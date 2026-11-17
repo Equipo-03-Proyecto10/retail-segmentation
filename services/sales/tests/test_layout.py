@@ -98,3 +98,22 @@ def test_the_distributed_stack_and_local_environment_include_sales() -> None:
     assert "REDIS_SALES_PASSWORD=svc_sales" in local
     assert "AUTH_JWKS_PATH=/run/mosaiq/jwks.json" in local
     assert "MOSAIQ_SERVICE_NAME=sales" in local
+
+
+def test_the_import_worker_is_a_second_hardened_process_of_the_same_image() -> None:
+    import yaml
+
+    compose = yaml.safe_load((ROOT / "compose.yaml").read_text())
+    api, worker = (
+        compose["services"]["sales"],
+        compose["services"]["sales-import-worker"],
+    )
+    assert worker["image"] == api["image"]
+    assert worker["command"] == ["python", "-m", "app.import_worker"]
+    assert worker["mem_limit"] == "96m"
+    assert "ports" not in worker and "depends_on" not in worker
+    assert worker["user"] == api["user"] == "10001:10001"
+    assert worker["cap_drop"] == ["ALL"] and worker["read_only"] is True
+    # It reaches PostgreSQL by the same socket and holds no token key or Redis.
+    assert worker["env_file"] == api["env_file"]
+    assert all("jwks" not in volume for volume in worker["volumes"])

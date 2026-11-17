@@ -54,7 +54,7 @@ def test_page_lists_unhealthy_services_first(app):
                 "1.2M",
                 "64.00M",
                 None,
-                [Group("stream:stores.v1.changed", "stock", 3, 1)],
+                [Group("stream:stores.v1.changed", "stock", 3, 1, 7_500)],
             )
         ],
     )
@@ -65,6 +65,8 @@ def test_page_lists_unhealthy_services_first(app):
     assert listed[1:] == [n for n in names if n != "stores"]
     assert "schema_not_ready" in html
     assert "stream:stores.v1.changed" in html
+    assert "Oldest unacked" in html
+    assert "7.5 s" in html
 
 
 def test_status_json(app):

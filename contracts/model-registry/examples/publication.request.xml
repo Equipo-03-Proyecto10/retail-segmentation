@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelPublicationRequest xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1">
+  <reason>K-means k=4 separates the at-risk customers better than the rule set.</reason>
+</ModelPublicationRequest>

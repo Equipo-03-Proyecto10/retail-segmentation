@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The status request violates its schema: only CANCELLED can be set.</message>
+  <correlation_id>corr-import-status-invalid-body</correlation_id>
+  <details>
+    <field>status</field>
+    <code>not_allowed</code>
+  </details>
+</Error>

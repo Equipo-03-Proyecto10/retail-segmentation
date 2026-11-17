@@ -57,6 +57,14 @@ include:
     env_file: docker/distributed/local.env
   - path: [services/audit-trail/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
+  - path: [services/rfm-engine/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/experimentation/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/model-registry/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
+  - path: [services/analytics-kpis/compose.yaml, docker/distributed/service.local.yaml]
+    env_file: docker/distributed/local.env
 
 services:
   # The development PostgreSQL of compose.yaml, with its socket directory on a
@@ -64,14 +72,14 @@ services:
   # uses the same socket-form DATABASE_URL here as on the instance. It
   # publishes no port: compose.yaml's own db may already hold 5432.
   db:
-    image: postgres:16
+    image: postgres:18
     environment:
       POSTGRES_PASSWORD: postgres
       APP_DB_PASSWORD: retail_app
     volumes:
       - ./sql:/opt/sql:ro
       - ./docker/initdb.sh:/docker-entrypoint-initdb.d/initdb.sh:ro
-      - mosaiq-distributed-pgdata:/var/lib/postgresql/data
+      - mosaiq-distributed-pgdata:/var/lib/postgresql
       - mosaiq-pgsocket:/var/run/postgresql
     healthcheck:
       test: ["CMD-SHELL", "psql -U postgres -d retail -tAc 'SELECT 1 FROM app_user LIMIT 1' || exit 1"]

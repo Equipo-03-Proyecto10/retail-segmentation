@@ -1,0 +1,11 @@
+{
+  "code": "invalid_transition",
+  "message": "An incident only moves forward from OPEN to ACKNOWLEDGED to RESOLVED.",
+  "correlation_id": "corr-invalid-transition",
+  "details": [
+    {
+      "field": "status",
+      "code": "backward_move"
+    }
+  ]
+}

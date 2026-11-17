@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import uuid
 from datetime import UTC, datetime, timedelta
+from xml.etree import ElementTree
 
 import pytest
 
@@ -148,6 +149,51 @@ def test_before_registration(client, token, sale_body, owner):
     assert response.get_json()["code"] == "before_registration"
 
 
+@pytest.mark.parametrize("media", ["application/json", "application/xml"])
+def test_an_anonymized_customer_is_refused_and_nothing_is_stored(
+    client, token, sale_body, owner, anonymized_customer, media
+):
+    """ADR-0066 section 3 and #1061: no new sale attaches to a removed identity."""
+    body = copy.deepcopy(sale_body)
+    body["customer_id"] = anonymized_customer
+    line = body["lines"][0]
+
+    def counts() -> tuple:
+        return owner.execute(
+            "SELECT (SELECT count(*) FROM public.transaction),"
+            " (SELECT count(*) FROM sales_events.outbox),"
+            " (SELECT quantity_on_hand FROM public.inventory"
+            "  WHERE store_id = %s AND product_id = %s)",
+            (body["store_id"], line["product_id"]),
+        ).fetchone()
+
+    before = counts()
+    headers = idempotency_headers(token("STORE_MANAGER"))
+    if media == "application/json":
+        response = client.post("/v1/sales", json=body, headers=headers)
+        error = response.get_json()
+        code, field, detail = (
+            error["code"],
+            error["details"][0]["field"],
+            error["details"][0]["code"],
+        )
+    else:
+        response = client.post(
+            "/v1/sales",
+            data=sale_xml(body),
+            content_type="application/xml",
+            headers={**headers, "Accept": "application/xml"},
+        )
+        root = ElementTree.fromstring(response.data)
+        common = "{https://mosaiq.maxthecoder.online/xml/common/v1}"
+        code = root.findtext(f"{common}code")
+        field = root.findtext(f"{common}details/{common}field")
+        detail = root.findtext(f"{common}details/{common}code")
+    assert response.status_code == 422
+    assert (code, field, detail) == ("anonymized_customer", "customer_id", "anonymized")
+    assert counts() == before
+
+
 def test_unknown_customer_store_and_channel(client, token, sale_body):
     cases = (
         ("customer_id", str(uuid.uuid4()), "unknown_customer"),
@@ -157,7 +203,11 @@ def test_unknown_customer_store_and_channel(client, token, sale_body):
     for field, value, code in cases:
         body = copy.deepcopy(sale_body)
         body[field] = value
-        response = post(client, token, body)
+        # A floor role naming a store it is not assigned to is refused with 403
+        # before the store is looked up (F19-07); the 422 is ADMIN's to read.
+        response = client.post(
+            "/v1/sales", json=body, headers=idempotency_headers(token("ADMIN"))
+        )
         assert response.status_code == 422
         assert response.get_json()["code"] == code
         assert response.get_json()["details"][0]["field"] == field

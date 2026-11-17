@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>already_assigned</code>
+  <message>This experiment is already assigned and is never assigned again.</message>
+  <correlation_id>corr-already-assigned</correlation_id>
+</Error>

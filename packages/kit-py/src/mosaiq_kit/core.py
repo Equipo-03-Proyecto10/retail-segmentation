@@ -223,7 +223,7 @@ class Kit:
         return render_representation(
             result,
             g.response_format,
-            self.contract.namespace,
+            operation.response_namespace or self.contract.namespace,
             request_size=self.size,
         )
 

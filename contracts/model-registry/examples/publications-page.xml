@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelPublications xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <ModelPublication>
+    <publication_id>13</publication_id>
+    <version_id>3</version_id>
+    <action>ROLLBACK</action>
+    <previous_version_id>5</previous_version_id>
+    <reason>Drift alerts on the K-means reference; restore the rule set.</reason>
+    <published_by>11111111-1111-1111-1111-000000000001</published_by>
+    <published_at>2026-10-30T17:45:12Z</published_at>
+  </ModelPublication>
+  <ModelPublication>
+    <publication_id>12</publication_id>
+    <version_id>5</version_id>
+    <action>PUBLISH</action>
+    <previous_version_id>3</previous_version_id>
+    <reason>K-means k=4 separates the at-risk customers better than the rule set.</reason>
+    <published_by>11111111-1111-1111-1111-000000000001</published_by>
+    <published_at>2026-10-28T09:30:00Z</published_at>
+  </ModelPublication>
+  <ModelPublication>
+    <publication_id>1</publication_id>
+    <version_id>3</version_id>
+    <action>PUBLISH</action>
+    <reason>First published version.</reason>
+    <published_by>11111111-1111-1111-1111-000000000001</published_by>
+    <published_at>2026-09-01T08:00:00Z</published_at>
+  </ModelPublication>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>3</common:total>
+  </common:PageInfo>
+</ModelPublications>

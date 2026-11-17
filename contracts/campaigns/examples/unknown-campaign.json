@@ -1,0 +1,11 @@
+{
+  "code": "unknown_campaign",
+  "message": "No campaign has the given campaign_id.",
+  "correlation_id": "corr-promotion-422a",
+  "details": [
+    {
+      "field": "campaign_id",
+      "code": "unknown_campaign"
+    }
+  ]
+}

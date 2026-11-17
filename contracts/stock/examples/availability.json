@@ -1,0 +1,36 @@
+{
+  "availabilities": [
+    {
+      "store_id": 3,
+      "product_id": 120,
+      "channel_id": 1,
+      "is_available": true,
+      "reason": "AVAILABLE",
+      "quantity_on_hand": 41,
+      "updated_at": "2026-10-18T12:10:00Z"
+    },
+    {
+      "store_id": 3,
+      "product_id": 120,
+      "channel_id": 3,
+      "is_available": true,
+      "reason": "AVAILABLE",
+      "quantity_on_hand": 41,
+      "updated_at": "2026-10-18T12:10:00Z"
+    },
+    {
+      "store_id": 3,
+      "product_id": 120,
+      "channel_id": 4,
+      "is_available": false,
+      "reason": "CHANNEL_NOT_ENABLED",
+      "quantity_on_hand": 41,
+      "updated_at": "2026-10-18T12:10:00Z"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

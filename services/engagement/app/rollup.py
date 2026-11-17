@@ -12,7 +12,7 @@ import logging
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
-from .events import DAILY, EVENTS, TYPES, EventStore, mongo_guard, utc_day
+from .events import ALL_TYPES, DAILY, EVENTS, EventStore, mongo_guard, utc_day
 from .live import LiveCounters
 
 LOGGER = logging.getLogger(__name__)
@@ -101,7 +101,7 @@ def refresh_live(live: LiveCounters, rollup: list[dict[str, Any]]) -> int:
     recent = {utc_day(today - timedelta(days=age)) for age in range(3)}
     count = 0
     for row in rollup:
-        if row["day"] in recent and row["type"] in TYPES:
+        if row["day"] in recent and row["type"] in ALL_TYPES:
             live.set(row["store_id"], row["day"], row["type"], int(row["count"]))
             count += 1
     return count

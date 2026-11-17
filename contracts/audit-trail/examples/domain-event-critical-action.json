@@ -1,0 +1,23 @@
+{
+  "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000006",
+  "kind": "CRITICAL_ACTION",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-07T17:21:30.002Z",
+  "recorded_at": "2026-11-07T17:21:30.015Z",
+  "actor_type": "USER",
+  "actor_user_id": "11111111-1111-1111-1111-000000000003",
+  "actor_role": "STORE_MANAGER",
+  "source": "svc_sales",
+  "store_id": 4,
+  "subject_type": "sale_reversal",
+  "subject_id": "77",
+  "model_version_id": null,
+  "rule_set_version": null,
+  "correlation_id": "corr-reversal-77",
+  "details": {
+    "action": "SALE_REVERSED",
+    "reason_code": "CUSTOMER_RETURN"
+  },
+  "prev_hash": "bf9ecc5dae097b3ba5791e265603f24f99fec997bbc7382fefbfdfe9f8f94551",
+  "entry_hash": "05cf6326adfd4b14809361fa0a8d2b2271f58e707147e94cb8d02b6a05845d69"
+}

@@ -43,7 +43,7 @@ problems=$(
     locks=$(find "$d" -maxdepth 1 \( -name uv.lock -o -name Cargo.lock \) | wc -l)
     [ "$locks" -eq 1 ] || echo "ADR-0045: $d has $locks lock files"
   done
-  git grep -nwE 'ADMIN|ANALYST|STORE_MANAGER|MARKETING|INVENTORY_PLANNER|AUDITOR|CUSTOMER' -- packages/ \
+  git grep -nwE 'ADMIN|ANALYST|STORE_MANAGER|MARKETING|INVENTORY_PLANNER|AUDITOR|CUSTOMER|SALES_ASSOCIATE|LOYALTY_OFFICER|COMMERCIAL_SUPERVISOR' -- packages/ \
     | found "ADR-0045 role code in a kit"
   git grep -noE "[\"'][a-z_]+:[a-z_]+:[^\"']*" -- packages/ \
     | grep -vE "pub:auth:v1:live:|[\"']stream:" | found "ADR-0045 Redis key in a kit"
@@ -133,6 +133,11 @@ PERL
   git grep -nE "mosaiq-($names)\b" -- .github/ deploy/ ':(exclude).github/scripts/guards.sh' \
     ':(exclude)deploy/check-services.sh' \
     | found "ADR-0040 a service named"
+  # ADR-0080: no test image is named on the deploy path. check-services.sh names
+  # the prefix only to refuse it.
+  git grep -n 'mosaiq-ci-' -- deploy/ .github/workflows/deploy.yml .github/workflows/deploy-service.yml \
+    ':(exclude)deploy/check-services.sh' \
+    | found "ADR-0080 a test image on the deploy path"
   # ADR-0040: the per-service deploy runs each service as its own project,
   # never builds an image and never runs SQL (F18-03), and the web's deploy
   # stays out of the services.

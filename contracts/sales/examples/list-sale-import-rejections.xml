@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImportRejections xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <SaleImportRejection>
+    <line>4</line>
+    <field>quantity</field>
+    <code>invalid_quantity</code>
+    <message>Line 4: quantity must be a positive whole number; the cell holds "0".</message>
+  </SaleImportRejection>
+  <SaleImportRejection>
+    <line>6</line>
+    <field>occurred_at</field>
+    <code>future_dated</code>
+    <message>Line 6: occurred_at cannot be in the future; the cell holds "2026-12-15T09:00:00-06:00".</message>
+  </SaleImportRejection>
+  <SaleImportRejection>
+    <line>8</line>
+    <code>duplicate_row</code>
+    <message>Line 8: repeats line 3 of this file (transaction T-1001, product 1020); the line was recorded once and nothing was added.</message>
+    <duplicate_of>FILE</duplicate_of>
+    <first_line>3</first_line>
+  </SaleImportRejection>
+  <SaleImportRejection>
+    <line>9</line>
+    <code>duplicate_row</code>
+    <message>Line 9: transaction T-0958 is already recorded as sale 4790; nothing was added.</message>
+    <duplicate_of>RECORDED_SALE</duplicate_of>
+    <sale_id>4790</sale_id>
+  </SaleImportRejection>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>4</common:total>
+  </common:PageInfo>
+</SaleImportRejections>

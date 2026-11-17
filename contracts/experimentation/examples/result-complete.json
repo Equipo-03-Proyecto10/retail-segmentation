@@ -1,0 +1,189 @@
+{
+  "experiment_id": 12,
+  "campaign_id": 4,
+  "basis": "PRIMARY",
+  "status": "COMPLETE",
+  "as_of": "2026-10-22T08:00:07Z",
+  "elapsed_share": 1,
+  "data_origin": "OBSERVED",
+  "synthetic": false,
+  "design_kind": "CONTROLLED",
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": "REVENUE_PER_CUSTOMER",
+    "estimator": "DIFFERENCE_OF_PROPORTIONS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.05,
+    "power": 0.80,
+    "minimum_detectable_effect": 0.02,
+    "baseline": 0.10,
+    "baseline_std_dev": null,
+    "required_per_arm": 3839,
+    "smallest_detectable_effect": 0.0196,
+    "allocation": "EQUAL",
+    "conversion_window_days": 14,
+    "settle_days": 7,
+    "starts_on": "2026-10-01",
+    "analysis_at": "2026-10-22T08:00:00Z"
+  },
+  "arms": [
+    {
+      "arm_id": 31,
+      "kind": "CONTROL",
+      "name": "No offer",
+      "assigned": 4000,
+      "analysed": 4000,
+      "exposed": 0,
+      "converted": 400,
+      "pending": 0,
+      "not_converted": 3600,
+      "conversion_rate": 0.1000,
+      "exposed_conversion_rate": null,
+      "net_revenue": "23640.00",
+      "revenue_per_customer": "5.91",
+      "revenue_std_dev": 31.40
+    },
+    {
+      "arm_id": 32,
+      "kind": "TREATMENT",
+      "name": "10 percent win-back voucher",
+      "assigned": 4000,
+      "analysed": 4000,
+      "exposed": 3560,
+      "converted": 484,
+      "pending": 0,
+      "not_converted": 3516,
+      "conversion_rate": 0.1210,
+      "exposed_conversion_rate": 0.1270,
+      "net_revenue": "27960.00",
+      "revenue_per_customer": "6.99",
+      "revenue_std_dev": 32.10
+    }
+  ],
+  "checks": {
+    "sample_ratio": {
+      "status": "PASSED",
+      "p_value": 1.000000,
+      "threshold": 0.001
+    },
+    "balance": [
+      {
+        "measure": "PRE_RECENCY_DAYS",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.012,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_PURCHASE_COUNT",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.008,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_NET_SPEND",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.021,
+        "flagged": false,
+        "threshold": 0.25
+      }
+    ]
+  },
+  "comparisons": [
+    {
+      "label": "EFFECT",
+      "metric": "CONVERSION",
+      "role": "PRIMARY",
+      "arm_id": 32,
+      "against_arm_id": 31,
+      "difference": 0.0210,
+      "lower": 0.0073,
+      "upper": 0.0347,
+      "confidence_level": 0.950,
+      "test": "POOLED_Z",
+      "p_value": 0.002739,
+      "degrees_of_freedom": null,
+      "conclusion": "SIGNIFICANT",
+      "incremental_revenue": null,
+      "bootstrap": null
+    },
+    {
+      "label": "EFFECT",
+      "metric": "REVENUE_PER_CUSTOMER",
+      "role": "SECONDARY",
+      "arm_id": 32,
+      "against_arm_id": 31,
+      "difference": 1.08,
+      "lower": -0.31,
+      "upper": 2.47,
+      "confidence_level": 0.950,
+      "test": "WELCH_T",
+      "p_value": 0.128225,
+      "degrees_of_freedom": 7994.1,
+      "conclusion": null,
+      "incremental_revenue": null,
+      "bootstrap": {
+        "resamples": 10000,
+        "lower": -0.29,
+        "upper": 2.46,
+        "agrees": true
+      }
+    }
+  ],
+  "effect_refusal": null,
+  "attribution": {
+    "label": "ATTRIBUTION",
+    "window_days": 14,
+    "arms": [
+      {
+        "arm_id": 32,
+        "attributed_sales": 431,
+        "attributed_customers": 377,
+        "attributed_revenue": "15980.40"
+      }
+    ],
+    "attributed_sales": 431,
+    "attributed_revenue": "15980.40",
+    "unattributed_conversions": 107,
+    "as_of": "2026-10-22T08:00:07Z"
+  },
+  "assumptions": [
+    {
+      "code": "INTENT_TO_TREAT",
+      "statement": "Every assigned customer counts in the arm they were assigned to, exposed or not."
+    },
+    {
+      "code": "NET_OF_REVERSALS",
+      "statement": "Conversions and revenue count sales net of reversals, as known at `as_of`."
+    },
+    {
+      "code": "SINGLE_LOOK",
+      "statement": "The result is read once, at the analysis instant; stopping early or adding a look needs a new experiment."
+    },
+    {
+      "code": "FAMILY_WISE_ALPHA",
+      "statement": "Each treatment is compared with the control at the experiment's alpha divided by the number of treatments."
+    },
+    {
+      "code": "LARGE_SAMPLE_APPROXIMATION",
+      "statement": "The intervals rest on the normal approximation, which the planned customers per arm make adequate."
+    },
+    {
+      "code": "NO_CONTAMINATION",
+      "statement": "A customer is assigned in at most one experiment whose period overlaps this one's."
+    },
+    {
+      "code": "CONTROL_NEVER_EXPOSED",
+      "statement": "The control is never exposed, so exposure is a secondary, descriptive measure and not an effect on the exposed."
+    },
+    {
+      "code": "ZERO_FOR_NON_BUYERS",
+      "statement": "Revenue per customer counts zero for a customer who bought nothing in the window."
+    }
+  ],
+  "flags": []
+}

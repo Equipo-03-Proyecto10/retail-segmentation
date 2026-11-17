@@ -16,6 +16,11 @@ For a service named `<name>`, the v1 contract contains:
   examples named `*.xml`, and examples that must be refused named
   `*.invalid.xml`.
 
+A later major keeps its examples in `contracts/<name>/examples/v<N>/`, validated
+against `contracts/<name>/<name>.v<N>.xsd` with the same rules (an `*.invalid.xml`
+must be refused). The check fails on any other subdirectory, so no example sits
+where nothing validates it.
+
 Request examples are named `*.request.json` and `*.request.xml`. Every other
 non-invalid XML example is a response example. This distinction is used by the
 compatibility check: the base XSD must accept the head response examples, and
@@ -82,7 +87,9 @@ and `total`. Invalid values get 422 `invalid_pagination`.
 the service generates one, and always echoes it. A 429 carries `Retry-After`.
 Retried mobile writes use the identifier declared by their operation:
 `Idempotency-Key` for sales, `client_event_id` for engagement, and
-`client_check_in_id` for check-ins.
+`client_check_in_id` for check-ins. A customer visit carries no identifier: a
+repeat for the same customer and store within its duplicate window is the same
+visit and answers 200 with the stored one.
 
 ## Authentication and routes
 
@@ -97,6 +104,12 @@ that takes exactly one of several filters, declares
 `x-mosaiq-conformance-query`: a map of query parameters to sample values the
 shared conformance suite (`tests/conformance`) calls it with. It changes nothing
 the service accepts; `listSegmentAssignments` is the first.
+
+An operation published before its implementation (ADR-0035) declares
+`x-mosaiq-status: planned` (ADR-0073), the only value allowed. The conformance
+suite runs no case against it, and a guard case fails once the image answers
+the route with anything but 404 or 405. The implementing pull request removes
+the marker, and the operation then joins every case.
 
 The meta routes are `/health/live`, `/health/ready`, `/openapi.yaml`, and
 `/schema.xsd`. They sit outside `/v1`, do not appear in the registry, and need
@@ -167,6 +180,13 @@ Any change under `contracts/<name>/` moves that contract's semantic
 to an existing XML response type is also breaking because response types are
 closed to additions within a major. A new operation, optional query parameter,
 optional request element, or error code on an existing status is not breaking.
+
+The one exception is a closed vocabulary that an accepted record grows: an
+entry in [`vocabulary-growth.yaml`](vocabulary-growth.yaml) excuses exactly the
+values it lists, for exactly the contract version that adds them
+([ADR-0076](../docs/adr/0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md)
+for the role codes, [ADR-0082](../docs/adr/0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md)
+for the audited entity names).
 
 A breaking version ships `/v2` beside `/v1` in the same OpenAPI document. Its
 schema is `<name>.v2.xsd`, uses namespace

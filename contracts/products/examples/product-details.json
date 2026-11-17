@@ -1,0 +1,21 @@
+{
+  "product_id": 1001,
+  "sku": "MOS-CAM-001",
+  "name": "Aisle Camera",
+  "category_id": 12,
+  "list_price": "129.90",
+  "is_active": true,
+  "commercial_status": "active",
+  "attributes": [
+    {
+      "name": "color",
+      "value": "graphite"
+    },
+    {
+      "name": "resolution",
+      "value": "1080p"
+    }
+  ],
+  "photo_url": "https://mosaiq.maxthecoder.online/uploads/products/1001-camera.webp",
+  "barcode": "4006381333931"
+}

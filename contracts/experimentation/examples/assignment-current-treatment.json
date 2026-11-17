@@ -1,0 +1,13 @@
+{
+  "assignment_id": 74211,
+  "experiment_id": 18,
+  "campaign_id": 8,
+  "customer_id": "c0a80001-0000-4000-8000-000000000204",
+  "arm_id": 62,
+  "arm_kind": "TREATMENT",
+  "arm_name": "Free coffee with any basket",
+  "assignment_key": "c46257a135c867fa4e7b8237203bf328ae76bbd46a910d963f2147ba2a7f0fcb",
+  "assigned_at": "2026-11-05T08:00:00Z",
+  "exposure_count": 1,
+  "first_exposed_at": "2026-11-07T16:42:10Z"
+}

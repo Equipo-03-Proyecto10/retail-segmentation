@@ -1,0 +1,264 @@
+{
+  "report_id": 32,
+  "kind": "DATA_DRIFT",
+  "model_version": {
+    "version_id": 5,
+    "name": "kmeans-k4-2026-10",
+    "method": "KMEANS"
+  },
+  "comparison": "COMPARED",
+  "not_compared_reason": null,
+  "window": {
+    "start": "2026-11-06T03:00:00Z",
+    "end": "2026-12-06T03:00:00Z",
+    "days": 30,
+    "customer_count": 2400
+  },
+  "reference": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z"
+  },
+  "previous_report_id": 31,
+  "variables": [
+    {
+      "variable": "SEGMENT_SHARES",
+      "state": "ALARM",
+      "statistics": [
+        {
+          "statistic": "PSI",
+          "value": 0.3148,
+          "p_value": null,
+          "degrees_of_freedom": null,
+          "threshold_basis": "VALUE",
+          "watch_threshold": 0.1,
+          "alarm_threshold": 0.25,
+          "level": "ALARM"
+        },
+        {
+          "statistic": "CHI_SQUARE",
+          "value": 676.3754,
+          "p_value": 2.78e-146,
+          "degrees_of_freedom": 3,
+          "threshold_basis": "P_VALUE",
+          "watch_threshold": 0.05,
+          "alarm_threshold": 0.01,
+          "level": "ALARM"
+        }
+      ],
+      "bins": [
+        {
+          "label": "CHAMPIONS",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.12,
+          "current_share": 0.04,
+          "contribution": 0.0879
+        },
+        {
+          "label": "LOYAL",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.31,
+          "current_share": 0.15,
+          "contribution": 0.1161
+        },
+        {
+          "label": "AT_RISK",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.33,
+          "current_share": 0.39,
+          "contribution": 0.01
+        },
+        {
+          "label": "LOST",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.24,
+          "current_share": 0.42,
+          "contribution": 0.1007
+        }
+      ]
+    },
+    {
+      "variable": "R",
+      "state": "ALARM",
+      "statistics": [
+        {
+          "statistic": "PSI",
+          "value": 0.2679,
+          "p_value": null,
+          "degrees_of_freedom": null,
+          "threshold_basis": "VALUE",
+          "watch_threshold": 0.1,
+          "alarm_threshold": 0.25,
+          "level": "ALARM"
+        }
+      ],
+      "bins": [
+        {
+          "label": "B1",
+          "lower": 0,
+          "upper": 30,
+          "reference_share": 0.31,
+          "current_share": 0.14,
+          "contribution": 0.1351
+        },
+        {
+          "label": "B2",
+          "lower": 30,
+          "upper": 60,
+          "reference_share": 0.27,
+          "current_share": 0.22,
+          "contribution": 0.0102
+        },
+        {
+          "label": "B3",
+          "lower": 60,
+          "upper": 120,
+          "reference_share": 0.24,
+          "current_share": 0.29,
+          "contribution": 0.0095
+        },
+        {
+          "label": "B4",
+          "lower": 120,
+          "upper": 180,
+          "reference_share": 0.18,
+          "current_share": 0.35,
+          "contribution": 0.113
+        },
+        {
+          "label": "NO_VALUE",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.0,
+          "current_share": 0.0,
+          "contribution": 0.0
+        }
+      ]
+    },
+    {
+      "variable": "F",
+      "state": "WATCH",
+      "statistics": [
+        {
+          "statistic": "PSI",
+          "value": 0.108,
+          "p_value": null,
+          "degrees_of_freedom": null,
+          "threshold_basis": "VALUE",
+          "watch_threshold": 0.1,
+          "alarm_threshold": 0.25,
+          "level": "WATCH"
+        }
+      ],
+      "bins": [
+        {
+          "label": "B1",
+          "lower": 1,
+          "upper": 2,
+          "reference_share": 0.38,
+          "current_share": 0.26,
+          "contribution": 0.0455
+        },
+        {
+          "label": "B2",
+          "lower": 2,
+          "upper": 4,
+          "reference_share": 0.29,
+          "current_share": 0.27,
+          "contribution": 0.0014
+        },
+        {
+          "label": "B3",
+          "lower": 4,
+          "upper": 8,
+          "reference_share": 0.21,
+          "current_share": 0.26,
+          "contribution": 0.0107
+        },
+        {
+          "label": "B4",
+          "lower": 8,
+          "upper": 42,
+          "reference_share": 0.12,
+          "current_share": 0.21,
+          "contribution": 0.0504
+        },
+        {
+          "label": "NO_VALUE",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.0,
+          "current_share": 0.0,
+          "contribution": 0.0
+        }
+      ]
+    },
+    {
+      "variable": "M",
+      "state": "NORMAL",
+      "statistics": [
+        {
+          "statistic": "PSI",
+          "value": 0.0012,
+          "p_value": null,
+          "degrees_of_freedom": null,
+          "threshold_basis": "VALUE",
+          "watch_threshold": 0.1,
+          "alarm_threshold": 0.25,
+          "level": "NORMAL"
+        }
+      ],
+      "bins": [
+        {
+          "label": "B1",
+          "lower": 5.0,
+          "upper": 150.0,
+          "reference_share": 0.34,
+          "current_share": 0.33,
+          "contribution": 0.0003
+        },
+        {
+          "label": "B2",
+          "lower": 150.0,
+          "upper": 600.0,
+          "reference_share": 0.33,
+          "current_share": 0.33,
+          "contribution": 0.0
+        },
+        {
+          "label": "B3",
+          "lower": 600.0,
+          "upper": 1800.0,
+          "reference_share": 0.22,
+          "current_share": 0.22,
+          "contribution": 0.0
+        },
+        {
+          "label": "B4",
+          "lower": 1800.0,
+          "upper": 9120.5,
+          "reference_share": 0.11,
+          "current_share": 0.12,
+          "contribution": 0.0009
+        },
+        {
+          "label": "NO_VALUE",
+          "lower": null,
+          "upper": null,
+          "reference_share": 0.0,
+          "current_share": 0.0,
+          "contribution": 0.0
+        }
+      ]
+    }
+  ],
+  "outcome_test": null,
+  "alert_ids": [
+    41,
+    42
+  ],
+  "computed_at": "2026-12-06T03:04:41Z"
+}

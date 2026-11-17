@@ -1,0 +1,11 @@
+{
+  "code": "unknown_store",
+  "message": "A store id does not exist.",
+  "correlation_id": "corr-promotion-422c",
+  "details": [
+    {
+      "field": "store_ids",
+      "code": "unknown_store"
+    }
+  ]
+}

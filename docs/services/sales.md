@@ -1,7 +1,7 @@
 # sales
 
 > **Status:** Implemented (phase 14, core; F14-18, #454). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales))
+> **One rule:** A sale is recorded exactly once, all or nothing, consuming its stock in the same transaction, and only with lines dated not in the future and not before the customer's registration, for active products, with positive quantities and positive two-decimal prices (RN-11 to RN-13, RN-37 (accepted sales), RN-70)
 
 ## Summary
 
@@ -22,6 +22,10 @@
 
 - One PostgreSQL transaction per `POST /v1/sales`: validate the whole sale, insert the header and every line, call `api_stock.consume_v1` per line in ascending `product_id` order, insert `sales.sale_capture`, commit. Any refusal rolls everything back.
 - Idempotency is durable in PostgreSQL: the `Idempotency-Key` becomes `source_transaction_id = 'svc-sales:' || key`, and a request hash decides between a replay (200 with the original) and a conflict (409). No Redis key is involved.
+- A reversal (RN-70, ADR-0062) is its own transaction: lock the sold lines in ascending product order, record the `sales.sale_reversal` header and its lines, add to `transaction_line.returned_quantity`, call `api_stock.restock_v1` per resellable line in ascending product order, commit. The outbox row for `stream:sales.v1.reversed` is written by the capture trigger in that transaction, so a rollback publishes nothing. A sale is never edited or deleted; the database refuses reversals that add up to more than was sold. Its time limits are configuration (`SALES_CANCELLATION_WINDOW_DAYS`, `SALES_RETURN_WINDOW_DAYS`, `SALES_TIMEZONE`); the store narrowing of ADR-0060 is #757's.
+- The floor roles work only in their assigned stores (ADR-0060, F19-07). Recording a sale or a reversal, reading one by id and listing are narrowed by `api_users.store_assignment_v1`, read inside the request's transaction with no cache and no token claim, so a removed assignment is refused from the next call. A list with no `store_id` returns only the caller's stores and a floor user with no assignment gets an empty page. `ADMIN`, `ANALYST`, `MARKETING` and `AUDITOR` are not confined, and sale imports and channels are not narrowed.
+- An import (RN-37, ADR-0070) is a second way in for the same rule. `POST /v1/sale-imports` opens it, `PUT /v1/sale-imports/{id}/chunks/{n}` stages numbered chunks of at most 150 rows and answers 202, and the import worker, a second process of this image (`python -m app.import_worker`, compose service `sales-import-worker`, 96 MB), applies the rows one at a time. Each row passes `salerules.validate_sale_rules` and `validate_sale_references`, the same functions `POST /v1/sales` calls, and takes stock through the same `store.consume_stock`. Its outcome (accepted with the sale line it made, or rejected with line, field, code and sentence) commits with the row, so a resume skips every line that has one. Counts reconcile: `received = accepted + rejected + pending`, and `pending` is zero when `COMPLETED`. A repeated file creates no sale twice: a row repeating a recorded line is `duplicate_row`, told apart as `FILE` or `RECORDED_SALE`.
+- **Reconciliation and quality (F26-09).** The guard cannot see a file whose ids were re-keyed between loads (ADR-0070 section 5), so a finished import can be reconciled: `POST /v1/sale-imports/{import_id}/reconciliation` lists, as cases, each sale the import made that has the same customer, store, instant and lines as an earlier sale under another source id. Listing a pair changes no sale, no stock and no count, and a repeat run only adds pairs not yet listed. A person settles each case once, as `DISTINCT` (two real sales) or `DUPLICATE` (one sale loaded twice); the decision keeps its author (`sub`) and moment in `sales.reconciliation_case`, and a trigger refuses to change it. Settling a case does not cancel a duplicate sale: that stays a reversal (ADR-0062), made by someone allowed to. `GET .../quality` reports a load, which is one file: its counts, how many rows failed for each code, and where its cases stand. It covers imports made through this service; the web's own CSV page and `sales_load` are untouched.
 - The service never imports the web's ingestion code. The rules it shares with the CSV path are carried by the database and by golden fixtures (E-17). Serves the read-only channel vocabulary (E-01).
 
 ## Endpoints
@@ -31,6 +35,19 @@
 | POST | `/v1/sales` | Record a sale (`Idempotency-Key` UUID required); 201, or 200 with `Idempotent-Replayed: true` on a replay | ADMIN, STORE_MANAGER |
 | GET | `/v1/sales` | List sales (`customer_id`, `store_id`, `from`, `to`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/sales/{sale_id}` | One sale (status; the Electron read-back) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| POST | `/v1/sale-reversals` | Record a cancellation or a return (`Idempotency-Key` UUID required); 201, or 200 with `Idempotent-Replayed: true` on a replay. A seller records cancellations only | ADMIN, STORE_MANAGER, SALES_ASSOCIATE (returns: ADMIN, STORE_MANAGER) |
+| GET | `/v1/sale-reversals` | List reversals (`sale_id`, `customer_id`, `store_id`, `kind`, `from`, `to`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, COMMERCIAL_SUPERVISOR |
+| GET | `/v1/sale-reversals/{reversal_id}` | One reversal with its lines | same as the list |
+| POST | `/v1/sale-imports` | Open an import (`Idempotency-Key` UUID required); 201, or 200 with `Idempotent-Replayed: true`. One import is open at a time | ADMIN |
+| GET | `/v1/sale-imports` | The recent imports, newest first | ADMIN |
+| GET | `/v1/sale-imports/{import_id}` | One import: status, `next_sequence` and the reconciled counts | ADMIN |
+| PUT | `/v1/sale-imports/{import_id}/chunks/{sequence}` | Stage one numbered chunk; 202, or 200 with `Idempotent-Replayed: true` for the same chunk again | ADMIN |
+| GET | `/v1/sale-imports/{import_id}/rejections` | The refused rows, by line, with field, code and reason | ADMIN |
+| PUT | `/v1/sale-imports/{import_id}/status` | Cancel an import (`CANCELLED` is the only value) | ADMIN |
+| POST | `/v1/sale-imports/{import_id}/reconciliation` | Reconcile a finished import: list as cases the sales it made that look like an earlier sale under another source id. Changes no sale; 409 `import_not_finished` while it is open | ADMIN, ANALYST |
+| GET | `/v1/sale-imports/{import_id}/reconciliation-cases` | The import's cases, oldest first (`status` `OPEN` or `RESOLVED`, `page`, `size`) | ADMIN, ANALYST, AUDITOR |
+| PUT | `/v1/sale-imports/{import_id}/reconciliation-cases/{case_id}/resolution` | Settle a case once as `DISTINCT` or `DUPLICATE`, audited with its author; the other resolution later is 409 `case_resolved` | ADMIN, ANALYST |
+| GET | `/v1/sale-imports/{import_id}/quality` | The load's quality report: counts, rows failed for each code, where its cases stand | ADMIN, ANALYST, AUDITOR |
 | GET | `/v1/channels` | Channel vocabulary, read only (E-01) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
@@ -42,6 +59,11 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `transaction`, `transaction_line` | Tables (`public`) | S+W: SELECT, INSERT | The web's CSV path is a legacy co-writer (E-09); the `svc-sales:` namespace is guarded (E-16) |
+| `transaction_line.returned_quantity` | Column (`public`) | S: UPDATE of this column only | The running total of a line's reversals; CHECK between 0 and `quantity`; a trigger refuses any other writer (ADR-0062) |
+| `sales.sale_reversal`, `sales.sale_reversal_line` | Tables (`sales`) | S: SELECT, INSERT | New; append-only; the database refuses reversals that exceed the sale; seed-exempt runtime state |
+| `transaction.total` | Column (`public`) | S: UPDATE of this column only | An import appends lines to a header and recomputes its total, as the web's CSV path does |
+| `sales.import`, `sales.import_chunk`, `sales.import_row_outcome` | Tables (`sales`) | S: SELECT, INSERT, UPDATE (outcomes: SELECT, INSERT) | New; the control state of an import; seed-exempt runtime state |
+| `sales.reconciliation_case` | Table (`sales`) | S: SELECT, INSERT, UPDATE of `resolution`, `resolved_by`, `resolved_at`, `note` | New (F26-09); one row for each look-alike pair; a decision is written once by a trigger; seed-exempt runtime state |
 | `sales.sale_capture` | Table (`sales`) | S: SELECT, INSERT | New; `transaction_id` PK, `request_sha256`, `recorded_by`, `captured_at`; seed-exempt runtime state |
 | `channel` | Table (`public`) | R: SELECT | Only the web writes it (E-10) |
 | `sales_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_sales`; seed-exempt runtime state |
@@ -50,16 +72,22 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Direction | Object | Counterpart |
 |---|---|---|
-| Publishes | `api_sales.purchase_line_v1` | recommendations |
+| Publishes | `api_sales.purchase_line_v1` | recommendations, customers (the retention candidates, #1061) |
+| Publishes | `api_sales.channel_v1` | stock (the set of channel ids availability is derived over, F21-07) |
+| Publishes | `api_sales.net_purchase_line_v1` | recommendations (SELECT granted); the net definition of ADR-0062, also read by the web as `public.net_sale_line` |
 | Consumes | `api_products.product_ref_v1` | products |
 | Consumes | `api_customers.customer_ref_v1` | customers |
+| Consumes | `api_users.store_assignment_v1` | users (narrows the floor roles to their assigned stores, ADR-0060; SELECT only, read on every request) |
 | Calls | `api_stock.consume_v1(smallint, int, int)` | stock (EXECUTE; E-05) |
+| Calls | `api_stock.restock_v1(smallint, int, int, bigint)` | stock (EXECUTE; E-05): once per resellable reversed line, in the reversal's transaction |
+| Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `HISTORY_READ` for `GET /v1/sales?customer_id=`, a 403 included, in the read's transaction; 503 `audit_unavailable` when it cannot |
 
 ## Events
 
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
 | Produces | `stream:sales.v1.recorded` | captured from `transaction` AFTER INSERT OR UPDATE OF `total`, for the service and the CSV path | recommendations' cache; consumers dedupe by `event_id` |
+| Produces | `stream:sales.v1.reversed` | captured from `sales.sale_reversal` AFTER INSERT, one event per reversal (`sale_id:reversal_id`) | recommendations, rfm-engine and experimentation recompute for the customer; consumers dedupe by `event_id` |
 
 ## Redis keys
 
@@ -81,8 +109,23 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 422 | `no_lines` | The sale has no lines |
 | 422 | `no_stock_record` | No inventory row for the store and product |
 | 422 | `unknown_customer`, `unknown_store`, `unknown_channel`, `unknown_product` | A reference does not exist |
+| 422 | `anonymized_customer` | The customer has been anonymized (ADR-0066 section 3, #1061); also an imported row's reason |
 | 422 | `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` | A sale rule is broken |
 | 404 | `sale_not_found` | `GET /v1/sales/{sale_id}` names no sale |
+| 404 | `sale_import_not_found` | An import route names no import |
+| 409 | `import_in_progress`, `import_not_receiving`, `import_finished` | Another import is open; the import takes no more chunks; it is `COMPLETED` or `EXPIRED` and cannot be cancelled |
+| 409 | `chunk_conflict`, `chunk_out_of_order` | The same chunk with other rows; a chunk above `next_sequence` |
+| 422 | `row_count_mismatch` | The rows of the chunks do not add up to `total_rows` |
+| (row) | `wrong_cell_count`, `invalid_value`, `missing_offset`, `formula_like_id`, `id_too_long`, `header_mismatch`, `duplicate_row` | Only in a rejection report, never a response status: a row of a file refused, plus the codes of `POST /v1/sales` |
+| 404 | `sale_reversal_not_found` | `GET /v1/sale-reversals/{reversal_id}` names no reversal |
+| 403 | `forbidden_role` | A `SALES_ASSOCIATE` records a return (a seller only cancels), or a role outside `x-mosaiq-roles` |
+| 403 | `forbidden_store` | `STORE_MANAGER` or `SALES_ASSOCIATE` records a sale or reversal for, reads, or names in a filter a store that is not currently assigned to them (ADR-0060). It is decided before the store is looked up and before the idempotency key, in JSON and XML, with no data |
+| 409 | `quantity_exceeds_remaining` | A return asks for more units than the sale still holds (nothing changes) |
+| 409 | `sale_already_reversed` | A cancellation of a sale that already has a reversal |
+| 409 | `reversal_window_closed` | The cancellation or return window has passed (configuration) |
+| 422 | `unknown_sale`, `unknown_sale_line` | The sale, or a product on it, does not exist |
+| 422 | `reason_required`, `no_return_lines`, `unexpected_lines` | A reason is missing, a return has no lines, a cancellation has some |
+| 422 | `no_stock_record` | A reversed line's store has no stock record: nothing is recorded |
 | 422 | `invalid_query` | `GET /v1/sales` has a malformed `customer_id`, `store_id`, `from` or `to`, or `from` after `to` |
 
 ## Accepted exceptions
@@ -98,9 +141,9 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-05 — one synchronous cross-boundary call, inside the database
 
-- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside its own transaction. It is the only place where one boundary calls into another.
-- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031). A saga or an HTTP call to stock could leave a sale without its decrement, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
-- **Guard:** EXECUTE goes to `svc_sales` only, and the grant check compares it both ways. It is in the database and never HTTP. ADR-0044 states that a second cross-boundary write needs its own record.
+- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside the sale's transaction, and `api_stock.restock_v1` once per resalable reversed line, inside the reversal's transaction (ADR-0061, ADR-0062). They are the only places where sales calls into another boundary.
+- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031), and so must a reversal and its restock (ADR-0061). A saga or an HTTP call to stock could leave a sale without its decrement, a reversal without its restock, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
+- **Guard:** EXECUTE on both goes to `svc_sales` only, and the grant check compares it both ways. Both are in the database and never HTTP. ADR-0044 states that a further cross-boundary write needs its own record; for `restock_v1`, that record is ADR-0061.
 - **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction). Register: [E-05](./README.md#e-05--one-synchronous-cross-boundary-call-inside-the-database).
 
 ### E-09 — the frozen web is a legacy co-writer of some tables

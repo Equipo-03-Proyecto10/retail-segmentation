@@ -14,23 +14,29 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Shows the envelope: code, message and correlation id; details go next to their fields. */
+/**
+ * A refusal in plain words, with the technical envelope (code, correlation id, retry-after and
+ * the details that name no field on screen) behind a disclosure.
+ */
 export function errorBox(error: ErrorView, fieldNames: string[] = []): HTMLElement {
-  const box = el('dl', { cls: 'error' });
+  const box = el('div', { cls: 'error' });
   box.setAttribute('role', 'alert');
   box.dataset.testid = 'error';
+  const facts = el('dl');
   const row = (name: string, value: string, id: string): void => {
     const dd = el('dd', { text: value });
     dd.dataset.testid = id;
-    box.append(el('dt', { text: name }), dd);
+    facts.append(el('dt', { text: name }), dd);
   };
   row('Code', error.code, 'error-code');
-  row('Message', error.message, 'error-message');
   row('Correlation id', error.correlation_id, 'error-correlation');
   if (error.retry_after !== undefined) row('Retry after', error.retry_after, 'error-retry-after');
   for (const d of error.details) {
     if (!fieldNames.includes(d.field)) row(`Field ${d.field}`, d.code, 'error-detail');
   }
+  const disclosure = el('details', {}, el('summary', { text: 'Details' }), facts);
+  disclosure.dataset.testid = 'error-details';
+  box.append(testid(el('p', { cls: 'error-message', text: error.message }), 'error-message'), disclosure);
   return box;
 }
 
@@ -67,13 +73,20 @@ export function formField(
   return wrap;
 }
 
-/** Puts a refusal's details next to the fields of a form that is still on screen, keeping what was typed. */
-export function markDetails(form: HTMLFormElement, details: Details): void {
+/**
+ * Puts a refusal's details next to the fields of a form that is still on screen, keeping what was
+ * typed. A screen may word a detail itself; the default is the field and the code as returned.
+ */
+export function markDetails(
+  form: HTMLFormElement,
+  details: Details,
+  wording: (detail: Details[number]) => string = (d) => `${d.field}: ${d.code}`,
+): void {
   form.querySelectorAll('.field-detail').forEach((old) => old.remove());
   for (const d of details) {
     const control = form.querySelector(`[name="${CSS.escape(d.field)}"]`);
     control?.parentElement?.append(
-      testid(el('p', { cls: 'field-detail', text: `${d.field}: ${d.code}` }), `detail-${d.field}`),
+      testid(el('p', { cls: 'field-detail', text: wording(d) }), `detail-${d.field}`),
     );
   }
 }

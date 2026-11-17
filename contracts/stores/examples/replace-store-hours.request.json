@@ -1,0 +1,20 @@
+{
+  "time_zone": "America/Mexico_City",
+  "intervals": [
+    {
+      "day_of_week": 1,
+      "opens_at": "09:00",
+      "closes_at": "21:00"
+    },
+    {
+      "day_of_week": 2,
+      "opens_at": "09:00",
+      "closes_at": "21:00"
+    },
+    {
+      "day_of_week": 6,
+      "opens_at": "10:00",
+      "closes_at": "18:00"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "code": "customer_not_found",
+  "message": "The customer does not exist.",
+  "correlation_id": "corr-customer-not-found",
+  "details": []
+}

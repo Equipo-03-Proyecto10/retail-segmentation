@@ -2,18 +2,20 @@ package online.maxthecoder.mosaiq.floor.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.MAX_IDS
 import online.maxthecoder.mosaiq.floor.net.RecommendationItem
 import online.maxthecoder.mosaiq.floor.net.RecommendationReason
 import online.maxthecoder.mosaiq.floor.net.RecommendationResult
-import retrofit2.Response
+import online.maxthecoder.mosaiq.floor.net.call
 
 /** One recommendation as the panel shows it: the item, its name, its reasons in words. */
 data class ShownRecommendation(
@@ -77,7 +79,9 @@ class CustomerInsightsViewModel(
                             ShownRecommendation(
                                 rank = index + 1,
                                 item = item,
-                                name = names[item.productId] ?: "Product ${item.productId}",
+                                name =
+                                names[item.productId]
+                                    ?: AppText.get(R.string.insights_product_fallback, item.productId),
                                 reasons = item.reasons.map { describe(it, categoryNames) }
                             )
                         }
@@ -104,9 +108,9 @@ class CustomerInsightsViewModel(
                 current.copy(
                     clickNote =
                     if (store == null) {
-                        "Check in at your store first, so the click is counted there."
+                        AppText.get(R.string.insights_click_no_store)
                     } else {
-                        "The customer has no segment, so the click cannot be counted."
+                        AppText.get(R.string.insights_click_no_segment)
                     }
                 )
             return false
@@ -141,36 +145,21 @@ class CustomerInsightsViewModel(
         }
     }
 
-    private sealed interface Answer<out T> {
-        data class Body<T>(val value: T) : Answer<T>
-
-        data class Refused(val error: ApiError) : Answer<Nothing>
-    }
-
-    private suspend fun <T> call(request: suspend () -> Response<T>): Answer<T> {
-        val response =
-            try {
-                request()
-            } catch (unreachable: IOException) {
-                return Answer.Refused(ApiError.unreachable(null))
-            }
-        val body = response.body()
-        return if (response.isSuccessful && body != null) Answer.Body(body) else Answer.Refused(ApiError.from(response))
-    }
-
     companion object {
         /** A reason in plain words. */
         fun describe(reason: RecommendationReason, categories: Map<Int, String>): String {
-            val category = reason.categoryId?.let { categories[it] ?: "category ${reason.categoryId}" }
+            val category = reason.categoryId?.let {
+                categories[it] ?: AppText.get(R.string.insights_category_fallback, reason.categoryId)
+            }
             return when (reason.signal) {
                 "segment" -> {
                     val buyers = reason.segmentBuyers ?: 0
-                    "$buyers other ${if (buyers == 1) "customer" else "customers"} in the same segment bought it"
+                    AppText.plural(R.plurals.insights_reason_segment, buyers, buyers)
                 }
-                "preferred_category" -> "In $category, a category they like"
+                "preferred_category" -> AppText.get(R.string.insights_reason_category, category.orEmpty())
                 "purchase_history" -> {
                     val percent = Math.round((reason.share ?: 0.0) * PERCENT)
-                    "$category makes up $percent% of their purchases"
+                    AppText.get(R.string.insights_reason_history, category.orEmpty(), percent)
                 }
                 else -> reason.signal
             }
@@ -178,22 +167,28 @@ class CustomerInsightsViewModel(
 
         /** Why nothing is recommended, in plain words. */
         fun whyNone(status: String): String = when (status) {
-            "none_match" -> "Nothing in stock at their usual store matches what they like, buy or their segment buys."
-            "no_open_assignment" -> "No recommendations: the customer has no open segment assignment."
-            "unassigned_result" -> "No recommendations: the latest segmentation run left the customer unassigned."
-            "no_usual_store" -> "No recommendations: the customer has no purchase in the window, so no usual store."
-            else -> "No recommendations ($status)."
+            "none_match" -> AppText.get(R.string.insights_none_match)
+            "no_open_assignment" -> AppText.get(R.string.insights_none_no_assignment)
+            "unassigned_result" -> AppText.get(R.string.insights_none_unassigned)
+            "no_usual_store" -> AppText.get(R.string.insights_none_no_store)
+            else -> AppText.get(R.string.insights_none_other, status)
         }
 
         /** The segment state as returned, never filled in. */
         fun segmentLine(assignment: CurrentAssignment): String = when (assignment.state) {
             "assigned" ->
-                "Segment ${assignment.labelCode} · R ${assignment.rScore} F ${assignment.fScore} " +
-                    "M ${assignment.mScore} · since ${assignment.since}"
+                AppText.get(
+                    R.string.insights_line_assigned,
+                    assignment.labelCode.toString(),
+                    assignment.rScore.toString(),
+                    assignment.fScore.toString(),
+                    assignment.mScore.toString(),
+                    assignment.since.toString()
+                )
             "unassigned_result" ->
-                "Unassigned result (run ${assignment.runId}): the latest run found no purchase to score."
-            "no_open_assignment" -> "No open assignment: no segmentation run has assigned this customer yet."
-            else -> "Segment state: ${assignment.state}"
+                AppText.get(R.string.insights_line_unassigned, assignment.runId.toString())
+            "no_open_assignment" -> AppText.get(R.string.insights_line_none)
+            else -> AppText.get(R.string.insights_line_other, assignment.state)
         }
 
         private const val PERCENT = 100

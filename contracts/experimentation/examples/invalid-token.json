@@ -1,0 +1,6 @@
+{
+  "code": "invalid_token",
+  "message": "The bearer token is missing, malformed or expired.",
+  "correlation_id": "corr-invalid-token",
+  "details": []
+}

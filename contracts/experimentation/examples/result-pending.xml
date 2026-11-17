@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentResult xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <experiment_id>18</experiment_id>
+  <campaign_id>8</campaign_id>
+  <basis>PRIMARY</basis>
+  <status>PENDING</status>
+  <as_of>2026-11-09T08:00:00Z</as_of>
+  <elapsed_share>0.2857</elapsed_share>
+  <data_origin>OBSERVED</data_origin>
+  <synthetic>false</synthetic>
+  <design_kind>CONTROLLED</design_kind>
+  <design>
+    <primary_metric>CONVERSION</primary_metric>
+    <secondary_metric>REVENUE_PER_CUSTOMER</secondary_metric>
+    <estimator>DIFFERENCE_OF_PROPORTIONS</estimator>
+    <alpha>0.05</alpha>
+    <comparison_alpha>0.05</comparison_alpha>
+    <power>0.80</power>
+    <minimum_detectable_effect>0.02</minimum_detectable_effect>
+    <baseline>0.10</baseline>
+    <required_per_arm>3839</required_per_arm>
+    <smallest_detectable_effect>0.0281</smallest_detectable_effect>
+    <allocation>EQUAL</allocation>
+    <conversion_window_days>14</conversion_window_days>
+    <settle_days>7</settle_days>
+    <starts_on>2026-11-05</starts_on>
+    <analysis_at>2026-11-26T08:00:00Z</analysis_at>
+  </design>
+  <arms>
+    <arm_id>61</arm_id>
+    <kind>CONTROL</kind>
+    <name>No offer</name>
+    <assigned>2000</assigned>
+    <analysed>2000</analysed>
+    <exposed>0</exposed>
+    <converted>61</converted>
+    <pending>1939</pending>
+    <not_converted>0</not_converted>
+    <conversion_rate>0.0305</conversion_rate>
+    <net_revenue>2318.00</net_revenue>
+    <revenue_per_customer>1.16</revenue_per_customer>
+    <revenue_std_dev>20.50</revenue_std_dev>
+  </arms>
+  <arms>
+    <arm_id>62</arm_id>
+    <kind>TREATMENT</kind>
+    <name>Free coffee with any basket</name>
+    <assigned>2000</assigned>
+    <analysed>2000</analysed>
+    <exposed>1710</exposed>
+    <converted>83</converted>
+    <pending>1917</pending>
+    <not_converted>0</not_converted>
+    <conversion_rate>0.0415</conversion_rate>
+    <exposed_conversion_rate>0.0415</exposed_conversion_rate>
+    <net_revenue>3154.00</net_revenue>
+    <revenue_per_customer>1.58</revenue_per_customer>
+    <revenue_std_dev>21.20</revenue_std_dev>
+  </arms>
+  <assumptions>
+    <code>INTENT_TO_TREAT</code>
+    <statement>Every assigned customer counts in the arm they were assigned to, exposed or not.</statement>
+  </assumptions>
+  <assumptions>
+    <code>NET_OF_REVERSALS</code>
+    <statement>Conversions and revenue count sales net of reversals, as known at `as_of`.</statement>
+  </assumptions>
+  <assumptions>
+    <code>SINGLE_LOOK</code>
+    <statement>The result is read once, at the analysis instant; stopping early or adding a look needs a new experiment.</statement>
+  </assumptions>
+</ExperimentResult>

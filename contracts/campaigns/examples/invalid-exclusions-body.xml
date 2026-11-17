@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The request body contains a forbidden or invalid field.</message>
+  <correlation_id>corr-exclusions-422a</correlation_id>
+  <details>
+    <field>customer_ids</field>
+    <code>max_items</code>
+  </details>
+</Error>

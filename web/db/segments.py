@@ -63,8 +63,8 @@ WITH window_sales AS (
     SELECT customer_id,
            max(occurred_at) AS last_purchase,
            count(*)         AS frequency,
-           sum(total)       AS monetary
-    FROM transaction
+           sum(net_total)   AS monetary
+    FROM net_sale
     WHERE occurred_at >= now() - make_interval(days => %s)
       AND occurred_at <= now()
     GROUP BY customer_id
@@ -153,8 +153,8 @@ SELECT c.customer_id, w.last_purchase, w.frequency, w.monetary
       SELECT customer_id,
              max(occurred_at) AS last_purchase,
              count(*)         AS frequency,
-             sum(total)       AS monetary
-      FROM transaction
+             sum(net_total)   AS monetary
+      FROM net_sale
       WHERE occurred_at >= now() - make_interval(days => %s)
         AND occurred_at <= now()
       GROUP BY customer_id

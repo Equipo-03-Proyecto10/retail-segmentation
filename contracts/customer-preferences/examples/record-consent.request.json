@@ -1,0 +1,16 @@
+{
+  "decisions": [
+    {
+      "purpose": "PERSONALIZATION",
+      "decision": "GRANTED"
+    },
+    {
+      "purpose": "MARKETING_CONTACT",
+      "decision": "WITHDRAWN"
+    },
+    {
+      "purpose": "PROFILING",
+      "decision": "GRANTED"
+    }
+  ]
+}

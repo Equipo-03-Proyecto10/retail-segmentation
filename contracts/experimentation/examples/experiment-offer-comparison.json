@@ -1,0 +1,117 @@
+{
+  "experiment_id": 16,
+  "name": "Voucher versus free delivery",
+  "campaign_id": 7,
+  "state": "ANALYZED",
+  "design_kind": "OFFER_COMPARISON",
+  "assignment_rule": "V1",
+  "data_origin": "OBSERVED",
+  "arms": [
+    {
+      "arm_id": 51,
+      "position": 0,
+      "kind": "TREATMENT",
+      "name": "10 percent voucher",
+      "treatment_description": "Offered a 10 percent voucher on the next purchase."
+    },
+    {
+      "arm_id": 52,
+      "position": 1,
+      "kind": "TREATMENT",
+      "name": "Free delivery",
+      "treatment_description": "Offered free delivery on the next online purchase."
+    }
+  ],
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": "REVENUE_PER_CUSTOMER",
+    "estimator": "DIFFERENCE_OF_PROPORTIONS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.05,
+    "power": 0.80,
+    "minimum_detectable_effect": 0.02,
+    "baseline": 0.10,
+    "baseline_std_dev": null,
+    "required_per_arm": 3839,
+    "smallest_detectable_effect": 0.0196,
+    "allocation": "EQUAL",
+    "conversion_window_days": 14,
+    "settle_days": 7,
+    "starts_on": "2026-10-05",
+    "analysis_at": "2026-10-26T08:00:00Z"
+  },
+  "frame": {
+    "taken_at": "2026-10-05T07:59:55Z",
+    "size": 8000,
+    "digest": "03ec6905cfd132ab399fa8d575d12fc4dc74d22d494c3663d7a7098cc857da1a",
+    "label_code": "LOYAL",
+    "model_version_id": 5,
+    "exclusions": [
+      {
+        "reason": "NO_MARKETING_CONTACT_CONSENT",
+        "count": 300
+      },
+      {
+        "reason": "NO_PERSONALIZATION_CONSENT",
+        "count": 150
+      }
+    ]
+  },
+  "salt": "a7790f98633d3f57304a9b06565581bbb460927312e9089a671b12e0af490e35",
+  "assignment": {
+    "experiment_id": 16,
+    "assigned_at": "2026-10-05T08:00:00Z",
+    "assigned_by": "11111111-1111-1111-1111-000000000003",
+    "assigned_total": 8000,
+    "acknowledged_underpowered": false,
+    "arms": [
+      {
+        "arm_id": 51,
+        "kind": "TREATMENT",
+        "assigned": 4000
+      },
+      {
+        "arm_id": 52,
+        "kind": "TREATMENT",
+        "assigned": 4000
+      }
+    ],
+    "checks": {
+      "recomputation_matches": true,
+      "sample_ratio": {
+        "status": "PASSED",
+        "p_value": 1.000000,
+        "threshold": 0.001
+      },
+      "balance": [
+        {
+          "measure": "PRE_RECENCY_DAYS",
+          "arm_id": 52,
+          "reference_arm_id": 51,
+          "standardized_mean_difference": 0.019,
+          "flagged": false,
+          "threshold": 0.25
+        },
+        {
+          "measure": "PRE_PURCHASE_COUNT",
+          "arm_id": 52,
+          "reference_arm_id": 51,
+          "standardized_mean_difference": 0.011,
+          "flagged": false,
+          "threshold": 0.25
+        },
+        {
+          "measure": "PRE_NET_SPEND",
+          "arm_id": 52,
+          "reference_arm_id": 51,
+          "standardized_mean_difference": 0.016,
+          "flagged": false,
+          "threshold": 0.25
+        }
+      ]
+    }
+  },
+  "flags": [],
+  "planned_at": "2026-10-05T07:59:55Z",
+  "planned_by": "11111111-1111-1111-1111-000000000003"
+}

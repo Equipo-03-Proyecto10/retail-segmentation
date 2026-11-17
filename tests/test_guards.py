@@ -216,6 +216,16 @@ def test_a_rendered_service_passes(repo: Path) -> None:
             "location /api/products/ {}\n",
             "ADR-0035",
         ),
+        (
+            "deploy/deploy-service.sh",
+            "image=ghcr.io/equipo-03-proyecto10/mosaiq-ci-x:0123456789abcdef01234567\n",
+            "ADR-0080 a test image on the deploy path",
+        ),
+        (
+            ".github/workflows/deploy-service.yml",
+            "run: docker pull ghcr.io/equipo-03-proyecto10/mosaiq-ci-x:1\n",
+            "ADR-0080 a test image on the deploy path",
+        ),
     ],
 )
 def test_each_broken_rule_is_named(
@@ -225,6 +235,12 @@ def test_each_broken_rule_is_named(
     result = guards(repo)
     assert result.returncode == 1
     assert record in result.stdout, result.stdout
+
+
+def test_the_instance_check_may_name_the_test_image_prefix(repo: Path) -> None:
+    write(repo, "deploy/check-services.sh", '"${GHCR}ci-"*) ;; # mosaiq-ci-\n')
+    result = guards(repo)
+    assert (result.returncode, result.stdout) == (0, "")
 
 
 def test_a_services_tests_may_sign_throwaway_tokens(repo: Path) -> None:

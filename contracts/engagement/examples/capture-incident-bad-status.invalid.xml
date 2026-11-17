@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CaptureIncidentReviewRequest xmlns="https://mosaiq.maxthecoder.online/xml/engagement/v1">
+  <status>OPEN</status>
+</CaptureIncidentReviewRequest>

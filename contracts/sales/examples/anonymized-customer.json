@@ -1,0 +1,11 @@
+{
+  "code": "anonymized_customer",
+  "message": "The customer has been anonymized and cannot be named in a new sale.",
+  "correlation_id": "corr-anonymized-customer",
+  "details": [
+    {
+      "field": "customer_id",
+      "code": "anonymized"
+    }
+  ]
+}

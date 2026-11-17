@@ -40,6 +40,7 @@ ROLES = (
     "INVENTORY_PLANNER",
     "AUDITOR",
     "CUSTOMER",
+    "SALES_ASSOCIATE",
 )
 
 
@@ -114,6 +115,10 @@ def auth_environment(
 def redis_connection() -> Iterator[redis.Redis]:
     url = _required("TEST_REDIS_URL", "REDIS")
     client = redis.Redis.from_url(url, decode_responses=True)
+    if client.config_get("appendonly")["appendonly"] != "yes":
+        pytest.fail(
+            "This suite needs a Redis with appendonly yes: the relay waits on WAITAOF"
+        )
     password = "sales-test-" + uuid.uuid4().hex
     line = (ROOT / "redis/sales.acl").read_text().strip()
     rendered = line.replace("{{password}}", ">" + password)
@@ -141,6 +146,67 @@ def role_subjects(owner_connection: psycopg.Connection) -> dict[str, str]:
     subjects = dict(rows)
     assert all(role in subjects for role in ROLES)
     return subjects
+
+
+FLOOR = ("STORE_MANAGER", "SALES_ASSOCIATE")
+
+
+def set_assignments(owner_url: str, user_id: str, stores: list[int]) -> None:
+    """Make `stores` the user's whole assignment set, committed at once."""
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        with connection.transaction():
+            connection.execute(
+                "DELETE FROM users.store_assignment WHERE user_id = %s", (user_id,)
+            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    "INSERT INTO users.store_assignment (user_id, store_id)"
+                    " VALUES (%s, %s)",
+                    [(user_id, store_id) for store_id in stores],
+                )
+
+
+@pytest.fixture(scope="session")
+def every_store(owner_connection: psycopg.Connection) -> list[int]:
+    return [
+        row[0]
+        for row in owner_connection.execute(
+            "SELECT store_id FROM public.store ORDER BY store_id"
+        )
+    ]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def floor_users_work_everywhere(
+    owner_url: str,
+    role_subjects: dict[str, str],
+    every_store: list[int],
+) -> Iterator[None]:
+    """The floor subjects the suite signs as work in every store (ADR-0060).
+
+    The narrowing of F19-07 would otherwise tie each existing case to the one
+    store the seed happens to give that user. `test_store_scope.py` sets exact
+    assignments for its own cases and puts this state back.
+    """
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        before = {
+            subject: [
+                row[0]
+                for row in connection.execute(
+                    "SELECT store_id FROM users.store_assignment"
+                    " WHERE user_id = %s ORDER BY store_id",
+                    (subject,),
+                )
+            ]
+            for subject in (role_subjects[role] for role in FLOOR)
+        }
+    for subject in before:
+        set_assignments(owner_url, subject, every_store)
+    try:
+        yield
+    finally:
+        for subject, stores in before.items():
+            set_assignments(owner_url, subject, stores)
 
 
 @pytest.fixture
@@ -254,20 +320,40 @@ def cleanup(owner_url: str) -> Iterator[None]:
             row[0]
             for row in connection.execute(
                 "SELECT transaction_id FROM public.transaction"
-                " WHERE source_transaction_id LIKE %s",
-                ("svc-sales:%",),
+                " WHERE source_transaction_id LIKE %s OR source_transaction_id LIKE %s",
+                ("svc-sales:%", "test-csv-%"),
             )
         ]
         if ids:
+            pairs = connection.execute(
+                "SELECT transaction_id, reversal_id FROM sales.sale_reversal"
+                " WHERE transaction_id = ANY(%s)",
+                (ids,),
+            ).fetchall()
+            reversals = [reversal_id for _sale_id, reversal_id in pairs]
             connection.execute(
                 "DELETE FROM sales_events.outbox WHERE entity_id = ANY(%s)",
-                ([str(value) for value in ids],),
+                (
+                    [str(value) for value in ids]
+                    + [f"{sale_id}:{reversal_id}" for sale_id, reversal_id in pairs],
+                ),
+            )
+            connection.execute(
+                "DELETE FROM stock.stock_movement"
+                " WHERE movement_type = 'RESTOCK' AND reversal_id = ANY(%s)",
+                (reversals,),
             )
             connection.execute(
                 "DELETE FROM public.transaction WHERE transaction_id = ANY(%s)",
                 (ids,),
             )
+        connection.execute("DELETE FROM sales.import")
         with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO public.inventory (store_id, product_id, quantity_on_hand)"
+                " VALUES (%s, %s, 0) ON CONFLICT DO NOTHING",
+                [(store_id, product_id) for store_id, product_id, _ in quantities],
+            )
             cursor.executemany(
                 "UPDATE public.inventory SET quantity_on_hand = %s"
                 " WHERE store_id = %s AND product_id = %s",
@@ -276,6 +362,59 @@ def cleanup(owner_url: str) -> Iterator[None]:
                     for store_id, product_id, quantity in quantities
                 ],
             )
+
+
+@pytest.fixture
+def world(owner):
+    """A customer, a channel and two stocked products at one store."""
+    rows = owner.execute(
+        "SELECT i.store_id, i.product_id FROM public.inventory AS i"
+        " JOIN public.product AS p USING (product_id)"
+        " WHERE p.is_active AND i.quantity_on_hand >= 10"
+        " ORDER BY i.store_id, i.product_id"
+    ).fetchall()
+    store = rows[0][0]
+    products = [product for found, product in rows if found == store][:3]
+    # Enough stock that no row is refused for it unless a test makes it so; the
+    # suite's cleanup puts the seed's quantities back.
+    owner.execute(
+        "UPDATE public.inventory SET quantity_on_hand = 500"
+        " WHERE store_id = %s AND product_id = ANY(%s)",
+        (store, products),
+    )
+    customer, registered = owner.execute(
+        "SELECT customer_id, registered_on FROM public.customer"
+        " ORDER BY registered_on, customer_id LIMIT 1"
+    ).fetchone()
+    channel = owner.execute("SELECT min(channel_id) FROM public.channel").fetchone()[0]
+    return {
+        "store": store,
+        "products": products,
+        "customer": str(customer),
+        "registered": registered,
+        "channel": channel,
+    }
+
+
+@pytest.fixture
+def anonymized_customer(owner: psycopg.Connection) -> Iterator[str]:
+    """A customer anonymized in place (ADR-0066 section 3), removed afterwards.
+
+    It is inserted already anonymized, so the identity CHECK holds and no
+    customers event is captured. Its registration date is the latest one, so a
+    fixture that picks the earliest customer never picks it. It names no sale,
+    so it can be deleted once the test is done.
+    """
+    customer_id = owner.execute(
+        "INSERT INTO public.customer (name, email, phone, registration_channel_id,"
+        " registered_on, anonymized_at)"
+        " SELECT %s, NULL, NULL, min(channel_id),"
+        " (SELECT max(registered_on) FROM public.customer), now()"
+        " FROM public.channel RETURNING customer_id::text",
+        ("Anonymized customer",),
+    ).fetchone()[0]
+    yield customer_id
+    owner.execute("DELETE FROM public.customer WHERE customer_id = %s", (customer_id,))
 
 
 def idempotency_headers(auth: dict[str, str], key: str | None = None) -> dict[str, str]:

@@ -1,1 +1,1 @@
-user svc_engagement on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~engagement:rl:* ~engagement:live:* (%R~pub:auth:v1:live:* +exists)
+user svc_engagement on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~engagement:rl:* ~engagement:live:* (%R~pub:auth:v1:live:* +exists) +waitaof (~stream:engagement.v1.interaction_recorded +xadd)

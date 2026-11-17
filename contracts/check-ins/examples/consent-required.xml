@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>consent_required</code>
+  <message>The customer has not granted the consent a visit needs.</message>
+  <correlation_id>corr-consent-required</correlation_id>
+</Error>

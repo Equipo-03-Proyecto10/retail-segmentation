@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_body</code>
+  <message>The reversal violates its schema.</message>
+  <correlation_id>corr-reversal-invalid-body</correlation_id>
+  <details>
+    <field>kind</field>
+    <code>unknown_kind</code>
+  </details>
+</Error>

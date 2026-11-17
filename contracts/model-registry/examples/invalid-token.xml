@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_token</code>
+  <message>The bearer token is invalid.</message>
+  <correlation_id>corr-invalid-token</correlation_id>
+</Error>

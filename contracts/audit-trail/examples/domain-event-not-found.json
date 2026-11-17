@@ -1,0 +1,6 @@
+{
+  "code": "domain_event_not_found",
+  "message": "No domain event has this id.",
+  "correlation_id": "corr-events-404",
+  "details": []
+}

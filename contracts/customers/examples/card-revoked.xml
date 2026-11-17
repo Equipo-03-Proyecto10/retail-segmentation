@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>card_revoked</code>
+  <message>The loyalty card was revoked.</message>
+  <correlation_id>corr-791-revoked</correlation_id>
+  <details>
+    <field>code</field>
+    <code>revoked</code>
+  </details>
+</Error>

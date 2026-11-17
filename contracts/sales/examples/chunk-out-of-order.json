@@ -1,0 +1,11 @@
+{
+  "code": "chunk_out_of_order",
+  "message": "Import 17 expects chunk 1 next, and chunk 3 was sent. Read next_sequence from GET /v1/sale-imports/17 and continue there.",
+  "correlation_id": "corr-chunk-out-of-order",
+  "details": [
+    {
+      "field": "next_sequence",
+      "code": "out_of_order"
+    }
+  ]
+}

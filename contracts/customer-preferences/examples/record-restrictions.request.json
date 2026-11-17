@@ -1,0 +1,19 @@
+{
+  "decisions": [
+    {
+      "kind": "CHANNEL",
+      "target_id": 5,
+      "decision": "IMPOSED"
+    },
+    {
+      "kind": "INTEREST_CATEGORY",
+      "target_id": 9,
+      "decision": "IMPOSED"
+    },
+    {
+      "kind": "INTEREST_CATEGORY",
+      "target_id": 12,
+      "decision": "LIFTED"
+    }
+  ]
+}

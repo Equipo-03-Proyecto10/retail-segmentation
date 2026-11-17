@@ -22,6 +22,7 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -42,7 +43,7 @@ AUDIENCE = "mosaiq-api"
 # Every token names a seeded account, so an operation that answers for its
 # caller (users' GET /v1/users/me) finds one: each stack loads the seed.
 SUBJECT = "11111111-1111-1111-1111-000000000001"
-# The seven role codes of contracts/auth/token-claims.v1.md.
+# The ten role codes of contracts/auth/token-claims.v1.md.
 ROLE_CODES = (
     "ADMIN",
     "ANALYST",
@@ -51,6 +52,9 @@ ROLE_CODES = (
     "INVENTORY_PLANNER",
     "AUDITOR",
     "CUSTOMER",
+    "SALES_ASSOCIATE",
+    "LOYALTY_OFFICER",
+    "COMMERCIAL_SUPERVISOR",
 )
 METHODS = ("get", "post", "put", "patch", "delete")
 
@@ -132,10 +136,27 @@ class Contract:
     directory: Path
     document: dict
     operations: list[Operation] = field(default_factory=list)
+    # Operations marked `x-mosaiq-status: planned` (ADR-0073): published ahead
+    # of their implementation, so no case selects them; one guard case checks
+    # that the image still does not answer them.
+    planned: list[Operation] = field(default_factory=list)
 
     @property
     def xsd(self) -> Path:
         return self.directory / (self.directory.name + ".xsd")
+
+    def xsd_for(self, namespace: str) -> Path:
+        """The XSD whose targetNamespace is the document's root namespace.
+
+        A versioned XSD (`<service>.v2.xsd`) answers its own namespace; any
+        other, the common error envelope included, is the service's own XSD.
+        """
+
+        for path in sorted(self.directory.glob(self.directory.name + ".v*.xsd")):
+            declared = re.search(r'targetNamespace="([^"]+)"', path.read_text())
+            if declared and declared.group(1) == namespace:
+                return path
+        return self.xsd
 
     def resolve(self, item: dict) -> dict:
         while "$ref" in item:
@@ -180,7 +201,10 @@ def load_contract(directory: Path) -> Contract:
                 or operation.get("responses", {}).get("201")
                 or {}
             )
-            contract.operations.append(
+            status = operation.get("x-mosaiq-status")
+            if status not in (None, "planned"):
+                raise ValueError(f"{operation['operationId']}: status {status!r}")
+            (contract.planned if status else contract.operations).append(
                 Operation(
                     operation_id=operation["operationId"],
                     method=method.upper(),
@@ -299,13 +323,19 @@ class Client:
         return reply
 
     def validate_xml(self, document: bytes, where: str) -> None:
+        namespace = subprocess.run(
+            ["xmllint", "--nonet", "--xpath", "namespace-uri(/*)", "-"],
+            input=document,
+            capture_output=True,
+        ).stdout.decode()
+        xsd = self.contract.xsd_for(namespace.strip())
         result = subprocess.run(
-            ["xmllint", "--noout", "--nonet", "--schema", str(self.contract.xsd), "-"],
+            ["xmllint", "--noout", "--nonet", "--schema", str(xsd), "-"],
             input=document,
             capture_output=True,
         )
         assert result.returncode == 0, (
-            f"{where}: XML invalid against {self.contract.xsd.name}: "
+            f"{where}: XML invalid against {xsd.name}: "
             f"{result.stderr.decode()}\n{document.decode(errors='replace')}"
         )
 

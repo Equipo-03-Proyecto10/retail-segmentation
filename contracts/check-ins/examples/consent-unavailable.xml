@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>consent_unavailable</code>
+  <message>The customer's consent could not be read, so the visit was not recorded. Try again.</message>
+  <correlation_id>corr-consent-unavailable</correlation_id>
+</Error>

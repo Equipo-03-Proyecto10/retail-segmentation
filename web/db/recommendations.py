@@ -16,7 +16,8 @@ being recommended to is left out of their own segment's popularity. Only the lab
 read: nothing here asks how a run was produced (ADR-0018).
 
 Accepted sales only: ADR-0020 persists a CSV row only once it is accepted, so
-`transaction` and `transaction_line` are the accepted sales.
+the accepted sales are read through `net_sale` and `net_sale_line`, which count
+net units (ADR-0062): a product a customer returned is not one they bought.
 """
 
 from __future__ import annotations
@@ -79,8 +80,8 @@ def list_segment_buyers(
             """
             SELECT tl.product_id, count(DISTINCT t.customer_id)
             FROM customer_segment_history AS h
-            JOIN transaction AS t ON t.customer_id = h.customer_id
-            JOIN transaction_line AS tl ON tl.transaction_id = t.transaction_id
+            JOIN net_sale AS t ON t.customer_id = h.customer_id
+            JOIN net_sale_line AS tl ON tl.transaction_id = t.transaction_id
             WHERE h.valid_to IS NULL
               AND h.label_code = %(label_code)s
               AND h.customer_id <> %(customer_id)s

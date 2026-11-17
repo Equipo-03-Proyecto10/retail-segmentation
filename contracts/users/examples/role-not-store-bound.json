@@ -1,0 +1,11 @@
+{
+  "code": "role_not_store_bound",
+  "message": "The user's role is not tied to stores, so only an empty set is accepted.",
+  "correlation_id": "corr-role-not-store-bound",
+  "details": [
+    {
+      "field": "store_ids",
+      "code": "role_not_store_bound"
+    }
+  ]
+}

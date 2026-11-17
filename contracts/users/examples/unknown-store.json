@@ -1,0 +1,11 @@
+{
+  "code": "unknown_store",
+  "message": "A store id references no store.",
+  "correlation_id": "corr-unknown-store",
+  "details": [
+    {
+      "field": "store_ids",
+      "code": "unknown"
+    }
+  ]
+}

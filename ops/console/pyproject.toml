@@ -1,6 +1,6 @@
 [project]
 name = "ops-console"
-version = "0.1.0"
+version = "0.2.0"
 description = "MOSAIQ ops-console: a status panel over the services' meta routes (ADR-0055)"
 requires-python = ">=3.12,<3.13"
 dependencies = [

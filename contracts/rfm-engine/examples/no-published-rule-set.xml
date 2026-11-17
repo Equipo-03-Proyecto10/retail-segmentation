@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>no_published_rule_set</code>
+  <message>No rule set is published and the request names none.</message>
+  <correlation_id>corr-no-published-rule-set</correlation_id>
+</Error>

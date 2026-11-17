@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Promotions xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <Promotion>
+    <promotion_id>38</promotion_id>
+    <campaign_id>12</campaign_id>
+    <name>Loyal customers 15 percent</name>
+    <discount_percent>15.00</discount_percent>
+    <starts_on>2026-11-01</starts_on>
+    <ends_on>2026-11-30</ends_on>
+    <store_ids>1</store_ids>
+    <store_ids>2</store_ids>
+    <channel_ids>1</channel_ids>
+    <channel_ids>2</channel_ids>
+    <is_active>true</is_active>
+  </Promotion>
+  <Promotion>
+    <promotion_id>41</promotion_id>
+    <campaign_id>301</campaign_id>
+    <name>Holiday preview 10 percent</name>
+    <discount_percent>10.00</discount_percent>
+    <starts_on>2026-11-15</starts_on>
+    <ends_on>2026-12-24</ends_on>
+    <store_ids>1</store_ids>
+    <channel_ids>1</channel_ids>
+    <is_active>false</is_active>
+  </Promotion>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>2</common:total>
+  </common:PageInfo>
+</Promotions>

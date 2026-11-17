@@ -148,12 +148,37 @@ def test_an_xml_comment_in_the_body_is_skipped(api: Any) -> None:
     assert reply.get_json()["name"] == "Renamed"
 
 
-def test_roles_are_the_seven_codes_and_one_can_be_read(api: Any) -> None:
+def test_roles_are_the_ten_codes_and_one_can_be_read(api: Any) -> None:
     body = api("GET", "/v1/roles").get_json()
-    assert [role["role_code"] for role in body["roles"]][0] == "ADMIN"
-    assert body["page"]["total"] == 7 == len(body["roles"])
+    codes = [role["role_code"] for role in body["roles"]]
+    assert codes[0] == "ADMIN"
+    assert body["page"]["total"] == 10 == len(body["roles"])
+    # ADR-0060's floor roles (F19-04, #754).
+    assert {"SALES_ASSOCIATE", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR"} <= set(codes)
     assert api("GET", "/v1/roles/AUDITOR").get_json()["role_code"] == "AUDITOR"
     assert _code(api("GET", "/v1/roles/ROOT")) == (404, "role_not_found")
+
+
+def test_the_floor_roles_are_listed_in_xml(api: Any) -> None:
+    reply = api("GET", "/v1/roles", headers={"Accept": "application/xml"})
+    assert reply.status_code == 200, reply.data
+    for code in ("SALES_ASSOCIATE", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR"):
+        assert f"<role_code>{code}</role_code>".encode() in reply.data
+
+
+@pytest.mark.parametrize(
+    "role_code", ["SALES_ASSOCIATE", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR"]
+)
+def test_an_account_can_be_created_for_each_floor_role(
+    api: Any, role_code: str
+) -> None:
+    body = NEW_USER | {
+        "email": f"{role_code.lower()}@example.com",
+        "role_code": role_code,
+    }
+    reply = api("POST", "/v1/users", json_body=body)
+    assert reply.status_code == 201, reply.data
+    assert reply.get_json()["role_code"] == role_code
 
 
 def test_accounts_are_never_deleted(api: Any) -> None:

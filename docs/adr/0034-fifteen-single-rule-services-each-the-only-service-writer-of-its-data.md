@@ -1,10 +1,10 @@
 # ADR-0034 — Fifteen single-rule services, each the only service that writes its data
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0059 (the registry's fifteen)
 **Owner:** Marcelo
 **Issue:** #398
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0059](0059-four-new-services-join-the-fifteen-and-six-capabilities-fold-into-the-rule-they-extend.md), in part
 
 ---
 

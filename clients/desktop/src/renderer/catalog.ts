@@ -32,7 +32,7 @@ export interface ScreenContext {
 }
 
 /** The tree as indented options, for choosing a category or a parent. */
-function categoryOptions(tree: CategoryNode[]): [string, string][] {
+export function categoryOptions(tree: CategoryNode[]): [string, string][] {
   const out: [string, string][] = [];
   const walk = (nodes: CategoryNode[], depth: number): void => {
     for (const n of nodes) {

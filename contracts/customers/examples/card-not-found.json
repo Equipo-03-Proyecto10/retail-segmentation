@@ -1,0 +1,11 @@
+{
+  "code": "card_not_found",
+  "message": "No loyalty card matches.",
+  "correlation_id": "corr-791-card",
+  "details": [
+    {
+      "field": "code",
+      "code": "not_found"
+    }
+  ]
+}

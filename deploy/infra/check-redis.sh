@@ -14,7 +14,8 @@
 #     contracts/streams/<producer>.<event>.v1.md.
 # Per instance:
 #   - the memory, eviction and persistence settings of ADR-0037;
-#   - the default user is off, so a client without credentials gets NOAUTH;
+#   - the default user is off, so a client without credentials gets NOAUTH,
+#     and by ACL DRYRUN its rules reach EXEC and writes only (ADR-0056);
 #   - both instances hold the same users;
 #   - every non-stream key on redis-state has a TTL, and no cache key lives
 #     there.
@@ -79,6 +80,13 @@ for instance in redis-state redis-cache; do
   [[ $reply == *NOAUTH* || $reply == *WRONGPASS* ]] \
     || fail "$instance answers a client without credentials: '$reply'"
 done
+# ADR-0056: the rules that let it replay the AOF are inert while it is off.
+for instance in state cache; do
+  declare -n cli="${instance}_cli"
+  flags=$("${cli[@]}" ACL GETUSER default 2>&1 | sed -n 2p)
+  [[ $flags == off ]] || fail "the default user on redis-$instance is '$flags', expected off"
+  unset -n cli
+done
 
 # --- the same users on both instances ------------------------------------------
 state_users=$("${state_cli[@]}" ACL LIST 2>&1)
@@ -134,6 +142,11 @@ for user in "${services[@]}"; do
     fi
   done
 done
+
+add default OK EXEC
+add default DENIED GET auth:session:x
+add default DENIED EVAL '"return 1"' 0
+add default DENIED CONFIG GET maxmemory
 
 if ((${#checks[@]})); then
   mapfile -t replies < <(printf '%s\n' "${checks[@]}" | "${state_cli[@]}" 2>&1)

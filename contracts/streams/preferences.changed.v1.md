@@ -42,6 +42,18 @@ logs and acknowledges the entry; the outbox row remains in the seven-day replay
 log. Current state is re-read from `api_preferences.interest_category_v1` and
 the preferences contract, never from the event.
 
+## Propagation bound
+
+The time from the commit of the outbox row to the group's acknowledgement of
+its entry, under the controlled load of `ops/propagation/` (F20-06, #764).
+`ops/propagation/propagation.py check` fails a run whose p95 or maximum
+exceeds the figure below, or that leaves an entry unacknowledged. The measured
+figures are in `docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `recommendations` | 3000 | 5000 |
+
 ## Failure and compatibility
 
 The owner relay waits on `preferences_outbox` only as a private wake-up and

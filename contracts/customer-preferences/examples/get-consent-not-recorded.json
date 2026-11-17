@@ -1,0 +1,33 @@
+{
+  "customer_id": "c4a1f0e2-5b7d-4e39-8a62-9d1b3c7e0f54",
+  "as_of": "2026-11-05T14:30:00Z",
+  "purposes": [
+    {
+      "purpose": "PERSONALIZATION",
+      "state": "NOT_RECORDED",
+      "decision_id": null,
+      "recorded_at": null,
+      "recorded_by": null,
+      "source": null,
+      "basis": null
+    },
+    {
+      "purpose": "MARKETING_CONTACT",
+      "state": "NOT_RECORDED",
+      "decision_id": null,
+      "recorded_at": null,
+      "recorded_by": null,
+      "source": null,
+      "basis": null
+    },
+    {
+      "purpose": "PROFILING",
+      "state": "NOT_RECORDED",
+      "decision_id": null,
+      "recorded_at": null,
+      "recorded_by": null,
+      "source": null,
+      "basis": null
+    }
+  ]
+}

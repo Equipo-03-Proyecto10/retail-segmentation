@@ -1,0 +1,67 @@
+{
+  "alert_id": 42,
+  "report_id": 32,
+  "previous_report_id": 31,
+  "kind": "DATA_DRIFT",
+  "claim": "DISTRIBUTION_CHANGE",
+  "model_version": {
+    "version_id": 5,
+    "name": "kmeans-k4-2026-10",
+    "method": "KMEANS"
+  },
+  "variable": "R",
+  "window": {
+    "start": "2026-11-06T03:00:00Z",
+    "end": "2026-12-06T03:00:00Z",
+    "days": 30,
+    "customer_count": 2400
+  },
+  "reference": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z"
+  },
+  "statistics": [
+    {
+      "statistic": "PSI",
+      "value": 0.2679,
+      "p_value": null,
+      "degrees_of_freedom": null,
+      "threshold_basis": "VALUE",
+      "watch_threshold": 0.1,
+      "alarm_threshold": 0.25,
+      "level": "ALARM"
+    }
+  ],
+  "bins": [
+    {
+      "label": "B1",
+      "lower": 0,
+      "upper": 30,
+      "reference_share": 0.31,
+      "current_share": 0.14,
+      "contribution": 0.1351
+    },
+    {
+      "label": "B4",
+      "lower": 120,
+      "upper": 180,
+      "reference_share": 0.18,
+      "current_share": 0.35,
+      "contribution": 0.113
+    },
+    {
+      "label": "B2",
+      "lower": 30,
+      "upper": 60,
+      "reference_share": 0.27,
+      "current_share": 0.22,
+      "contribution": 0.0102
+    }
+  ],
+  "outcome_test": null,
+  "suggested_review": {
+    "code": "REVIEW_FEATURE_DISTRIBUTION",
+    "text": "Recency moved toward longer gaps since the last purchase: B1 fell from 31.0% to 14.0% and B4 rose from 18.0% to 35.0%. Rule out a seasonal effect or a data-quality cause, such as a late sales import, before reading it as a change in behaviour, and consider a draft version fitted on current data."
+  },
+  "raised_at": "2026-12-06T03:04:41Z"
+}

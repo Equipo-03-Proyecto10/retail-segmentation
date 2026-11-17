@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>A required query field is missing or malformed.</message>
+  <correlation_id>corr-invalid-query</correlation_id>
+  <details>
+    <field>customer_id</field>
+    <code>required</code>
+  </details>
+</Error>

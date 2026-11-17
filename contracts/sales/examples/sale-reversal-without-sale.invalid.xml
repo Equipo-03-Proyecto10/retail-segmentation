@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReversalRequest xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <kind>CANCELLATION</kind>
+  <reason>Duplicate scan at the till</reason>
+</SaleReversalRequest>

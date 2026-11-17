@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentRequest xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <name>Voucher versus free delivery</name>
+  <campaign_id>7</campaign_id>
+  <primary_metric>CONVERSION</primary_metric>
+  <starts_on>2026-10-05</starts_on>
+  <conversion_window_days>14</conversion_window_days>
+  <minimum_detectable_effect>0.02</minimum_detectable_effect>
+  <arms>
+    <kind>TREATMENT</kind>
+    <name>10 percent voucher</name>
+    <treatment_description>Offered a 10 percent voucher on the next purchase.</treatment_description>
+  </arms>
+  <arms>
+    <kind>TREATMENT</kind>
+    <name>Free delivery</name>
+    <treatment_description>Offered free delivery on the next online purchase.</treatment_description>
+  </arms>
+</ExperimentRequest>

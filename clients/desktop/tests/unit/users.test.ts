@@ -78,6 +78,9 @@ describe('reading users and roles', () => {
       'INVENTORY_PLANNER',
       'AUDITOR',
       'CUSTOMER',
+      'SALES_ASSOCIATE',
+      'LOYALTY_OFFICER',
+      'COMMERCIAL_SUPERVISOR',
     ]);
   });
 

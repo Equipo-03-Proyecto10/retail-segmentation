@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovements xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1"
+                xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <StockMovement>
+    <movement_id>9124</movement_id>
+    <movement_type>ADJUSTMENT</movement_type>
+    <store_id>3</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>-3</quantity_delta>
+    <quantity_before>42</quantity_before>
+    <quantity_after>39</quantity_after>
+    <reason>DAMAGE</reason>
+    <note>Crushed in the stockroom.</note>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-18T08:45:12Z</recorded_at>
+  </StockMovement>
+  <StockMovement>
+    <movement_id>9123</movement_id>
+    <movement_type>COUNT</movement_type>
+    <store_id>3</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>-2</quantity_delta>
+    <quantity_before>44</quantity_before>
+    <quantity_after>42</quantity_after>
+    <counted_by>Lucia Ortega</counted_by>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-17T18:30:00Z</recorded_at>
+  </StockMovement>
+  <StockMovement>
+    <movement_id>9121</movement_id>
+    <movement_type>TRANSFER</movement_type>
+    <store_id>3</store_id>
+    <product_id>120</product_id>
+    <quantity_delta>-10</quantity_delta>
+    <quantity_before>54</quantity_before>
+    <quantity_after>44</quantity_after>
+    <transfer_id>b4f2c1de-7a39-4d56-8a0b-6e1d9c3f2a77</transfer_id>
+    <recorded_by>3f0c9e1a-6a7b-4c52-9d1e-2b8f5a7d4c10</recorded_by>
+    <recorded_at>2026-10-16T10:02:31Z</recorded_at>
+  </StockMovement>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>3</common:total>
+  </common:PageInfo>
+</StockMovements>

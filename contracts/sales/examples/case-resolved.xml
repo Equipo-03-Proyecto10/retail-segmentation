@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>case_resolved</code>
+  <message>Reconciliation case 42 was already settled as DUPLICATE and cannot be settled again.</message>
+  <correlation_id>corr-case-resolved</correlation_id>
+  <details>
+    <field>resolution</field>
+    <code>already_settled</code>
+  </details>
+</Error>

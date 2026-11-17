@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PutCampaignBudgetRequest xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <total_amount>150000.00</total_amount>
+  <per_customer_cap>300.00</per_customer_cap>
+</PutCampaignBudgetRequest>

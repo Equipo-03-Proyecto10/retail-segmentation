@@ -1,0 +1,15 @@
+{
+  "contract_version": 1,
+  "header": [
+    "transaction_id",
+    "customer_id",
+    "store_id",
+    "channel_id",
+    "occurred_at",
+    "product_id",
+    "quantity",
+    "unit_price"
+  ],
+  "total_rows": 9,
+  "chunk_count": 2
+}

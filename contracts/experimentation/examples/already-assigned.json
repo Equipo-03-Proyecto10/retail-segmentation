@@ -1,0 +1,6 @@
+{
+  "code": "already_assigned",
+  "message": "This experiment is already assigned and is never assigned again.",
+  "correlation_id": "corr-already-assigned",
+  "details": []
+}

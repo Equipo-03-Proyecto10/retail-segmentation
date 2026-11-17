@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleImportChunk xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <rows>
+    <line>2</line>
+    <cells>T-2001</cells>
+    <cells>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</cells>
+    <cells>3</cells>
+    <cells>3</cells>
+    <cells>2026-10-02T14:03:00-06:00</cells>
+    <cells>1007</cells>
+    <cells>1</cells>
+    <cells>19.999</cells>
+  </rows>
+  <rows>
+    <line>3</line>
+    <cells>T-2002</cells>
+    <cells>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</cells>
+    <cells>three</cells>
+    <cells>3</cells>
+    <cells>2026-10-02T14:03:00</cells>
+    <cells>1020</cells>
+    <cells>3</cells>
+    <cells>4.25</cells>
+  </rows>
+  <rows>
+    <line>4</line>
+    <cells>T-2003</cells>
+    <cells>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</cells>
+    <cells>3</cells>
+    <cells>3</cells>
+  </rows>
+</SaleImportChunk>

@@ -6,6 +6,7 @@ use axum::body::Body;
 use axum::extract::Request;
 use axum::middleware::{self, Next};
 use axum::response::Response;
+use axum::Router;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use mosaiq_kit::{
@@ -18,6 +19,14 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use tokio_postgres::Row;
 use uuid::Uuid;
+
+mod rules;
+
+pub use rules::{
+    parse_channels, parse_discount, parse_hours, read_channels, read_hours, read_rules,
+    read_status, replace_channels, replace_hours, replace_rules, replace_status, Channels,
+    CommercialRules, Hours, Interval, Status, StoredHours,
+};
 
 pub const SERVICE: &str = "stores";
 pub const SUFFIX: &str = "stores";
@@ -220,13 +229,13 @@ fn directory_filters(query: &str) -> Result<(Option<bool>, Option<String>), ApiE
     }
 }
 
-fn store_id(ctx: &Ctx) -> Result<i16, ApiError> {
+pub(crate) fn store_id(ctx: &Ctx) -> Result<i16, ApiError> {
     ctx.path_i64("store_id")
         .and_then(|value| i16::try_from(value).ok())
         .ok_or_else(store_not_found)
 }
 
-fn store_not_found() -> ApiError {
+pub(crate) fn store_not_found() -> ApiError {
     ApiError::new(404, "store_not_found", "The store does not exist.")
 }
 
@@ -248,10 +257,7 @@ pub fn constraint_error(error: tokio_postgres::Error) -> ApiError {
     // A session whose `sub` is not an `app_user` fails the foreign keys on
     // `set_by` and on the audit trigger's `user_id`. The contract documents
     // 401 for the token, so it is refused as an invalid token, not a 500.
-    if matches!(
-        constraint,
-        "store_location_set_by_fkey" | "audit_log_user_id_fkey"
-    ) {
+    if constraint == "audit_log_user_id_fkey" || constraint.ends_with("_set_by_fkey") {
         return ApiError::new(401, "invalid_token", "The bearer token is invalid.");
     }
     let field = match constraint {
@@ -391,8 +397,13 @@ async fn database_ready(db: Arc<Database>) -> bool {
     let Ok(connection) = db.connection().await else {
         return false;
     };
+    // The v2 view reads the location and the four tables of F21-12, so a
+    // database that lacks the boundary's section is not ready.
     connection
-        .query_one("SELECT count(*) FROM stores.store_location", &[])
+        .query(
+            "SELECT store_id FROM api_stores.store_directory_v2 LIMIT $1",
+            &[&0i64],
+        )
         .await
         .is_ok()
 }
@@ -478,6 +489,19 @@ async fn capture_query(request: Request<Body>, next: Next) -> Response {
     REQUEST_QUERY.scope(query, next.run(request)).await
 }
 
+/// The service's routes over the staged contract in `contracts`.
+pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std::error::Error>> {
+    let kit = Kit::new(SERVICE, SUFFIX, contracts, config)?
+        .operation("listStores", list_stores)?
+        .operation("getStore", get_store)?
+        .operation("putStoreLocation", put_store_location)?
+        .operation("deleteStoreLocation", delete_store_location)?;
+    Ok(rules::register(kit)?
+        .ready_check(database_ready)
+        .into_router()
+        .layer(middleware::from_fn(capture_query)))
+}
+
 pub fn run() -> Result<(), Box<dyn std::error::Error>> {
     configure_logging(&std::env::var("LOG_LEVEL").unwrap_or_else(|_| "info".to_owned()));
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -494,15 +518,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         spawn_stream_tasks(password);
-        let kit = Kit::new(SERVICE, SUFFIX, "contracts", KitConfig::from_env(SUFFIX))?;
-        let router = kit
-            .operation("listStores", list_stores)?
-            .operation("getStore", get_store)?
-            .operation("putStoreLocation", put_store_location)?
-            .operation("deleteStoreLocation", delete_store_location)?
-            .ready_check(database_ready)
-            .into_router()
-            .layer(middleware::from_fn(capture_query));
+        let router = router(KitConfig::from_env(SUFFIX), "contracts")?;
         let listener = tokio::net::TcpListener::bind("0.0.0.0:5005").await?;
         mosaiq_kit::serve(listener, router).await?;
         Ok::<(), Box<dyn std::error::Error>>(())

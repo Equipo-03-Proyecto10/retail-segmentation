@@ -12,6 +12,7 @@ import online.maxthecoder.mosaiq.floor.location.LocationSource
 import online.maxthecoder.mosaiq.floor.net.Network
 import online.maxthecoder.mosaiq.floor.outbox.FloorDatabase
 import online.maxthecoder.mosaiq.floor.outbox.FloorWrites
+import online.maxthecoder.mosaiq.floor.outbox.InFlight
 import online.maxthecoder.mosaiq.floor.outbox.OutboxDao
 import online.maxthecoder.mosaiq.floor.session.PrefsSessionStore
 import online.maxthecoder.mosaiq.floor.session.SessionStore
@@ -28,6 +29,9 @@ class AppGraph(
     deviceLabel: String
 ) {
     val writes = FloorWrites(outbox, session, schedule)
+
+    /** Which queued rows are being sent right now, for the outbox's "Sending" badge. */
+    val inFlight = InFlight()
     val sessions = SessionRepository(network, tokens, deviceLabel, session)
 
     /** Resends whatever the signed-in user left queued. */
@@ -47,6 +51,7 @@ class FloorApplication :
 
     override fun onCreate() {
         super.onCreate()
+        AppText.install(this)
         val tokens = KeystoreTokenStore(this)
         val events = SessionEvents()
         graph =

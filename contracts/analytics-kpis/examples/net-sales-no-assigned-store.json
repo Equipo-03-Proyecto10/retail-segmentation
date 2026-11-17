@@ -1,0 +1,30 @@
+{
+  "kpi": "net-sales",
+  "definition_version": 1,
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "granularity": null,
+  "group_by": [
+    "store"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": true,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_sales.net_purchase_line_v1",
+      "api_users.store_assignment_v1"
+    ],
+    "synthetic": false,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 0
+  }
+}

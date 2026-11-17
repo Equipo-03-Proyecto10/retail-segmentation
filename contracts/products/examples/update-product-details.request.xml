@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<UpdateProductDetailsRequest xmlns="https://mosaiq.maxthecoder.online/xml/products/v1">
+  <commercial_status>discontinued</commercial_status>
+  <attributes>
+    <name>color</name>
+    <value>white</value>
+  </attributes>
+  <barcode>036000291452</barcode>
+</UpdateProductDetailsRequest>

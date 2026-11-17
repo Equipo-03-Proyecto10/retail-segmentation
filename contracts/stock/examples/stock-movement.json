@@ -1,0 +1,17 @@
+{
+  "movement_id": 9125,
+  "movement_type": "RESTOCK",
+  "store_id": 3,
+  "product_id": 120,
+  "quantity_delta": 2,
+  "quantity_before": 39,
+  "quantity_after": 41,
+  "transfer_id": null,
+  "reference": null,
+  "reason": null,
+  "counted_by": null,
+  "note": null,
+  "reversal_id": 77,
+  "recorded_by": null,
+  "recorded_at": "2026-10-18T12:10:00Z"
+}

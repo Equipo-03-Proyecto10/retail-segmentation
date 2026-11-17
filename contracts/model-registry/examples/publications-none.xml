@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelPublications xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>0</common:total>
+  </common:PageInfo>
+</ModelPublications>

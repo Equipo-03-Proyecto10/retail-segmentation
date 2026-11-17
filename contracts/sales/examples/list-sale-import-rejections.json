@@ -1,0 +1,45 @@
+{
+  "sale_import_rejections": [
+    {
+      "line": 4,
+      "field": "quantity",
+      "code": "invalid_quantity",
+      "message": "Line 4: quantity must be a positive whole number; the cell holds \"0\".",
+      "duplicate_of": null,
+      "first_line": null,
+      "sale_id": null
+    },
+    {
+      "line": 6,
+      "field": "occurred_at",
+      "code": "future_dated",
+      "message": "Line 6: occurred_at cannot be in the future; the cell holds \"2026-12-15T09:00:00-06:00\".",
+      "duplicate_of": null,
+      "first_line": null,
+      "sale_id": null
+    },
+    {
+      "line": 8,
+      "field": null,
+      "code": "duplicate_row",
+      "message": "Line 8: repeats line 3 of this file (transaction T-1001, product 1020); the line was recorded once and nothing was added.",
+      "duplicate_of": "FILE",
+      "first_line": 3,
+      "sale_id": null
+    },
+    {
+      "line": 9,
+      "field": null,
+      "code": "duplicate_row",
+      "message": "Line 9: transaction T-0958 is already recorded as sale 4790; nothing was added.",
+      "duplicate_of": "RECORDED_SALE",
+      "first_line": null,
+      "sale_id": 4790
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 4
+  }
+}

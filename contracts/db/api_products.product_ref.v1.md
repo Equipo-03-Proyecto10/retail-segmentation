@@ -15,13 +15,26 @@ boundaries; consumers never receive privileges on `public.product`.
 | `list_price` | `numeric(10,2)` | Current non-negative list price. |
 | `is_active` | `boolean` | Whether the product is available for current business operations. |
 
+`is_active` and the commercial status of the products contract
+(`contracts/products/openapi.yaml`, 1.2.0): `is_active` is true exactly when
+the product's commercial status is `active`; `paused` and `discontinued` both
+publish `is_active = false`. This view therefore stays at v1 and gains no
+column: the commercial status, attributes, photo URL and barcode are not
+published across boundaries by this view. Substitutes and complements are in
+`api_products.product_relation_v1`
+([contract](api_products.product_relation.v1.md)).
+
 `image_path` is intentionally absent: it is web-managed and is not needed by
 the cross-boundary rules. The view uses the producer-owned source of truth and
 does not copy product state.
 
 ## Access and consumers
 
-The consuming services are **sales**, **recommendations**, and **engagement**.
+The consuming services are **sales**, **recommendations**, **engagement**,
+**customer-preferences**, which reads the category of each purchased product to infer
+interests (F21-18), **stock**, whose availability reads `is_active` (F21-07), and
+**analytics-kpis**, which reads the category and `is_active` of each product for the
+demand-coverage report (F26-05).
 Each consumer receives `USAGE` on `api_products` and `SELECT` on this view only,
 and names the columns it reads. The products boundary also holds `SELECT` as
 the producer. The view uses PostgreSQL's definer-rights behavior

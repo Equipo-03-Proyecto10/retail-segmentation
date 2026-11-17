@@ -35,6 +35,18 @@ The `recommendations` group invalidates its result cache. It deduplicates by
 `event_id` before acknowledging an entry. Current state is re-read from
 `api_stock.stock_level_v1`, never from the event.
 
+## Propagation bound
+
+The time from the commit of the outbox row to the group's acknowledgement of
+its entry, under the controlled load of `ops/propagation/` (F20-06, #764).
+`ops/propagation/propagation.py check` fails a run whose p95 or maximum
+exceeds the figure below, or that leaves an entry unacknowledged. The measured
+figures are in `docs/evidence/f20-06-stream-propagation.md`.
+
+| Group | p95 (ms) | Max (ms) |
+|---|---:|---:|
+| `recommendations` | 3000 | 5000 |
+
 ## Failure and compatibility
 
 The owner relay waits on `stock_outbox` only as a private wake-up and also

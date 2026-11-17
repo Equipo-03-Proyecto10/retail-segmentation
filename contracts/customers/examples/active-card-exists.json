@@ -1,0 +1,11 @@
+{
+  "code": "active_card_exists",
+  "message": "The customer already has an active loyalty card.",
+  "correlation_id": "corr-791-active",
+  "details": [
+    {
+      "field": "customer_id",
+      "code": "already_active"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <event_id>7a0c5e1d-3b2f-4c8a-9d61-000000000006</event_id>
+  <kind>CRITICAL_ACTION</kind>
+  <outcome>SUCCESS</outcome>
+  <occurred_at>2026-11-07T17:21:30.002Z</occurred_at>
+  <recorded_at>2026-11-07T17:21:30.015Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>11111111-1111-1111-1111-000000000003</actor_user_id>
+  <actor_role>STORE_MANAGER</actor_role>
+  <source>svc_sales</source>
+  <store_id>4</store_id>
+  <subject_type>sale_reversal</subject_type>
+  <subject_id>77</subject_id>
+  <correlation_id>corr-reversal-77</correlation_id>
+  <details>
+    <CriticalAction>
+      <action>SALE_REVERSED</action>
+      <reason_code>CUSTOMER_RETURN</reason_code>
+    </CriticalAction>
+  </details>
+  <prev_hash>bf9ecc5dae097b3ba5791e265603f24f99fec997bbc7382fefbfdfe9f8f94551</prev_hash>
+  <entry_hash>05cf6326adfd4b14809361fa0a8d2b2271f58e707147e94cb8d02b6a05845d69</entry_hash>
+</DomainEvent>

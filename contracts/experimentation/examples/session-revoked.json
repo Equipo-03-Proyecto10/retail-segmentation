@@ -1,0 +1,6 @@
+{
+  "code": "session_revoked",
+  "message": "The session was revoked.",
+  "correlation_id": "corr-session-revoked",
+  "details": []
+}

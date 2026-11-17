@@ -101,7 +101,8 @@ def test_an_unknown_store_product_or_customer_is_refused_in_that_order(workspace
         (workspace.scan(store_id=2**31 - 1), "unknown_store"),
     )
     for body, code in cases:
-        response = workspace.post(body)
+        # An administrator: a confined caller is refused the store first.
+        response = workspace.post(body, headers=workspace.admin)
         assert (response.status_code, response.get_json()["code"]) == (422, code)
         assert (
             db.engagement_event.count_documents(

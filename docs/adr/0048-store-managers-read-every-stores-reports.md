@@ -1,10 +1,10 @@
 # ADR-0048 — Store managers read every store's reports
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0060 (no user-to-store association, for the services)
 **Owner:** Raquel
 **Issue:** #467
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0060](0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md), in part
 
 ---
 

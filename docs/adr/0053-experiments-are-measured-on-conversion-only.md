@@ -1,10 +1,10 @@
 # ADR-0053 — Experiments are measured on conversion only; `AVERAGE_TICKET` is removed
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0068 (conversion as the only target metric, and a revenue metric waiting for a later story)
 **Owner:** Max
 **Issue:** #457
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0068](0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md), in part (conversion as the only target metric, and a revenue metric waiting for a later story)
 
 ---
 

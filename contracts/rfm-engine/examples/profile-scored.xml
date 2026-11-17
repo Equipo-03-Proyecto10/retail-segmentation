@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmProfile xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+  <state>scored</state>
+  <rule_set_id>3</rule_set_id>
+  <r_days>30</r_days>
+  <f_count>9</f_count>
+  <m_total>842.50</m_total>
+  <r_score>4</r_score>
+  <f_score>5</f_score>
+  <m_score>4</m_score>
+  <label_code>LOYAL</label_code>
+  <via_fallback>false</via_fallback>
+  <computed_at>2026-10-30T14:22:05Z</computed_at>
+  <next_change_at>2026-11-05T08:10:00Z</next_change_at>
+</RfmProfile>

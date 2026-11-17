@@ -1,5 +1,6 @@
 import type { CampaignStatus, CampaignView, LabelView, Paged, Result } from '../shared/api';
-import type { Backoffice } from './backoffice';
+import { plainRefusal } from '../shared/campaign-messages';
+import { plain, type Backoffice } from './backoffice';
 import {
   checked,
   failed,
@@ -21,7 +22,9 @@ import type { FieldValue } from './xml';
 // campaigns-service's: nothing here decides whether a move is legal or whether a
 // start precedes an end, so ends_before_start, duplicate_draft, illegal_transition,
 // status_changed, campaign_ended, experiment_not_ready and campaign_not_draft are
-// the service's answers, passed on as returned.
+// the service's answers, passed on with their code and correlation id as returned.
+// Only the sentence is the client's (F28-09, #878): each code of the contract has one
+// in plain words (shared/campaign-messages.ts).
 
 const MAX_CAMPAIGN_ID = 2147483647;
 const NAME_MAX = 120;
@@ -75,6 +78,12 @@ function date(f: FieldChecks, field: string, value: unknown): string {
   }
 }
 
+/** A refusal of a campaigns-service call: its envelope as returned, with a plain sentence for its code. */
+export function refused<T>(res: CallResult): Result<T> {
+  if (res.ok) throw new Error('a refusal was expected');
+  return { ok: false, error: plainRefusal(plain(res.error)) };
+}
+
 export class Campaigns {
   constructor(private readonly office: Backoffice) {}
 
@@ -95,7 +104,7 @@ export class Campaigns {
       params.set('page', String(pageNumber(q.page)));
       params.set('size', String(pageSize(q.size)));
       const res = await this.office.authed({ method: 'GET', path: `/v1/campaigns?${params.toString()}` });
-      if (!res.ok) return failed(res);
+      if (!res.ok) return refused(res);
       const data = res.data?.Campaigns as { Campaign?: CampaignXml[] } & Record<string, unknown>;
       return { ok: true, value: { items: (data.Campaign ?? []).map(campaignOf), page: pageOf(data) } };
     });
@@ -187,7 +196,7 @@ export class Campaigns {
   }
 
   private campaignResult(res: CallResult): Result<CampaignView> {
-    if (!res.ok) return failed(res);
+    if (!res.ok) return refused(res);
     return { ok: true, value: campaignOf(res.data?.Campaign as CampaignXml) };
   }
 }

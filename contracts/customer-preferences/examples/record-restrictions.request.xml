@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordRestrictionDecisionsRequest xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <decisions>
+    <kind>CHANNEL</kind>
+    <target_id>5</target_id>
+    <decision>IMPOSED</decision>
+  </decisions>
+  <decisions>
+    <kind>INTEREST_CATEGORY</kind>
+    <target_id>9</target_id>
+    <decision>IMPOSED</decision>
+  </decisions>
+  <decisions>
+    <kind>INTEREST_CATEGORY</kind>
+    <target_id>12</target_id>
+    <decision>LIFTED</decision>
+  </decisions>
+</RecordRestrictionDecisionsRequest>

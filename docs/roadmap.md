@@ -137,7 +137,7 @@ following:
 | Part | Requirement | Current position |
 |---|---|---|
 | Microservices | At least ten (instructor; ADR-0043 supersedes ADR-0016's six to ten), each implementing one business rule, with its own container, versioned routes, authentication, JSON **and** XML responses, a health endpoint and OpenAPI documentation | Planned: 15 services, each one business rule (ADR-0034, ADR-0043), phases 13–15 (#400, #399, #401) |
-| Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Planned: ADR-0041, phase 17 (#403) |
+| Android client | Consumes JSON only. At least four microservices, plus two device capabilities — camera, QR, GPS, notifications, local storage or sensors | Planned: ADR-0041, phase 17 (#403); UI/UX refresh to the MOSAIQ design system, ADR-0057 and ADR-0058 (#716) |
 | Desktop client | Consumes XML only, validated against an XSD. At least four microservices, and a **different** process from the mobile one | Planned: Electron, ADR-0041, phase 16 (#402) |
 | MongoDB | Real storage, with insert, query, update, aggregation and indexing demonstrated | Planned: engagement-service only, ADR-0038 |
 | Redis | Sessions, revoked tokens, cache, counters and rate limits. Every component consults it during authentication or authorization | Planned: ADR-0037, two instances (`redis-state` and `redis-cache`) that also carry the inter-service streams. Every **service** consults it on every authenticated request. The web system keeps its PostgreSQL sessions (ADR-0022) and does not, which the instructor confirmed on 2026-10-13 |
@@ -169,6 +169,18 @@ the delivery they governed.
 
 Kubernetes and managed database services remain outside the second delivery.
 Nothing in ADR-0016 brings them into scope.
+
+## The third delivery
+
+[`scope-delivery-3.md`](scope-delivery-3.md) holds its boundary: the instructor's
+retrospective checked against the repository, the fifteen services against the
+instructor's catalog, capabilities 16 to 25, and phases 19 to 29 (epics #740, #741, #742, #743, #744, #745, #746, #747, #748, #749, #750). The
+stories are in [`backlog.md`](backlog.md).
+
+Work enters as above: a change to the web through its short cycle, and a
+distributed component through its decision, then its contract, then its
+implementation. The two deferred permissions that had no route are now decided
+there: `inventory.write` by F21-04, and `segment.write` by F22-09.
 
 ## Two warnings promoted into decisions
 

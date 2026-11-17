@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomerVisits xmlns="https://mosaiq.maxthecoder.online/xml/check-ins/v1"
+               xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <CustomerVisit>
+    <visit_id>4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f65</visit_id>
+    <customer_id>c2f6e0a4-91b3-4d57-a8e1-3b5f7d9c1e20</customer_id>
+    <store_id>3</store_id>
+    <occurred_at>2026-11-09T11:15:00Z</occurred_at>
+    <recorded_at>2026-11-09T11:15:01Z</recorded_at>
+    <recorded_by>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</recorded_by>
+  </CustomerVisit>
+  <CustomerVisit>
+    <visit_id>4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f64</visit_id>
+    <customer_id>7b3ad781-c5de-4f40-ae50-1fa825ce2b25</customer_id>
+    <store_id>3</store_id>
+    <campaign_id>12</campaign_id>
+    <occurred_at>2026-11-09T10:00:00Z</occurred_at>
+    <recorded_at>2026-11-09T10:00:02Z</recorded_at>
+    <recorded_by>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</recorded_by>
+  </CustomerVisit>
+  <CustomerVisit>
+    <visit_id>4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f10</visit_id>
+    <store_id>3</store_id>
+    <campaign_id>7</campaign_id>
+    <occurred_at>2023-10-02T15:30:00Z</occurred_at>
+    <recorded_at>2023-10-02T15:30:03Z</recorded_at>
+    <recorded_by>5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33</recorded_by>
+  </CustomerVisit>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>3</common:total>
+  </common:PageInfo>
+</CustomerVisits>

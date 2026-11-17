@@ -1,0 +1,6 @@
+{
+  "code": "unsupported_media_type",
+  "message": "The Content-Type is not supported.",
+  "correlation_id": "corr-unsupported-media-type",
+  "details": []
+}

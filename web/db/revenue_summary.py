@@ -3,6 +3,10 @@
 Read-only and parameterized. The window is closed at the newest sale on
 record, not at the wall clock, so the summary describes the data that exists
 rather than going blank when the last load is older than the window.
+
+Revenue is net (ADR-0062): it is read through `net_sale`, so a return lowers it
+and a sale cancelled in full is neither a transaction nor revenue. The newest
+sale is the newest one that still counts.
 """
 
 from __future__ import annotations
@@ -40,25 +44,25 @@ class RevenueSummary:
 
 
 _WINDOW = """
-    t.occurred_at > (SELECT max(occurred_at) FROM transaction)
+    t.occurred_at > (SELECT max(occurred_at) FROM net_sale)
                     - make_interval(days => %s)
 """
 _TOTALS = (
-    "SELECT max(t.occurred_at), count(*), coalesce(sum(t.total), 0), "
+    "SELECT max(t.occurred_at), count(*), coalesce(sum(t.net_total), 0), "
     "coalesce(bool_or(t.data_origin = 'SEEDED'), false) "
-    "FROM transaction AS t WHERE " + _WINDOW
+    "FROM net_sale AS t WHERE " + _WINDOW
 )
 _BY_CHANNEL = (
-    "SELECT c.name, count(*), sum(t.total) FROM transaction AS t "
+    "SELECT c.name, count(*), sum(t.net_total) FROM net_sale AS t "
     "JOIN channel AS c ON c.channel_id = t.channel_id WHERE "
     + _WINDOW
-    + "GROUP BY c.channel_id, c.name ORDER BY sum(t.total) DESC, c.name"
+    + "GROUP BY c.channel_id, c.name ORDER BY sum(t.net_total) DESC, c.name"
 )
 _BY_STORE = (
-    "SELECT s.name, count(*), sum(t.total) FROM transaction AS t "
+    "SELECT s.name, count(*), sum(t.net_total) FROM net_sale AS t "
     "JOIN store AS s ON s.store_id = t.store_id WHERE "
     + _WINDOW
-    + "GROUP BY s.store_id, s.name ORDER BY sum(t.total) DESC, s.name"
+    + "GROUP BY s.store_id, s.name ORDER BY sum(t.net_total) DESC, s.name"
 )
 
 

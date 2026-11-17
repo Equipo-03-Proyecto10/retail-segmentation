@@ -1,0 +1,15 @@
+{
+  "kind": "backlog",
+  "environment": "local",
+  "stream": "stream:stores.v1.changed",
+  "group": "stores",
+  "events": 500,
+  "producer_stopped": true,
+  "duplicate_entries": 0,
+  "entries": 500,
+  "acknowledged_entries": 500,
+  "lost_events": [],
+  "max_deliveries_seen": 1,
+  "catch_up_s": 29.255,
+  "poll_interval_ms": 5.0
+}

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConsentState xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <customer_id>c4a1f0e2-5b7d-4e39-8a62-9d1b3c7e0f54</customer_id>
+  <as_of>2026-11-05T14:30:00Z</as_of>
+  <purposes>
+    <purpose>PERSONALIZATION</purpose>
+    <state>NOT_RECORDED</state>
+  </purposes>
+  <purposes>
+    <purpose>MARKETING_CONTACT</purpose>
+    <state>NOT_RECORDED</state>
+  </purposes>
+  <purposes>
+    <purpose>PROFILING</purpose>
+    <state>NOT_RECORDED</state>
+  </purposes>
+</ConsentState>

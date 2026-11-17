@@ -1,0 +1,18 @@
+{
+  "version_name": "kmeans-k5-trial-2",
+  "method": "KMEANS",
+  "window_days": 180,
+  "seed": 77,
+  "parameters": {
+    "rule_set_id": null,
+    "k": 5,
+    "max_iterations": 100,
+    "tolerance": 0.0001,
+    "features": [
+      "R",
+      "F",
+      "M"
+    ],
+    "normalization": "MIN_MAX"
+  }
+}

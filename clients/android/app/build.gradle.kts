@@ -75,6 +75,12 @@ kotlin {
     }
 }
 
+// The screenshots test (ScreenshotsTest) only runs under SCREENSHOTS=1; the variable is an input so a
+// run with it is never mistaken for an up-to-date run without it.
+tasks.withType<Test>().configureEach {
+    inputs.property("screenshots", providers.environmentVariable("SCREENSHOTS").orElse(""))
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -108,6 +114,8 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.work.testing)
     testImplementation(libs.robolectric)
+    // FloorAccessContractTest reads the contracts' x-mosaiq-roles, anchors and aliases included.
+    testImplementation(libs.snakeyaml)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(platform(libs.compose.bom))

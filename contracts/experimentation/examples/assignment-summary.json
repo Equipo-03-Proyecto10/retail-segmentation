@@ -1,0 +1,53 @@
+{
+  "experiment_id": 12,
+  "assigned_at": "2026-10-01T08:00:00Z",
+  "assigned_by": "11111111-1111-1111-1111-000000000003",
+  "assigned_total": 8000,
+  "acknowledged_underpowered": false,
+  "arms": [
+    {
+      "arm_id": 31,
+      "kind": "CONTROL",
+      "assigned": 4000
+    },
+    {
+      "arm_id": 32,
+      "kind": "TREATMENT",
+      "assigned": 4000
+    }
+  ],
+  "checks": {
+    "recomputation_matches": true,
+    "sample_ratio": {
+      "status": "PASSED",
+      "p_value": 1.000000,
+      "threshold": 0.001
+    },
+    "balance": [
+      {
+        "measure": "PRE_RECENCY_DAYS",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.012,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_PURCHASE_COUNT",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.008,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_NET_SPEND",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.021,
+        "flagged": false,
+        "threshold": 0.25
+      }
+    ]
+  }
+}

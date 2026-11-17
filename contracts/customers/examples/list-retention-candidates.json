@@ -1,0 +1,25 @@
+{
+  "as_of": "2026-11-17T18:00:00Z",
+  "inactive_before": "2023-11-17",
+  "candidates": [
+    {
+      "customer_id": "3f1c2b9e-8a47-4d2e-9b61-0c5a7e4d2f10",
+      "registered_on": "2021-03-02",
+      "last_sale_at": "2022-08-14T16:20:00Z",
+      "last_visit_at": null,
+      "last_activity_on": "2022-08-14"
+    },
+    {
+      "customer_id": "9a6e4c21-5d3b-4f88-a2c7-7e1b0d9f4a35",
+      "registered_on": "2022-01-20",
+      "last_sale_at": "2022-11-03T19:05:00Z",
+      "last_visit_at": "2023-05-28T15:40:00Z",
+      "last_activity_on": "2023-05-28"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

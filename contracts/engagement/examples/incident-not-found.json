@@ -1,0 +1,6 @@
+{
+  "code": "incident_not_found",
+  "message": "No capture incident has this id.",
+  "correlation_id": "corr-incident-not-found",
+  "details": []
+}

@@ -265,3 +265,60 @@ def test_factory_background_workers_are_started_and_stoppable(
     finally:
         workers.stop()
         application.extensions["mosaiq_kit"].db.close()
+
+
+class Crash(BaseException):
+    """The process dies: the consumer catches Exception only, so no XACK follows."""
+
+
+def test_reapplying_an_access_change_leaves_the_same_sessions(
+    app: Any,
+    session: dict[str, str],
+    redis_admin: redis.Redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#764 criterion 3: re-applying an event is idempotent by re-read (ADR-0044).
+
+    The revocation runs in a process that dies after it and before XACK; the
+    restarted process applies the entry again from its pending list; then a
+    duplicate entry, as a relay that crashed between XADD and its UPDATE
+    appends, is applied once more. The sessions left alive, the user's and
+    everyone else's, are the same each time.
+    """
+    service = app.extensions["auth_service"]
+    other = service.sign_in("user3@mosaiq-demo.com", "Password123!")
+    mine = _sid(session)
+
+    def observe() -> set[str]:
+        return set(redis_admin.scan_iter(match="pub:auth:v1:live:*")) | set(
+            redis_admin.scan_iter(match="auth:session:*")
+        )
+
+    BackgroundWorkers(service, redis_admin, interval=60).consumer.run_once(block_ms=1)
+    event = _event(USER_ID)
+    redis_admin.xadd(ACCESS_CHANGED_STREAM, event)
+
+    revoke_users = service.store.revoke_users
+
+    def revoke_then_crash(users: list[str]) -> None:
+        revoke_users(users)
+        raise Crash
+
+    monkeypatch.setattr(service.store, "revoke_users", revoke_then_crash)
+    with pytest.raises(Crash):
+        BackgroundWorkers(service, redis_admin, interval=60).consumer.run_once(10)
+    monkeypatch.setattr(service.store, "revoke_users", revoke_users)
+    first = observe()
+    assert "pub:auth:v1:live:" + mine not in first
+    assert "pub:auth:v1:live:" + _sid(other) in first
+    assert redis_admin.xpending(ACCESS_CHANGED_STREAM, "auth")["pending"] == 1
+
+    restarted = BackgroundWorkers(service, redis_admin, interval=60).consumer
+    assert restarted.run_once(block_ms=10) == 1
+    assert observe() == first
+
+    redis_admin.xadd(ACCESS_CHANGED_STREAM, event)
+    duplicate = BackgroundWorkers(service, redis_admin, interval=60).consumer
+    assert duplicate.run_once(block_ms=10) == 1
+    assert observe() == first
+    assert redis_admin.xpending(ACCESS_CHANGED_STREAM, "auth")["pending"] == 0

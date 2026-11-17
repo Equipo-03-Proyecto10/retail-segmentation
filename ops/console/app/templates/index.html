@@ -64,7 +64,7 @@
 <h2>Redis</h2>
 <div class="panel">
 <table>
-  <thead><tr><th>Instance</th><th>State</th><th class="num">Memory</th><th>Stream</th><th>Consumer group</th><th class="num">Lag</th><th class="num">Pending</th></tr></thead>
+  <thead><tr><th>Instance</th><th>State</th><th class="num">Memory</th><th>Stream</th><th>Consumer group</th><th class="num">Lag</th><th class="num">Pending</th><th class="num" title="Age of the oldest entry the group has not acknowledged">Oldest unacked</th></tr></thead>
   <tbody>
   {% for i in redis %}
     {% set groups = i.groups or [none] %}
@@ -79,13 +79,14 @@
       <td class="mono">{{ g.stream }}</td><td class="mono">{{ g.group }}</td>
       <td class="num {{ 'warn' if g.lag else '' }}">{{ g.lag if g.lag is not none else '?' }}</td>
       <td class="num {{ 'warn' if g.pending else '' }}">{{ g.pending }}</td>
+      <td class="num {{ 'warn' if g.oldest_unacked_ms and g.oldest_unacked_ms >= 5000 else '' }}">{{ g.oldest_unacked_label }}</td>
       {% else %}
-      <td colspan="4" class="meta">{{ 'no streams' if i.up else '' }}</td>
+      <td colspan="5" class="meta">{{ 'no streams' if i.up else '' }}</td>
       {% endif %}
     </tr>
     {% endfor %}
   {% else %}
-    <tr><td colspan="7" class="meta">not polled yet</td></tr>
+    <tr><td colspan="8" class="meta">not polled yet</td></tr>
   {% endfor %}
   </tbody>
 </table>

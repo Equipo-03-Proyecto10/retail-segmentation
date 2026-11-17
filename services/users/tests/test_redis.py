@@ -42,6 +42,10 @@ def redis_admin() -> Iterator[redis.Redis]:
         pytest.skip("TEST_REDIS_URL is not set")
     client = redis.Redis.from_url(url, decode_responses=True)
     client.ping()
+    if client.config_get("appendonly")["appendonly"] != "yes":
+        pytest.fail(
+            "This suite needs a Redis with appendonly yes: the relay waits on WAITAOF"
+        )
     yield client
     client.delete(STREAM)
     client.execute_command("ACL", "DELUSER", "svc_users")

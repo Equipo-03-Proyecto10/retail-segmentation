@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>A query parameter is outside its allowed values.</message>
+  <correlation_id>corr-list-422b</correlation_id>
+  <details>
+    <field>store_id</field>
+    <code>minimum</code>
+  </details>
+</Error>

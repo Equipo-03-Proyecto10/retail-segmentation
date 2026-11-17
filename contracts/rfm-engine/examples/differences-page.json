@@ -1,0 +1,38 @@
+{
+  "differences": [
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "fields": [
+        "f_count",
+        "m_total",
+        "f_score",
+        "m_score"
+      ],
+      "incremental": {
+        "state": "scored",
+        "r_days": 30,
+        "f_count": 9,
+        "m_total": "842.50",
+        "r_score": 4,
+        "f_score": 5,
+        "m_score": 4,
+        "label_code": "LOYAL"
+      },
+      "recomputed": {
+        "state": "scored",
+        "r_days": 30,
+        "f_count": 8,
+        "m_total": "790.00",
+        "r_score": 4,
+        "f_score": 4,
+        "m_score": 3,
+        "label_code": "LOYAL"
+      }
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 1
+  }
+}

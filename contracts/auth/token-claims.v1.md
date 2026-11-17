@@ -18,7 +18,7 @@ enforcing its own operation-to-role policy.
 | `aud` | Exactly `mosaiq-api`. |
 | `sub` | The authenticated `app_user.user_id`, a UUID string. |
 | `sid` | The UUID of the session whose liveness key must exist. |
-| `role` | One immutable role code: `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR`, or `CUSTOMER`. |
+| `role` | One immutable role code: `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR`, `CUSTOMER`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, or `COMMERCIAL_SUPERVISOR`. |
 | `jti` | A unique identifier for this access token. |
 | `iat` | NumericDate at which this access token was issued. |
 | `exp` | NumericDate after which this access token is refused. |

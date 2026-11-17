@@ -15,6 +15,7 @@ on:
       - web/services/consumption_profile.py
       - web/services/users.py
       - web/services/campaigns.py
+      - web/services/segment_migration.py
       - web/db/**
       - sql/**
       - tests/golden/**
@@ -29,7 +30,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -61,7 +62,7 @@ jobs:
 
       - name: Capture every port
         run: |
-          for service in sales recommendations users campaigns; do
+          for service in sales recommendations users campaigns segments; do
             python -m tests.golden.capture --service "$service" --out "$RUNNER_TEMP/golden"
           done
 

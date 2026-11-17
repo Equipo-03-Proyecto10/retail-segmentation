@@ -1,0 +1,6 @@
+{
+  "code": "auth_unavailable",
+  "message": "Authentication is unavailable.",
+  "correlation_id": "corr-auth-unavailable",
+  "details": []
+}

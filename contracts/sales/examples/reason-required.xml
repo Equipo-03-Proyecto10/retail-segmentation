@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>reason_required</code>
+  <message>A reversal needs a reason.</message>
+  <correlation_id>corr-reason-required</correlation_id>
+  <details>
+    <field>reason</field>
+    <code>required</code>
+  </details>
+</Error>

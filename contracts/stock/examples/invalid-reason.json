@@ -1,0 +1,11 @@
+{
+  "code": "invalid_reason",
+  "message": "An adjustment must state a reason from DAMAGE, LOSS, EXPIRY or CORRECTION.",
+  "correlation_id": "corr-invalid-reason",
+  "details": [
+    {
+      "field": "reason",
+      "code": "not_allowed"
+    }
+  ]
+}

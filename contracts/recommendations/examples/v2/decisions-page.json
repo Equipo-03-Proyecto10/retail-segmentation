@@ -1,0 +1,69 @@
+{
+  "recommendation_decisions": [
+    {
+      "decision_id": "c41e8a06-72d3-4b95-a1f0-6e2b9d57c3a4",
+      "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+      "status": "recommended",
+      "computed_at": "2026-10-15T16:42:10Z",
+      "store_id": 5,
+      "store_source": "given",
+      "channel_id": 1,
+      "item_count": 4,
+      "exclusions": [
+        {
+          "reason": "already_bought",
+          "count": 2
+        },
+        {
+          "reason": "not_sellable",
+          "count": 1
+        },
+        {
+          "reason": "out_of_stock",
+          "count": 2
+        }
+      ]
+    },
+    {
+      "decision_id": "9b2d4c7e-5a10-4f38-8c61-d3e0a7b94f12",
+      "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+      "status": "recommended",
+      "computed_at": "2026-10-14T09:15:03Z",
+      "store_id": 3,
+      "store_source": "usual_store",
+      "channel_id": null,
+      "item_count": 2,
+      "exclusions": [
+        {
+          "reason": "already_bought",
+          "count": 2
+        },
+        {
+          "reason": "out_of_stock",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "decision_id": "a05e6b12-8d49-4c73-b1f6-94d3e7a0c2b8",
+      "customer_id": null,
+      "status": "recommended",
+      "computed_at": "2026-09-02T11:20:41Z",
+      "store_id": 3,
+      "store_source": "usual_store",
+      "channel_id": null,
+      "item_count": 3,
+      "exclusions": [
+        {
+          "reason": "not_sellable",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

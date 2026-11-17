@@ -1,0 +1,48 @@
+{
+  "assignments": [
+    {
+      "assignment_id": 70431,
+      "experiment_id": 12,
+      "campaign_id": 4,
+      "customer_id": "c0a80001-0000-4000-8000-000000000101",
+      "arm_id": 32,
+      "arm_kind": "TREATMENT",
+      "arm_name": "10 percent win-back voucher",
+      "assignment_key": "c1bc5b27d24bbc62a0f0cd9e9518776c20e1c8ed60f0623484fd863b6daa76c0",
+      "assigned_at": "2026-10-01T08:00:00Z",
+      "exposure_count": 2,
+      "first_exposed_at": "2026-10-02T11:05:00Z"
+    },
+    {
+      "assignment_id": 70432,
+      "experiment_id": 12,
+      "campaign_id": 4,
+      "customer_id": "c0a80001-0000-4000-8000-000000000102",
+      "arm_id": 31,
+      "arm_kind": "CONTROL",
+      "arm_name": "No offer",
+      "assignment_key": "89aa2a26a82d70a865f9613e05bedcbfe27c634211c9431c89c006ecc522174b",
+      "assigned_at": "2026-10-01T08:00:00Z",
+      "exposure_count": 0,
+      "first_exposed_at": null
+    },
+    {
+      "assignment_id": 70433,
+      "experiment_id": 12,
+      "campaign_id": 4,
+      "customer_id": "c0a80001-0000-4000-8000-000000000103",
+      "arm_id": 32,
+      "arm_kind": "TREATMENT",
+      "arm_name": "10 percent win-back voucher",
+      "assignment_key": "b2622524a7578eb92519b371fb1ce4fb71d8464d85c3fda2cca341c2d8713a99",
+      "assigned_at": "2026-10-01T08:00:00Z",
+      "exposure_count": 0,
+      "first_exposed_at": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 8000
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "code": "experiment_not_found",
+  "message": "No experiment has this id.",
+  "correlation_id": "corr-experiment-not-found",
+  "details": []
+}

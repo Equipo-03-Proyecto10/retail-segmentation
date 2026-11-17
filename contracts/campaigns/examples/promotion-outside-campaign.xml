@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>promotion_outside_campaign</code>
+  <message>The promotion validity must lie within the campaign validity.</message>
+  <correlation_id>corr-promotion-422b</correlation_id>
+  <details>
+    <field>starts_on</field>
+    <code>outside_campaign</code>
+  </details>
+</Error>

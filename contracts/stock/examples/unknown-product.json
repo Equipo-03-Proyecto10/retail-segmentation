@@ -1,0 +1,11 @@
+{
+  "code": "unknown_product",
+  "message": "No product has that id.",
+  "correlation_id": "corr-unknown-product",
+  "details": [
+    {
+      "field": "product_id",
+      "code": "unknown"
+    }
+  ]
+}

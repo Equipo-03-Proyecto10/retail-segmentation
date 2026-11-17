@@ -13,16 +13,20 @@ The design is governed by ADR-0034 to ADR-0046. Every service implements exactly
 | [products](./products.md) | Flask | 5003 | core | Unique SKU, non-negative price, one existing category; retired, not deleted | RN-10, RN-11 |
 | [categories](./categories.md) | Flask | 5004 | core | An acyclic category tree; no delete with products, children or customer interests | RN-33, RN-06, RN-07 |
 | [stores](./stores.md) | Rust (axum) | 5005 | core | At most one valid, geofenced location per store, set by ADMIN only | RN-53 |
-| [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, ADR-0031 |
+| [stock](./stock.md) | Rust (axum) | 5006 | core | Stock never negative, consumed only by an accepted sale, atomically with it | RN-14, RN-69, ADR-0031 |
 | [customers](./customers.md) | Flask | 5007 | core | A customer registered once with valid data, never deleted through services | RN-08 |
-| [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set | RN-54 |
-| [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales) |
-| [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is | RN-20, RN-21 |
+| [customer-preferences](./customer-preferences.md) | Rust (axum) | 5008 | core | Preferred channels and interest categories each replaced only as a whole set; consent and restrictions change only by an appended, attributed decision | RN-54, RN-73 |
+| [sales](./sales.md) | Flask | 5009 | core | A sale recorded once, all or nothing, consuming its stock in the same transaction | RN-11 to RN-13, RN-37 (accepted sales), RN-70 |
+| [segments](./segments.md) | Rust (axum) | 5010 | core | At most one current segment per customer, by stable label; unassigned reported as is; a migration compares labels within one model version and a comparison across versions is methodological | RN-20, RN-21, RN-39, RN-59, RN-60 |
 | [recommendations](./recommendations.md) | Flask | 5011 | core | Recommend active, in-stock, not-yet-bought products with reasons, or say why none | RN-40 |
-| [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | QR scans and recommendation clicks recorded once, attributed, voided never deleted | RN-55 |
-| [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence; overrides are append-only reviews | RN-56 |
+| [engagement](./engagement.md) | Flask + MongoDB | 5012 | core | Eight kinds of in-store engagement event recorded once, each a distinct fact and never a sale, attributed, voided never deleted | RN-55 |
+| [check-ins](./check-ins.md) | Rust (axum) | 5013 | core | A check-in is verified only within the store's geofence, and overrides are append-only reviews; a customer visit is a separate fact with no position, recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window | RN-56, RN-72 |
 | [campaigns](./campaigns.md) | Flask | 5014 | second | A campaign moves only along the allowed states, is edited only in DRAFT, and is activated only before it ends, with its experiments ready | RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation) |
 | [audit-trail](./audit-trail.md) | Rust (axum) | 5015 | second | An append-only, attributed, credential-free audit readable by ADMIN and AUDITOR only | RN-28, RN-29, RN-30 |
+| [rfm-engine](./rfm-engine.md) | Flask | 5016 | third | A customer's R, F and M follow their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation | RN-65 |
+| [model-registry](./model-registry.md) | Flask | 5019 | third | A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback | RN-66 |
+| [experimentation](./experimentation.md) | Flask | 5020 | third | An experiment is frozen before it assigns anyone, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty | RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67 |
+| [analytics-kpis](./analytics-kpis.md) | Rust (axum) | 5022 | third | A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it | RN-68 |
 
 The full one-sentence rule of each service is in its sheet and in the registry of [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md).
 
@@ -49,15 +53,15 @@ The design accepts a small number of deliberate deviations from the strict readi
 |---|---|---|
 | [E-01](#e-01--sales-serves-the-read-only-channel-vocabulary) | sales serves the read-only channel vocabulary | [sales](./sales.md) |
 | [E-02](#e-02--users-serves-the-read-only-role-vocabulary) | users serves the read-only role vocabulary | [users](./users.md) |
-| [E-03](#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity) | a foreign id keys a resource that is its own identity | [customer-preferences](./customer-preferences.md), [stock](./stock.md) |
+| [E-03](#e-03--a-foreign-id-keys-a-resource-that-is-its-own-identity) | a foreign id keys a resource that is its own identity | [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md) |
 | [E-04](#e-04--the-public-key-is-served-as-json-only) | the public key is served as JSON only | [auth](./auth.md) |
-| [E-05](#e-05--one-synchronous-cross-boundary-call-inside-the-database) | one synchronous cross-boundary call, inside the database | [stock](./stock.md), [sales](./sales.md) |
+| [E-05](#e-05--one-synchronous-cross-boundary-call-inside-the-database) | synchronous cross-boundary calls, inside the database | [stock](./stock.md), [sales](./sales.md), [segments](./segments.md) |
 | [E-06](#e-06--a-recommendation-carries-the-stock-figure-it-used) | a recommendation carries the stock figure it used | [recommendations](./recommendations.md) |
 | [E-07](#e-07--recommendations-depends-on-seven-published-contracts) | recommendations depends on seven published contracts | [recommendations](./recommendations.md) |
 | [E-08](#e-08--read-rule-services-count-as-one-rule-services) | read-rule services count as one-rule services | [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md) |
-| [E-09](#e-09--the-frozen-web-is-a-legacy-co-writer-of-some-tables) | the frozen web is a legacy co-writer of some tables | [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md) |
+| [E-09](#e-09--the-frozen-web-is-a-legacy-co-writer-of-some-tables) | the frozen web is a legacy co-writer of some tables | [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md), [experimentation](./experimentation.md) |
 | [E-10](#e-10--read-owners-of-tables-only-the-web-writes) | read owners of tables only the web writes | [users](./users.md), [stores](./stores.md), [stock](./stock.md), [sales](./sales.md), [segments](./segments.md), [audit-trail](./audit-trail.md) |
-| [E-11](#e-11--foreign-keys-cross-service-boundaries) | foreign keys cross service boundaries | [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md) |
+| [E-11](#e-11--foreign-keys-cross-service-boundaries) | foreign keys cross service boundaries | [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md), [recommendations](./recommendations.md) |
 | [E-12](#e-12--audit_log-is-the-one-table-every-writer-shares) | audit_log is the one table every writer shares | [audit-trail](./audit-trail.md), [users](./users.md), [products](./products.md), [categories](./categories.md), [stores](./stores.md), [customers](./customers.md), [campaigns](./campaigns.md) |
 | [E-13](#e-13--a-definer-guard-reads-rows-its-service-cannot-read) | a definer guard reads rows its service cannot read | [categories](./categories.md), [campaigns](./campaigns.md) |
 | [E-14](#e-14--campaigns-shares-the-webs-id-allocation-lock) | campaigns shares the web's id-allocation lock | [campaigns](./campaigns.md) |
@@ -88,10 +92,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-03 — a foreign id keys a resource that is its own identity
 
-- **What:** Two paths carry another boundary's id: `/v1/preference-profiles/{customer_id}` and `/v1/stock-levels/{store_id}/{product_id}`. Strictly, "foreign ids are query or body fields".
-- **Why it is acceptable:** A preference profile exists once per customer, and a stock level is one row per store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
-- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these two paths use it.
-- **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md)
+- **What:** Four paths carry another boundary's id: `/v1/preference-profiles/{customer_id}`, `/v1/stock-levels/{store_id}/{product_id}`, `/v1/availabilities/{store_id}/{product_id}` and `/v1/rfm-profiles/{customer_id}`. Strictly, "foreign ids are query or body fields".
+- **Why it is acceptable:** A preference profile and an RFM profile each exist once per customer, and a stock level, like a pair's availability, is keyed by its store and product. The id is the resource's own identity, not a reference to another service's resource, so a query parameter would only hide a key.
+- **Guard:** No path may contain another service's registered resource name, as whole path segments. The registry check enforces it. The remaining half, "the id is the resource's identity", is a review call, and only these four paths use it.
+- **Services:** [customer-preferences](./customer-preferences.md), [stock](./stock.md), [rfm-engine](./rfm-engine.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (path rule))
 
 ### E-04 — the public key is served as JSON only
@@ -102,33 +106,33 @@ The design accepts a small number of deliberate deviations from the strict readi
 - **Services:** [auth](./auth.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Formats); [ADR-0036](../adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md) (Keys)
 
-### E-05 — one synchronous cross-boundary call, inside the database
+### E-05 — synchronous cross-boundary calls, inside the database
 
-- **What:** sales-service calls `api_stock.consume_v1` once per sale line, inside its own transaction. It is the only place where one boundary calls into another.
-- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031). A saga or an HTTP call to stock could leave a sale without its decrement, or the reverse. A SECURITY DEFINER function owned by `definer_stock` gives atomicity without a stock write privilege for sales.
-- **Guard:** EXECUTE goes to `svc_sales` only, and the grant check compares it both ways. It is in the database and never HTTP. ADR-0044 states that a second cross-boundary write needs its own record.
-- **Services:** [stock](./stock.md), [sales](./sales.md)
-- **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction)
+- **What:** Three functions are called across a boundary, each inside the caller's own transaction. sales-service calls `api_stock.consume_v1` once per sale line, and `api_stock.restock_v1` once per resalable reversed line, inside the reversal's transaction. rfm-engine calls `api_segments.apply_assignment_v1` once per customer whose label changes, in the transaction that writes the customer's profile. They are the only places where one boundary calls into another.
+- **Why it is acceptable:** A sale and its stock decrement must commit together (RN-14, ADR-0031), so must a reversal and its restock (ADR-0061), and a profile and the assignment it implies must too (ADR-0063). A saga or an HTTP call could leave one without the other. A SECURITY DEFINER function owned by the callee's definer role gives atomicity without a write privilege for the caller.
+- **Guard:** EXECUTE goes to the single caller only (`svc_sales`; `svc_rfm`), and the grant check compares it both ways. Each is in the database and never HTTP. ADR-0044 states that a further cross-boundary write needs its own record: ADR-0061 for `restock_v1`, ADR-0063 for `apply_assignment_v1`.
+- **Services:** [stock](./stock.md), [sales](./sales.md), [segments](./segments.md) (rfm-engine is the caller; its sheet joins with its contract)
+- **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (The one synchronous call); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (The transaction); [ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) (The writer); [ADR-0061](../adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md) (A second synchronous write)
 
 ### E-06 — a recommendation carries the stock figure it used
 
-- **What:** Each recommended item includes the quantity held, which belongs to stock.
-- **Why it is acceptable:** The figure is part of the evidence for the service's own decision ("in stock at the customer's usual store"), so it is part of this service's representation, not a re-serving of stock. Dropping it would hide why an item was or was not offered.
-- **Guard:** Only a figure the service used to decide is allowed, never another service's representation. Product names, prices and availability queries stay with products and stock, and clients fetch them by id.
+- **What:** Each recommended item includes the quantity held, which belongs to stock. On `/v2` the item's `availability` also names the store and channel the figure belongs to, and an `elsewhere` entry carries another store's quantity.
+- **Why it is acceptable:** The figure is part of the evidence for the service's own decision ("available at the reference store and channel"), so it is part of this service's representation, not a re-serving of stock. Dropping it would hide why an item was or was not offered.
+- **Guard:** Only a figure the service used to decide is allowed, never another service's representation: `availability` is not stock's `availabilities` resource and carries no `reason` or `updated_at`. Product names, prices and availability queries stay with products and stock, and clients fetch them by id.
 - **Services:** [recommendations](./recommendations.md)
 - **Decided in:** [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md) (Decision (no composition))
 
 ### E-07 — recommendations depends on seven published contracts
 
-- **What:** One service reads seven boundaries: products, categories, stock, customers, preferences, sales and segments.
-- **Why it is acceptable:** RN-40 is a rule over all of them. Splitting it would put one rule in several services, or copy seven datasets into projections that drift.
+- **What:** One service reads seven boundaries: products, categories, stock, customers, preferences, sales and segments. For `/v2` it also reads stock's `availability_v1`, the products and stores views of commercial status, substitute relations, store status and channels, and the customer restriction view (ADR-0067).
+- **Why it is acceptable:** RN-40 is a rule over all of them. Splitting it would put one rule in several services, or copy seven datasets into projections that drift. The number is a consequence of the rule, not a reason to split it.
 - **Guard:** It reads versioned `api_*` views only, never a base table, and names the columns it reads. A breaking change ships `_v2` beside `_v1`, and the old object is dropped only when `grants.csv` shows no consumer.
 - **Services:** [recommendations](./recommendations.md)
 - **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (Reads: the published database contracts)
 
 ### E-08 — read-rule services count as one-rule services
 
-- **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom.
+- **What:** Four services write no invariant of their own. They enforce a read rule: what they may report, and to whom. Since ADR-0067 recommendations also records the explanation of each decision, in a schema of its own (F24-05, implemented). That record is its own output and not an invariant other services depend on, so it is still counted as a read-rule service.
 - **Why it is acceptable:** Counting them follows the instructor's wording (one business rule per service), and the domain does not offer more writers: segmentation runs belong to the web (RN-05), and the audit log is written by `fn_audit`.
 - **Guard:** The instructor confirmed that read-only boundaries count (Q-13, 2026-10-15). Even under the strict reading the floor would hold: ten core writers plus campaigns. ADR-0043 forbids cutting any core service.
 - **Services:** [stock](./stock.md), [segments](./segments.md), [recommendations](./recommendations.md), [audit-trail](./audit-trail.md)
@@ -136,10 +140,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-09 — the frozen web is a legacy co-writer of some tables
 
-- **What:** The web still writes `app_user`, `product`, `category`, `campaign`, `transaction`, `transaction_line` and, through its CSV path, `inventory`. "Only service writer" is not "only writer".
+- **What:** The web still writes `app_user`, `product`, `category`, `campaign`, `transaction`, `transaction_line`, the five `experiment*` tables and, through its CSV path, `inventory`. "Only service writer" is not "only writer".
 - **Why it is acceptable:** The web is frozen, yet a phone sale must appear in it and its edits must keep working. Services therefore write the same `public` tables the web reads.
 - **Guard:** Rules both enforce live in the schema (CHECKs, unique indexes, triggers) or are pinned by golden fixtures (E-17). The owner's outbox trigger captures web writes too, so no writer is invisible.
-- **Services:** [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md)
+- **Services:** [users](./users.md), [products](./products.md), [categories](./categories.md), [campaigns](./campaigns.md), [sales](./sales.md), [stock](./stock.md), [experimentation](./experimentation.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Context); [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (Events)
 
 ### E-10 — read owners of tables only the web writes
@@ -147,15 +151,16 @@ The design accepts a small number of deliberate deviations from the strict readi
 - **What:** Some services read a table they never write (`role`, `store`, `inventory`, `channel`, the segmentation tables, `audit_log`) and publish it through a contract.
 - **Why it is acceptable:** Without a declared owner, several services would read `store` directly and nobody would know who a change breaks. One read owner gives one service to change and one contract for everyone else.
 - **Guard:** Exactly one `svc_*` role holds any privilege on each base table, and CI checks it. A read owner cannot fix its own data: the web does.
+- **Outcome when the web and a service both write `store` (F21-12, #786):** they do not write the same fact. The web alone writes the `store` row, `is_active` included; stores-service writes the store's operating status, hours, enabled channels and maximum discount in its own `stores` tables, and holds only `SELECT` on `store`. Neither write can overwrite the other. Both are announced on `stream:stores.v1.changed`, because the capture trigger covers `public.store` and the new tables whoever writes, and `api_stores.store_directory_v2` publishes `is_active` and `status` side by side: a consumer lets a store sell only when `is_active` is true, the status is `OPEN` and the channel is enabled.
 - **Services:** [users](./users.md), [stores](./stores.md), [stock](./stock.md), [sales](./sales.md), [segments](./segments.md), [audit-trail](./audit-trail.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Decision and ownership matrix)
 
 ### E-11 — foreign keys cross service boundaries
 
-- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`).
+- **What:** Tables owned by different services reference each other (`customer.channel_id`, `transaction_line.product_id`, `campaign.label_code` to `segment_label`, `checkins.store_check_in` to `store` and `app_user`, `recommendations.recommendation_decision` to `customer`, `segmentation_run`, `store` and `channel`).
 - **Why it is acceptable:** They come from the legacy schema or protect it. The RI check runs as the parent's owner, so the child's service needs no privilege on the parent. Dropping them would weaken the model the web relies on.
 - **Guard:** A violation (23503) maps to a 422 by constraint name. No service holds DELETE on a master, so no cascade starts from a service. The category guard covers the remaining case.
-- **Services:** [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md)
+- **Services:** [customers](./customers.md), [customer-preferences](./customer-preferences.md), [sales](./sales.md), [check-ins](./check-ins.md), [stores](./stores.md), [campaigns](./campaigns.md), [recommendations](./recommendations.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Consequences)
 
 ### E-12 — audit_log is the one table every writer shares
@@ -200,9 +205,9 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-17 — rules ported from the web exist twice
 
-- **What:** Four rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes and campaign transitions.
-- **Why it is acceptable:** A service may not import `web/`, which is frozen, loads Flask and has no version to pin. Carrying a rule twice is the price of independence.
-- **Guard:** The database carries what it can (CHECKs, indexes, triggers). The rest is a port pinned by golden fixtures captured once from the web on the seed database, with a drift job. A web bug fix opens an issue to regenerate them.
+- **What:** Four rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes and campaign transitions. For RN-40, parity holds on the default path only (ADR-0067): no store and no channel named, every product active and sellable. A given store or channel, `not_sellable`, `store_not_selling`, alternatives, the recorded explanation and consent are not in the web and are outside the parity claim.
+- **Why it is acceptable:** A service may not import `web/`, which is frozen, loads Flask and has no version to pin. Carrying a rule twice is the price of independence. The web cannot read the stock-channel, commercial-status and consent contracts, so it does not adopt the new behaviours.
+- **Guard:** The database carries what it can (CHECKs, indexes, triggers). The rest is a port pinned by golden fixtures captured once from the web on the seed database, with a drift job. A web bug fix opens an issue to regenerate them. Each deliberate difference of RN-40 is a recorded fixture with its reason (ADR-0045).
 - **Services:** [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md)
 - **Decided in:** [ADR-0045](../adr/0045-services-never-import-the-web-system.md) (Decision); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (Context)
 
@@ -240,11 +245,11 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-22 — a bench-only Rust build serves the same read endpoints as products
 
-- **What:** `bench/products-service-rs/` implements the products read operations so the two languages can be compared.
+- **What:** `bench/products-service-rs/` implements the read operations of the products contract (the list, one product, and the details and relations of a product) so the two languages can be compared. The load comparison measures the first two; it serves the others so that both builds pass the same conformance suite (ADR-0078).
 - **Why it is acceptable:** A fair comparison needs the same contract under the same load. Two services doing different work cannot be compared.
-- **Guard:** It is never registered, routed, deployed or counted, so no endpoint is served by two deployables. It connects as `svc_products_bench` with SELECT on `public.product` only.
+- **Guard:** It is never registered, routed, deployed or counted, so no endpoint is served by two deployables. It connects as `svc_products_bench` with SELECT on `public.product` and the four tables of the products boundary, and writes nothing.
 - **Services:** [products](./products.md)
-- **Decided in:** [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) (Decision)
+- **Decided in:** [ADR-0042](../adr/0042-a-bench-only-rust-build-of-the-products-reads-is-compared-under-one-load.md) (Decision); [ADR-0078](../adr/0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) (the reads it serves and its role's grants)
 
 ### Adding or changing an exception
 

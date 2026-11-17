@@ -1,0 +1,22 @@
+{
+  "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000007",
+  "kind": "HISTORY_READ",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-08T11:02:13.441Z",
+  "recorded_at": "2026-11-08T11:02:13.447Z",
+  "actor_type": "USER",
+  "actor_user_id": "11111111-1111-1111-1111-000000000002",
+  "actor_role": "ANALYST",
+  "source": "svc_sales",
+  "store_id": null,
+  "subject_type": "customer",
+  "subject_id": "00000000-0000-0000-0000-000000000007",
+  "model_version_id": null,
+  "rule_set_version": null,
+  "correlation_id": "corr-sales-c7",
+  "details": {
+    "history": "SALES"
+  },
+  "prev_hash": "50f0aa6d082625d6ccb3fbf56457d50202c1653519f50789d02d38ffb7a013d2",
+  "entry_hash": "29fd7f922bf17266ec390af322024daf75fa91133b8fb25049b4dc66723a6308"
+}

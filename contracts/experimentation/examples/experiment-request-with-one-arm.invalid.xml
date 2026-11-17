@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentRequest xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <name>One arm is not an experiment</name>
+  <campaign_id>4</campaign_id>
+  <primary_metric>CONVERSION</primary_metric>
+  <starts_on>2026-10-01</starts_on>
+  <conversion_window_days>14</conversion_window_days>
+  <minimum_detectable_effect>0.02</minimum_detectable_effect>
+  <arms>
+    <kind>TREATMENT</kind>
+    <name>Alone</name>
+    <treatment_description>There is nothing to compare it with.</treatment_description>
+  </arms>
+</ExperimentRequest>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CampaignAudience xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <campaign_id>12</campaign_id>
+  <label_code>LOYAL</label_code>
+  <max_customers>5000</max_customers>
+  <audience_size>3120</audience_size>
+  <as_of>2026-11-02T15:04:05Z</as_of>
+</CampaignAudience>

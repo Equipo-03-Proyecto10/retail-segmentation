@@ -1,0 +1,23 @@
+{
+  "event_id": "7a0c5e1d-3b2f-4c8a-9d61-000000000003",
+  "kind": "MODEL_ROLLED_BACK",
+  "outcome": "SUCCESS",
+  "occurred_at": "2026-11-07T09:40:10.551Z",
+  "recorded_at": "2026-11-07T09:40:10.560Z",
+  "actor_type": "USER",
+  "actor_user_id": "11111111-1111-1111-1111-000000000001",
+  "actor_role": "ADMIN",
+  "source": "svc_models",
+  "store_id": null,
+  "subject_type": "model_version",
+  "subject_id": "11",
+  "model_version_id": 11,
+  "rule_set_version": null,
+  "correlation_id": "corr-rollback-12",
+  "details": {
+    "previous_version_id": 12,
+    "reason_code": "DRIFT_ALERT"
+  },
+  "prev_hash": "38ab545a7a2350cf0eccd4e859a2b40a1557eb0accecb6701378cb06570af29c",
+  "entry_hash": "6e18ec763c0751ffab6eddca795cf9a03b16c59b30cc266b9281a23a55897359"
+}

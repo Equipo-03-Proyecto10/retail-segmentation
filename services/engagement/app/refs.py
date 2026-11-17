@@ -1,8 +1,9 @@
 """The references an event names, checked in PostgreSQL's published views.
 
-svc_engagement may read exactly three views and no table (ADR-0044):
-api_stores.store_directory_v1, api_products.product_ref_v1 and
-api_customers.customer_ref_v1. Identifiers arrive only as bound parameters.
+svc_engagement may read exactly four views and no table (ADR-0044):
+api_stores.store_directory_v1, api_products.product_ref_v1,
+api_customers.customer_ref_v1 and api_users.store_assignment_v1. Identifiers
+arrive only as bound parameters.
 """
 
 from __future__ import annotations
@@ -20,10 +21,14 @@ def _unknown(code: str, field: str, message: str) -> ApiError:
 def check_references(
     connection: Connection,
     store_id: int,
-    product_id: int,
+    product_id: int | None,
     customer_id: str | None,
 ) -> None:
-    """Raise 422 unknown_store, unknown_product or unknown_customer, in that order."""
+    """Raise 422 unknown_store, unknown_product or unknown_customer, in that order.
+
+    A kind with no product (STORE_VISIT, CAMPAIGN_EXPOSURE, NAVIGATION) passes
+    None and skips that check.
+    """
 
     if (
         not _in_range(store_id)
@@ -39,7 +44,7 @@ def check_references(
             "store_id",
             f"Store {store_id} does not exist or is not active.",
         )
-    if (
+    if product_id is not None and (
         not _in_range(product_id)
         or connection.execute(
             "SELECT 1 FROM api_products.product_ref_v1 WHERE product_id = %s",
@@ -62,6 +67,64 @@ def check_references(
             "unknown_customer",
             "customer_id",
             f"Customer {customer_id} does not exist.",
+        )
+
+
+def check_store(connection: Connection, store_id: int) -> None:
+    """Raise 422 when an incident names an unknown or inactive store."""
+
+    if (
+        not _in_range(store_id)
+        or connection.execute(
+            "SELECT 1 FROM api_stores.store_directory_v1"
+            " WHERE store_id = %s AND is_active",
+            (store_id,),
+        ).fetchone()
+        is None
+    ):
+        raise _unknown(
+            "unknown_store",
+            "store_id",
+            f"Store {store_id} does not exist or is not active.",
+        )
+
+
+# ADR-0060: these four roles work only in the stores assigned to them. Every
+# other role, ADMIN and the reading roles among them, is never confined.
+FLOOR_ROLES = frozenset(
+    {"STORE_MANAGER", "SALES_ASSOCIATE", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR"}
+)
+
+
+def assigned_stores(connection: Connection, user_id: str) -> list[int]:
+    """Read the caller's current active assignments for this request."""
+
+    return [
+        row[0]
+        for row in connection.execute(
+            "SELECT store_id FROM api_users.store_assignment_v1"
+            " WHERE user_id = %s::uuid ORDER BY store_id",
+            (user_id,),
+        ).fetchall()
+    ]
+
+
+def require_assigned_store(connection: Connection, user_id: str, store_id: int) -> None:
+    """Refuse a store outside a non-admin caller's live assignments."""
+
+    if (
+        connection.execute(
+            "SELECT 1 FROM api_users.store_assignment_v1"
+            " WHERE user_id = %s::uuid AND store_id = %s",
+            (user_id, store_id),
+        ).fetchone()
+        is None
+    ):
+        raise ApiError(
+            403,
+            "forbidden_store",
+            "The caller is not assigned to this store.",
+            [{"field": "store_id", "code": "not_assigned"}],
         )
 
 

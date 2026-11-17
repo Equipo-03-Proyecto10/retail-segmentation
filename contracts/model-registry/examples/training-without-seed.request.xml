@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ModelTrainingRequest xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1">
+  <version_name>kmeans-k4-next</version_name>
+  <method>KMEANS</method>
+  <window_days>180</window_days>
+  <parameters>
+    <k>4</k>
+    <max_iterations>100</max_iterations>
+    <tolerance>0.0001</tolerance>
+    <features>R</features>
+    <features>F</features>
+    <features>M</features>
+    <normalization>MIN_MAX</normalization>
+  </parameters>
+</ModelTrainingRequest>

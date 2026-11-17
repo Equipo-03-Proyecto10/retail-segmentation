@@ -1,0 +1,6 @@
+{
+  "code": "model_training_not_found",
+  "message": "The model training does not exist.",
+  "correlation_id": "corr-model-training-not-found",
+  "details": []
+}

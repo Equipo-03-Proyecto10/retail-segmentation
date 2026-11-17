@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only what the window and the launcher icon need before Compose draws: the
+     values are MOSAIQ tokens, and ThemeDriftTest checks them against
+     docs/design-system/tokens/resolved-tokens.css. -->
+<resources>
+    <!-- mq-bg-canvas -->
+    <color name="mosaiq_canvas">#FAFAF9</color>
+    <!-- mq-neutral-950 -->
+    <color name="mosaiq_neutral_950">#141412</color>
+    <!-- mq-white -->
+    <color name="mosaiq_white">#FFFFFF</color>
+</resources>

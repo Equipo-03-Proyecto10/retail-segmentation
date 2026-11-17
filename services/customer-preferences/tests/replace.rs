@@ -25,7 +25,7 @@ async fn a_put_makes_the_set_exactly_the_list_sorted_and_leaves_the_other_alone(
     let Some(url) = owner_url() else { return };
     let owner = connect(&url).await;
     let db = service_database(&url);
-    let actor = principal(Uuid::new_v4(), "STORE_MANAGER");
+    let actor = principal(support::admin(), "STORE_MANAGER");
     let customer = TestCustomer::create(&owner).await;
     let channels = channel_ids(&owner).await;
     let categories = category_ids(&owner).await;
@@ -65,7 +65,7 @@ async fn an_empty_list_clears_one_set_only() {
     let Some(url) = owner_url() else { return };
     let owner = connect(&url).await;
     let db = service_database(&url);
-    let actor = principal(Uuid::new_v4(), "ADMIN");
+    let actor = principal(support::admin(), "ADMIN");
     let customer = TestCustomer::create(&owner).await;
     let channels = channel_ids(&owner).await;
     let categories = category_ids(&owner).await;
@@ -99,7 +99,7 @@ async fn an_unknown_reference_is_422_naming_its_position_and_changes_nothing() {
     let Some(url) = owner_url() else { return };
     let owner = connect(&url).await;
     let db = service_database(&url);
-    let actor = principal(Uuid::new_v4(), "STORE_MANAGER");
+    let actor = principal(support::admin(), "STORE_MANAGER");
     let customer = TestCustomer::create(&owner).await;
     let channels = channel_ids(&owner).await;
     let categories = category_ids(&owner).await;
@@ -183,7 +183,7 @@ async fn an_unknown_customer_is_404_customer_not_found() {
     let Some(url) = owner_url() else { return };
     let owner = connect(&url).await;
     let db = service_database(&url);
-    let actor = principal(Uuid::new_v4(), "ADMIN");
+    let actor = principal(support::admin(), "ADMIN");
     let channels = channel_ids(&owner).await;
     let nobody = Uuid::new_v4();
     assert_eq!(read_profile(&db, nobody).await.unwrap(), None);
@@ -215,7 +215,7 @@ async fn the_transaction_carries_the_caller_as_the_audit_actor() {
     let db = service_database(&url);
     let customer = TestCustomer::create(&owner).await;
     let channels = channel_ids(&owner).await;
-    let caller = Uuid::new_v4();
+    let caller = support::admin();
     let replaced = replace(
         &db,
         &principal(caller, "STORE_MANAGER"),
@@ -236,7 +236,7 @@ async fn a_changing_replace_captures_one_event_per_row_and_a_no_op_captures_none
     let Some(url) = owner_url() else { return };
     let owner = connect(&url).await;
     let db = service_database(&url);
-    let actor = principal(Uuid::new_v4(), "ADMIN");
+    let actor = principal(support::admin(), "ADMIN");
     let customer = TestCustomer::create(&owner).await;
     let channels = channel_ids(&owner).await;
     let stream = "stream:preferences.v1.changed".to_owned();
@@ -306,7 +306,7 @@ async fn a_replace_waits_for_the_customer_advisory_lock() {
         tokio::spawn(async move {
             replace(
                 &db,
-                &principal(Uuid::new_v4(), "ADMIN"),
+                &principal(support::admin(), "ADMIN"),
                 id,
                 CHANNELS,
                 &wanted,
@@ -348,7 +348,7 @@ async fn two_concurrent_replaces_leave_one_submitted_set_never_a_union() {
         };
         replace(
             &db,
-            &principal(Uuid::new_v4(), "ADMIN"),
+            &principal(support::admin(), "ADMIN"),
             customer.id,
             CATEGORIES,
             &some(&start),
@@ -361,7 +361,7 @@ async fn two_concurrent_replaces_leave_one_submitted_set_never_a_union() {
             tokio::spawn(async move {
                 replace(
                     &db,
-                    &principal(Uuid::new_v4(), "STORE_MANAGER"),
+                    &principal(support::admin(), "STORE_MANAGER"),
                     id,
                     CATEGORIES,
                     &some(&ids),

@@ -1,0 +1,28 @@
+name: Test image cleanup
+
+# The test images the nightly chain and the emulator job push (ADR-0080,
+# ghcr.io/equipo-03-proyecto10/mosaiq-ci-<name>): versions older than 14 days
+# are deleted, and each service's newest one is kept. Release images are never
+# touched. .github/scripts/ci_images_cleanup.py has the rule.
+on:
+  schedule:
+    # Mondays at 05:17 in Monterrey (UTC-6), clear of the nightly chain.
+    - cron: "17 11 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Delete test images older than 14 days
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+      - name: Keep each service's newest, delete the rest past 14 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/ci_images_cleanup.py

@@ -1,10 +1,15 @@
 name: Nightly
 
 # The demonstration chain against develop (F13-09): the local distributed
-# stack of compose.distributed.yaml from scratch, the three scripts plus every
-# boundary section re-applied as an operator applies them, then tests/e2e/.
-# A scenario whose services do not exist yet is skipped and listed in the job
-# summary. A failure marks the run red and uploads the stack's compose logs.
+# stack of compose.distributed.yaml on fresh volumes, the three scripts plus
+# every boundary section re-applied as an operator applies them, then
+# tests/e2e/. A scenario whose services do not exist yet is skipped and listed
+# in the job summary. A failure marks the run red and uploads the stack's
+# compose logs. The schedule runs develop; a dispatch runs the ref it is
+# dispatched from. Each service image is pulled by its content key when one
+# exists and built otherwise, and only a run on develop pushes what it built
+# (ADR-0080). Building every image from source stays with Service template and
+# ops/verify.
 on:
   schedule:
     # 01:30 in Monterrey (UTC-6).
@@ -17,6 +22,10 @@ permissions:
 jobs:
   e2e:
     runs-on: ubuntu-24.04
+    # packages: write so this job can push ADR-0080's test images. It pushes no release image.
+    permissions:
+      contents: read
+      packages: write
     env:
       COMPOSE: docker compose -f compose.distributed.yaml
       E2E_BASE_URL: http://127.0.0.1:8080
@@ -24,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: develop
+          ref: ${{ github.event_name == 'schedule' && 'develop' || github.ref }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -33,22 +42,59 @@ jobs:
           pip install -r web/requirements-dev.txt -r contracts/requirements.txt
           bash contracts/install-tools.sh
 
-      - name: Bring the local stack up from scratch
+      - name: Bring the local stack up
+        env:
+          GHCR_TOKEN: ${{ github.token }}
         run: |
           docker network create mosaiq
           bash .github/scripts/stage-contracts.sh --all
           bash docker/distributed/auth-keys.sh
-          $COMPOSE up --build --wait --wait-timeout 600
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          bash .github/scripts/ci-images.sh prepare
+          $COMPOSE up --no-build --wait --wait-timeout 600
+
+      # After the stack came up healthy, so a broken image is never kept.
+      - name: Keep the images built here for the next run (ADR-0080)
+        if: github.ref == 'refs/heads/develop'
+        run: bash .github/scripts/ci-images.sh push
 
       - name: Re-apply every boundary section
+        id: boundaries
+        run: bash .github/scripts/apply-boundaries.sh $COMPOSE exec -T db psql -U postgres -d retail
+
+      - name: The web-to-service parity harness (F20-07)
+        # The web is not part of the compose stack (Q-12 keeps it off the
+        # mosaiq network), so gunicorn runs on the runner against the db
+        # container's bridge IP. The accounts are the seed's demo accounts;
+        # a PARITY_*_PASSWORD secret overrides the seeded password.
+        env:
+          PARITY_WEB_EMAIL: ${{ secrets.PARITY_WEB_EMAIL || 'admin@mosaiq-demo.com' }}
+          PARITY_WEB_PASSWORD: ${{ secrets.PARITY_WEB_PASSWORD || 'Password123!' }}
+          PARITY_SERVICE_EMAIL: ${{ secrets.PARITY_SERVICE_EMAIL || 'user3@mosaiq-demo.com' }}
+          PARITY_SERVICE_PASSWORD: ${{ secrets.PARITY_SERVICE_PASSWORD || 'Password123!' }}
         run: |
           set -euo pipefail
-          for b in $(sed -n 's/^-- BEGIN BOUNDARY \(.*\)$/\1/p' sql/01_schema.sql); do
-            sed -n "/^-- BEGIN BOUNDARY $b\$/,/^-- END BOUNDARY $b\$/p" sql/01_schema.sql \
-              | $COMPOSE exec -T db psql -X -q -v ON_ERROR_STOP=1 -U postgres -d retail >/dev/null
+          db_ip=$(docker inspect "$($COMPOSE ps -q db)" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}')
+          mkdir -p test-results "$RUNNER_TEMP/uploads"
+          DATABASE_URL="postgresql://retail_app:retail_app@${db_ip}:5432/retail" \
+          FLASK_ENV=development FLASK_SECRET_KEY="$(openssl rand -hex 32)" \
+          UPLOAD_DIR="$RUNNER_TEMP/uploads" \
+            gunicorn --bind 127.0.0.1:5000 'web.app:create_app()' >test-results/web.log 2>&1 &
+          for _ in $(seq 60); do
+            curl -fsS -o /dev/null http://127.0.0.1:5000/ && break || sleep 1
           done
+          export PARITY_WEB_URL=http://127.0.0.1:5000
+          export PARITY_GATEWAY_URL=http://127.0.0.1:8080
+          export PARITY_DATABASE_URL="postgresql://postgres:postgres@${db_ip}:5432/retail"
+          python3 -m pytest tests/parity -rs --junitxml=test-results/parity.xml
 
+      # After parity, and even when parity fails: the chain stops
+      # redis-state on purpose (fail-closed authentication), and the
+      # services' stream relays then reconnect with backoff. Run before
+      # parity, it left segments-service's relay down while parity timed
+      # a run's propagation against its 5 s bound (#1010).
       - name: The demonstration chain
+        if: ${{ !cancelled() && steps.boundaries.outcome == 'success' }}
         run: python3 -m pytest tests/e2e -rs --junitxml=test-results/e2e.xml
 
       - name: Collect the stack's compose logs

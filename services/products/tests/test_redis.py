@@ -196,3 +196,71 @@ def test_the_switches_default_to_on(build_app, redis_env, monkeypatch) -> None:
         == ["products"],
         5,
     )
+
+
+class Crash(BaseException):
+    """The process dies: the kit catches Exception only, so no XACK follows."""
+
+
+def test_reapplying_an_event_leaves_the_same_state(
+    build_app, redis_env, owner_url, monkeypatch
+) -> None:
+    """#764 criterion 3: re-applying an event is idempotent by re-read (ADR-0044).
+
+    The production handler runs in a process that dies after the effect and
+    before XACK; the restarted process applies the entry again from its
+    pending list; then a duplicate entry, as a relay that crashed between XADD
+    and its UPDATE appends, is applied once more. The next read is the same
+    answer each time.
+    """
+    from mosaiq_kit import StreamConsumer
+
+    import app.service
+
+    # Build the real consumer, but drive it by hand instead of in its thread.
+    monkeypatch.setattr(app.service.StreamConsumer, "start", lambda self: None)
+    application = build_app(
+        CACHE_ENABLED="true",
+        STREAM_CONSUMER_ENABLED="true",
+        OUTBOX_RELAY_ENABLED="true",
+    )
+    production = application.extensions["products_consumer"]
+    stream = production.stream
+    client = application.test_client()
+    seed(client)
+
+    def drained() -> bool:  # the creation's own event is relayed and handled
+        production.run_once(block_ms=10)
+        groups = redis_env.xinfo_groups(stream)
+        return bool(redis_env.xrange(stream)) and groups[0]["lag"] == 0
+
+    assert wait_for(drained, 10)
+
+    def observe():
+        return client.get(URL, headers=headers()).get_json()
+
+    assert observe()["name"] == "Test product 1"  # now cached
+    before = len(redis_env.xrange(stream))
+    web_rename(owner_url, "Renamed twice")
+    assert wait_for(lambda: len(redis_env.xrange(stream)) > before, 10)
+    _entry_id, fields = redis_env.xrevrange(stream, count=1)[0]
+
+    def crashing(entry):
+        production.handler(entry)
+        raise Crash
+
+    with pytest.raises(Crash):
+        StreamConsumer(production.redis, stream, crashing).run_once(block_ms=10)
+    first = observe()
+    assert first["name"] == "Renamed twice"
+    assert redis_env.xpending(stream, "products")["pending"] == 1
+
+    restarted = StreamConsumer(production.redis, stream, production.handler)
+    assert restarted.run_once(block_ms=10) == 1
+    assert observe() == first
+
+    redis_env.xadd(stream, fields)
+    duplicate = StreamConsumer(production.redis, stream, production.handler)
+    assert duplicate.run_once(block_ms=10) == 1
+    assert observe() == first
+    assert redis_env.xpending(stream, "products")["pending"] == 0

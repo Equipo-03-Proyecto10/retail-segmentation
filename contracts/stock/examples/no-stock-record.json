@@ -1,0 +1,11 @@
+{
+  "code": "no_stock_record",
+  "message": "No stock record exists for the store and product.",
+  "correlation_id": "corr-no-stock-record",
+  "details": [
+    {
+      "field": "store_id",
+      "code": "no_stock_record"
+    }
+  ]
+}

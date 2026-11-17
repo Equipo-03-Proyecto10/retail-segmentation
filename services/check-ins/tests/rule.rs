@@ -210,13 +210,15 @@ async fn unknown_or_inactive_stores_and_future_moments_are_refused() {
 
     let mut missing = request(&store, None);
     missing.store_id = 32_767;
-    let error = record_check_in(&db, &manager, &missing, chrono::Utc::now())
+    // An administrator: a confined caller is refused the store first (ADR-0060).
+    let admin = principal(ADMIN, "ADMIN");
+    let error = record_check_in(&db, &admin, &missing, chrono::Utc::now())
         .await
         .unwrap_err();
     assert_eq!((error.status, error.code.as_str()), (422, "unknown_store"));
 
     store.deactivate(&owner).await;
-    let error = record_check_in(&db, &manager, &request(&store, None), chrono::Utc::now())
+    let error = record_check_in(&db, &admin, &request(&store, None), chrono::Utc::now())
         .await
         .unwrap_err();
     assert_eq!(error.code, "unknown_store");
@@ -244,7 +246,9 @@ async fn reviews_append_and_the_latest_decides() {
         .await
         .unwrap();
     assert_eq!(first.reviewed_by.to_string(), ADMIN);
-    let (read, reviews) = read_check_in(&db, check_in.check_in_id).await.unwrap();
+    let (read, reviews) = read_check_in(&db, &admin, check_in.check_in_id)
+        .await
+        .unwrap();
     assert!(read.verified && !read.auto_verified());
     assert_eq!(reviews.len(), 1);
 
@@ -257,7 +261,9 @@ async fn reviews_append_and_the_latest_decides() {
     )
     .await
     .unwrap();
-    let (read, reviews) = read_check_in(&db, check_in.check_in_id).await.unwrap();
+    let (read, reviews) = read_check_in(&db, &admin, check_in.check_in_id)
+        .await
+        .unwrap();
     assert!(!read.verified);
     assert_eq!(
         reviews
@@ -279,7 +285,9 @@ async fn reviews_append_and_the_latest_decides() {
         (error.status, error.code.as_str()),
         (404, "check_in_not_found")
     );
-    let error = read_check_in(&db, Uuid::new_v4()).await.unwrap_err();
+    let error = read_check_in(&db, &admin, Uuid::new_v4())
+        .await
+        .unwrap_err();
     assert_eq!(error.code, "check_in_not_found");
     store.cleanup(&owner).await;
 }
@@ -291,6 +299,7 @@ async fn the_list_filters_on_store_user_effective_verdict_and_time() {
     let db = service_database(&url);
     let store = TestStore::create(&owner, true).await;
     let manager = principal(STORE_MANAGER, "STORE_MANAGER");
+    let admin = principal(ADMIN, "ADMIN");
     // One occurred_at for both, so the `from` filter below excludes both. Each
     // request() reads the clock, truncated to the second: two calls that
     // straddle a second boundary put the second check-in inside the filter.
@@ -317,25 +326,49 @@ async fn the_list_filters_on_store_user_effective_verdict_and_time() {
         store_id: Some(i32::from(store.id)),
         ..Filters::default()
     };
-    let (items, total) = list_check_ins(&db, &filters, 1, 20).await.unwrap();
+    let (items, total) = list_check_ins(&db, &admin, &filters, 1, 20).await.unwrap();
     assert_eq!(total, 2);
     assert_eq!(items.len(), 2);
 
     filters.verified = Some(true);
-    assert_eq!(list_check_ins(&db, &filters, 1, 20).await.unwrap().1, 2);
+    assert_eq!(
+        list_check_ins(&db, &admin, &filters, 1, 20)
+            .await
+            .unwrap()
+            .1,
+        2
+    );
     filters.verified = Some(false);
-    assert_eq!(list_check_ins(&db, &filters, 1, 20).await.unwrap().1, 0);
+    assert_eq!(
+        list_check_ins(&db, &admin, &filters, 1, 20)
+            .await
+            .unwrap()
+            .1,
+        0
+    );
 
     filters.verified = None;
     filters.user_id = Some(Uuid::parse_str(ADMIN).unwrap());
-    assert_eq!(list_check_ins(&db, &filters, 1, 20).await.unwrap().1, 0);
+    assert_eq!(
+        list_check_ins(&db, &admin, &filters, 1, 20)
+            .await
+            .unwrap()
+            .1,
+        0
+    );
     filters.user_id = Some(inside.user_id);
     filters.from = Some(inside.occurred_at + Duration::seconds(1));
-    assert_eq!(list_check_ins(&db, &filters, 1, 20).await.unwrap().1, 0);
+    assert_eq!(
+        list_check_ins(&db, &admin, &filters, 1, 20)
+            .await
+            .unwrap()
+            .1,
+        0
+    );
     filters.from = None;
 
     // Past the last page the total still comes back, with no items.
-    let (items, total) = list_check_ins(&db, &filters, 9, 1).await.unwrap();
+    let (items, total) = list_check_ins(&db, &admin, &filters, 9, 1).await.unwrap();
     assert_eq!((items.len(), total), (0, 2));
     store.cleanup(&owner).await;
 }
@@ -354,6 +387,8 @@ async fn the_web_cannot_delete_a_store_that_has_check_ins() {
     )
     .await
     .unwrap();
+    // Without the manager's assignment, so the check-ins are what refuses.
+    store.unassign(&owner, STORE_MANAGER).await;
     owner.batch_execute("SET ROLE retail_app").await.unwrap();
     let error = owner
         .execute("DELETE FROM store WHERE store_id = $1", &[&store.id])

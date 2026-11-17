@@ -1,0 +1,56 @@
+{
+  "from": "2026-09-14T03:00:00Z",
+  "to": "2026-10-12T03:00:00Z",
+  "migration": {
+    "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+    "previous_state": "label",
+    "previous_label_code": "LOYAL",
+    "new_state": "label",
+    "new_label_code": "CHAMPION",
+    "movement": "improved",
+    "changed_at": "2026-10-12T03:00:00Z",
+    "cause": "FULL_RUN",
+    "previous_run_id": 40,
+    "new_run_id": 42,
+    "previous_model_version_id": 3,
+    "new_model_version_id": 3,
+    "methodological": false,
+    "responsible_variables": [
+      "recency",
+      "monetary"
+    ],
+    "rank_only": false
+  },
+  "measures": [
+    {
+      "variable": "recency",
+      "unit": "days",
+      "previous_value": "41",
+      "new_value": "9",
+      "judgement": "changed",
+      "not_compared_reason": null,
+      "rank_changed": false,
+      "statement": "Recency changed: the last purchase was 41 days before the earlier assignment and 9 days before the later one."
+    },
+    {
+      "variable": "frequency",
+      "unit": "purchases",
+      "previous_value": "8",
+      "new_value": "8",
+      "judgement": "stable",
+      "not_compared_reason": null,
+      "rank_changed": false,
+      "statement": "Frequency is stable at 8 purchases."
+    },
+    {
+      "variable": "monetary",
+      "unit": "MXN",
+      "previous_value": "1200.00",
+      "new_value": "1560.00",
+      "judgement": "changed",
+      "not_compared_reason": null,
+      "rank_changed": false,
+      "statement": "Monetary changed from 1200.00 MXN to 1560.00 MXN, more than 10% of the earlier value."
+    }
+  ]
+}

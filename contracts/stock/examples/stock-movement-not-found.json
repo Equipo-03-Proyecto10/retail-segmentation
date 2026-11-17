@@ -1,0 +1,6 @@
+{
+  "code": "stock_movement_not_found",
+  "message": "No stock movement exists with id 9999.",
+  "correlation_id": "corr-stock-movement-not-found",
+  "details": []
+}

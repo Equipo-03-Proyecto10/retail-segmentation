@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExperimentAssignments xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <ExperimentAssignment>
+    <assignment_id>70431</assignment_id>
+    <experiment_id>12</experiment_id>
+    <campaign_id>4</campaign_id>
+    <customer_id>c0a80001-0000-4000-8000-000000000101</customer_id>
+    <arm_id>32</arm_id>
+    <arm_kind>TREATMENT</arm_kind>
+    <arm_name>10 percent win-back voucher</arm_name>
+    <assignment_key>c1bc5b27d24bbc62a0f0cd9e9518776c20e1c8ed60f0623484fd863b6daa76c0</assignment_key>
+    <assigned_at>2026-10-01T08:00:00Z</assigned_at>
+    <exposure_count>2</exposure_count>
+    <first_exposed_at>2026-10-02T11:05:00Z</first_exposed_at>
+  </ExperimentAssignment>
+  <ExperimentAssignment>
+    <assignment_id>70432</assignment_id>
+    <experiment_id>12</experiment_id>
+    <campaign_id>4</campaign_id>
+    <customer_id>c0a80001-0000-4000-8000-000000000102</customer_id>
+    <arm_id>31</arm_id>
+    <arm_kind>CONTROL</arm_kind>
+    <arm_name>No offer</arm_name>
+    <assignment_key>89aa2a26a82d70a865f9613e05bedcbfe27c634211c9431c89c006ecc522174b</assignment_key>
+    <assigned_at>2026-10-01T08:00:00Z</assigned_at>
+    <exposure_count>0</exposure_count>
+  </ExperimentAssignment>
+  <ExperimentAssignment>
+    <assignment_id>70433</assignment_id>
+    <experiment_id>12</experiment_id>
+    <campaign_id>4</campaign_id>
+    <customer_id>c0a80001-0000-4000-8000-000000000103</customer_id>
+    <arm_id>32</arm_id>
+    <arm_kind>TREATMENT</arm_kind>
+    <arm_name>10 percent win-back voucher</arm_name>
+    <assignment_key>b2622524a7578eb92519b371fb1ce4fb71d8464d85c3fda2cca341c2d8713a99</assignment_key>
+    <assigned_at>2026-10-01T08:00:00Z</assigned_at>
+    <exposure_count>0</exposure_count>
+  </ExperimentAssignment>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>8000</common:total>
+  </common:PageInfo>
+</ExperimentAssignments>

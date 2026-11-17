@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CampaignEligibilityRules xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <campaign_id>12</campaign_id>
+  <registered_on_or_before>2026-06-30</registered_on_or_before>
+  <min_purchases>2</min_purchases>
+  <purchase_window_days>180</purchase_window_days>
+</CampaignEligibilityRules>

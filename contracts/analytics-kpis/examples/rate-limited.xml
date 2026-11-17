@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>rate_limited</code>
+  <message>The request limit was exceeded.</message>
+  <correlation_id>corr-kpi-429</correlation_id>
+</Error>

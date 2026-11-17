@@ -350,6 +350,40 @@ def test_a_store_manager_reads_segments_and_customers_and_writes_nothing() -> No
     assert "segment.read" not in permissions_for("INVENTORY_PLANNER")
 
 
+FLOOR_ROLES = ["SALES_ASSOCIATE", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR"]
+
+
+@pytest.mark.parametrize("role", FLOOR_ROLES)
+def test_a_new_floor_role_holds_nothing_in_the_web(role: str) -> None:
+    """ADR-0060: the three floor roles get an empty row in the matrix."""
+    assert role in PERMISSIONS
+    assert permissions_for(role) == frozenset()
+
+
+@pytest.mark.parametrize("role", FLOOR_ROLES)
+def test_a_new_floor_role_is_refused_every_protected_page(role: str) -> None:
+    """The default-deny gate refuses a floor role on every route that needs a
+    permission, and lets it reach only what any signed-in user may open."""
+    app = _app()
+    client = app.test_client()
+    _sign_in(client, role)
+    protected = [
+        rule.rule
+        for rule in app.url_map.iter_rules()
+        if "GET" in rule.methods
+        and not rule.arguments
+        and (requirement := requirement_of(app.view_functions[rule.endpoint]))
+        is not None
+        and requirement.permissions
+    ]
+
+    assert protected, "the sweep found no protected page to check"
+    reached = [path for path in protected if client.get(path).status_code != 403]
+    assert reached == [], f"{role} reached {reached}"
+    ungated = {entry.label for entry in NAVIGATION if entry.permission is None}
+    assert set(_menu_labels(client)) <= ungated
+
+
 def test_every_permission_named_anywhere_is_part_of_the_vocabulary() -> None:
     granted = {permission for role in PERMISSIONS.values() for permission in role}
     navigated = {entry.permission for entry in NAVIGATION if entry.permission}

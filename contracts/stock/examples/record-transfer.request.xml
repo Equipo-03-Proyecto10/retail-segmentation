@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovementRequest xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movement_type>TRANSFER</movement_type>
+  <product_id>120</product_id>
+  <origin_store_id>3</origin_store_id>
+  <destination_store_id>5</destination_store_id>
+  <quantity>10</quantity>
+</StockMovementRequest>

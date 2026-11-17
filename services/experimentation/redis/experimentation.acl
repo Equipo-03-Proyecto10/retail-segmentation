@@ -1,0 +1,1 @@
+user svc_experiments on {{password}} resetchannels -@all +@connection +@read +@write -@dangerous -scan -randomkey ~experiments:rl:* +waitaof (%R~pub:auth:v1:live:* +exists) (~stream:engagement.v1.interaction_recorded +xreadgroup +xack +xgroup|create +xpending +xclaim)

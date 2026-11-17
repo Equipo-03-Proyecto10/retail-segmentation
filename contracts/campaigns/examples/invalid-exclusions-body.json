@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The request body contains a forbidden or invalid field.",
+  "correlation_id": "corr-exclusions-422a",
+  "details": [
+    {
+      "field": "customer_ids",
+      "code": "max_items"
+    }
+  ]
+}

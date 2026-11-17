@@ -86,7 +86,7 @@ SEEDED_CONVERSION_SQL = """
                  FROM experiment_assignment AS sa
                  JOIN experiment_conversion AS sc
                    ON sc.assignment_id = sa.assignment_id
-                 JOIN transaction AS st ON st.transaction_id = sc.transaction_id
+                 JOIN net_sale AS st ON st.transaction_id = sc.transaction_id
                 WHERE sa.experiment_id = e.experiment_id
                   AND st.data_origin = 'SEEDED'
            )

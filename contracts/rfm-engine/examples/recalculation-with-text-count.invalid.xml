@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmRecalculation xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <recalculation_id>12</recalculation_id>
+  <trigger>SCHEDULE</trigger>
+  <state>COMPLETED</state>
+  <rule_set_id>3</rule_set_id>
+  <as_of>2026-10-25T02:30:00Z</as_of>
+  <started_at>2026-10-25T02:30:00Z</started_at>
+  <customers_checked>thirty</customers_checked>
+</RfmRecalculation>

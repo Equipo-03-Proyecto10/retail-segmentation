@@ -62,7 +62,7 @@ jobs:
       - name: Tests
         run: |
           if [ -n "$(find . -name 'test_*.py' -not -path './.venv/*' -print -quit)" ]; then
-            pytest --junitxml=test-results/pytest.xml
+            pytest -n auto --junitxml=test-results/pytest.xml
           else
             echo "No tests yet — nothing to run."
           fi
@@ -126,7 +126,7 @@ jobs:
       - run: pip install -r contracts/requirements.txt
       - name: Repository guards stay silent
         run: bash .github/scripts/guards.sh
-      - name: Every mem_limit sums to at most 3,000 MB
+      - name: Every mem_limit sums to at most 3,500 MB
         run: python3 .github/scripts/memory_gate.py
 
   database:
@@ -134,7 +134,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -199,6 +199,28 @@ jobs:
           LEFT JOIN transaction_line AS l ON l.transaction_id = t.transaction_id
           GROUP BY t.transaction_id, t.total
           HAVING t.total <> COALESCE(SUM(l.quantity * l.unit_price), 0);
+
+          SELECT 'ADR-0062 returned_quantity disagrees with its reversals',
+                 l.transaction_id, l.product_id, l.returned_quantity,
+                 COALESCE(SUM(x.quantity), 0)
+          FROM transaction_line AS l
+          LEFT JOIN sales.sale_reversal_line AS x
+            ON x.transaction_id = l.transaction_id AND x.product_id = l.product_id
+          GROUP BY l.transaction_id, l.product_id, l.returned_quantity
+          HAVING l.returned_quantity <> COALESCE(SUM(x.quantity), 0);
+
+          SELECT 'ADR-0070 completed import does not reconcile', i.import_id
+          FROM sales.import AS i
+          WHERE i.status = 'COMPLETED'
+            AND (i.total_rows <> (SELECT COALESCE(SUM(c.row_count), 0)
+                                    FROM sales.import_chunk AS c
+                                   WHERE c.import_id = i.import_id)
+                 OR i.total_rows <> (SELECT count(*) FROM sales.import_row_outcome AS o
+                                      WHERE o.import_id = i.import_id));
+
+          SELECT 'ADR-0070 done chunk keeps its staged rows', import_id, sequence
+          FROM sales.import_chunk
+          WHERE status = 'DONE' AND rows IS NOT NULL;
 
           WITH expected AS (
             SELECT h.history_id,
@@ -283,7 +305,7 @@ jobs:
                        ORDER BY 1;")
           [ "$failed" -eq 0 ]
           if grep -vE '^\s*(#|$)' sql/seed-exempt.txt | grep -F . \
-               | grep -vxE 'sales\.sale_capture|[a-z]+_events\.outbox'; then
+               | grep -vxE 'sales\.(sale_(capture|reversal|reversal_line)|import|import_chunk|import_row_outcome|reconciliation_case)|models\.(model_version|model_version_feature|model_publication)|rfm\.(rule_set|customer_profile)|experiments\.(experiment_plan|experiment_frame_member|experiment_frame_exclusion|experiment_flag|exposure_notice)|[a-z]+_events\.outbox'; then
             echo "seed-exempt.txt names a schema-qualified table it may not exempt"
             exit 1
           fi
@@ -413,7 +435,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -527,7 +549,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: postgres:16
+        image: postgres:18
         env:
           POSTGRES_PASSWORD: postgres
         ports:
@@ -568,8 +590,8 @@ jobs:
       - name: Install libxml2 and libclang
         if: steps.changes.outputs.changed == 'true'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 install -y --no-install-recommends libclang-dev libxml2-dev pkg-config
 
       - name: Install the pinned toolchain
         if: steps.changes.outputs.changed == 'true'
@@ -577,7 +599,15 @@ jobs:
         run: |
           channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
           rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt
+          echo "RUSTUP_TOOLCHAIN=$channel" >> "$GITHUB_ENV"
           cargo --version
+
+      - name: Restore the Rust cache
+        if: steps.changes.outputs.changed == 'true'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: packages/kit-rs -> target
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Load PostgreSQL scripts
         if: steps.changes.outputs.changed == 'true'

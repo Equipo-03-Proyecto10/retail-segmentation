@@ -1,0 +1,6 @@
+{
+  "code": "version_not_draft",
+  "message": "Only a DRAFT version can be published; a retired version is restored by a rollback.",
+  "correlation_id": "corr-version-not-draft",
+  "details": []
+}

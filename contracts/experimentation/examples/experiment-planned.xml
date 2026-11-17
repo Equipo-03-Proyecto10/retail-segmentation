@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Experiment xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <experiment_id>15</experiment_id>
+  <name>Spring basket booster</name>
+  <campaign_id>6</campaign_id>
+  <state>PLANNED</state>
+  <design_kind>CONTROLLED</design_kind>
+  <assignment_rule>V1</assignment_rule>
+  <data_origin>OBSERVED</data_origin>
+  <arms>
+    <arm_id>41</arm_id>
+    <position>0</position>
+    <kind>CONTROL</kind>
+    <name>No offer</name>
+    <treatment_description>Held back: receives no basket offer.</treatment_description>
+  </arms>
+  <arms>
+    <arm_id>42</arm_id>
+    <position>1</position>
+    <kind>TREATMENT</kind>
+    <name>Basket booster</name>
+    <treatment_description>Offered 5 percent off a basket of five or more items.</treatment_description>
+  </arms>
+  <design>
+    <primary_metric>CONVERSION</primary_metric>
+    <secondary_metric>REVENUE_PER_CUSTOMER</secondary_metric>
+    <estimator>DIFFERENCE_OF_PROPORTIONS</estimator>
+    <alpha>0.05</alpha>
+    <comparison_alpha>0.05</comparison_alpha>
+    <power>0.80</power>
+    <minimum_detectable_effect>0.02</minimum_detectable_effect>
+    <baseline>0.10</baseline>
+    <required_per_arm>3839</required_per_arm>
+    <smallest_detectable_effect>0.0537</smallest_detectable_effect>
+    <allocation>EQUAL</allocation>
+    <conversion_window_days>14</conversion_window_days>
+    <settle_days>7</settle_days>
+    <starts_on>2026-11-16</starts_on>
+  </design>
+  <frame>
+    <taken_at>2026-11-06T10:15:00Z</taken_at>
+    <size>1200</size>
+    <digest>df0ad5683e6f88ceea1a5f42684b9b073043e4094bf33e09d9d6dbe2fbe62b96</digest>
+    <label_code>LOYAL</label_code>
+    <model_version_id>5</model_version_id>
+    <exclusions>
+      <reason>NO_MARKETING_CONTACT_CONSENT</reason>
+      <count>96</count>
+    </exclusions>
+    <exclusions>
+      <reason>NO_PERSONALIZATION_CONSENT</reason>
+      <count>41</count>
+    </exclusions>
+    <exclusions>
+      <reason>OVERLAPPING_EXPERIMENT</reason>
+      <count>310</count>
+    </exclusions>
+  </frame>
+  <salt>09848d0652fb9a5ef2acc1efa72eec4c7176b7a729c224c0e23eda3cf5402f6f</salt>
+  <flags>UNDERPOWERED</flags>
+  <planned_at>2026-11-06T10:15:00Z</planned_at>
+  <planned_by>11111111-1111-1111-1111-000000000003</planned_by>
+</Experiment>

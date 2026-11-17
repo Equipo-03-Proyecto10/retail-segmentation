@@ -1,0 +1,6 @@
+{
+  "code": "promotion_not_found",
+  "message": "No promotion has the requested promotion_id.",
+  "correlation_id": "corr-promotion-404",
+  "details": []
+}

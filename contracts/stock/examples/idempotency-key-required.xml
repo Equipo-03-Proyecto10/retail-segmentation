@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>idempotency_key_required</code>
+  <message>The Idempotency-Key header is missing or is not a UUID.</message>
+  <correlation_id>corr-idempotency-key-required</correlation_id>
+  <details>
+    <field>Idempotency-Key</field>
+    <code>required</code>
+  </details>
+</Error>

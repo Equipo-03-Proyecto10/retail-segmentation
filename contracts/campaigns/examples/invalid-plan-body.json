@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The request body contains a forbidden or invalid field.",
+  "correlation_id": "corr-plan-422",
+  "details": [
+    {
+      "field": "per_customer_cap",
+      "code": "exceeds_total_amount"
+    }
+  ]
+}

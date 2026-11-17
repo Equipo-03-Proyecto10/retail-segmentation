@@ -1,0 +1,6 @@
+{
+  "code": "database_unavailable",
+  "message": "The analytics database is unavailable.",
+  "correlation_id": "corr-kpi-503b",
+  "details": []
+}

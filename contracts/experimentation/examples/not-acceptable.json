@@ -1,0 +1,6 @@
+{
+  "code": "not_acceptable",
+  "message": "The Accept header names no supported representation.",
+  "correlation_id": "corr-not-acceptable",
+  "details": []
+}

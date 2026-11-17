@@ -1,0 +1,18 @@
+{
+  "availabilities": [
+    {
+      "store_id": 3,
+      "product_id": 9,
+      "channel_id": 3,
+      "is_available": false,
+      "reason": "NO_STOCK_RECORD",
+      "quantity_on_hand": null,
+      "updated_at": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 1
+  }
+}

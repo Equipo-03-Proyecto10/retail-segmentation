@@ -1,0 +1,14 @@
+{
+  "recalculation_id": 13,
+  "trigger": "ON_DEMAND",
+  "state": "COMPLETED",
+  "rule_set_id": 3,
+  "as_of": "2026-10-28T15:00:00Z",
+  "started_at": "2026-10-28T15:00:00Z",
+  "finished_at": "2026-10-28T15:01:12Z",
+  "started_by": "11111111-1111-1111-1111-000000000001",
+  "customers_checked": 30,
+  "customers_different": 1,
+  "outcome": "DIFFERENT",
+  "failure_code": null
+}

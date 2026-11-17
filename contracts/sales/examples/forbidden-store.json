@@ -1,0 +1,11 @@
+{
+  "code": "forbidden_store",
+  "message": "The sale belongs to a store the caller is not assigned to.",
+  "correlation_id": "corr-forbidden-store",
+  "details": [
+    {
+      "field": "sale_id",
+      "code": "other_store"
+    }
+  ]
+}

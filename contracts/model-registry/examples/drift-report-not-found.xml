@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>drift_report_not_found</code>
+  <message>The drift report does not exist.</message>
+  <correlation_id>corr-drift-report-not-found</correlation_id>
+</Error>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>chunk_out_of_order</code>
+  <message>Import 17 expects chunk 1 next, and chunk 3 was sent. Read next_sequence from GET /v1/sale-imports/17 and continue there.</message>
+  <correlation_id>corr-chunk-out-of-order</correlation_id>
+  <details>
+    <field>next_sequence</field>
+    <code>out_of_order</code>
+  </details>
+</Error>

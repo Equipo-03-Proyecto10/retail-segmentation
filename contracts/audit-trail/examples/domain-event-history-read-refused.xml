@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DomainEvent xmlns="https://mosaiq.maxthecoder.online/xml/audit-trail/v1">
+  <event_id>7a0c5e1d-3b2f-4c8a-9d61-000000000008</event_id>
+  <kind>HISTORY_READ</kind>
+  <outcome>REFUSED</outcome>
+  <occurred_at>2026-11-08T11:04:59.300Z</occurred_at>
+  <recorded_at>2026-11-08T11:04:59.306Z</recorded_at>
+  <actor_type>USER</actor_type>
+  <actor_user_id>11111111-1111-1111-1111-000000000005</actor_user_id>
+  <actor_role>INVENTORY_PLANNER</actor_role>
+  <source>svc_segments</source>
+  <subject_type>customer</subject_type>
+  <subject_id>00000000-0000-0000-0000-000000000007</subject_id>
+  <correlation_id>corr-seg-c7</correlation_id>
+  <details>
+    <HistoryRead>
+      <history>SEGMENT</history>
+    </HistoryRead>
+  </details>
+  <prev_hash>6e0550412e62bea076a1cfb2b7b6e6892484e31e399a985d0b475c6bb15a173c</prev_hash>
+  <entry_hash>92d11bcc469c24d37a908c037f5b3caa0f95cb6716e8ae4d357741a7a0d7edb8</entry_hash>
+</DomainEvent>

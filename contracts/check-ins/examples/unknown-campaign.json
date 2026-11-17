@@ -1,0 +1,11 @@
+{
+  "code": "unknown_campaign",
+  "message": "Campaign 9999 does not exist.",
+  "correlation_id": "corr-unknown-campaign",
+  "details": [
+    {
+      "field": "campaign_id",
+      "code": "unknown_campaign"
+    }
+  ]
+}

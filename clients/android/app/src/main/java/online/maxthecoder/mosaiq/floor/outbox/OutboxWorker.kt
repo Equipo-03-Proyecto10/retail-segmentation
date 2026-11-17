@@ -10,7 +10,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.GraphProvider
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.auth.TokenStore
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.session.SessionStore
@@ -61,7 +63,14 @@ class OutboxWorker(
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val graph = (applicationContext as GraphProvider).graph
-        return drain(graph.outbox, graph.session, graph.tokens, graph.network.client, graph.network.gateway)
+        return drain(
+            graph.outbox,
+            graph.session,
+            graph.tokens,
+            graph.network.client,
+            graph.network.gateway,
+            graph.inFlight
+        )
     }
 
     companion object {
@@ -73,38 +82,47 @@ class OutboxWorker(
             session: SessionStore,
             tokens: TokenStore,
             client: OkHttpClient,
-            gateway: okhttp3.HttpUrl
+            gateway: okhttp3.HttpUrl,
+            inFlight: InFlight = InFlight()
         ): Result = withContext(Dispatchers.IO) {
             val userId = session.userId.value
             if (userId == null || tokens.read() == null) return@withContext Result.success()
             for (row in outbox.pendingFor(userId)) {
                 outbox.countAttempt(row.id)
+                val url = gateway.resolve(row.path)
+                if (url == null) {
+                    // A path that is no URL never becomes one: refuse the row rather than retry it forever.
+                    outbox.markRefused(row.id, 0, "invalid_path", AppText.get(R.string.outbox_invalid_path), null)
+                    continue
+                }
                 val request =
                     Request
                         .Builder()
-                        .url(gateway.resolve(row.path)!!)
+                        .url(url)
                         .post(row.body.toRequestBody(JSON))
                         .apply {
                             if (row.operation == Operation.SALE) header("Idempotency-Key", row.clientId)
                         }
                         .build()
                 val attempt =
-                    try {
-                        client.newCall(request).execute().use {
-                            val verdict = Attempt.of(
-                                it.code,
-                                it.body?.string(),
-                                it.header(ApiError.CORRELATION_HEADER),
-                                it.header("Retry-After")
-                            )
-                            if (verdict is Attempt.Done) {
-                                verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
-                            } else {
-                                verdict
+                    inFlight.during(row.id) {
+                        try {
+                            client.newCall(request).execute().use {
+                                val verdict = Attempt.of(
+                                    it.code,
+                                    it.body?.string(),
+                                    it.header(ApiError.CORRELATION_HEADER),
+                                    it.header("Retry-After")
+                                )
+                                if (verdict is Attempt.Done) {
+                                    verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
+                                } else {
+                                    verdict
+                                }
                             }
+                        } catch (unreachable: IOException) {
+                            Attempt.Retry
                         }
-                    } catch (unreachable: IOException) {
-                        Attempt.Retry
                     }
                 when (attempt) {
                     is Attempt.Done -> outbox.markDone(

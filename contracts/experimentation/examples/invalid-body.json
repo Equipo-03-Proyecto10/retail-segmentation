@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "A control may appear at most once, and an experiment needs at least one treatment.",
+  "correlation_id": "corr-invalid-body",
+  "details": [
+    {
+      "field": "arms",
+      "code": "control_count"
+    }
+  ]
+}

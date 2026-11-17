@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<DriftReport xmlns="https://mosaiq.maxthecoder.online/xml/model-registry/v1">
+  <report_id>7</report_id>
+  <kind>DATA_DRIFT</kind>
+  <model_version>
+    <version_id>5</version_id>
+    <name>kmeans-k4-2026-10</name>
+    <method>KMEANS</method>
+  </model_version>
+  <comparison>NOT_COMPARED</comparison>
+  <not_compared_reason>VERSION_CHANGE</not_compared_reason>
+  <window>
+    <start>2026-10-04T03:00:00Z</start>
+    <end>2026-11-03T03:00:00Z</end>
+    <days>30</days>
+    <customer_count>2311</customer_count>
+  </window>
+  <reference>
+    <sample_size>18432</sample_size>
+    <captured_at>2026-10-29T03:00:00Z</captured_at>
+  </reference>
+  <previous_report_id>6</previous_report_id>
+  <computed_at>2026-11-03T03:01:07Z</computed_at>
+</DriftReport>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>client_incident_conflict</code>
+  <message>This client_incident_id or source operation was already reported with a different source.</message>
+  <correlation_id>corr-client-incident-conflict</correlation_id>
+</Error>

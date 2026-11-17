@@ -1,8 +1,7 @@
 import { createServer, type Server } from 'node:http';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test';
+import { expect, launchElectron, test, type ElectronApplication, type Page } from './electron-test';
 import { shot } from '../support/evidence';
 
 // User administration, the account menu and the administrator transfer (F16-06,
@@ -193,9 +192,7 @@ async function signIn(page: Page, as: string): Promise<void> {
 }
 
 async function launch(as: string): Promise<{ app: ElectronApplication; page: Page }> {
-  const dir = mkdtempSync(join(tmpdir(), 'mosaiq-desktop-'));
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ baseUrl: base }));
-  const app = await electron.launch({ args: ['.'], env: { ...process.env, MOSAIQ_DESKTOP_CONFIG_DIR: dir } });
+  const { app } = await launchElectron(base);
   const page = await app.firstWindow();
   await signIn(page, as);
   return { app, page };
@@ -210,7 +207,7 @@ test('the users screen lists, filters and opens a user in XML; roles come from u
   const { app, page } = await launch('ADMIN');
   await open(page, 'users');
   await expect(page.locator('[data-testid=users-table] tbody tr')).toHaveCount(4);
-  await expect(page.locator('#filter-role option')).toHaveCount(8);
+  await expect(page.locator('#filter-role option')).toHaveCount(11);
 
   await page.selectOption('#filter-role', 'ANALYST');
   await page.getByRole('button', { name: 'Search' }).click();
@@ -246,6 +243,9 @@ test('an ADMIN creates a user: the picker has no ADMIN, and the refusals show as
     'INVENTORY_PLANNER',
     'AUDITOR',
     'CUSTOMER',
+    'SALES_ASSOCIATE',
+    'LOYALTY_OFFICER',
+    'COMMERCIAL_SUPERVISOR',
   ]);
 
   // A short password and a bad email are refused by the schema's facets, before sending.
@@ -304,7 +304,7 @@ test('an ADMIN edits name, email and a non-ADMIN role; a forced ADMIN change poi
   const { app, page } = await launch('ADMIN');
   await open(page, 'users');
   await page.getByTestId(`view-user-${ALEX}`).click();
-  await expect(page.locator('[data-testid=user-edit] #c-role_code option')).toHaveCount(6);
+  await expect(page.locator('[data-testid=user-edit] #c-role_code option')).toHaveCount(9);
   await page.fill('[data-testid=user-edit] #c-name', 'Alex Senior Analyst');
   await page.fill('[data-testid=user-edit] #c-email', 'alex.senior@example.com');
   await page.selectOption('[data-testid=user-edit] #c-role_code', 'MARKETING');

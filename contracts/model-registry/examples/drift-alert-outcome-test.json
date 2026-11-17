@@ -1,0 +1,62 @@
+{
+  "alert_id": 43,
+  "report_id": 36,
+  "previous_report_id": 21,
+  "kind": "OUTCOME_TEST",
+  "claim": "CONCEPT_DRIFT",
+  "model_version": {
+    "version_id": 5,
+    "name": "kmeans-k4-2026-10",
+    "method": "KMEANS"
+  },
+  "variable": "REPURCHASE_RATE",
+  "window": {
+    "start": "2026-11-28T03:00:00Z",
+    "end": "2026-12-28T03:00:00Z",
+    "days": 30,
+    "customer_count": 17601
+  },
+  "reference": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z"
+  },
+  "statistics": [],
+  "bins": [],
+  "outcome_test": {
+    "relation": "REPURCHASE_GIVEN_SEGMENT",
+    "horizon_days": 30,
+    "cohort_as_of": "2026-11-28T03:00:00Z",
+    "thresholds": {
+      "alpha": 0.05,
+      "min_difference_points": 5,
+      "min_customers_per_side": 100
+    },
+    "segments": [
+      {
+        "label_code": "LOYAL",
+        "reference": {
+          "customers": 5714,
+          "repurchasers": 2743,
+          "rate": 0.48
+        },
+        "current": {
+          "customers": 5421,
+          "repurchasers": 2063,
+          "rate": 0.3806
+        },
+        "difference_points": -9.95,
+        "z": -10.59,
+        "p_value": 3.16e-26,
+        "adjusted_p_value": 1.26e-25,
+        "result": "PASSED",
+        "persisted": true
+      }
+    ],
+    "claim": "CONCEPT_DRIFT"
+  },
+  "suggested_review": {
+    "code": "REVIEW_PREDICTIVE_RELATION",
+    "text": "Customers of LOYAL repurchased within 30 days at 38.1% against 48.0% in the reference cohort, in two consecutive matured cohorts. Review the campaigns and recommendations that rely on this segment, and consider a draft version fitted on current data."
+  },
+  "raised_at": "2026-12-29T03:06:29Z"
+}

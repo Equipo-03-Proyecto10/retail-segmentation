@@ -1,0 +1,6 @@
+{
+  "campaign_id": 12,
+  "registered_on_or_before": "2026-06-30",
+  "min_purchases": 2,
+  "purchase_window_days": 180
+}

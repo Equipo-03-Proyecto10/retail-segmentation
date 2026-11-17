@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RetentionCandidates xmlns="https://mosaiq.maxthecoder.online/xml/customers/v1"
+                     xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <as_of>2026-11-17T18:00:00Z</as_of>
+  <inactive_before>2023-11-17</inactive_before>
+  <RetentionCandidate>
+    <customer_id>3f1c2b9e-8a47-4d2e-9b61-0c5a7e4d2f10</customer_id>
+    <registered_on>2021-03-02</registered_on>
+    <last_sale_at>2022-08-14T16:20:00Z</last_sale_at>
+    <last_activity_on>2022-08-14</last_activity_on>
+  </RetentionCandidate>
+  <RetentionCandidate>
+    <customer_id>9a6e4c21-5d3b-4f88-a2c7-7e1b0d9f4a35</customer_id>
+    <registered_on>2022-01-20</registered_on>
+    <last_sale_at>2022-11-03T19:05:00Z</last_sale_at>
+    <last_visit_at>2023-05-28T15:40:00Z</last_visit_at>
+    <last_activity_on>2023-05-28</last_activity_on>
+  </RetentionCandidate>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>2</common:total>
+  </common:PageInfo>
+</RetentionCandidates>

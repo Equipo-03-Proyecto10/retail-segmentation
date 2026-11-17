@@ -189,7 +189,9 @@ def make_app(monkeypatch: pytest.MonkeyPatch, jwks_path: Path, state: FakeState)
                 LiveCounters(redis.Redis.from_url(redis_url, decode_responses=True))
                 if redis_url != DEAD_REDIS
                 else None
-            )
+            ),
+            # A test drives the relay itself, with run_once (test_relay.py).
+            start_relay=False,
         )
         application.testing = True
         application.extensions["mosaiq_kit"].auth.redis = state
@@ -204,9 +206,74 @@ def make_app(monkeypatch: pytest.MonkeyPatch, jwks_path: Path, state: FakeState)
             store.client.close()
 
 
+# The floor role the suite signs without naming a subject. The other floor roles
+# are signed with the fixed subjects of the cases that need them.
+FLOOR = ("STORE_MANAGER",)
+
+
+@pytest.fixture(scope="session")
+def floor_subjects(owner_url: str) -> Iterator[dict[str, str]]:
+    """One seeded user per floor role, assigned to every store (ADR-0060).
+
+    The narrowing of F19-07 would otherwise refuse each existing case that
+    signs a floor token for a user nobody assigned. `test_store_scope.py`
+    sets exact assignments for its own users.
+    """
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        subjects = dict(
+            connection.execute(
+                "SELECT r.code, min(u.user_id::text) FROM public.app_user AS u"
+                " JOIN public.role AS r USING (role_id) WHERE u.is_active"
+                " AND r.code = ANY(%s) GROUP BY r.code",
+                (list(FLOOR),),
+            ).fetchall()
+        )
+        stores = [
+            row[0]
+            for row in connection.execute(
+                "SELECT store_id FROM public.store ORDER BY store_id"
+            )
+        ]
+        before = {
+            subject: [
+                row[0]
+                for row in connection.execute(
+                    "SELECT store_id FROM users.store_assignment"
+                    " WHERE user_id = %s ORDER BY store_id",
+                    (subject,),
+                )
+            ]
+            for subject in subjects.values()
+        }
+    for subject in before:
+        set_assignments(owner_url, subject, stores)
+    try:
+        yield subjects
+    finally:
+        for subject, assigned in before.items():
+            set_assignments(owner_url, subject, assigned)
+
+
+def set_assignments(owner_url: str, user_id: str, stores: list[int]) -> None:
+    """Make `stores` the user's whole assignment set, committed at once."""
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        with connection.transaction():
+            connection.execute(
+                "DELETE FROM users.store_assignment WHERE user_id = %s", (user_id,)
+            )
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    "INSERT INTO users.store_assignment (user_id, store_id)"
+                    " VALUES (%s, %s)",
+                    [(user_id, store_id) for store_id in stores],
+                )
+
+
 @pytest.fixture
-def token(key: rsa.RSAPrivateKey):
+def token(key: rsa.RSAPrivateKey, request: pytest.FixtureRequest):
     def sign(role: str = "STORE_MANAGER", sub: str | None = None) -> dict[str, str]:
+        if sub is None and role in FLOOR:
+            sub = request.getfixturevalue("floor_subjects")[role]
         now = int(time.time())
         claims = {
             "iss": ISSUER,
@@ -229,9 +296,14 @@ def token(key: rsa.RSAPrivateKey):
 class Workspace:
     """A recorder, a UTC day in the past and helpers to post events on it."""
 
-    def __init__(self, client: FlaskClient, token: Callable[..., dict[str, str]]):
+    def __init__(
+        self,
+        client: FlaskClient,
+        token: Callable[..., dict[str, str]],
+        sub: str,
+    ):
         self.client = client
-        self.sub = str(uuid.uuid4())
+        self.sub = sub
         self.day = date(1990, 1, 1) + timedelta(days=random.randrange(0, 11000))
         self.headers = token("STORE_MANAGER", self.sub)
         self.admin = token("ADMIN", str(uuid.uuid4()))
@@ -265,13 +337,14 @@ def workspace(
     service_url: str,
     redis_url: str,
     token,
+    floor_subjects: dict[str, str],
     mongo: MongoClient,
     cache,
 ) -> Iterator[Workspace]:
     """The app against real PostgreSQL, MongoDB and Redis, and a day of its own."""
 
     app = make_app(mongo_uri=mongo_uri, database_url=service_url, redis_url=redis_url)
-    space = Workspace(app.test_client(), token)
+    space = Workspace(app.test_client(), token, floor_subjects["STORE_MANAGER"])
     yield space
     database = mongo.get_default_database(default="engagement")
     database.engagement_event.delete_many({"recorded_by": space.sub})

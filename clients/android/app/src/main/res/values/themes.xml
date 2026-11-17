@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Light by default; values-night switches to the dark platform parent. The
+     window background is the MOSAIQ canvas, so there is no flash of another
+     color before Compose draws, and the bars are transparent for edge-to-edge. -->
+<resources>
+    <style name="Theme.Mosaiq" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/mosaiq_canvas</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

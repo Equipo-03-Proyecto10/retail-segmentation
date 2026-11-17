@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>no_stock_record</code>
+  <message>No stock record exists for the store and product.</message>
+  <correlation_id>corr-no-stock-record</correlation_id>
+  <details>
+    <field>store_id</field>
+    <code>no_stock_record</code>
+  </details>
+</Error>

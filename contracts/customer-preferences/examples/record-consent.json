@@ -1,0 +1,33 @@
+{
+  "customer_id": "c4a1f0e2-5b7d-4e39-8a62-9d1b3c7e0f54",
+  "as_of": "2026-11-05T14:31:07Z",
+  "purposes": [
+    {
+      "purpose": "PERSONALIZATION",
+      "state": "GRANTED",
+      "decision_id": 189,
+      "recorded_at": "2026-11-05T14:31:07Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF",
+      "basis": "EXPLICIT"
+    },
+    {
+      "purpose": "MARKETING_CONTACT",
+      "state": "WITHDRAWN",
+      "decision_id": 190,
+      "recorded_at": "2026-11-05T14:31:07Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF",
+      "basis": "EXPLICIT"
+    },
+    {
+      "purpose": "PROFILING",
+      "state": "GRANTED",
+      "decision_id": 191,
+      "recorded_at": "2026-11-05T14:31:07Z",
+      "recorded_by": "b5d0a6f2-18c3-4e7a-9f64-0d2e7c1a3b58",
+      "source": "STAFF_ON_BEHALF",
+      "basis": "EXPLICIT"
+    }
+  ]
+}

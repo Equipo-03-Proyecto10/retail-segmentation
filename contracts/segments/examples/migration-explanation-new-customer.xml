@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SegmentMigrationExplanation xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <from>2026-10-12T03:00:00Z</from>
+  <to>2026-10-21T03:00:00Z</to>
+  <migration>
+    <customer_id>0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66</customer_id>
+    <previous_state>new</previous_state>
+    <new_state>label</new_state>
+    <new_label_code>LOYAL</new_label_code>
+    <movement>not_ranked</movement>
+    <changed_at>2026-10-20T02:00:00Z</changed_at>
+    <cause>VERSION_CHANGE</cause>
+    <new_run_id>52</new_run_id>
+    <new_model_version_id>4</new_model_version_id>
+    <methodological>true</methodological>
+    <rank_only>false</rank_only>
+  </migration>
+  <MigrationMeasure>
+    <variable>recency</variable>
+    <unit>days</unit>
+    <new_value>14</new_value>
+    <judgement>not_compared</judgement>
+    <not_compared_reason>new_customer</not_compared_reason>
+    <rank_changed>false</rank_changed>
+    <statement>Recency is not compared: the customer was new at the earlier instant.</statement>
+  </MigrationMeasure>
+  <MigrationMeasure>
+    <variable>frequency</variable>
+    <unit>purchases</unit>
+    <new_value>3</new_value>
+    <judgement>not_compared</judgement>
+    <not_compared_reason>new_customer</not_compared_reason>
+    <rank_changed>false</rank_changed>
+    <statement>Frequency is not compared: the customer was new at the earlier instant.</statement>
+  </MigrationMeasure>
+  <MigrationMeasure>
+    <variable>monetary</variable>
+    <unit>MXN</unit>
+    <new_value>240.00</new_value>
+    <judgement>not_compared</judgement>
+    <not_compared_reason>new_customer</not_compared_reason>
+    <rank_changed>false</rank_changed>
+    <statement>Monetary is not compared: the customer was new at the earlier instant.</statement>
+  </MigrationMeasure>
+</SegmentMigrationExplanation>

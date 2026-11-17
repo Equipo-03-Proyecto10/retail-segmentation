@@ -1,0 +1,36 @@
+{
+  "customer_visits": [
+    {
+      "visit_id": "4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f65",
+      "customer_id": "c2f6e0a4-91b3-4d57-a8e1-3b5f7d9c1e20",
+      "store_id": 3,
+      "campaign_id": null,
+      "occurred_at": "2026-11-09T11:15:00Z",
+      "recorded_at": "2026-11-09T11:15:01Z",
+      "recorded_by": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33"
+    },
+    {
+      "visit_id": "4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f64",
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "store_id": 3,
+      "campaign_id": 12,
+      "occurred_at": "2026-11-09T10:00:00Z",
+      "recorded_at": "2026-11-09T10:00:02Z",
+      "recorded_by": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33"
+    },
+    {
+      "visit_id": "4e8a1c37-6b2d-4f09-8c53-a1d7e92b0f10",
+      "customer_id": null,
+      "store_id": 3,
+      "campaign_id": 7,
+      "occurred_at": "2023-10-02T15:30:00Z",
+      "recorded_at": "2023-10-02T15:30:03Z",
+      "recorded_by": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

@@ -111,5 +111,7 @@ def test_the_service_never_imports_the_web() -> None:
 
 def test_the_service_never_deletes_a_campaign_or_reads_the_experiment_tables() -> None:
     text = "\n".join(path.read_text() for path in APP.rglob("*.py"))
-    assert not re.search(r"delete\s+from", text, re.I)
+    # The limits of a campaign (campaigns.*) are replaced by delete and insert;
+    # the campaign itself (public.campaign) is never deleted.
+    assert not re.search(r"delete\s+from\s+(public\.)?campaign\b", text, re.I)
     assert not re.search(r"(from|join)\s+(public\.)?experiment", text, re.I)

@@ -178,4 +178,141 @@
   <xs:element name="EngagementEvent" type="ev:EngagementEvent"/>
   <xs:element name="EngagementEvents" type="ev:EngagementEvents"/>
   <xs:element name="EngagementSummary" type="ev:EngagementSummary"/>
+
+  <!-- Capture incidents (ADR-0071): a queued floor write that was finally
+       refused, reported once by the device. -->
+  <xs:simpleType name="IncidentSourceType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SALE"/>
+      <xs:enumeration value="CHECK_IN"/>
+      <xs:enumeration value="ENGAGEMENT_EVENT"/>
+      <xs:enumeration value="CUSTOMER_WRITE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IncidentStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OPEN"/>
+      <xs:enumeration value="ACKNOWLEDGED"/>
+      <xs:enumeration value="RESOLVED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IncidentReviewStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ACKNOWLEDGED"/>
+      <xs:enumeration value="RESOLVED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CorrelationId">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9A-Za-z\-]{1,64}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RefusedCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[a-z][a-z0-9_]{0,63}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RefusedStatus">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="400"/>
+      <xs:maxInclusive value="499"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ReviewNote">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="200"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="IncidentGroupBy">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="store"/>
+      <xs:enumeration value="day"/>
+      <xs:enumeration value="source_type"/>
+      <xs:enumeration value="refused_code"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="CaptureIncidentRequest">
+    <xs:sequence>
+      <xs:element name="client_incident_id" type="xs:string"/>
+      <xs:element name="source_type" type="ev:IncidentSourceType"/>
+      <xs:element name="source_operation_id" type="xs:string"/>
+      <xs:element name="source_correlation_id" type="ev:CorrelationId"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="refused_status" type="ev:RefusedStatus"/>
+      <xs:element name="refused_code" type="ev:RefusedCode"/>
+      <xs:element name="attempts" type="xs:positiveInteger"/>
+      <xs:element name="occurred_at" type="xs:dateTime"/>
+      <xs:element name="line_count" type="xs:positiveInteger" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CaptureIncidentReviewRequest">
+    <xs:sequence>
+      <xs:element name="status" type="ev:IncidentReviewStatus"/>
+      <xs:element name="note" type="ev:ReviewNote" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="IncidentReview">
+    <xs:sequence>
+      <xs:element name="status" type="ev:IncidentReviewStatus"/>
+      <xs:element name="note" type="ev:ReviewNote" minOccurs="0"/>
+      <xs:element name="by" type="xs:string"/>
+      <xs:element name="at" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CaptureIncident">
+    <xs:sequence>
+      <xs:element name="incident_id" type="xs:string"/>
+      <xs:element name="client_incident_id" type="xs:string"/>
+      <xs:element name="source_type" type="ev:IncidentSourceType"/>
+      <xs:element name="source_operation_id" type="xs:string"/>
+      <xs:element name="source_correlation_id" type="ev:CorrelationId"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="refused_status" type="ev:RefusedStatus"/>
+      <xs:element name="refused_code" type="ev:RefusedCode"/>
+      <xs:element name="attempts" type="xs:positiveInteger"/>
+      <xs:element name="occurred_at" type="xs:dateTime"/>
+      <xs:element name="line_count" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="reported_by" type="xs:string"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+      <xs:element name="status" type="ev:IncidentStatus"/>
+      <xs:element name="history" type="ev:IncidentReview"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CaptureIncidents">
+    <xs:sequence>
+      <xs:element name="CaptureIncident" type="ev:CaptureIncident"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CaptureIncidentSummary">
+    <xs:sequence>
+      <xs:element name="from" type="xs:date" minOccurs="0"/>
+      <xs:element name="to" type="xs:date" minOccurs="0"/>
+      <xs:element name="group_by" type="ev:IncidentGroupBy"/>
+      <xs:element name="groups" type="ev:Group"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="CaptureIncidentRequest" type="ev:CaptureIncidentRequest"/>
+  <xs:element name="CaptureIncidentReviewRequest" type="ev:CaptureIncidentReviewRequest"/>
+  <xs:element name="CaptureIncident" type="ev:CaptureIncident"/>
+  <xs:element name="CaptureIncidents" type="ev:CaptureIncidents"/>
+  <xs:element name="CaptureIncidentSummary" type="ev:CaptureIncidentSummary"/>
 </xs:schema>

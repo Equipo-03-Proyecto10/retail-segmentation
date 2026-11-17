@@ -1,6 +1,6 @@
 # MOSAIQ Floor (Android)
 
-The floor process of the second delivery ([ADR-0041](../../docs/adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md)): a Kotlin and Jetpack Compose app for `STORE_MANAGER` and `ADMIN`. It speaks JSON only. This scaffold (F17-01, #426) signs in, shows who is signed in, keeps the session safe and signs out. The floor screens build on it.
+The floor process of the second delivery ([ADR-0041](../../docs/adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md)): a Kotlin and Jetpack Compose app for the four store profiles of [ADR-0060](../../docs/adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md) (`SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR`) and `ADMIN`. It speaks JSON only. This scaffold (F17-01, #426) signs in, shows who is signed in, keeps the session safe and signs out. The floor screens build on it.
 
 ## Run it
 
@@ -66,8 +66,25 @@ A failure there blocks only pull requests that touch the client, never a service
   - **Single-flight:** one OkHttp `Authenticator` (`net/TokenAuthenticator.kt`) runs one `POST /v1/sessions/refresh` however many calls fail together, then retries each once.
   - **Terminal refusals:** `invalid_refresh`, `refresh_reused`, `session_expired` and `session_revoked` erase the tokens and send the user to sign-in with the reason.
   - **Temporary failures:** a 503 keeps the tokens and asks to try again.
-- **Roles.** Only `STORE_MANAGER` and `ADMIN` get past sign-in. Any other role is signed out at once with a plain message. The gate is for usability only: the services refuse those roles anyway.
+- **Roles.** Only the codes in `FLOOR_ROLES` (`SessionRepository.kt`) get past sign-in, and any other role, or a code this build does not know, is signed out at once with a plain message and shows no screen (ADR-0076). Each role gets its own bottom navigation: `auth/FloorAccess.kt` is the one table of which sections a role holds, and `FloorAccessContractTest` checks it against the `x-mosaiq-roles` of every operation each section calls. A section a role does not hold cannot be shown by a tap, Back or a restored saved state. The gate is for usability only: the services refuse those roles anyway.
 - **Errors.** Every refusal shows its `code`, its `message` and the request's correlation id.
 - **Network security.** Release builds allow HTTPS only. Debug builds also allow cleartext to `10.0.2.2` and to the device's own loopback (`localhost`, `127.0.0.1`), where the instrumented tests run MockWebServer, and nothing else (`src/debug/res/xml/network_security_config.xml`).
 
 Every dependency version is pinned in `gradle/libs.versions.toml`.
+
+## Theme and fonts
+
+`ui/theme/` is the only place a color, type size, shape or spacing value is written (ADR-0057); `bash clients/android/check-adr41.sh` lists any that leak out. `ThemeDriftTest` compares the palette with `docs/design-system/tokens/resolved-tokens.css`, and `ThemeContrastTest` checks the WCAG ratios of the pairs the theme defines.
+
+`app/src/main/res/font/` holds IBM Plex Sans (one variable font) and IBM Plex Mono (400, 500, 600), licensed under the SIL Open Font License 1.1. They are the Latin subsets vendored in `docs/design-system/fonts/`, converted from woff2 to ttf, which Android cannot load as woff2. The conversion only unwraps the woff2 container; the glyphs are unchanged. The license is the one `docs/design-system/README.md` names for those files.
+
+## Icons (Lucide, ISC)
+
+Icons are [Lucide](https://lucide.dev) icons, vendored as vector drawables in `app/src/main/res/drawable/` named `ic_lucide_<name>.xml` (Android resource names use underscores where Lucide uses hyphens). No icon library is a dependency.
+
+- **Source:** `lucide-static` 0.468.0, `https://unpkg.com/lucide-static@0.468.0/icons/<name>.svg`.
+- **License:** ISC, Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT); all other copyright (c) for Lucide are held by Lucide Contributors 2022.
+- **Conversion:** only the shape geometry (`path`, `circle`, `line`, `rect`, `polyline`) is kept, in a 24dp viewport with no fill, a black 2-unit stroke and round caps and joins. The black is a placeholder: every use site tints it with `Icon(tint = ...)` through `MqIcon`.
+- **Component kit:** `ui/components/` holds the `Mq*` components (button, text field, list row, badge, loading, empty state, pager, error panel, card, section, quantity stepper, snackbar host). Each has a preview in both schemes in `ComponentsPreview.kt`.
+
+Icons in use: search, x, plus, minus, chevron-right, chevron-down, eye, eye-off, circle-alert, circle-check, info, refresh-cw, package, user-search, trash-2, clock, wifi-off, triangle-alert.

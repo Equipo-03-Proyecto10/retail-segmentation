@@ -1,0 +1,131 @@
+{
+  "cases": [
+    {
+      "id": "rn39-label-comparison",
+      "input": {
+        "call": "classify_migration",
+        "labels_after": {
+          "a": "CHAMPION",
+          "b": "LOYAL",
+          "c": null,
+          "d": "AT_RISK"
+        },
+        "labels_before": {
+          "a": "LOYAL",
+          "b": "CHAMPION",
+          "c": null
+        },
+        "ordinals": {
+          "AT_RISK": 3,
+          "CHAMPION": 1,
+          "LOYAL": 2
+        }
+      },
+      "outcome": {
+        "migrations": [
+          {
+            "after": "CHAMPION",
+            "before": "LOYAL",
+            "category": "moved",
+            "customer_id": "a",
+            "direction": "improved"
+          },
+          {
+            "after": "LOYAL",
+            "before": "CHAMPION",
+            "category": "moved",
+            "customer_id": "b",
+            "direction": "declined"
+          },
+          {
+            "after": null,
+            "before": null,
+            "category": "unchanged",
+            "customer_id": "c",
+            "direction": null
+          },
+          {
+            "after": "AT_RISK",
+            "before": null,
+            "category": "absent_from_earlier",
+            "customer_id": "d",
+            "direction": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "rn59-traceable-matrix",
+      "input": {
+        "call": "build_migration_matrix",
+        "source": "rn39-label-comparison"
+      },
+      "outcome": {
+        "column_totals": {
+          "AT_RISK": 1,
+          "CHAMPION": 1,
+          "LOYAL": 1,
+          "Not in later run": 0,
+          "Unassigned": 1
+        },
+        "nonzero_cells": {
+          "CHAMPION->LOYAL": 1,
+          "LOYAL->CHAMPION": 1,
+          "Not in earlier run->AT_RISK": 1,
+          "Unassigned->Unassigned": 1
+        },
+        "row_totals": {
+          "AT_RISK": 0,
+          "CHAMPION": 1,
+          "LOYAL": 1,
+          "Not in earlier run": 1,
+          "Unassigned": 1
+        }
+      }
+    },
+    {
+      "id": "rn60-raw-value-judgement",
+      "input": {
+        "call": "describe_migration",
+        "frequency": [
+          8,
+          8
+        ],
+        "monetary": [
+          "1200.00",
+          "1560.00"
+        ],
+        "recency": [
+          41,
+          9
+        ]
+      },
+      "outcome": {
+        "judgements": [
+          "changed",
+          "stable",
+          "changed"
+        ],
+        "moved_by_rank_only": false,
+        "rank_only": [
+          false,
+          false,
+          false
+        ],
+        "recency_days": [
+          41,
+          9
+        ]
+      }
+    }
+  ],
+  "header": {
+    "as_of": {
+      "anchor": "2026-11-17T12:24:31.320987-06:00"
+    },
+    "captured_on": "2026-11-17",
+    "port": "segments",
+    "seed_sha256": "70057653c08b3d2ed18ab3862caa419f5277690b42d62746e7ecf417ef81004f",
+    "web_commit": "0c359363f12407eb5714d593ed0a425f215a3011"
+  }
+}

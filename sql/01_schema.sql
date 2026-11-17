@@ -895,8 +895,9 @@ REVOKE UPDATE, DELETE ON audit_log FROM retail_app;
 -- row of contracts/db/grants.csv, which contracts/db/check_grants.sh compares
 -- with the database in both directions (ADR-0034).
 --
--- The bench-only Rust build of the products reads: SELECT on product, nothing
--- else (ADR-0042).
+-- The bench-only Rust build of the products reads: SELECT on product here, and
+-- on the products boundary's four tables in that boundary's section; nothing
+-- else (ADR-0042, ADR-0078).
 GRANT SELECT ON product TO svc_products_bench;
 -- fn_audit runs as definer_audit (AUDIT STRATEGY below), which may append to
 -- the audit log and do nothing else.
@@ -960,6 +961,16 @@ BEGIN
     -- longer-lived table would only widen where credentials can leak from.
     before_data := before_data - 'password_hash';
     after_data  := after_data  - 'password_hash';
+
+    -- An anonymized customer's name, email and phone never enter the trail again
+    -- (ADR-0066 section 3), and the entry that records the anonymization does not
+    -- keep the identity it removed. The older entries are redacted by
+    -- customers.redact_audit_v1 in the same transaction.
+    IF TG_TABLE_NAME = 'customer'
+       AND coalesce(after_data, before_data) ->> 'anonymized_at' IS NOT NULL THEN
+        before_data := public.fn_redact_identity(before_data);
+        after_data  := public.fn_redact_identity(after_data);
+    END IF;
 
     -- The application sets mosaiq.user_id on the connection once F4-01 knows
     -- who is logged in. Until then, and for anything the seed or a maintenance
@@ -1159,6 +1170,28 @@ BEGIN
         RAISE EXCEPTION 'svc_sales records OBSERVED sales only (ADR-0052)'
             USING ERRCODE = '22023';
     END IF;
+    -- ADR-0070 section 5. A file imported through sales-service writes the id
+    -- `svc-sales:imp:<id>`, the web writes `<id>`. Neither path may record the
+    -- other's sale again, so each refuses the id when the other's exists. Both
+    -- take the same advisory lock first (key 293001, contracts/db/
+    -- advisory-locks.md), so two concurrent loads of one file cannot both pass.
+    IF session_user = 'svc_sales' AND NEW.source_transaction_id LIKE 'svc-sales:imp:%' THEN
+        PERFORM pg_advisory_xact_lock(293001, hashtext(substr(NEW.source_transaction_id, 15)));
+        IF EXISTS (SELECT FROM public.transaction AS t
+                    WHERE t.source_transaction_id = substr(NEW.source_transaction_id, 15)) THEN
+            RAISE EXCEPTION 'duplicate: % was already loaded through the other path',
+                substr(NEW.source_transaction_id, 15)
+                USING ERRCODE = '22023';
+        END IF;
+    ELSIF session_user <> 'svc_sales' THEN
+        PERFORM pg_advisory_xact_lock(293001, hashtext(NEW.source_transaction_id));
+        IF EXISTS (SELECT FROM public.transaction AS t
+                    WHERE t.source_transaction_id = 'svc-sales:imp:' || NEW.source_transaction_id) THEN
+            RAISE EXCEPTION 'duplicate: % was already loaded through the other path',
+                NEW.source_transaction_id
+                USING ERRCODE = '22023';
+        END IF;
+    END IF;
     RETURN NEW;
 END
 $$;
@@ -1230,10 +1263,19 @@ CREATE INDEX IF NOT EXISTS outbox_unrelayed
 CREATE OR REPLACE VIEW api_sales.purchase_line_v1
 WITH (security_invoker = off) AS
 SELECT t.transaction_id, t.customer_id, t.store_id, t.channel_id, t.occurred_at,
-       l.product_id, l.quantity, l.unit_price
+       l.product_id, l.quantity, l.unit_price, t.data_origin
 FROM public.transaction AS t
 JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id;
 REVOKE ALL ON api_sales.purchase_line_v1 FROM PUBLIC;
+
+-- contracts/db/api_sales.channel.v1.md: the ids of the sales channels, the
+-- vocabulary sales is the read owner of (E-10). Ids only; stock derives one
+-- availability row per channel from it (F21-07).
+CREATE OR REPLACE VIEW api_sales.channel_v1
+WITH (security_invoker = off) AS
+SELECT channel_id
+FROM public.channel;
+REVOKE ALL ON api_sales.channel_v1 FROM PUBLIC;
 
 -- stream:sales.v1.recorded, for every writer of a header, the web's CSV path
 -- included. A service sale fires once (its total is never updated); a CSV row
@@ -1273,8 +1315,485 @@ GRANT USAGE ON SCHEMA sales_events TO svc_sales, definer_sales;
 GRANT INSERT ON sales_events.outbox TO definer_sales;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON sales_events.outbox TO svc_sales;
 
-GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations;
+GRANT USAGE ON SCHEMA api_sales TO svc_sales, svc_recommendations, svc_stock;
 GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
+GRANT SELECT ON api_sales.channel_v1 TO svc_sales, svc_stock;
+
+-- Reversals (F21-01 ADR-0062, F21-03). A cancellation or a return is an
+-- append-only fact recorded beside the sale; the sale, its lines' quantity and
+-- its total are never edited. docs/data-model.md holds the 4NF justification.
+--
+-- transaction_line.returned_quantity is the running total of a line's reversed
+-- units. It repeats what the reversal lines add up to, as inventory repeats its
+-- movements, so every reader of net units (public.net_sale_line, below) reads
+-- one column instead of summing a table the web cannot reach (ADR-0046). Three
+-- guards keep the copy honest: the CHECK, the writer guard and the deferred
+-- equality trigger.
+ALTER TABLE public.transaction_line
+    ADD COLUMN IF NOT EXISTS returned_quantity integer NOT NULL DEFAULT 0;
+DO $returned_quantity$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conrelid = 'public.transaction_line'::regclass
+                      AND conname = 'transaction_line_returned_quantity_check') THEN
+        ALTER TABLE public.transaction_line
+            ADD CONSTRAINT transaction_line_returned_quantity_check
+            CHECK (returned_quantity BETWEEN 0 AND quantity);
+    END IF;
+END
+$returned_quantity$;
+
+-- Only svc_sales writes returned_quantity, and a line is born with none
+-- returned. session_user is the role that connected, which SET ROLE cannot
+-- change, as in the namespace guards above. SQLSTATE 22023 is a DataError that
+-- ingest_row reports as a malformed row, so the web is unchanged.
+CREATE OR REPLACE FUNCTION fn_sales_returned_quantity_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF NEW.returned_quantity <> 0 THEN
+            RAISE EXCEPTION 'a sale line is recorded with nothing returned'
+                USING ERRCODE = '22023';
+        END IF;
+    ELSIF session_user <> 'svc_sales' THEN
+        RAISE EXCEPTION 'only svc_sales writes returned_quantity (ADR-0062)'
+            USING ERRCODE = '22023';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_sales_returned_quantity_guard
+BEFORE INSERT OR UPDATE OF returned_quantity ON public.transaction_line
+FOR EACH ROW EXECUTE FUNCTION fn_sales_returned_quantity_guard();
+
+-- One row per reversal. The idempotency key is this resource's own, kept here
+-- because no other column holds it (a sale's key is the suffix of its
+-- source_transaction_id). request_sha256 is the canonical request a retry is
+-- compared with. The customer and the store are the sale's, never copied.
+CREATE TABLE IF NOT EXISTS sales.sale_reversal (
+    reversal_id     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    transaction_id  bigint NOT NULL
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    kind            text NOT NULL
+        CONSTRAINT sale_reversal_kind_check
+        CHECK (kind IN ('CANCELLATION', 'RETURN')),
+    reason          text
+        CONSTRAINT sale_reversal_reason_check
+        CHECK (reason IS NULL OR (btrim(reason) <> '' AND char_length(reason) <= 200)),
+    idempotency_key uuid NOT NULL
+        CONSTRAINT sale_reversal_idempotency_key_key UNIQUE,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT sale_reversal_request_sha256_check
+        CHECK (octet_length(request_sha256) = 32),
+    recorded_by     uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    recorded_at     timestamptz NOT NULL DEFAULT now(),
+    -- A cancellation states its reason on the header, a return on each line.
+    CONSTRAINT sale_reversal_reason_kind_check
+        CHECK ((kind = 'CANCELLATION') = (reason IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS sale_reversal_sale
+    ON sales.sale_reversal (transaction_id);
+CREATE INDEX IF NOT EXISTS sale_reversal_recorded
+    ON sales.sale_reversal (recorded_at DESC, reversal_id DESC);
+-- A sale is cancelled once: a second cancellation could only reverse nothing.
+CREATE UNIQUE INDEX IF NOT EXISTS sale_reversal_one_cancellation
+    ON sales.sale_reversal (transaction_id) WHERE kind = 'CANCELLATION';
+
+-- The lines a reversal touched. (transaction_id, product_id) names the sold
+-- line, so the units reversed can never name a line the sale does not have.
+CREATE TABLE IF NOT EXISTS sales.sale_reversal_line (
+    reversal_id    bigint NOT NULL
+        REFERENCES sales.sale_reversal (reversal_id) ON DELETE CASCADE,
+    transaction_id bigint NOT NULL,
+    product_id     integer NOT NULL,
+    quantity       integer NOT NULL
+        CONSTRAINT sale_reversal_line_quantity_check CHECK (quantity > 0),
+    reason         text
+        CONSTRAINT sale_reversal_line_reason_check
+        CHECK (reason IS NULL OR (btrim(reason) <> '' AND char_length(reason) <= 200)),
+    resellable     boolean NOT NULL DEFAULT true,
+    PRIMARY KEY (reversal_id, product_id),
+    FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS sale_reversal_line_sold
+    ON sales.sale_reversal_line (transaction_id, product_id);
+
+-- The sum of a sale line's reversals can never exceed what was sold, whoever
+-- inserts (the service or a direct INSERT). The sold line is locked first, so
+-- two reversals of one line queue instead of both seeing the same remainder.
+-- A cancellation takes the whole line, and a return states a reason; both are
+-- what the contract says and a direct INSERT must not slip past them.
+CREATE OR REPLACE FUNCTION sales.fn_sale_reversal_line_guard() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    header_sale bigint;
+    header_kind text;
+    sold        integer;
+    already     integer;
+BEGIN
+    SELECT r.transaction_id, r.kind INTO header_sale, header_kind
+      FROM sales.sale_reversal AS r WHERE r.reversal_id = NEW.reversal_id;
+    IF header_sale IS DISTINCT FROM NEW.transaction_id THEN
+        RAISE EXCEPTION 'reversal % is not a reversal of sale %', NEW.reversal_id, NEW.transaction_id
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_sale_check';
+    END IF;
+    SELECT l.quantity INTO sold
+      FROM public.transaction_line AS l
+     WHERE l.transaction_id = NEW.transaction_id AND l.product_id = NEW.product_id
+       FOR UPDATE;
+    SELECT coalesce(sum(x.quantity), 0) INTO already
+      FROM sales.sale_reversal_line AS x
+     WHERE x.transaction_id = NEW.transaction_id AND x.product_id = NEW.product_id;
+    IF already + NEW.quantity > sold THEN
+        RAISE EXCEPTION 'reversing % more of product % would exceed the % sold in sale % (% already reversed)',
+            NEW.quantity, NEW.product_id, sold, NEW.transaction_id, already
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_within_sale';
+    END IF;
+    IF header_kind = 'CANCELLATION' AND NEW.quantity <> sold THEN
+        RAISE EXCEPTION 'a cancellation reverses every unit of a line'
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_cancellation_whole';
+    END IF;
+    IF (header_kind = 'RETURN') = (NEW.reason IS NULL) THEN
+        RAISE EXCEPTION 'a return line states a reason and a cancellation line does not'
+            USING ERRCODE = '23514', CONSTRAINT = 'sale_reversal_line_reason_kind_check';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_sale_reversal_line_guard
+BEFORE INSERT ON sales.sale_reversal_line
+FOR EACH ROW EXECUTE FUNCTION sales.fn_sale_reversal_line_guard();
+
+-- At commit, a line's returned_quantity equals the sum of its reversal lines:
+-- a reversal never lands without its effect, and the effect never without a
+-- reversal (contracts/db/api_sales.net_purchase_line.v1.md). Deferred, since
+-- the service writes the reversal line first and the column after it.
+CREATE OR REPLACE FUNCTION sales.fn_returned_quantity_matches() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    expected integer;
+    actual   integer;
+BEGIN
+    SELECT l.returned_quantity INTO actual
+      FROM public.transaction_line AS l
+     WHERE l.transaction_id = NEW.transaction_id AND l.product_id = NEW.product_id;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
+    SELECT coalesce(sum(x.quantity), 0) INTO expected
+      FROM sales.sale_reversal_line AS x
+     WHERE x.transaction_id = NEW.transaction_id AND x.product_id = NEW.product_id;
+    IF actual <> expected THEN
+        RAISE EXCEPTION 'returned_quantity % of sale % product % differs from its reversals (%)',
+            actual, NEW.transaction_id, NEW.product_id, expected
+            USING ERRCODE = '23514', CONSTRAINT = 'returned_quantity_matches_reversals';
+    END IF;
+    RETURN NULL;
+END
+$$;
+
+-- A constraint trigger cannot be replaced in place, so it is dropped first.
+DROP TRIGGER IF EXISTS trg_returned_quantity_matches ON sales.sale_reversal_line;
+CREATE CONSTRAINT TRIGGER trg_returned_quantity_matches
+AFTER INSERT ON sales.sale_reversal_line
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION sales.fn_returned_quantity_matches();
+
+DROP TRIGGER IF EXISTS trg_returned_quantity_matches ON public.transaction_line;
+CREATE CONSTRAINT TRIGGER trg_returned_quantity_matches
+AFTER UPDATE OF returned_quantity ON public.transaction_line
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION sales.fn_returned_quantity_matches();
+
+-- stream:sales.v1.reversed (contracts/streams/sales.reversed.v1.md): exactly
+-- one outbox row per reversal, in the reversal's own transaction, so a
+-- rollback publishes nothing. The entity is `sale_id:reversal_id`.
+CREATE OR REPLACE FUNCTION sales_events.capture_reversed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO sales_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:sales.v1.reversed', TG_OP,
+            NEW.transaction_id::text || ':' || NEW.reversal_id::text);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('sales_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION sales_events.capture_reversed() OWNER TO definer_sales;
+REVOKE EXECUTE ON FUNCTION sales_events.capture_reversed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_reversed
+AFTER INSERT ON sales.sale_reversal
+FOR EACH ROW EXECUTE FUNCTION sales_events.capture_reversed();
+
+-- The one definition of net units (ADR-0062). public.net_sale_line holds a row
+-- for every sale line with at least one unit left, and public.net_sale one row
+-- for every sale with at least one such line, whose net amount is therefore
+-- above zero: a sale whose net amount is zero stops counting as a purchase.
+-- The web reads these two (retail_app reaches public alone, ADR-0046);
+-- api_sales.net_purchase_line_v1 publishes the same definition to services.
+-- transaction.total stays what was charged and is exposed as `total`.
+CREATE OR REPLACE VIEW public.net_sale_line AS
+SELECT t.transaction_id, t.customer_id, t.store_id, t.channel_id, t.occurred_at,
+       t.data_origin, l.product_id, l.quantity, l.returned_quantity,
+       l.quantity - l.returned_quantity AS net_quantity,
+       l.unit_price,
+       ((l.quantity - l.returned_quantity) * l.unit_price)::numeric(12,2) AS net_amount
+FROM public.transaction AS t
+JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id
+WHERE l.quantity > l.returned_quantity;
+
+CREATE OR REPLACE VIEW public.net_sale AS
+SELECT t.transaction_id, t.source_transaction_id, t.customer_id, t.store_id,
+       t.channel_id, t.occurred_at, t.data_origin, t.total,
+       n.net_total, n.net_units
+FROM public.transaction AS t
+CROSS JOIN LATERAL (
+    SELECT sum(l.net_amount)::numeric(12,2) AS net_total,
+           sum(l.net_quantity)::bigint AS net_units
+    FROM public.net_sale_line AS l
+    WHERE l.transaction_id = t.transaction_id
+) AS n
+WHERE n.net_units > 0;
+
+REVOKE ALL ON public.net_sale_line, public.net_sale FROM PUBLIC;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER
+    ON public.net_sale_line, public.net_sale FROM retail_app;
+GRANT SELECT ON public.net_sale_line, public.net_sale TO retail_app;
+
+-- contracts/db/api_sales.net_purchase_line.v1.md: the lines that still count,
+-- phone and CSV alike. Definer rights, like purchase_line_v1.
+CREATE OR REPLACE VIEW api_sales.net_purchase_line_v1
+WITH (security_invoker = off) AS
+SELECT transaction_id, customer_id, store_id, channel_id, occurred_at,
+       product_id, quantity, returned_quantity, net_quantity, unit_price, net_amount,
+       data_origin
+FROM public.net_sale_line;
+REVOKE ALL ON api_sales.net_purchase_line_v1 FROM PUBLIC;
+
+-- svc_sales reaches inventory only through api_stock.restock_v1 (granted in
+-- BOUNDARY stock), and writes returned_quantity and nothing else of a line.
+GRANT UPDATE (returned_quantity) ON public.transaction_line TO svc_sales;
+GRANT SELECT, INSERT ON sales.sale_reversal, sales.sale_reversal_line TO svc_sales;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_sales, svc_recommendations;
+
+-- Sales imports (F26-06 ADR-0070, F26-08). A file reaches sales-service as
+-- numbered chunks of rows, is staged here and applied one row at a time by the
+-- worker, a second process of the same image. docs/data-model.md holds the 4NF
+-- justification.
+--
+-- One row per import. The Idempotency-Key is this resource's own and is kept
+-- here because no other column holds it. request_sha256 is the canonical
+-- request a retry is compared with. last_chunk_at is when a chunk last arrived,
+-- which is what the 24-hour expiry counts from.
+CREATE TABLE IF NOT EXISTS sales.import (
+    import_id       bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key uuid NOT NULL
+        CONSTRAINT import_idempotency_key_key UNIQUE,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT import_request_sha256_check CHECK (octet_length(request_sha256) = 32),
+    contract_version smallint NOT NULL
+        CONSTRAINT import_contract_version_check CHECK (contract_version = 1),
+    total_rows      integer NOT NULL
+        CONSTRAINT import_total_rows_check CHECK (total_rows BETWEEN 1 AND 100000),
+    chunk_count     integer NOT NULL
+        CONSTRAINT import_chunk_count_check CHECK (chunk_count BETWEEN 1 AND 667),
+    status          text NOT NULL DEFAULT 'RECEIVING'
+        CONSTRAINT import_status_check
+        CHECK (status IN ('RECEIVING', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'EXPIRED')),
+    created_by      uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    last_chunk_at   timestamptz NOT NULL DEFAULT now(),
+    finished_at     timestamptz,
+    CONSTRAINT import_finished_check
+        CHECK ((status IN ('COMPLETED', 'CANCELLED', 'EXPIRED')) = (finished_at IS NOT NULL))
+);
+-- One import is open at a time (ADR-0070 section 2): the database says so too.
+CREATE UNIQUE INDEX IF NOT EXISTS import_one_open
+    ON sales.import ((true)) WHERE status IN ('RECEIVING', 'PROCESSING');
+CREATE INDEX IF NOT EXISTS import_created
+    ON sales.import (created_at DESC, import_id DESC);
+
+-- One row per staged chunk. `rows` is the payload the worker applies and is
+-- nulled as soon as the chunk is done, cancelled or expired: a staged copy of
+-- customer ids does not outlive the work. row_count stays, so the counts of an
+-- import that never finished still reconcile.
+CREATE TABLE IF NOT EXISTS sales.import_chunk (
+    import_id      bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    sequence       integer NOT NULL
+        CONSTRAINT import_chunk_sequence_check CHECK (sequence BETWEEN 0 AND 666),
+    request_sha256 bytea NOT NULL
+        CONSTRAINT import_chunk_request_sha256_check CHECK (octet_length(request_sha256) = 32),
+    row_count      integer NOT NULL
+        CONSTRAINT import_chunk_row_count_check CHECK (row_count BETWEEN 1 AND 150),
+    first_line     integer NOT NULL
+        CONSTRAINT import_chunk_first_line_check CHECK (first_line >= 1),
+    last_line      integer NOT NULL,
+    rows           jsonb,
+    status         text NOT NULL DEFAULT 'PENDING'
+        CONSTRAINT import_chunk_status_check CHECK (status IN ('PENDING', 'DONE')),
+    staged_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (import_id, sequence),
+    CONSTRAINT import_chunk_lines_check CHECK (last_line >= first_line),
+    CONSTRAINT import_chunk_done_check CHECK (status <> 'DONE' OR rows IS NULL)
+);
+CREATE INDEX IF NOT EXISTS import_chunk_pending
+    ON sales.import_chunk (import_id, sequence) WHERE status = 'PENDING';
+
+-- One row per applied or refused line of the file. It is the durable record
+-- that makes a resume exact: the outcome is written in the same transaction as
+-- the sale line it describes, so a line is never applied twice. An accepted
+-- outcome points at the sale line it made (transaction_id, product_id), which
+-- is how a later duplicate names the first line; a refused one carries what the
+-- report shows. The row's cells are not kept.
+CREATE TABLE IF NOT EXISTS sales.import_row_outcome (
+    import_id      bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    line           integer NOT NULL
+        CONSTRAINT import_row_outcome_line_check CHECK (line >= 2),
+    outcome        text NOT NULL
+        CONSTRAINT import_row_outcome_outcome_check CHECK (outcome IN ('ACCEPTED', 'REJECTED')),
+    code           text,
+    field          text,
+    message        text,
+    duplicate_of   text
+        CONSTRAINT import_row_outcome_duplicate_of_check
+        CHECK (duplicate_of IN ('FILE', 'RECORDED_SALE')),
+    first_line     integer,
+    sale_id        bigint,
+    transaction_id bigint,
+    product_id     integer,
+    PRIMARY KEY (import_id, line),
+    FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id) ON DELETE SET NULL,
+    CONSTRAINT import_row_outcome_shape_check CHECK (
+        CASE outcome
+            WHEN 'ACCEPTED' THEN code IS NULL AND field IS NULL AND message IS NULL
+                AND duplicate_of IS NULL AND first_line IS NULL AND sale_id IS NULL
+            ELSE code IS NOT NULL AND message IS NOT NULL
+                AND transaction_id IS NULL AND product_id IS NULL
+                AND ((code = 'duplicate_row') = (duplicate_of IS NOT NULL))
+                AND (first_line IS NULL OR duplicate_of = 'FILE')
+                AND (sale_id IS NULL OR duplicate_of = 'RECORDED_SALE')
+        END)
+);
+CREATE INDEX IF NOT EXISTS import_row_outcome_rejected
+    ON sales.import_row_outcome (import_id, line) WHERE outcome = 'REJECTED';
+CREATE INDEX IF NOT EXISTS import_row_outcome_line_made
+    ON sales.import_row_outcome (import_id, transaction_id, product_id)
+    WHERE outcome = 'ACCEPTED';
+
+-- A header an import made has a capture row like a phone sale's, so ADR-0039's
+-- query (one sales.sale_capture row for every `svc-sales:` header) still
+-- returns nothing. import_id says which import made it.
+ALTER TABLE sales.sale_capture
+    ADD COLUMN IF NOT EXISTS import_id bigint REFERENCES sales.import (import_id);
+CREATE INDEX IF NOT EXISTS sale_capture_import
+    ON sales.sale_capture (import_id) WHERE import_id IS NOT NULL;
+
+-- An import appends lines to a header and recomputes its total, as the web's
+-- CSV path does (the deferred trigger on both tables holds total equal to the
+-- sum of the lines). That is the one column of a header svc_sales may change.
+GRANT UPDATE (total) ON public.transaction TO svc_sales;
+GRANT SELECT, INSERT, UPDATE ON sales.import, sales.import_chunk TO svc_sales;
+GRANT SELECT, INSERT ON sales.import_row_outcome TO svc_sales;
+
+-- Reconciliation of an import's sales with the sales already recorded (F26-09,
+-- ADR-0070 section 5: the guard does not unify a file whose ids were re-keyed
+-- between loads). A case is one pair: a sale an import made and an earlier
+-- sale that looks the same (same customer, store, instant and lines) under a
+-- different source id. Finding a pair changes no sale; a person settles it
+-- once, and the decision keeps its author and its moment. docs/data-model.md
+-- holds the 4NF justification.
+CREATE TABLE IF NOT EXISTS sales.reconciliation_case (
+    case_id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    import_id               bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    imported_transaction_id bigint NOT NULL
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    matched_transaction_id  bigint NOT NULL
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    found_at                timestamptz NOT NULL DEFAULT now(),
+    resolution              text
+        CONSTRAINT reconciliation_case_resolution_check
+        CHECK (resolution IN ('DISTINCT', 'DUPLICATE')),
+    resolved_by             uuid
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    resolved_at             timestamptz,
+    note                    text
+        CONSTRAINT reconciliation_case_note_check
+        CHECK (note IS NULL OR char_length(note) BETWEEN 1 AND 500),
+    CONSTRAINT reconciliation_case_pair_key
+        UNIQUE (imported_transaction_id, matched_transaction_id),
+    CONSTRAINT reconciliation_case_distinct_sales_check
+        CHECK (imported_transaction_id <> matched_transaction_id),
+    CONSTRAINT reconciliation_case_resolved_check
+        CHECK ((resolution IS NULL) = (resolved_by IS NULL)
+               AND (resolution IS NULL) = (resolved_at IS NULL)
+               AND (note IS NULL OR resolution IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS reconciliation_case_import
+    ON sales.reconciliation_case (import_id, case_id);
+CREATE INDEX IF NOT EXISTS reconciliation_case_open
+    ON sales.reconciliation_case (import_id, case_id) WHERE resolution IS NULL;
+
+-- A decision is made once: it cannot be changed, deleted or made by someone
+-- else afterwards, whatever role writes (the column grant already limits
+-- svc_sales to these four columns; this holds for the schema owner too).
+CREATE OR REPLACE FUNCTION sales.refuse_case_rewrite() RETURNS trigger
+LANGUAGE plpgsql AS $refuse$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        -- A direct DELETE is refused. The cascade of a sale or an import that
+        -- is itself deleted runs one trigger deeper and is let through: the
+        -- decision is about a sale that no longer exists.
+        IF OLD.resolution IS NOT NULL AND pg_trigger_depth() = 1 THEN
+            RAISE EXCEPTION 'reconciliation case % is settled and cannot be deleted',
+                OLD.case_id
+                USING ERRCODE = 'check_violation',
+                      CONSTRAINT = 'reconciliation_case_write_once';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.resolution IS NOT NULL
+       OR (NEW.case_id, NEW.import_id, NEW.imported_transaction_id,
+           NEW.matched_transaction_id, NEW.found_at)
+          IS DISTINCT FROM
+          (OLD.case_id, OLD.import_id, OLD.imported_transaction_id,
+           OLD.matched_transaction_id, OLD.found_at) THEN
+        RAISE EXCEPTION 'reconciliation case % can only be settled once',
+            OLD.case_id
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'reconciliation_case_write_once';
+    END IF;
+    RETURN NEW;
+END
+$refuse$;
+CREATE OR REPLACE TRIGGER reconciliation_case_write_once
+BEFORE UPDATE OR DELETE ON sales.reconciliation_case
+FOR EACH ROW EXECUTE FUNCTION sales.refuse_case_rewrite();
+
+GRANT SELECT, INSERT ON sales.reconciliation_case TO svc_sales;
+GRANT UPDATE (resolution, resolved_by, resolved_at, note)
+    ON sales.reconciliation_case TO svc_sales;
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products
@@ -1283,11 +1802,21 @@ GRANT SELECT ON api_sales.purchase_line_v1 TO svc_sales, svc_recommendations;
 -- capture trigger fires for every writer of public.product, the frozen web
 -- and a hard delete included, so no change is invisible to the cache
 -- invalidation of products and of recommendations.
+--
+-- F21-10 (#790) adds the product's commercial details in the service schema
+-- `products` (ADR-0046): a commercial status, attributes, a barcode and
+-- directed relations, each in its own table keyed by product_id and none a
+-- column of public.product, which stays as the web knows it. The status and
+-- public.product.is_active are kept in step by two triggers, so neither the
+-- web nor the service can leave them disagreeing (see the triggers below).
+-- docs/data-model.md §2.4 holds the 4NF justification.
 
 CREATE SCHEMA IF NOT EXISTS api_products;
 REVOKE ALL ON SCHEMA api_products FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS products_events;
 REVOKE ALL ON SCHEMA products_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS products;
+REVOKE ALL ON SCHEMA products FROM PUBLIC;
 
 -- Keys only, never state: consumers re-read the producer's api_ view.
 CREATE TABLE IF NOT EXISTS products_events.outbox (
@@ -1301,6 +1830,92 @@ CREATE TABLE IF NOT EXISTS products_events.outbox (
 CREATE INDEX IF NOT EXISTS outbox_unrelayed
     ON products_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
+-- GTIN check digit (GS1): from the right of the body, the digits weigh 3, 1,
+-- 3, 1, ...; the check digit completes their sum to a multiple of ten. Pure and
+-- immutable, so a CHECK can use it. products-service validates the same rule
+-- before it writes, to answer 422 invalid_barcode; this is the backstop, and
+-- services/products/tests pins the two together.
+CREATE OR REPLACE FUNCTION products.gtin_check_digit(body text) RETURNS integer
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp
+AS $gtin$
+    SELECT (10 - coalesce(sum(substr(body, length(body) - i + 1, 1)::integer
+                              * CASE WHEN i % 2 = 1 THEN 3 ELSE 1 END), 0) % 10) % 10
+      FROM generate_series(1, length(body)) AS i
+$gtin$;
+
+CREATE OR REPLACE FUNCTION products.gtin_is_valid(code text) RETURNS boolean
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+SET search_path = pg_catalog, pg_temp
+AS $gtin$
+    SELECT CASE
+        WHEN code ~ '^([0-9]{8}|[0-9]{12,14})$'
+        THEN right(code, 1)::integer = products.gtin_check_digit(left(code, -1))
+        ELSE false
+    END
+$gtin$;
+
+-- One row per product that has an explicit commercial status. A product with
+-- none reads as active when public.product.is_active, otherwise discontinued.
+-- is_active is true exactly when the status is active (decision 2 of the
+-- products contract, 1.2.0); paused and discontinued are both off sale.
+CREATE TABLE IF NOT EXISTS products.product_status (
+    product_id        integer NOT NULL,
+    commercial_status text    NOT NULL,
+    CONSTRAINT product_status_pkey PRIMARY KEY (product_id),
+    CONSTRAINT product_status_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_status_commercial_status_check
+        CHECK (commercial_status IN ('active', 'paused', 'discontinued'))
+);
+
+-- One row per (product, attribute name): the product's variable set of
+-- name and value pairs, split out so that no relation carries two independent
+-- multivalued facts (docs/data-model.md §2.4).
+CREATE TABLE IF NOT EXISTS products.product_attribute (
+    product_id integer NOT NULL,
+    name       text    NOT NULL,
+    value      text    NOT NULL,
+    CONSTRAINT product_attribute_pkey PRIMARY KEY (product_id, name),
+    CONSTRAINT product_attribute_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_attribute_name_check CHECK (name ~ '^[a-z][a-z0-9_]{0,39}$'),
+    CONSTRAINT product_attribute_value_check CHECK (char_length(value) BETWEEN 1 AND 120)
+);
+
+-- At most one barcode per product, and one product per barcode: a GTIN-8, -12,
+-- -13 or -14 with a valid check digit.
+CREATE TABLE IF NOT EXISTS products.product_barcode (
+    product_id integer NOT NULL,
+    barcode    text    NOT NULL,
+    CONSTRAINT product_barcode_pkey PRIMARY KEY (product_id),
+    CONSTRAINT product_barcode_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_barcode_barcode_key UNIQUE (barcode),
+    CONSTRAINT product_barcode_gtin_check CHECK (products.gtin_is_valid(barcode))
+);
+
+-- A directed relation: (A, B, substitute) does not imply (B, A, substitute).
+-- Both ends are products; a product is never related to itself.
+CREATE TABLE IF NOT EXISTS products.product_relation (
+    product_id         integer NOT NULL,
+    related_product_id integer NOT NULL,
+    relation_kind      text    NOT NULL,
+    CONSTRAINT product_relation_pkey
+        PRIMARY KEY (product_id, relation_kind, related_product_id),
+    CONSTRAINT product_relation_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_relation_related_product_id_fkey
+        FOREIGN KEY (related_product_id) REFERENCES public.product (product_id) ON DELETE CASCADE,
+    CONSTRAINT product_relation_kind_check
+        CHECK (relation_kind IN ('substitute', 'complement')),
+    CONSTRAINT product_relation_not_self_check CHECK (product_id <> related_product_id)
+);
+-- A product delete (the web's) cascades through related_product_id, which the
+-- primary key does not lead with.
+CREATE INDEX IF NOT EXISTS idx_product_relation_related
+    ON products.product_relation (related_product_id);
+
 -- contracts/db/api_products.product_ref.v1.md. Definer rights
 -- (security_invoker = off): a consumer reads these columns and nothing else of
 -- public.product. image_path stays web-managed and is not published.
@@ -1308,6 +1923,13 @@ CREATE OR REPLACE VIEW api_products.product_ref_v1
 WITH (security_invoker = off) AS
 SELECT product_id, sku, name, category_id, list_price, is_active
 FROM public.product;
+
+-- contracts/db/api_products.product_relation.v1.md. Definer rights, so
+-- recommendations reads the three columns without any privilege on the table.
+CREATE OR REPLACE VIEW api_products.product_relation_v1
+WITH (security_invoker = off) AS
+SELECT product_id, related_product_id, relation_kind
+FROM products.product_relation;
 
 -- Captures every writer, the web included, in the writer's transaction.
 CREATE OR REPLACE FUNCTION products_events.capture_changed() RETURNS trigger
@@ -1337,6 +1959,94 @@ CREATE OR REPLACE TRIGGER trg_capture_changed
 AFTER INSERT OR UPDATE OR DELETE ON public.product
 FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
 
+-- The commercial details are product source of truth too: the same capture
+-- function announces a change to any of them with the product's id, so the
+-- caches of products and recommendations are invalidated the same way.
+CREATE OR REPLACE TRIGGER trg_capture_status_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_status
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_attribute_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_attribute
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_barcode_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_barcode
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_relation_changed
+AFTER INSERT OR UPDATE OR DELETE ON products.product_relation
+FOR EACH ROW EXECUTE FUNCTION products_events.capture_changed();
+
+-- Catalog data is audited (RN-28), the actor coming from mosaiq.user_id, which
+-- the kit sets in every service transaction. The entity is the table's name,
+-- unique across schemas (ADR-0046), and the key is the product the row is
+-- about; the before and after documents carry the rest.
+CREATE OR REPLACE TRIGGER trg_audit_product_status
+AFTER INSERT OR UPDATE OR DELETE ON products.product_status
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_attribute
+AFTER INSERT OR UPDATE OR DELETE ON products.product_attribute
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_barcode
+AFTER INSERT OR UPDATE OR DELETE ON products.product_barcode
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+CREATE OR REPLACE TRIGGER trg_audit_product_relation
+AFTER INSERT OR UPDATE OR DELETE ON products.product_relation
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('product_id');
+
+-- Status and is_active in step, in both directions, by the database. Each
+-- trigger runs only when no other trigger is running (pg_trigger_depth() < 1),
+-- so one change cannot call the other back; the write each makes is the whole
+-- of the sync.
+--
+-- A change of public.product.is_active, by the web or by PATCH
+-- /v1/products/{id}: true sets the status active; false sets it discontinued,
+-- unless it is already paused. It runs as definer_products, because the web
+-- has no privilege on the status table.
+CREATE OR REPLACE FUNCTION products.sync_status_from_product() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $sync$
+BEGIN
+    INSERT INTO products.product_status AS s (product_id, commercial_status)
+    VALUES (NEW.product_id, CASE WHEN NEW.is_active THEN 'active' ELSE 'discontinued' END)
+    ON CONFLICT (product_id) DO UPDATE
+       SET commercial_status = EXCLUDED.commercial_status
+     WHERE s.commercial_status IS DISTINCT FROM EXCLUDED.commercial_status
+       AND NOT (s.commercial_status = 'paused' AND NOT NEW.is_active);
+    RETURN NULL;
+END
+$sync$;
+ALTER FUNCTION products.sync_status_from_product() OWNER TO definer_products;
+REVOKE EXECUTE ON FUNCTION products.sync_status_from_product() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_sync_status_from_product
+AFTER UPDATE OF is_active ON public.product
+FOR EACH ROW
+WHEN (OLD.is_active IS DISTINCT FROM NEW.is_active AND pg_trigger_depth() < 1)
+EXECUTE FUNCTION products.sync_status_from_product();
+
+-- A write of the status (PATCH /v1/products/{id}/details): active sets
+-- is_active true, paused and discontinued set it false. It runs with the
+-- writer's own rights, and svc_products holds UPDATE (is_active) already.
+CREATE OR REPLACE FUNCTION products.sync_product_from_status() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $sync$
+BEGIN
+    UPDATE public.product
+       SET is_active = (NEW.commercial_status = 'active')
+     WHERE product_id = NEW.product_id
+       AND is_active IS DISTINCT FROM (NEW.commercial_status = 'active');
+    RETURN NULL;
+END
+$sync$;
+
+CREATE OR REPLACE TRIGGER trg_sync_product_from_status
+AFTER INSERT OR UPDATE OF commercial_status ON products.product_status
+FOR EACH ROW
+WHEN (pg_trigger_depth() < 1)
+EXECUTE FUNCTION products.sync_product_from_status();
+
 -- svc_products writes the catalog but never deletes from it, and never
 -- touches image_path (web-managed). Each is a row of contracts/db/grants.csv.
 GRANT SELECT, INSERT ON public.product TO svc_products;
@@ -1347,18 +2057,42 @@ GRANT INSERT ON products_events.outbox TO definer_products;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON products_events.outbox TO svc_products;
 
 GRANT USAGE ON SCHEMA api_products
-    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement, svc_stock;
 GRANT SELECT ON api_products.product_ref_v1
-    TO svc_products, svc_sales, svc_recommendations, svc_engagement;
+    TO svc_products, svc_sales, svc_recommendations, svc_engagement, svc_stock;
+
+-- The commercial details. A status is set, never removed; an attribute set is
+-- replaced by insert, update of value and delete; a barcode is set or replaced,
+-- never cleared; a relation has no column to update, so a replace inserts and
+-- deletes. definer_products writes the status from the is_active trigger.
+GRANT USAGE ON SCHEMA products TO svc_products, definer_products;
+GRANT SELECT, INSERT ON products.product_status TO svc_products, definer_products;
+GRANT UPDATE (commercial_status) ON products.product_status TO svc_products, definer_products;
+GRANT SELECT, INSERT, DELETE ON products.product_attribute TO svc_products;
+GRANT UPDATE (value) ON products.product_attribute TO svc_products;
+GRANT SELECT, INSERT ON products.product_barcode TO svc_products;
+GRANT UPDATE (barcode) ON products.product_barcode TO svc_products;
+GRANT SELECT, INSERT, DELETE ON products.product_relation TO svc_products;
+
+GRANT SELECT ON api_products.product_relation_v1 TO svc_products, svc_recommendations;
+
+-- The bench-only twin serves the details and relations reads too, read-only
+-- (ADR-0078): SELECT on the four tables and USAGE on their schema, no write.
+GRANT USAGE ON SCHEMA products TO svc_products_bench;
+GRANT SELECT ON products.product_status, products.product_attribute,
+    products.product_barcode, products.product_relation TO svc_products_bench;
 -- END BOUNDARY products
 
 -- BEGIN BOUNDARY customers
--- customers-service (F14-14) owns the registration rule of RN-08: email unique
+-- customers-service (F14-14, F21-14) owns the registration and loyalty-card
+-- rule of RN-08: email unique
 -- when given, whatever the letter case (ux_customer_email_lower), a known channel
 -- (customer_registration_channel_id_fkey), a registration date not in the
 -- future (checked by the service) and no deletion. The table stays in public
--- as legacy, and the web only reads it. The boundary publishes no stream, so it
--- has no outbox and no capture trigger.
+-- as legacy, and the web only reads it. F21-19 (ADR-0066 section 3) adds the
+-- other half of RN-08: a customer is anonymized in place, never deleted. The
+-- boundary therefore publishes one stream, stream:customers.v1.anonymized,
+-- relayed from customers_events.outbox, and one flag in the customer reference.
 
 -- One customer per mailbox, whatever the letter case (#594), as app_user
 -- (#288). A plain UNIQUE on email let Ana@ and ana@ register as two customers.
@@ -1371,28 +2105,251 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_email_lower
 
 CREATE SCHEMA IF NOT EXISTS api_customers;
 REVOKE ALL ON SCHEMA api_customers FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS customers;
+REVOKE ALL ON SCHEMA customers FROM PUBLIC;
 
--- The published customer reference: identity and registration date, and no
--- personal data. security_invoker = off, so a consumer needs no privilege on
--- public.customer.
+-- Loyalty identifiers are durable facts: revocation updates a row and no role
+-- receives DELETE. The partial index is the database half of the one-active-
+-- card rule and remains effective for writes that bypass customers-service.
+CREATE TABLE IF NOT EXISTS customers.loyalty_card (
+    card_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id         UUID NOT NULL REFERENCES public.customer(customer_id),
+    code                VARCHAR(26) NOT NULL UNIQUE,
+    status              VARCHAR(7) NOT NULL DEFAULT 'ACTIVE',
+    issued_at           TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    issued_by           UUID NOT NULL REFERENCES public.app_user(user_id),
+    revoked_at          TIMESTAMPTZ,
+    revoked_by          UUID REFERENCES public.app_user(user_id),
+    revocation_reason   VARCHAR(16),
+    CONSTRAINT loyalty_card_code_check
+        CHECK (code ~ '^[0-9A-HJKMNP-TV-Z]{26}$'),
+    CONSTRAINT loyalty_card_status_check
+        CHECK (status IN ('ACTIVE', 'REVOKED')),
+    CONSTRAINT loyalty_card_revocation_reason_check
+        CHECK (revocation_reason IS NULL OR revocation_reason IN
+               ('LOST', 'STOLEN', 'REPLACED', 'CUSTOMER_REQUEST', 'OTHER')),
+    CONSTRAINT loyalty_card_revocation_state_check CHECK (
+        (status = 'ACTIVE' AND revoked_at IS NULL AND revoked_by IS NULL
+                           AND revocation_reason IS NULL)
+        OR
+        (status = 'REVOKED' AND revoked_at IS NOT NULL AND revoked_by IS NOT NULL
+                            AND revocation_reason IS NOT NULL)
+    )
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_loyalty_card_one_active_customer
+    ON customers.loyalty_card (customer_id) WHERE status = 'ACTIVE';
+CREATE INDEX IF NOT EXISTS idx_loyalty_card_customer_issued
+    ON customers.loyalty_card (customer_id, issued_at DESC, card_id);
+
+DROP TRIGGER IF EXISTS trg_audit_loyalty_card ON customers.loyalty_card;
+CREATE TRIGGER trg_audit_loyalty_card
+AFTER INSERT OR UPDATE ON customers.loyalty_card
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('card_id');
+
+-- Anonymization (F21-19, ADR-0066 section 3). anonymized_at is the one marker:
+-- null until the identity is removed in place, then the instant it was, once.
+-- It depends on the customer alone, so the model stays in 4NF (docs/data-model.md
+-- section 2.4). Two guards keep it honest for every writer, the web and a direct
+-- UPDATE included, because an application check alone is bypassed: the CHECK says
+-- a marked row holds no identity, and the trigger says a marked row never changes
+-- again. The placeholder is the name column's NOT NULL replacement.
+ALTER TABLE public.customer ADD COLUMN IF NOT EXISTS anonymized_at TIMESTAMPTZ;
+DO $anonymized_check$ BEGIN
+    ALTER TABLE public.customer ADD CONSTRAINT customer_anonymized_identity_check
+        CHECK (anonymized_at IS NULL OR (
+            name = 'Anonymized customer' AND email IS NULL AND phone IS NULL
+            AND user_id IS NULL));
+EXCEPTION WHEN duplicate_object THEN NULL; END $anonymized_check$;
+
+CREATE OR REPLACE FUNCTION customers.refuse_anonymized_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION 'customer % is anonymized and accepts no change', OLD.customer_id
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_anonymized';
+END
+$refuse$;
+REVOKE EXECUTE ON FUNCTION customers.refuse_anonymized_change() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_customer_anonymized_is_final ON public.customer;
+CREATE TRIGGER trg_customer_anonymized_is_final
+BEFORE UPDATE ON public.customer
+FOR EACH ROW WHEN (OLD.anonymized_at IS NOT NULL)
+EXECUTE FUNCTION customers.refuse_anonymized_change();
+
+-- An anonymized customer holds no loyalty card (ADR-0066): a card is never issued
+-- to one. The check is the table's, so a direct INSERT meets it too.
+CREATE OR REPLACE FUNCTION customers.refuse_card_for_anonymized() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    IF EXISTS (SELECT 1 FROM public.customer AS c
+                WHERE c.customer_id = NEW.customer_id AND c.anonymized_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'customer % is anonymized and holds no loyalty card', NEW.customer_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_anonymized';
+    END IF;
+    RETURN NEW;
+END
+$refuse$;
+REVOKE EXECUTE ON FUNCTION customers.refuse_card_for_anonymized() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_loyalty_card_not_for_anonymized ON customers.loyalty_card;
+CREATE TRIGGER trg_loyalty_card_not_for_anonymized
+BEFORE INSERT ON customers.loyalty_card
+FOR EACH ROW EXECUTE FUNCTION customers.refuse_card_for_anonymized();
+
+-- The published customer reference: identity, registration date and the
+-- anonymized flag, and no personal data. security_invoker = off, so a consumer
+-- needs no privilege on public.customer. anonymized is appended last so the view
+-- is replaced in place (contracts/db/api_customers.customer_ref.v1.md).
 CREATE OR REPLACE VIEW api_customers.customer_ref_v1
 WITH (security_invoker = off) AS
-SELECT customer_id, registered_on
+SELECT customer_id, registered_on, (anonymized_at IS NOT NULL) AS anonymized
 FROM public.customer;
 REVOKE ALL ON api_customers.customer_ref_v1 FROM PUBLIC;
+
+-- The identity inside an audit payload (ADR-0066 section 3): name, email and
+-- phone that are present and not JSON null become the marker; nothing else of
+-- the payload changes. Pure, so fn_audit, the redaction pass and the tests share
+-- one definition.
+CREATE OR REPLACE FUNCTION public.fn_redact_identity(d jsonb) RETURNS jsonb
+LANGUAGE sql IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $redact$
+    SELECT CASE WHEN d IS NULL THEN NULL ELSE
+        d || coalesce((SELECT jsonb_object_agg(k, '"[redacted]"'::jsonb)
+                         FROM unnest(ARRAY['name', 'email', 'phone']) AS k
+                        WHERE d ? k AND jsonb_typeof(d -> k) <> 'null'), '{}'::jsonb)
+    END
+$redact$;
+
+-- Removes the identity from every audit entry of one anonymized customer's row,
+-- and returns how many entries changed. It runs as definer_customers, which may
+-- read those columns and update the two payloads and nothing else; no svc_* role
+-- gains UPDATE on audit_log (ADR-0024, ADR-0066). It refuses a customer that is
+-- not anonymized, so it cannot be used to blank anyone's trail. The entries, their
+-- number, keys, actions, times and actors stay.
+CREATE OR REPLACE FUNCTION customers.redact_audit_v1(p_customer uuid) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $redact_audit$
+DECLARE
+    changed integer;
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM public.customer AS c
+                    WHERE c.customer_id = p_customer AND c.anonymized_at IS NOT NULL) THEN
+        RAISE EXCEPTION 'customer % is not anonymized', p_customer
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'customer_not_anonymized';
+    END IF;
+    UPDATE public.audit_log AS a
+       SET data_before = public.fn_redact_identity(a.data_before),
+           data_after = public.fn_redact_identity(a.data_after)
+     WHERE a.entity = 'customer' AND a.entity_pk = p_customer::text
+       AND (a.data_before IS DISTINCT FROM public.fn_redact_identity(a.data_before)
+            OR a.data_after IS DISTINCT FROM public.fn_redact_identity(a.data_after));
+    GET DIAGNOSTICS changed = ROW_COUNT;
+    RETURN changed;
+END
+$redact_audit$;
+ALTER FUNCTION customers.redact_audit_v1(uuid) OWNER TO definer_customers;
+REVOKE ALL ON FUNCTION customers.redact_audit_v1(uuid) FROM PUBLIC;
+
+-- Keys only, never state: a consumer re-reads api_customers.customer_ref_v1.
+CREATE SCHEMA IF NOT EXISTS customers_events;
+REVOKE ALL ON SCHEMA customers_events FROM PUBLIC;
+CREATE TABLE IF NOT EXISTS customers_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON customers_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- One outbox row, in the transaction that removes the identity, and none for a
+-- row that changes anything else (contracts/streams/customers.anonymized.v1.md).
+CREATE OR REPLACE FUNCTION customers_events.capture_anonymized() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO customers_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:customers.v1.anonymized', TG_OP, NEW.customer_id::text);
+    -- An empty wake-up for the customers relay; only that relay LISTENs.
+    PERFORM pg_notify('customers_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION customers_events.capture_anonymized() OWNER TO definer_customers;
+REVOKE EXECUTE ON FUNCTION customers_events.capture_anonymized() FROM PUBLIC;
+
+DROP TRIGGER IF EXISTS trg_customers_capture_anonymized ON public.customer;
+CREATE TRIGGER trg_customers_capture_anonymized
+AFTER UPDATE OF anonymized_at ON public.customer
+FOR EACH ROW WHEN (OLD.anonymized_at IS NULL AND NEW.anonymized_at IS NOT NULL)
+EXECUTE FUNCTION customers_events.capture_anonymized();
+
+-- Consumers can resolve one active code but cannot enumerate card data.
+CREATE OR REPLACE FUNCTION api_customers.resolve_loyalty_code_v1(p_code text)
+RETURNS TABLE (card_id uuid, customer_id uuid)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT card.card_id, card.customer_id
+    FROM customers.loyalty_card AS card
+    WHERE p_code ~ '^[0-9A-HJKMNP-TV-Z]{26}$'
+      AND card.code = p_code
+      AND card.status = 'ACTIVE'
+$$;
+ALTER FUNCTION api_customers.resolve_loyalty_code_v1(text)
+    OWNER TO definer_customers;
+REVOKE ALL ON FUNCTION api_customers.resolve_loyalty_code_v1(text) FROM PUBLIC;
 
 -- The only service writer of customer: no DELETE, and registered_on and
 -- user_id can be set at registration but never corrected.
 GRANT SELECT, INSERT ON public.customer TO svc_customers;
 GRANT UPDATE (name, email, phone, registration_channel_id)
     ON public.customer TO svc_customers;
+-- Anonymization sets the marker and clears the account link; the CHECK and the
+-- triggers above say what an UPDATE of them may leave behind.
+GRANT UPDATE (user_id, anonymized_at) ON public.customer TO svc_customers;
+-- The redaction function reads the customer's marker and rewrites two payloads
+-- of audit_log, and does nothing else.
+GRANT SELECT (customer_id, anonymized_at) ON public.customer TO definer_customers;
+GRANT SELECT (entity, entity_pk, data_before, data_after),
+      UPDATE (data_before, data_after) ON public.audit_log TO definer_customers;
+GRANT EXECUTE ON FUNCTION customers.redact_audit_v1(uuid) TO svc_customers;
+
+GRANT USAGE ON SCHEMA customers_events TO svc_customers, definer_customers;
+GRANT INSERT ON customers_events.outbox TO definer_customers;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON customers_events.outbox TO svc_customers;
+
+GRANT USAGE ON SCHEMA customers TO svc_customers, definer_customers;
+GRANT SELECT, INSERT ON customers.loyalty_card TO svc_customers;
+GRANT UPDATE (status, revoked_at, revoked_by, revocation_reason)
+    ON customers.loyalty_card TO svc_customers;
+GRANT SELECT ON customers.loyalty_card TO definer_customers;
 
 GRANT USAGE ON SCHEMA api_customers
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
-       svc_recommendations, svc_engagement;
+       svc_recommendations, svc_engagement, svc_checkins;
 GRANT SELECT ON api_customers.customer_ref_v1
     TO svc_customers, svc_sales, svc_preferences, svc_segments,
        svc_recommendations, svc_engagement;
+GRANT EXECUTE ON FUNCTION api_customers.resolve_loyalty_code_v1(text)
+    TO svc_checkins;
+-- The retention candidates (#1061) read each customer's latest sale through the
+-- sales boundary's published lines; its latest visit is granted in check-ins.
+GRANT USAGE ON SCHEMA api_sales TO svc_customers;
+GRANT SELECT ON api_sales.purchase_line_v1 TO svc_customers;
 -- END BOUNDARY customers
 
 -- BEGIN BOUNDARY segments
@@ -1484,6 +2441,8 @@ GRANT SELECT ON api_segments.current_label_v1 TO svc_segments, svc_recommendatio
 -- channel or category delete are announced too. The tables carry no audit
 -- trigger, and this section adds none.
 
+CREATE SCHEMA IF NOT EXISTS preferences;
+REVOKE ALL ON SCHEMA preferences FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS api_preferences;
 REVOKE ALL ON SCHEMA api_preferences FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS preferences_events;
@@ -1501,6 +2460,231 @@ CREATE TABLE IF NOT EXISTS preferences_events.outbox (
 CREATE INDEX IF NOT EXISTS outbox_unrelayed
     ON preferences_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
+-- F21-17 (#795, ADR-0066, RN-73): the consent log, the restriction log and the
+-- preference history. All four tables are append-only: svc_preferences holds
+-- SELECT and INSERT and nothing else, and a trigger refuses UPDATE, DELETE and
+-- TRUNCATE for every role, the owner included (refuse_change, below). A
+-- customer is never deleted (RN-08), so the foreign keys to it are RESTRICT.
+
+-- One row per consent decision. The current state of a purpose is its row with
+-- the largest decision_id. recorded_by is null exactly for the backfill that
+-- gave customers registered before consent existed their programme default.
+CREATE TABLE IF NOT EXISTS preferences.consent_decision (
+    decision_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id UUID NOT NULL,
+    purpose VARCHAR(20) NOT NULL,
+    decision VARCHAR(20) NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    recorded_by UUID,
+    source VARCHAR(20) NOT NULL,
+    basis VARCHAR(20) NOT NULL,
+    CONSTRAINT consent_decision_pkey PRIMARY KEY (decision_id),
+    CONSTRAINT consent_decision_customer_id_fkey FOREIGN KEY (customer_id)
+        REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    CONSTRAINT consent_decision_recorded_by_fkey FOREIGN KEY (recorded_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT consent_decision_purpose_check
+        CHECK (purpose IN ('PERSONALIZATION', 'MARKETING_CONTACT', 'PROFILING')),
+    CONSTRAINT consent_decision_decision_check
+        CHECK (decision IN ('GRANTED', 'WITHDRAWN')),
+    CONSTRAINT consent_decision_source_check
+        CHECK (source IN ('STAFF_ON_BEHALF', 'CUSTOMER_SELF', 'MIGRATION')),
+    CONSTRAINT consent_decision_basis_check
+        CHECK (basis IN ('EXPLICIT', 'PROGRAMME_DEFAULT')),
+    CONSTRAINT consent_decision_migration_check
+        CHECK ((source = 'MIGRATION') = (recorded_by IS NULL)
+           AND (source = 'MIGRATION') = (basis = 'PROGRAMME_DEFAULT'))
+);
+CREATE INDEX IF NOT EXISTS consent_decision_customer_purpose
+    ON preferences.consent_decision (customer_id, purpose, decision_id DESC);
+
+-- One row per restriction decision. A restriction names a channel or an
+-- interest category: two nullable references, exactly one set, each with its
+-- own foreign key; target_id is the one that is set.
+CREATE TABLE IF NOT EXISTS preferences.restriction_decision (
+    decision_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id UUID NOT NULL,
+    kind VARCHAR(20) NOT NULL,
+    channel_id SMALLINT,
+    category_id SMALLINT,
+    target_id SMALLINT GENERATED ALWAYS AS (COALESCE(channel_id, category_id)) STORED,
+    decision VARCHAR(20) NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    recorded_by UUID NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    CONSTRAINT restriction_decision_pkey PRIMARY KEY (decision_id),
+    CONSTRAINT restriction_decision_customer_id_fkey FOREIGN KEY (customer_id)
+        REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_channel_id_fkey FOREIGN KEY (channel_id)
+        REFERENCES public.channel(channel_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_category_id_fkey FOREIGN KEY (category_id)
+        REFERENCES public.category(category_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_recorded_by_fkey FOREIGN KEY (recorded_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT restriction_decision_kind_check
+        CHECK (kind IN ('CHANNEL', 'INTEREST_CATEGORY')),
+    CONSTRAINT restriction_decision_target_check
+        CHECK ((kind = 'CHANNEL' AND channel_id IS NOT NULL AND category_id IS NULL)
+            OR (kind = 'INTEREST_CATEGORY' AND category_id IS NOT NULL AND channel_id IS NULL)),
+    CONSTRAINT restriction_decision_decision_check
+        CHECK (decision IN ('IMPOSED', 'LIFTED')),
+    CONSTRAINT restriction_decision_source_check
+        CHECK (source IN ('STAFF_ON_BEHALF', 'CUSTOMER_SELF'))
+);
+CREATE INDEX IF NOT EXISTS restriction_decision_customer_target
+    ON preferences.restriction_decision (customer_id, kind, target_id, decision_id DESC);
+-- The RESTRICT checks when the web deletes a channel or categories-service
+-- deletes a category scan the child by these keys.
+CREATE INDEX IF NOT EXISTS restriction_decision_channel
+    ON preferences.restriction_decision (channel_id) WHERE channel_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS restriction_decision_category
+    ON preferences.restriction_decision (category_id) WHERE category_id IS NOT NULL;
+
+-- One row per replace of a declared set that changed it. The ids the set held
+-- before and holds after are in preference_change_member, one row per id.
+CREATE TABLE IF NOT EXISTS preferences.preference_change (
+    change_id BIGINT GENERATED ALWAYS AS IDENTITY,
+    customer_id UUID NOT NULL,
+    preference_set VARCHAR(20) NOT NULL,
+    changed_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    changed_by UUID NOT NULL,
+    CONSTRAINT preference_change_pkey PRIMARY KEY (change_id),
+    CONSTRAINT preference_change_customer_id_fkey FOREIGN KEY (customer_id)
+        REFERENCES public.customer(customer_id) ON DELETE RESTRICT,
+    CONSTRAINT preference_change_changed_by_fkey FOREIGN KEY (changed_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    CONSTRAINT preference_change_set_check
+        CHECK (preference_set IN ('PREFERRED_CHANNELS', 'INTEREST_CATEGORIES'))
+);
+CREATE INDEX IF NOT EXISTS preference_change_customer
+    ON preferences.preference_change (customer_id, change_id DESC);
+
+-- member_id is a channel id or a category id by the change's preference_set. It
+-- has no foreign key on purpose: it records what the set held at a past
+-- moment, and must stay readable after a channel or category is retired.
+CREATE TABLE IF NOT EXISTS preferences.preference_change_member (
+    change_id BIGINT NOT NULL,
+    side VARCHAR(6) NOT NULL,
+    member_id SMALLINT NOT NULL,
+    CONSTRAINT preference_change_member_pkey PRIMARY KEY (change_id, side, member_id),
+    CONSTRAINT preference_change_member_change_id_fkey FOREIGN KEY (change_id)
+        REFERENCES preferences.preference_change(change_id) ON DELETE RESTRICT,
+    CONSTRAINT preference_change_member_side_check CHECK (side IN ('BEFORE', 'AFTER'))
+);
+
+-- The second layer after the privileges, as for audit_events.domain_event:
+-- even the owner's UPDATE, DELETE or TRUNCATE is refused unless an operator's
+-- archiving script drops these triggers first.
+CREATE OR REPLACE FUNCTION preferences.refuse_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION '%.% is append-only (% refused)', TG_TABLE_SCHEMA, TG_TABLE_NAME, TG_OP
+        USING ERRCODE = 'check_violation', CONSTRAINT = TG_TABLE_NAME || '_append_only';
+END
+$refuse$;
+CREATE OR REPLACE TRIGGER consent_decision_append_only
+BEFORE UPDATE OR DELETE ON preferences.consent_decision
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER consent_decision_no_truncate
+BEFORE TRUNCATE ON preferences.consent_decision
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER restriction_decision_append_only
+BEFORE UPDATE OR DELETE ON preferences.restriction_decision
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER restriction_decision_no_truncate
+BEFORE TRUNCATE ON preferences.restriction_decision
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_append_only
+BEFORE UPDATE OR DELETE ON preferences.preference_change
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_no_truncate
+BEFORE TRUNCATE ON preferences.preference_change
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_member_append_only
+BEFORE UPDATE OR DELETE ON preferences.preference_change_member
+FOR EACH ROW EXECUTE FUNCTION preferences.refuse_change();
+CREATE OR REPLACE TRIGGER preference_change_member_no_truncate
+BEFORE TRUNCATE ON preferences.preference_change_member
+FOR EACH STATEMENT EXECUTE FUNCTION preferences.refuse_change();
+
+-- ADR-0066 section 1, the default for customers registered before consent
+-- existed: PROFILING and PERSONALIZATION granted, MARKETING_CONTACT withdrawn,
+-- each as a MIGRATION row with no actor. It runs only against an empty log, so
+-- it gives the customers that exist when the log is created their default and
+-- never a customer registered afterwards, who has none until a decision is
+-- recorded. On an empty database there is no customer yet and it appends
+-- nothing; 02_seed_30_per_table.sql appends the seeded customers' defaults.
+INSERT INTO preferences.consent_decision (customer_id, purpose, decision, recorded_by, source, basis)
+SELECT c.customer_id, p.purpose, p.decision, NULL, 'MIGRATION', 'PROGRAMME_DEFAULT'
+FROM public.customer AS c
+CROSS JOIN (VALUES ('PERSONALIZATION', 'GRANTED'),
+                   ('MARKETING_CONTACT', 'WITHDRAWN'),
+                   ('PROFILING', 'GRANTED')) AS p(purpose, decision)
+WHERE NOT EXISTS (SELECT FROM preferences.consent_decision)
+ORDER BY c.customer_id, p.purpose;
+
+-- F21-18 (#796, ADR-0066, RN-34, RN-35): the interests inferred from a
+-- customer's net purchases, kept apart from the declared ones in
+-- public.customer_interest_category, which inference never writes. One row per
+-- customer and category; a run replaces a customer's whole set (DELETE and
+-- INSERT under the customer's decision lock), so the role gets no UPDATE.
+-- Every row says where it came from (source), over how many days (window_days)
+-- and how strongly (strength, the percentage of the customer's net purchases
+-- in the window that include a product of the category, rounded half up).
+-- The rows are derived and can be recomputed, so a category's deletion removes
+-- them; a customer is never deleted (RN-08), so that key is RESTRICT. When
+-- PROFILING is withdrawn the service deletes the customer's rows in the same
+-- transaction as the decision (ADR-0066 section 3).
+CREATE TABLE IF NOT EXISTS preferences.inferred_interest (
+    customer_id UUID NOT NULL,
+    category_id SMALLINT NOT NULL,
+    source VARCHAR(20) NOT NULL,
+    window_days SMALLINT NOT NULL,
+    strength SMALLINT NOT NULL,
+    inferred_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DO $inferred$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_pkey'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_pkey PRIMARY KEY (customer_id, category_id);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_customer_id_fkey'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_customer_id_fkey FOREIGN KEY (customer_id)
+                REFERENCES public.customer(customer_id) ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_category_id_fkey'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_category_id_fkey FOREIGN KEY (category_id)
+                REFERENCES public.category(category_id) ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_source_check'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_source_check CHECK (source IN ('NET_PURCHASES'));
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_window_days_check'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_window_days_check
+                CHECK (window_days BETWEEN 1 AND 3650);
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = 'inferred_interest_strength_check'
+                   AND conrelid = 'preferences.inferred_interest'::regclass) THEN
+        ALTER TABLE preferences.inferred_interest
+            ADD CONSTRAINT inferred_interest_strength_check CHECK (strength BETWEEN 1 AND 100);
+    END IF;
+END
+$inferred$;
+CREATE INDEX IF NOT EXISTS inferred_interest_category
+    ON preferences.inferred_interest (category_id);
+
 -- contracts/db/api_preferences.interest_category.v1.md. Definer rights
 -- (security_invoker = off): recommendations reads these two columns and needs
 -- no privilege on the base table.
@@ -1509,6 +2693,43 @@ WITH (security_invoker = off) AS
 SELECT customer_id, category_id
 FROM public.customer_interest_category;
 REVOKE ALL ON api_preferences.interest_category_v1 FROM PUBLIC;
+
+-- contracts/db/api_preferences.consent_state.v1.md: the latest decision of each
+-- purpose, by decision_id. No actor and no source: reading a customer's state
+-- is not reading the log.
+CREATE OR REPLACE VIEW api_preferences.consent_state_v1
+WITH (security_invoker = off) AS
+SELECT DISTINCT ON (d.customer_id, d.purpose)
+       d.customer_id, d.purpose, d.decision, d.decision_id, d.recorded_at, d.basis
+FROM preferences.consent_decision AS d
+ORDER BY d.customer_id, d.purpose, d.decision_id DESC;
+REVOKE ALL ON api_preferences.consent_state_v1 FROM PUBLIC;
+
+-- contracts/db/api_preferences.restriction_v1.md: a row while the latest
+-- decision for the target is IMPOSED.
+CREATE OR REPLACE VIEW api_preferences.restriction_v1
+WITH (security_invoker = off) AS
+SELECT latest.customer_id, latest.kind, latest.target_id, latest.decision_id,
+       latest.recorded_at AS imposed_at
+FROM (
+    SELECT DISTINCT ON (d.customer_id, d.kind, d.target_id)
+           d.customer_id, d.kind, d.target_id, d.decision, d.decision_id, d.recorded_at
+    FROM preferences.restriction_decision AS d
+    ORDER BY d.customer_id, d.kind, d.target_id, d.decision_id DESC
+) AS latest
+WHERE latest.decision = 'IMPOSED';
+REVOKE ALL ON api_preferences.restriction_v1 FROM PUBLIC;
+
+-- The web's batch segmentation cannot read api_preferences (ADR-0046) and
+-- consumes no service, so it reads this read-only view with the same
+-- definition: the database route of ADR-0045 (ADR-0066 section 2). SELECT
+-- only; the default privileges of public must not make it writable.
+CREATE OR REPLACE VIEW public.consent_state
+WITH (security_invoker = off) AS
+SELECT customer_id, purpose, decision, decision_id, recorded_at, basis
+FROM api_preferences.consent_state_v1;
+REVOKE ALL ON public.consent_state FROM PUBLIC, retail_app;
+GRANT SELECT ON public.consent_state TO retail_app;
 
 -- Captures every writer of either set, the web included, in the writer's
 -- transaction. entity_id is the customer whose profile changed (ADR-0044).
@@ -1542,6 +2763,32 @@ CREATE OR REPLACE TRIGGER trg_capture_interest_category_changed
 AFTER INSERT OR DELETE ON public.customer_interest_category
 FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_changed();
 
+-- The consent stream (contracts/streams/preferences.consent_changed.v1.md):
+-- one key-only event per row appended to either log, in the transaction that
+-- appends it, so a rollback announces nothing and the views already show the
+-- change when the event is visible.
+CREATE OR REPLACE FUNCTION preferences_events.capture_consent_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO preferences_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:preferences.v1.consent_changed', TG_OP, NEW.customer_id::text);
+    PERFORM pg_notify('preferences_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION preferences_events.capture_consent_changed() OWNER TO definer_preferences;
+REVOKE EXECUTE ON FUNCTION preferences_events.capture_consent_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_consent_decision_changed
+AFTER INSERT ON preferences.consent_decision
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_consent_changed();
+CREATE OR REPLACE TRIGGER trg_capture_restriction_decision_changed
+AFTER INSERT ON preferences.restriction_decision
+FOR EACH ROW EXECUTE FUNCTION preferences_events.capture_consent_changed();
+
 -- Whole-set replace: SELECT, INSERT and DELETE, never UPDATE. The customer is
 -- checked through api_customers.customer_ref_v1 (granted in the customers
 -- section), and channels and categories by foreign key, which needs no
@@ -1553,8 +2800,25 @@ GRANT USAGE ON SCHEMA preferences_events TO svc_preferences, definer_preferences
 GRANT INSERT ON preferences_events.outbox TO definer_preferences;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON preferences_events.outbox TO svc_preferences;
 
-GRANT USAGE ON SCHEMA api_preferences TO svc_preferences, svc_recommendations;
+GRANT USAGE ON SCHEMA preferences TO svc_preferences;
+GRANT SELECT, INSERT ON preferences.consent_decision, preferences.restriction_decision,
+    preferences.preference_change, preferences.preference_change_member TO svc_preferences;
+-- F21-18: inference replaces a customer's inferred set whole, so SELECT, INSERT
+-- and DELETE, never UPDATE. It reads what a customer bought and the category of
+-- each product only through the published views of sales and products.
+GRANT SELECT, INSERT, DELETE ON preferences.inferred_interest TO svc_preferences;
+GRANT USAGE ON SCHEMA api_sales, api_products TO svc_preferences;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_preferences;
+GRANT SELECT ON api_products.product_ref_v1 TO svc_preferences;
+
+GRANT USAGE ON SCHEMA api_preferences
+    TO svc_preferences, svc_recommendations, svc_campaigns, svc_checkins;
 GRANT SELECT ON api_preferences.interest_category_v1 TO svc_preferences, svc_recommendations;
+-- The readers named by contracts/db/api_preferences.consent_state.v1.md and
+-- restriction.v1.md whose roles exist; rfm-engine's follows with its role.
+GRANT SELECT ON api_preferences.consent_state_v1
+    TO svc_preferences, svc_recommendations, svc_campaigns, svc_checkins;
+GRANT SELECT ON api_preferences.restriction_v1 TO svc_preferences, svc_recommendations, svc_campaigns;
 -- END BOUNDARY customer-preferences
 
 -- BEGIN BOUNDARY categories
@@ -1661,6 +2925,316 @@ GRANT USAGE ON SCHEMA api_categories TO svc_categories, svc_recommendations;
 GRANT SELECT ON api_categories.category_tree_v1 TO svc_categories, svc_recommendations;
 -- END BOUNDARY categories
 
+-- BEGIN BOUNDARY stores
+CREATE SCHEMA IF NOT EXISTS stores;
+CREATE SCHEMA IF NOT EXISTS api_stores;
+CREATE SCHEMA IF NOT EXISTS stores_events;
+REVOKE ALL ON SCHEMA stores, api_stores, stores_events FROM PUBLIC;
+
+CREATE TABLE IF NOT EXISTS stores.store_location (
+    store_id SMALLINT NOT NULL,
+    latitude NUMERIC NOT NULL,
+    longitude NUMERIC NOT NULL,
+    geofence_radius_m INTEGER NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the table.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_pkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_pkey
+        PRIMARY KEY (store_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_store_id_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_latitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_latitude_check
+        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_longitude_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_longitude_check
+        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_geofence_radius_m_check'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_geofence_radius_m_check
+        CHECK (geofence_radius_m BETWEEN 25 AND 2000); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
+      AND conname = 'store_location_set_by_fkey'
+) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_set_by_fkey
+        FOREIGN KEY (set_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
+
+-- F21-12 (#786, RN-53): the other four facts of a store that only ADMIN sets
+-- through stores-service. Each is its own relation keyed by store_id, so a
+-- fact that has many values (opening days, enabled channels) never shares a
+-- row with another (4NF, docs/data-model.md). A store whose row is absent has
+-- never been written: it is OPEN, has no hours, enables no channel and has no
+-- discount cap (api_stores.store_directory_v2). public.store.is_active is a
+-- different fact, written only by the web.
+CREATE TABLE IF NOT EXISTS stores.store_status (
+    store_id SMALLINT NOT NULL,
+    status TEXT NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_status_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_status_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_status_status_check
+        CHECK (status IN ('OPEN', 'TEMPORARILY_CLOSED', 'CLOSED')),
+    CONSTRAINT store_status_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- One row per store whose hours were ever written. time_zone is NULL exactly
+-- when the store has no interval (the hours were cleared), which the
+-- constraint trigger below holds at commit.
+CREATE TABLE IF NOT EXISTS stores.store_hours (
+    store_id SMALLINT NOT NULL,
+    time_zone TEXT,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_hours_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_hours_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_hours_time_zone_check
+        CHECK (time_zone IS NULL OR char_length(time_zone) BETWEEN 1 AND 64),
+    CONSTRAINT store_hours_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- A day with no row is a closed day. No interval crosses midnight.
+CREATE TABLE IF NOT EXISTS stores.store_hours_interval (
+    store_id SMALLINT NOT NULL,
+    day_of_week SMALLINT NOT NULL,
+    opens_at TIME NOT NULL,
+    closes_at TIME NOT NULL,
+    CONSTRAINT store_hours_interval_pkey PRIMARY KEY (store_id, day_of_week),
+    CONSTRAINT store_hours_interval_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES stores.store_hours(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_hours_interval_day_of_week_check
+        CHECK (day_of_week BETWEEN 1 AND 7),
+    CONSTRAINT store_hours_interval_minutes_check
+        CHECK (extract(second FROM opens_at) = 0 AND extract(second FROM closes_at) = 0),
+    CONSTRAINT store_hours_interval_order_check CHECK (closes_at > opens_at)
+);
+
+-- One row per store whose channel set was ever written, so an emptied set
+-- still says when and by whom. The channels themselves are in store_channel.
+CREATE TABLE IF NOT EXISTS stores.store_channel_set (
+    store_id SMALLINT NOT NULL,
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_channel_set_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_channel_set_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_channel_set_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- stores holds no privilege on public.channel (sales is its read owner,
+-- E-10), so an unknown channel id is refused by this foreign key.
+CREATE TABLE IF NOT EXISTS stores.store_channel (
+    store_id SMALLINT NOT NULL,
+    channel_id SMALLINT NOT NULL,
+    CONSTRAINT store_channel_pkey PRIMARY KEY (store_id, channel_id),
+    CONSTRAINT store_channel_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES stores.store_channel_set(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_channel_channel_id_fkey FOREIGN KEY (channel_id)
+        REFERENCES public.channel(channel_id) ON DELETE RESTRICT
+);
+
+-- max_discount_percent is NULL when the cap was removed: the store then
+-- imposes no limit of its own, the same state as a store never written.
+CREATE TABLE IF NOT EXISTS stores.store_commercial_rule (
+    store_id SMALLINT NOT NULL,
+    max_discount_percent NUMERIC(5,2),
+    set_by UUID NOT NULL,
+    set_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT store_commercial_rule_pkey PRIMARY KEY (store_id),
+    CONSTRAINT store_commercial_rule_store_id_fkey FOREIGN KEY (store_id)
+        REFERENCES public.store(store_id) ON DELETE CASCADE,
+    CONSTRAINT store_commercial_rule_max_discount_percent_check
+        CHECK (max_discount_percent BETWEEN 0 AND 100),
+    CONSTRAINT store_commercial_rule_set_by_fkey FOREIGN KEY (set_by)
+        REFERENCES public.app_user(user_id) ON DELETE RESTRICT
+);
+
+-- time_zone is NULL exactly when the store has no interval. Deferred, so one
+-- transaction may replace the header and its intervals in any order.
+CREATE OR REPLACE FUNCTION stores.check_hours_consistent() RETURNS trigger
+LANGUAGE plpgsql
+AS $check$
+DECLARE
+    target smallint;
+    zone text;
+    present boolean;
+BEGIN
+    target := COALESCE(NEW.store_id, OLD.store_id);
+    SELECT h.time_zone, true INTO zone, present
+    FROM stores.store_hours AS h WHERE h.store_id = target;
+    IF present AND (zone IS NULL) = EXISTS (
+        SELECT FROM stores.store_hours_interval AS i WHERE i.store_id = target
+    ) THEN
+        RAISE EXCEPTION 'store % hours: time_zone is null exactly when there is no interval', target
+            USING ERRCODE = '23514', CONSTRAINT = 'store_hours_time_zone_consistent';
+    END IF;
+    RETURN NULL;
+END
+$check$;
+
+CREATE TABLE IF NOT EXISTS stores_events.outbox (
+    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    relayed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON stores_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE VIEW api_stores.store_directory_v1
+WITH (security_invoker = false) AS
+SELECT s.store_id, s.name, s.city, s.state, s.is_active,
+       l.latitude, l.longitude, l.geofence_radius_m
+FROM public.store AS s
+LEFT JOIN stores.store_location AS l USING (store_id);
+
+-- v2 adds the facts of F21-12 and keeps v1's eight columns (contracts/db/
+-- api_stores.store_directory.v2.md). The facts are published, never decided
+-- here: a consumer applies "is_active, OPEN and the channel enabled".
+CREATE OR REPLACE VIEW api_stores.store_directory_v2
+WITH (security_invoker = false) AS
+SELECT s.store_id, s.name, s.city, s.state, s.is_active,
+       l.latitude, l.longitude, l.geofence_radius_m,
+       COALESCE(st.status, 'OPEN')::text AS status,
+       h.time_zone,
+       COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+                      'day_of_week', i.day_of_week,
+                      'opens_at', to_char(i.opens_at, 'HH24:MI'),
+                      'closes_at', to_char(i.closes_at, 'HH24:MI'))
+                  ORDER BY i.day_of_week)
+           FROM stores.store_hours_interval AS i WHERE i.store_id = s.store_id
+       ), '[]'::jsonb) AS opening_hours,
+       COALESCE((
+           SELECT array_agg(c.channel_id ORDER BY c.channel_id)
+           FROM stores.store_channel AS c WHERE c.store_id = s.store_id
+       ), ARRAY[]::smallint[]) AS channel_ids,
+       r.max_discount_percent
+FROM public.store AS s
+LEFT JOIN stores.store_location AS l USING (store_id)
+LEFT JOIN stores.store_status AS st USING (store_id)
+LEFT JOIN stores.store_hours AS h USING (store_id)
+LEFT JOIN stores.store_commercial_rule AS r USING (store_id);
+
+CREATE OR REPLACE FUNCTION stores_events.capture_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+DECLARE
+    entity text;
+BEGIN
+    IF TG_OP = 'DELETE' THEN entity := OLD.store_id::text;
+    ELSE entity := NEW.store_id::text;
+    END IF;
+    INSERT INTO stores_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:stores.v1.changed', TG_OP, entity);
+    PERFORM pg_notify('stores_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION stores_events.capture_changed() OWNER TO definer_stores;
+REVOKE EXECUTE ON FUNCTION stores_events.capture_changed() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_stores_changed
+AFTER INSERT OR UPDATE OR DELETE ON public.store
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_location_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_audit_store_location
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+
+-- The new tables are captured and audited like the location. A child table
+-- (an interval, an enabled channel) is captured too, so a write by any
+-- writer is announced; the service writes only the rows that change.
+CREATE OR REPLACE TRIGGER trg_capture_store_status_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_status
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_hours_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_hours_interval_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_channel_set_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel_set
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_channel_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+CREATE OR REPLACE TRIGGER trg_capture_store_commercial_rule_changed
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_commercial_rule
+FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
+
+CREATE OR REPLACE TRIGGER trg_audit_store_status
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_status
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_hours
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_hours_interval
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_channel_set
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel_set
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_channel
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_channel
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+CREATE OR REPLACE TRIGGER trg_audit_store_commercial_rule
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_commercial_rule
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+
+DROP TRIGGER IF EXISTS trg_store_hours_consistent ON stores.store_hours;
+CREATE CONSTRAINT TRIGGER trg_store_hours_consistent
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION stores.check_hours_consistent();
+DROP TRIGGER IF EXISTS trg_store_hours_interval_consistent ON stores.store_hours_interval;
+CREATE CONSTRAINT TRIGGER trg_store_hours_interval_consistent
+AFTER INSERT OR UPDATE OR DELETE ON stores.store_hours_interval
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION stores.check_hours_consistent();
+
+GRANT USAGE ON SCHEMA stores TO svc_stores;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_location TO svc_stores;
+GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_status, stores.store_hours,
+    stores.store_hours_interval, stores.store_channel_set, stores.store_channel,
+    stores.store_commercial_rule TO svc_stores;
+GRANT SELECT ON public.store TO svc_stores;
+GRANT USAGE ON SCHEMA stores_events TO svc_stores, definer_stores;
+GRANT INSERT ON stores_events.outbox TO definer_stores;
+GRANT SELECT, DELETE ON stores_events.outbox TO svc_stores;
+GRANT UPDATE (relayed_at) ON stores_events.outbox TO svc_stores;
+GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement,
+    svc_stock, svc_campaigns, svc_sales;
+GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
+GRANT SELECT ON api_stores.store_directory_v2 TO svc_stores, svc_stock, svc_campaigns, svc_sales;
+-- END BOUNDARY stores
+
 -- BEGIN BOUNDARY stock
 CREATE SCHEMA IF NOT EXISTS api_stock;
 REVOKE ALL ON SCHEMA api_stock FROM PUBLIC;
@@ -1685,6 +3259,37 @@ WITH (security_invoker = false)
 AS
 SELECT store_id, product_id, quantity_on_hand, updated_at
 FROM public.inventory;
+
+-- contracts/db/api_stock.availability.v1.md (F21-07, ADR-0061): whether a
+-- product can be sold in a store and channel, derived on every read and never
+-- stored. One row per store, product and channel, each read through its
+-- producer's view; the reason is the first failing test, in the contract's
+-- order. "The store enables the channel" is stores' published rule: the store
+-- is active, OPEN, and lists the channel (api_stores.store_directory.v2.md).
+-- stock-service answers GET /v1/availabilities from this view, so the
+-- endpoint and recommendations read one definition. The stores section sits
+-- above this one because the view depends on its v2 directory.
+CREATE OR REPLACE VIEW api_stock.availability_v1
+WITH (security_invoker = false)
+AS
+SELECT s.store_id, p.product_id, c.channel_id,
+       r.reason = 'AVAILABLE' AS is_available,
+       r.reason, i.quantity_on_hand, i.updated_at
+FROM api_stores.store_directory_v2 AS s
+CROSS JOIN api_products.product_ref_v1 AS p
+CROSS JOIN api_sales.channel_v1 AS c
+LEFT JOIN public.inventory AS i
+       ON i.store_id = s.store_id AND i.product_id = p.product_id
+CROSS JOIN LATERAL (
+    SELECT CASE
+        WHEN NOT p.is_active THEN 'NOT_SELLABLE'
+        WHEN NOT (s.is_active AND s.status = 'OPEN'
+                  AND c.channel_id = ANY (s.channel_ids)) THEN 'CHANNEL_NOT_ENABLED'
+        WHEN i.store_id IS NULL THEN 'NO_STOCK_RECORD'
+        WHEN i.quantity_on_hand <= 0 THEN 'OUT_OF_STOCK'
+        ELSE 'AVAILABLE'
+    END::text AS reason
+) AS r;
 
 CREATE OR REPLACE FUNCTION api_stock.consume_v1(
     requested_store_id smallint,
@@ -1770,115 +3375,369 @@ GRANT UPDATE (relayed_at) ON stock_events.outbox TO svc_stock;
 
 GRANT USAGE ON SCHEMA api_stock TO svc_stock, svc_recommendations, svc_sales;
 GRANT SELECT ON api_stock.stock_level_v1 TO svc_stock, svc_recommendations;
+GRANT SELECT ON api_stock.availability_v1 TO svc_stock, svc_recommendations;
 GRANT EXECUTE ON FUNCTION api_stock.consume_v1(smallint, integer, integer) TO svc_sales;
--- END BOUNDARY stock
+-- ---------- stock movements (F21-06, ADR-0061, ADR-0046) ----------
+-- A recorded movement is the only way beyond a sale or its reversal to change
+-- on-hand, so the movement and its inventory change commit together or not at
+-- all. Tables live in the stock service schema, never in public.
+CREATE SCHEMA IF NOT EXISTS stock;
+REVOKE ALL ON SCHEMA stock FROM PUBLIC;
 
--- BEGIN BOUNDARY stores
-CREATE SCHEMA IF NOT EXISTS stores;
-CREATE SCHEMA IF NOT EXISTS api_stores;
-CREATE SCHEMA IF NOT EXISTS stores_events;
-REVOKE ALL ON SCHEMA stores, api_stores, stores_events FROM PUBLIC;
-
-CREATE TABLE IF NOT EXISTS stores.store_location (
-    store_id SMALLINT NOT NULL,
-    latitude NUMERIC NOT NULL,
-    longitude NUMERIC NOT NULL,
-    geofence_radius_m INTEGER NOT NULL,
-    set_by UUID NOT NULL,
-    set_at TIMESTAMPTZ NOT NULL DEFAULT now()
+-- One row per accepted request, kept so a retry is recognised. The key is a
+-- UUID the caller makes once per movement; request_sha256 is the hash of the
+-- caller's sub and the movement's fields in canonical form, so the same key
+-- with other fields is refused. Only accepted requests are written: a refused
+-- one rolls this row back with everything else (ADR-0061).
+CREATE TABLE IF NOT EXISTS stock.movement_request (
+    idempotency_key uuid PRIMARY KEY,
+    request_sha256  bytea NOT NULL
+        CONSTRAINT movement_request_sha256_check
+        CHECK (octet_length(request_sha256) = 32),
+    recorded_by     uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    accepted_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- Every named constraint is added separately so this boundary is safe to
--- re-apply to a database that already contains the table.
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_pkey'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_pkey
-        PRIMARY KEY (store_id); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_store_id_fkey'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_store_id_fkey
-        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE CASCADE; END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_latitude_check'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_latitude_check
-        CHECK (latitude BETWEEN -90 AND 90); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_longitude_check'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_longitude_check
-        CHECK (longitude BETWEEN -180 AND 180); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_geofence_radius_m_check'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_geofence_radius_m_check
-        CHECK (geofence_radius_m BETWEEN 25 AND 2000); END IF; END $$;
-DO $$ BEGIN IF NOT EXISTS (
-    SELECT FROM pg_constraint WHERE conrelid = 'stores.store_location'::regclass
-      AND conname = 'store_location_set_by_fkey'
-) THEN ALTER TABLE stores.store_location ADD CONSTRAINT store_location_set_by_fkey
-        FOREIGN KEY (set_by) REFERENCES public.app_user(user_id) ON DELETE RESTRICT; END IF; END $$;
-
-CREATE TABLE IF NOT EXISTS stores_events.outbox (
-    event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    stream TEXT NOT NULL,
-    event_type TEXT NOT NULL,
-    entity_id TEXT NOT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    relayed_at TIMESTAMPTZ
+-- Append-only: no service role holds UPDATE or DELETE. A mistake is corrected
+-- by a later movement. A transfer is two rows sharing transfer_id and one
+-- request. before and after are facts of the moment, not functions of current
+-- inventory, so they are stored. reversal_id names a sale reversal without a
+-- foreign key: reversals are recorded by sales, in its own boundary.
+CREATE TABLE IF NOT EXISTS stock.stock_movement (
+    movement_id      bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    idempotency_key  uuid
+        REFERENCES stock.movement_request (idempotency_key) ON DELETE RESTRICT,
+    movement_type    text NOT NULL
+        CONSTRAINT stock_movement_type_check
+        CHECK (movement_type IN ('RECEIPT', 'TRANSFER', 'COUNT', 'ADJUSTMENT', 'RESTOCK')),
+    store_id         smallint NOT NULL
+        REFERENCES public.store (store_id) ON DELETE RESTRICT,
+    product_id       integer NOT NULL
+        REFERENCES public.product (product_id) ON DELETE RESTRICT,
+    quantity_delta   integer NOT NULL,
+    quantity_before  integer NOT NULL
+        CONSTRAINT stock_movement_before_check CHECK (quantity_before >= 0),
+    quantity_after   integer NOT NULL
+        CONSTRAINT stock_movement_after_check CHECK (quantity_after >= 0),
+    transfer_id      uuid,
+    reference        text,
+    reason           text
+        CONSTRAINT stock_movement_reason_check
+        CHECK (reason IS NULL OR reason IN ('DAMAGE', 'LOSS', 'EXPIRY', 'CORRECTION')),
+    counted_by       text,
+    note             text,
+    reversal_id      bigint,
+    recorded_by      uuid
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    recorded_at      timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT stock_movement_balance_check
+        CHECK (quantity_after::bigint = quantity_before::bigint + quantity_delta::bigint),
+    -- What each type must state, and what it must not carry.
+    CONSTRAINT stock_movement_shape_check CHECK (
+        CASE movement_type
+            WHEN 'RECEIPT' THEN quantity_delta > 0 AND btrim(coalesce(reference, '')) <> ''
+                AND transfer_id IS NULL AND reason IS NULL AND counted_by IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'TRANSFER' THEN quantity_delta <> 0 AND transfer_id IS NOT NULL
+                AND reference IS NULL AND reason IS NULL AND counted_by IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'COUNT' THEN btrim(coalesce(counted_by, '')) <> ''
+                AND transfer_id IS NULL AND reference IS NULL AND reason IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'ADJUSTMENT' THEN quantity_delta <> 0 AND reason IS NOT NULL
+                AND transfer_id IS NULL AND reference IS NULL AND counted_by IS NULL
+                AND reversal_id IS NULL AND recorded_by IS NOT NULL
+            WHEN 'RESTOCK' THEN quantity_delta > 0 AND reversal_id IS NOT NULL
+                AND transfer_id IS NULL AND reference IS NULL AND reason IS NULL
+                AND counted_by IS NULL AND recorded_by IS NULL
+        END
+    ),
+    -- Every row but a restock came from an accepted request.
+    CONSTRAINT stock_movement_request_check
+        CHECK ((movement_type = 'RESTOCK') = (idempotency_key IS NULL))
 );
-CREATE INDEX IF NOT EXISTS outbox_unrelayed
-    ON stores_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
-CREATE OR REPLACE VIEW api_stores.store_directory_v1
-WITH (security_invoker = false) AS
-SELECT s.store_id, s.name, s.city, s.state, s.is_active,
-       l.latitude, l.longitude, l.geofence_radius_m
-FROM public.store AS s
-LEFT JOIN stores.store_location AS l USING (store_id);
+-- A transfer holds one row per store, and a reversal restocks a pair once
+-- (api_stock.restock_v1 names the second index in its error contract).
+CREATE UNIQUE INDEX IF NOT EXISTS stock_movement_transfer_store
+    ON stock.stock_movement (transfer_id, store_id) WHERE transfer_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS restock_already_recorded
+    ON stock.stock_movement (reversal_id, store_id, product_id) WHERE movement_type = 'RESTOCK';
+CREATE INDEX IF NOT EXISTS stock_movement_recorded
+    ON stock.stock_movement (recorded_at DESC, movement_id DESC);
+CREATE INDEX IF NOT EXISTS stock_movement_pair_recorded
+    ON stock.stock_movement (store_id, product_id, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS stock_movement_request
+    ON stock.stock_movement (idempotency_key) WHERE idempotency_key IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION stores_events.capture_changed() RETURNS trigger
+-- Changes one inventory row by delta and says what it held before and after.
+-- Subtracting is a conditional UPDATE, as consume_v1 does, so two movements on
+-- one row add up and nothing goes below zero. Adding is one upsert, so the
+-- record is created when absent and a concurrent add cannot be lost. Not
+-- SECURITY DEFINER itself: it runs only inside record_movement, as its owner.
+CREATE OR REPLACE FUNCTION stock.apply_delta(
+    p_store_id smallint,
+    p_product_id integer,
+    p_delta integer,
+    OUT quantity_before integer,
+    OUT quantity_after integer
+) RETURNS record
+LANGUAGE plpgsql
+SET search_path = public, pg_temp
+AS $apply$
+BEGIN
+    IF p_delta > 0 THEN
+        INSERT INTO inventory AS i (store_id, product_id, quantity_on_hand)
+        VALUES (p_store_id, p_product_id, p_delta)
+        ON CONFLICT (store_id, product_id) DO UPDATE
+           SET quantity_on_hand = i.quantity_on_hand + EXCLUDED.quantity_on_hand,
+               updated_at = now()
+        RETURNING i.quantity_on_hand INTO quantity_after;
+        quantity_before := quantity_after - p_delta;
+        RETURN;
+    END IF;
+
+    UPDATE inventory AS i
+       SET quantity_on_hand = i.quantity_on_hand + p_delta,
+           updated_at = now()
+     WHERE i.store_id = p_store_id
+       AND i.product_id = p_product_id
+       AND i.quantity_on_hand >= -p_delta
+     RETURNING i.quantity_on_hand INTO quantity_after;
+    IF FOUND THEN
+        quantity_before := quantity_after - p_delta;
+        RETURN;
+    END IF;
+
+    SELECT i.quantity_on_hand INTO quantity_before
+      FROM inventory AS i
+     WHERE i.store_id = p_store_id AND i.product_id = p_product_id
+       FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'no stock record for store % and product %', p_store_id, p_product_id
+            USING ERRCODE = '23514', CONSTRAINT = 'no_stock_record';
+    END IF;
+    RAISE EXCEPTION 'only % units are available', quantity_before
+        USING ERRCODE = '23514', CONSTRAINT = 'stock_unavailable';
+END
+$apply$;
+ALTER FUNCTION stock.apply_delta(smallint, integer, integer) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION stock.apply_delta(smallint, integer, integer) FROM PUBLIC;
+
+-- Applies one request: the movement row(s) and the inventory change in the
+-- caller's one transaction. Returns the movement ids, a transfer's origin
+-- first, and whether the key had already been accepted. A replay with the same
+-- canonical request changes nothing; the same key with another one is refused
+-- (23505, idempotency_key_reused). The caller validates what each type must
+-- state; the table's CHECKs are the second line. A transfer touches its two
+-- rows in ascending store order, so two opposite transfers cannot deadlock.
+CREATE OR REPLACE FUNCTION stock.record_movement(
+    p_idempotency_key uuid,
+    p_request text,
+    p_recorded_by uuid,
+    p_movement_type text,
+    p_store_id smallint,
+    p_destination_store_id smallint,
+    p_product_id integer,
+    p_quantity integer,
+    p_reference text,
+    p_reason text,
+    p_counted_by text,
+    p_note text,
+    OUT movement_ids bigint[],
+    OUT replayed boolean
+) RETURNS record
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, pg_temp
-AS $capture$
+SET search_path = public, pg_temp
+AS $record$
 DECLARE
-    entity text;
+    hash bytea := sha256(convert_to(p_request, 'UTF8'));
+    stored bytea;
+    before_quantity integer;
+    applied record;
+    destination record;
+    origin record;
+    transfer uuid;
+    id bigint;
 BEGIN
-    IF TG_OP = 'DELETE' THEN entity := OLD.store_id::text;
-    ELSE entity := NEW.store_id::text;
+    IF p_idempotency_key IS NULL OR p_recorded_by IS NULL OR p_request IS NULL
+       OR p_store_id IS NULL OR p_product_id IS NULL OR p_quantity IS NULL THEN
+        RAISE EXCEPTION 'a movement needs its key, author, store, product and quantity'
+            USING ERRCODE = '22023';
     END IF;
-    INSERT INTO stores_events.outbox (stream, event_type, entity_id)
-    VALUES ('stream:stores.v1.changed', TG_OP, entity);
-    PERFORM pg_notify('stores_outbox', '');
-    RETURN NULL;
+
+    INSERT INTO stock.movement_request (idempotency_key, request_sha256, recorded_by)
+    VALUES (p_idempotency_key, hash, p_recorded_by)
+    ON CONFLICT (idempotency_key) DO NOTHING;
+    IF NOT FOUND THEN
+        SELECT r.request_sha256 INTO stored
+          FROM stock.movement_request AS r
+         WHERE r.idempotency_key = p_idempotency_key;
+        IF stored IS DISTINCT FROM hash THEN
+            RAISE EXCEPTION 'the idempotency key was used for a different movement'
+                USING ERRCODE = '23505', CONSTRAINT = 'idempotency_key_reused';
+        END IF;
+        SELECT array_agg(m.movement_id ORDER BY m.movement_id) INTO movement_ids
+          FROM stock.stock_movement AS m
+         WHERE m.idempotency_key = p_idempotency_key;
+        replayed := true;
+        RETURN;
+    END IF;
+
+    movement_ids := ARRAY[]::bigint[];
+    replayed := false;
+
+    IF p_movement_type = 'RECEIPT' THEN
+        IF p_quantity <= 0 THEN
+            RAISE EXCEPTION 'quantity must be greater than zero' USING ERRCODE = '22023';
+        END IF;
+        applied := stock.apply_delta(p_store_id, p_product_id, p_quantity);
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, reference, note, recorded_by)
+        VALUES (p_idempotency_key, 'RECEIPT', p_store_id, p_product_id, p_quantity,
+                applied.quantity_before, applied.quantity_after, p_reference, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSIF p_movement_type = 'ADJUSTMENT' THEN
+        IF p_quantity = 0 THEN
+            RAISE EXCEPTION 'an adjustment changes the quantity' USING ERRCODE = '22023';
+        END IF;
+        applied := stock.apply_delta(p_store_id, p_product_id, p_quantity);
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, reason, note, recorded_by)
+        VALUES (p_idempotency_key, 'ADJUSTMENT', p_store_id, p_product_id, p_quantity,
+                applied.quantity_before, applied.quantity_after, p_reason, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSIF p_movement_type = 'COUNT' THEN
+        IF p_quantity < 0 THEN
+            RAISE EXCEPTION 'a count is zero or more' USING ERRCODE = '22023';
+        END IF;
+        INSERT INTO inventory (store_id, product_id, quantity_on_hand)
+        VALUES (p_store_id, p_product_id, p_quantity)
+        ON CONFLICT (store_id, product_id) DO NOTHING;
+        IF FOUND THEN
+            before_quantity := 0;
+        ELSE
+            SELECT i.quantity_on_hand INTO before_quantity
+              FROM inventory AS i
+             WHERE i.store_id = p_store_id AND i.product_id = p_product_id
+               FOR UPDATE;
+            UPDATE inventory AS i
+               SET quantity_on_hand = p_quantity, updated_at = now()
+             WHERE i.store_id = p_store_id AND i.product_id = p_product_id;
+        END IF;
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, counted_by, note, recorded_by)
+        VALUES (p_idempotency_key, 'COUNT', p_store_id, p_product_id,
+                p_quantity - before_quantity, before_quantity, p_quantity, p_counted_by, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSIF p_movement_type = 'TRANSFER' THEN
+        IF p_destination_store_id IS NULL OR p_quantity <= 0 THEN
+            RAISE EXCEPTION 'a transfer needs a destination and a positive quantity'
+                USING ERRCODE = '22023';
+        END IF;
+        IF p_destination_store_id = p_store_id THEN
+            RAISE EXCEPTION 'a transfer needs two different stores' USING ERRCODE = '22023';
+        END IF;
+        transfer := gen_random_uuid();
+        IF p_store_id < p_destination_store_id THEN
+            origin := stock.apply_delta(p_store_id, p_product_id, -p_quantity);
+            destination := stock.apply_delta(p_destination_store_id, p_product_id, p_quantity);
+        ELSE
+            destination := stock.apply_delta(p_destination_store_id, p_product_id, p_quantity);
+            origin := stock.apply_delta(p_store_id, p_product_id, -p_quantity);
+        END IF;
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, transfer_id, note, recorded_by)
+        VALUES (p_idempotency_key, 'TRANSFER', p_store_id, p_product_id, -p_quantity,
+                origin.quantity_before, origin.quantity_after, transfer, p_note, p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+        INSERT INTO stock.stock_movement (idempotency_key, movement_type, store_id, product_id,
+               quantity_delta, quantity_before, quantity_after, transfer_id, note, recorded_by)
+        VALUES (p_idempotency_key, 'TRANSFER', p_destination_store_id, p_product_id, p_quantity,
+                destination.quantity_before, destination.quantity_after, transfer, p_note,
+                p_recorded_by)
+        RETURNING movement_id INTO id;
+        movement_ids := movement_ids || id;
+
+    ELSE
+        RAISE EXCEPTION 'unknown movement type %', p_movement_type USING ERRCODE = '22023';
+    END IF;
 END
-$capture$;
-ALTER FUNCTION stores_events.capture_changed() OWNER TO definer_stores;
-REVOKE EXECUTE ON FUNCTION stores_events.capture_changed() FROM PUBLIC;
+$record$;
+ALTER FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint, integer, integer,
+    text, text, text, text) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
+    integer, integer, text, text, text, text) FROM PUBLIC;
 
-CREATE OR REPLACE TRIGGER trg_capture_stores_changed
-AFTER INSERT OR UPDATE OR DELETE ON public.store
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_capture_store_location_changed
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
-FOR EACH ROW EXECUTE FUNCTION stores_events.capture_changed();
-CREATE OR REPLACE TRIGGER trg_audit_store_location
-AFTER INSERT OR UPDATE OR DELETE ON stores.store_location
-FOR EACH ROW EXECUTE FUNCTION public.fn_audit('store_id');
+-- contracts/db/api_stock.restock.v1.md. Sales calls it once per resalable
+-- reversed line, inside the reversal's transaction (ADR-0061, ADR-0062, E-05).
+-- It only adds, and only to an existing row: a missing pair is no_stock_record,
+-- never a new record. The RESTOCK row and the quantity change are one
+-- statement block, so a second restock of the same (reversal, store, product)
+-- fails on restock_already_recorded and takes its UPDATE with it.
+CREATE OR REPLACE FUNCTION api_stock.restock_v1(
+    requested_store_id smallint,
+    requested_product_id integer,
+    requested_quantity integer,
+    requested_reversal_id bigint
+) RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $restock$
+DECLARE
+    restored integer;
+BEGIN
+    IF $3 IS NULL OR $3 <= 0 OR $4 IS NULL THEN
+        RAISE EXCEPTION 'quantity must be greater than zero and the reversal named'
+            USING ERRCODE = '22023';
+    END IF;
 
-GRANT USAGE ON SCHEMA stores TO svc_stores;
-GRANT SELECT, INSERT, UPDATE, DELETE ON stores.store_location TO svc_stores;
-GRANT SELECT ON public.store TO svc_stores;
-GRANT USAGE ON SCHEMA stores_events TO svc_stores, definer_stores;
-GRANT INSERT ON stores_events.outbox TO definer_stores;
-GRANT SELECT, DELETE ON stores_events.outbox TO svc_stores;
-GRANT UPDATE (relayed_at) ON stores_events.outbox TO svc_stores;
-GRANT USAGE ON SCHEMA api_stores TO svc_stores, svc_checkins, svc_engagement;
-GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_engagement;
--- END BOUNDARY stores
+    UPDATE inventory
+       SET quantity_on_hand = quantity_on_hand + $3,
+           updated_at = now()
+     WHERE store_id = $1
+       AND product_id = $2
+     RETURNING quantity_on_hand INTO restored;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'no stock record for store % and product %', $1, $2
+            USING ERRCODE = '23514', CONSTRAINT = 'no_stock_record';
+    END IF;
+
+    INSERT INTO stock.stock_movement (movement_type, store_id, product_id, quantity_delta,
+           quantity_before, quantity_after, reversal_id)
+    VALUES ('RESTOCK', $1, $2, $3, restored - $3, restored, $4);
+
+    RETURN restored;
+END
+$restock$;
+ALTER FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) OWNER TO definer_stock;
+REVOKE EXECUTE ON FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) FROM PUBLIC;
+
+-- A movement is stock-service's own: only svc_stock reads the history, and
+-- only definer_stock writes it. Each is a row of contracts/db/grants.csv.
+GRANT USAGE ON SCHEMA stock TO svc_stock, definer_stock;
+GRANT SELECT ON stock.stock_movement TO svc_stock;
+GRANT SELECT, INSERT ON stock.stock_movement, stock.movement_request TO definer_stock;
+GRANT INSERT ON public.inventory TO definer_stock;
+GRANT EXECUTE ON FUNCTION stock.record_movement(uuid, text, uuid, text, smallint, smallint,
+    integer, integer, text, text, text, text) TO svc_stock;
+GRANT EXECUTE ON FUNCTION stock.apply_delta(smallint, integer, integer) TO definer_stock;
+GRANT EXECUTE ON FUNCTION api_stock.restock_v1(smallint, integer, integer, bigint) TO svc_sales;
+-- END BOUNDARY stock
 
 -- BEGIN BOUNDARY users
 -- users-service (F14-04, ADR-0034, ADR-0036, ADR-0044): the single writer of
@@ -1887,9 +3746,35 @@ GRANT SELECT ON api_stores.store_directory_v1 TO svc_stores, svc_checkins, svc_e
 -- auth can end the user's sessions. Idempotent: an operator re-applies it.
 
 CREATE SCHEMA IF NOT EXISTS api_users;
+CREATE SCHEMA IF NOT EXISTS users;
 CREATE SCHEMA IF NOT EXISTS users_events;
 REVOKE ALL ON SCHEMA api_users FROM PUBLIC;
+REVOKE ALL ON SCHEMA users FROM PUBLIC;
 REVOKE ALL ON SCHEMA users_events FROM PUBLIC;
+
+-- The stores at which a floor user may work. Deactivation and role changes
+-- retain this history; the published view below decides whether it currently
+-- grants anything. The store FK is deliberately checked by PostgreSQL: its
+-- owner may read public.store, while svc_users receives no such privilege.
+CREATE TABLE IF NOT EXISTS users.store_assignment (
+    user_id  UUID NOT NULL,
+    store_id SMALLINT NOT NULL,
+    PRIMARY KEY (user_id, store_id)
+);
+CREATE INDEX IF NOT EXISTS idx_store_assignment_store
+    ON users.store_assignment (store_id);
+DO $$ BEGIN
+    ALTER TABLE users.store_assignment ADD CONSTRAINT store_assignment_user_id_fkey
+        FOREIGN KEY (user_id) REFERENCES public.app_user(user_id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+DO $$ BEGIN
+    ALTER TABLE users.store_assignment ADD CONSTRAINT store_assignment_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id) ON DELETE RESTRICT;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE OR REPLACE TRIGGER trg_audit_store_assignment
+AFTER INSERT OR UPDATE OR DELETE ON users.store_assignment
+FOR EACH ROW EXECUTE FUNCTION public.fn_audit('user_id');
 
 -- Keys only, never state: consumers re-read the credential view.
 CREATE TABLE IF NOT EXISTS users_events.outbox (
@@ -1915,6 +3800,18 @@ SELECT u.user_id,
        r.code AS role_code
   FROM public.app_user AS u
   JOIN public.role AS r ON r.role_id = u.role_id;
+
+-- Consumers re-read this view for every narrowed request (ADR-0060). Stored
+-- rows survive deactivation and a non-floor role change, but grant no access.
+CREATE OR REPLACE VIEW api_users.store_assignment_v1
+WITH (security_invoker = off) AS
+SELECT a.user_id, a.store_id
+  FROM users.store_assignment AS a
+  JOIN public.app_user AS u ON u.user_id = a.user_id
+  JOIN public.role AS r ON r.role_id = u.role_id
+ WHERE u.is_active
+   AND r.code IN ('SALES_ASSOCIATE', 'STORE_MANAGER', 'LOYALTY_OFFICER',
+                  'COMMERCIAL_SUPERVISOR');
 
 -- One outbox row per access change, whichever role made it, in the writer's
 -- transaction. A change of name or email alone is not an access change.
@@ -1950,12 +3847,17 @@ GRANT SELECT, INSERT ON public.app_user TO svc_users;
 GRANT UPDATE (name, email, role_id, is_active, password_hash) ON public.app_user TO svc_users;
 GRANT SELECT ON public.role TO svc_users;
 
+GRANT USAGE ON SCHEMA users TO svc_users;
+GRANT SELECT, INSERT, DELETE ON users.store_assignment TO svc_users;
+
 GRANT USAGE ON SCHEMA users_events TO svc_users, definer_users;
 GRANT INSERT ON users_events.outbox TO definer_users;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON users_events.outbox TO svc_users;
 
-GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth;
+GRANT USAGE ON SCHEMA api_users TO svc_users, svc_auth, svc_sales, svc_checkins, svc_engagement;
 GRANT SELECT ON api_users.credential_v1 TO svc_users, svc_auth;
+GRANT SELECT ON api_users.store_assignment_v1
+    TO svc_users, svc_sales, svc_checkins, svc_engagement;
 -- END BOUNDARY users
 
 -- BEGIN BOUNDARY check-ins
@@ -2076,19 +3978,177 @@ CREATE INDEX IF NOT EXISTS store_check_in_user_occurred
 CREATE INDEX IF NOT EXISTS check_in_review_check_in_reviewed
     ON checkins.check_in_review (check_in_id, reviewed_at);
 
+-- F21-23 (#801, RN-72): an authorized customer visit is a customer fact,
+-- separate from the staff location fact above. It deliberately has no
+-- loyalty-code, card, coordinate, accuracy, address, device or network column.
+-- campaign_id is checked through api_campaigns.campaign_ref_v1 before insert;
+-- there is no cross-boundary foreign key to campaigns' base table.
+CREATE TABLE IF NOT EXISTS checkins.customer_visit (
+    visit_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    store_id SMALLINT NOT NULL,
+    campaign_id INTEGER,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    recorded_by UUID NOT NULL
+);
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_pkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_pkey
+        PRIMARY KEY (visit_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_customer_id_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customer(customer_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_store_id_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_campaign_id_check'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_campaign_id_check
+        CHECK (campaign_id > 0); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'checkins.customer_visit'::regclass
+      AND conname = 'customer_visit_recorded_by_fkey'
+) THEN ALTER TABLE checkins.customer_visit ADD CONSTRAINT customer_visit_recorded_by_fkey
+        FOREIGN KEY (recorded_by) REFERENCES public.app_user(user_id)
+        ON DELETE RESTRICT; END IF; END $$;
+CREATE INDEX IF NOT EXISTS customer_visit_customer_store_occurred
+    ON checkins.customer_visit (customer_id, store_id, occurred_at)
+    WHERE customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS customer_visit_store_occurred
+    ON checkins.customer_visit (store_id, occurred_at DESC, visit_id);
+CREATE INDEX IF NOT EXISTS customer_visit_campaign_occurred
+    ON checkins.customer_visit (campaign_id, occurred_at DESC)
+    WHERE campaign_id IS NOT NULL;
+
 -- Append-only: SELECT and INSERT, never UPDATE or DELETE (RN-56). The store
 -- locations come from api_stores.store_directory_v1, granted in the stores
 -- section.
 GRANT USAGE ON SCHEMA checkins TO svc_checkins;
-GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review TO svc_checkins;
+GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review,
+    checkins.customer_visit TO svc_checkins;
+
+-- contracts/db/api_checkins.customer_last_visit.v1.md: each customer's latest
+-- visit, for customers' retention candidates (ADR-0066 section 3, #1061). A
+-- visit whose customer reference was removed no longer counts. Definer rights,
+-- so the consumer needs no privilege on checkins.customer_visit. The customers
+-- section comes first in this file, so the consumer's grant is made here.
+CREATE SCHEMA IF NOT EXISTS api_checkins;
+REVOKE ALL ON SCHEMA api_checkins FROM PUBLIC;
+CREATE OR REPLACE VIEW api_checkins.customer_last_visit_v1
+WITH (security_invoker = off) AS
+SELECT customer_id, max(occurred_at) AS last_visited_at
+FROM checkins.customer_visit
+WHERE customer_id IS NOT NULL
+GROUP BY customer_id;
+REVOKE ALL ON api_checkins.customer_last_visit_v1 FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_checkins TO svc_customers;
+GRANT SELECT ON api_checkins.customer_last_visit_v1 TO svc_customers;
 -- END BOUNDARY check-ins
 
 -- BEGIN BOUNDARY campaigns
--- campaigns-service (F14-28, ADR-0034, ADR-0045): the campaign state machine,
--- ported from web/services/campaigns.py and pinned to it by golden fixtures.
--- It adds no table and no api_ object. The table, its seed and its audit
--- trigger stay as they are, and the web remains a legacy co-writer (E-09).
--- Idempotent: an operator re-applies it.
+-- campaigns-service (F14-28, F25-04, ADR-0034, ADR-0045, ADR-0046): the campaign
+-- state machine, ported from web/services/campaigns.py and pinned to it by golden
+-- fixtures, and what a campaign may reach and spend: its audience cap, eligibility
+-- rules, exclusions and budget. The campaign table, its seed and its audit trigger
+-- stay as they are, and the web remains a legacy co-writer (E-09). The five new
+-- tables live in the `campaigns` schema and hold only the facts the web has no
+-- column for, so a write of the web's to `campaign` cannot lose them and the
+-- service's writes cannot lose the web's. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS campaigns;
+REVOKE ALL ON SCHEMA campaigns FROM PUBLIC;
+
+-- BEGIN F21-23 campaign reference view
+-- contracts/db/api_campaigns.campaign_ref.v1.md. This isolated block is kept
+-- apart from campaigns' F25 changes so either part can be merged and re-applied.
+CREATE SCHEMA IF NOT EXISTS api_campaigns;
+REVOKE ALL ON SCHEMA api_campaigns FROM PUBLIC;
+CREATE OR REPLACE VIEW api_campaigns.campaign_ref_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id
+FROM public.campaign;
+REVOKE ALL ON api_campaigns.campaign_ref_v1 FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_campaigns TO svc_campaigns, svc_checkins;
+GRANT SELECT ON api_campaigns.campaign_ref_v1 TO svc_campaigns, svc_checkins;
+-- END F21-23 campaign reference view
+
+-- Each of the first three is one fact of a campaign, so a row exists exactly when
+-- the fact was written: an absent row is "no cap", "no budget", "no rules". The
+-- contract replaces a resource whole while the campaign is DRAFT, so the service
+-- deletes the row and inserts the new one in one transaction. docs/data-model.md
+-- holds the normal-form note.
+CREATE TABLE IF NOT EXISTS campaigns.campaign_audience (
+    campaign_id   integer PRIMARY KEY
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    max_customers integer NOT NULL
+        CONSTRAINT campaign_audience_max_customers_check
+        CHECK (max_customers BETWEEN 1 AND 10000000)
+);
+
+CREATE TABLE IF NOT EXISTS campaigns.campaign_budget (
+    campaign_id      integer PRIMARY KEY
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    total_amount     numeric(12,2)
+        CONSTRAINT campaign_budget_total_amount_check CHECK (total_amount >= 0),
+    per_customer_cap numeric(12,2)
+        CONSTRAINT campaign_budget_per_customer_cap_check CHECK (per_customer_cap >= 0),
+    CONSTRAINT campaign_budget_present
+        CHECK (total_amount IS NOT NULL OR per_customer_cap IS NOT NULL),
+    CONSTRAINT campaign_budget_cap_within_total
+        CHECK (total_amount IS NULL OR per_customer_cap IS NULL
+               OR per_customer_cap <= total_amount)
+);
+
+-- min_purchases and purchase_window_days are one rule, given together or not at
+-- all; registered_on_or_before is the other.
+CREATE TABLE IF NOT EXISTS campaigns.campaign_eligibility (
+    campaign_id             integer PRIMARY KEY
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    registered_on_or_before date,
+    min_purchases           integer
+        CONSTRAINT campaign_eligibility_min_purchases_check
+        CHECK (min_purchases BETWEEN 1 AND 1000),
+    purchase_window_days    integer
+        CONSTRAINT campaign_eligibility_window_check
+        CHECK (purchase_window_days BETWEEN 1 AND 731),
+    CONSTRAINT campaign_eligibility_present
+        CHECK (registered_on_or_before IS NOT NULL OR min_purchases IS NOT NULL),
+    CONSTRAINT campaign_eligibility_purchase_rule
+        CHECK ((min_purchases IS NULL) = (purchase_window_days IS NULL))
+);
+
+-- The two lists are independent multivalued facts of a campaign: who is named and
+-- which labels are removed. One row per member, never an array and never a row per
+-- combination (4NF). The foreign keys are checked as the parents' owner (E-11), so
+-- svc_campaigns needs no privilege on customer or segment_label, and a refusal is
+-- unknown_customer or unknown_label by constraint name.
+CREATE TABLE IF NOT EXISTS campaigns.campaign_excluded_customer (
+    campaign_id integer NOT NULL
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    customer_id uuid NOT NULL
+        CONSTRAINT campaign_excluded_customer_customer_id_fkey
+        REFERENCES public.customer (customer_id) ON DELETE CASCADE,
+    PRIMARY KEY (campaign_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS campaign_excluded_customer_customer
+    ON campaigns.campaign_excluded_customer (customer_id);
+
+CREATE TABLE IF NOT EXISTS campaigns.campaign_excluded_label (
+    campaign_id integer NOT NULL
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    label_code  varchar(40) NOT NULL
+        CONSTRAINT campaign_excluded_label_label_code_fkey
+        REFERENCES public.segment_label (label_code) ON DELETE RESTRICT,
+    PRIMARY KEY (campaign_id, label_code)
+);
 
 -- E-13: RN-24 reads the web-only experiment tables, which no service may
 -- read. A service session (session_user, which SET ROLE cannot change) that
@@ -2147,16 +4207,1468 @@ GRANT SELECT ON public.experiment, public.experiment_group TO definer_guard;
 -- foreign key into segment_label is checked as the parent's owner (E-11), so
 -- it needs no privilege there.
 GRANT SELECT, INSERT, UPDATE ON public.campaign TO svc_campaigns;
+
+-- The service replaces what it wrote while the campaign is DRAFT: it reads, deletes
+-- and inserts, and changes no row in place. It computes an audience from the
+-- published views of segments, customers, preferences (granted in their own
+-- sections) and sales. Each is a row of contracts/db/grants.csv.
+GRANT USAGE ON SCHEMA campaigns TO svc_campaigns;
+GRANT SELECT, INSERT, DELETE ON campaigns.campaign_audience, campaigns.campaign_budget,
+    campaigns.campaign_eligibility, campaigns.campaign_excluded_customer,
+    campaigns.campaign_excluded_label TO svc_campaigns;
+GRANT USAGE ON SCHEMA api_segments, api_customers, api_sales TO svc_campaigns;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_campaigns;
+GRANT SELECT ON api_customers.customer_ref_v1 TO svc_campaigns;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_campaigns;
+
+-- What experimentation reads to take an experiment's frame (ADR-0068 section 1, #1051):
+-- the campaign's target label and eligibility rule, and its two lists of exclusions.
+-- Three views, because the rule is one row of a campaign and each exclusion list is its own
+-- multivalued fact (4NF). security_invoker = off, so svc_experiments needs no privilege on
+-- campaigns.* or public.campaign. They hold current rows: the consumer reads them in the one
+-- REPEATABLE READ transaction that fixes its instant T. Contracts:
+-- contracts/db/api_campaigns.campaign_target.v1.md, ...campaign_excluded_customer.v1.md and
+-- ...campaign_excluded_label.v1.md.
+CREATE SCHEMA IF NOT EXISTS api_campaigns;
+REVOKE ALL ON SCHEMA api_campaigns FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_target_v1
+WITH (security_invoker = off) AS
+SELECT c.campaign_id,
+       c.label_code,
+       c.status,
+       e.registered_on_or_before,
+       e.min_purchases,
+       e.purchase_window_days
+FROM public.campaign AS c
+LEFT JOIN campaigns.campaign_eligibility AS e ON e.campaign_id = c.campaign_id;
+REVOKE ALL ON api_campaigns.campaign_target_v1 FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_excluded_customer_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id, customer_id
+FROM campaigns.campaign_excluded_customer;
+REVOKE ALL ON api_campaigns.campaign_excluded_customer_v1 FROM PUBLIC;
+
+CREATE OR REPLACE VIEW api_campaigns.campaign_excluded_label_v1
+WITH (security_invoker = off) AS
+SELECT campaign_id, label_code
+FROM campaigns.campaign_excluded_label;
+REVOKE ALL ON api_campaigns.campaign_excluded_label_v1 FROM PUBLIC;
+
+GRANT USAGE ON SCHEMA api_campaigns TO svc_experiments;
+GRANT SELECT ON api_campaigns.campaign_target_v1,
+    api_campaigns.campaign_excluded_customer_v1,
+    api_campaigns.campaign_excluded_label_v1 TO svc_experiments;
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail
--- audit-trail-service (F14-30, ADR-0034): reads audit_log and nothing else. It
--- adds no table, no view and no function, and it owns no write: fn_audit, which
--- runs as definer_audit, is the only writer of an entry (E-12), and no svc_*
--- role holds INSERT, UPDATE, DELETE or TRUNCATE on the table. Only this role
--- reads it. Idempotent: an operator re-applies it.
+-- audit-trail-service (F14-30, ADR-0034): reads audit_log, and owns no write
+-- on it: fn_audit, which runs as definer_audit, is the only writer of an entry
+-- (E-12), and no svc_* role holds INSERT, UPDATE, DELETE or TRUNCATE on the
+-- table. Only this role reads it. Idempotent: an operator re-applies it.
 GRANT SELECT ON public.audit_log TO svc_audit_trail;
+
+-- Domain events (F21-25, ADR-0072): calculations, model publications and
+-- rollbacks, permission changes, critical actions and logged reads, recorded
+-- by their producers through api_audit.record_event_v1 inside the transaction
+-- of the act. The table is audit-trail's; svc_audit_trail only reads it, and
+-- definer_audit only appends. Contract:
+-- contracts/db/api_audit.record_event.v1.md.
+CREATE SCHEMA IF NOT EXISTS audit_events;
+REVOKE ALL ON SCHEMA audit_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_audit;
+REVOKE ALL ON SCHEMA api_audit FROM PUBLIC;
+
+-- seq is the chain position, assigned under advisory lock 272001 so it is
+-- gapless and the chain has one head. Nothing references app_user, customer
+-- or store: an event is evidence and outlives what it names.
+CREATE TABLE IF NOT EXISTS audit_events.domain_event (
+    seq              bigint      NOT NULL,
+    event_id         uuid        PRIMARY KEY,
+    kind             text        NOT NULL,
+    outcome          text        NOT NULL,
+    occurred_at      timestamptz NOT NULL,
+    recorded_at      timestamptz NOT NULL,
+    actor_type       text        NOT NULL,
+    actor_user_id    uuid,
+    actor_role       text,
+    source           text        NOT NULL,
+    store_id         smallint,
+    subject_type     text,
+    subject_id       text,
+    model_version_id bigint,
+    rule_set_version bigint,
+    correlation_id   text,
+    details          jsonb       NOT NULL,
+    prev_hash        text        NOT NULL,
+    entry_hash       text        NOT NULL,
+    CONSTRAINT domain_event_seq_key UNIQUE (seq),
+    CONSTRAINT domain_event_entry_hash_key UNIQUE (entry_hash),
+    CONSTRAINT domain_event_seq_positive CHECK (seq > 0),
+    CONSTRAINT domain_event_kind CHECK (kind IN (
+        'CALCULATION_RUN', 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK',
+        'PERMISSION_CHANGED', 'CRITICAL_ACTION', 'HISTORY_READ', 'AUDIT_READ')),
+    CONSTRAINT domain_event_outcome CHECK (outcome IN ('SUCCESS', 'REFUSED')),
+    CONSTRAINT domain_event_actor CHECK (
+        (actor_type = 'USER' AND actor_user_id IS NOT NULL AND actor_role IS NOT NULL)
+        OR (actor_type = 'SYSTEM' AND actor_user_id IS NULL AND actor_role IS NULL)),
+    CONSTRAINT domain_event_subject CHECK ((subject_type IS NULL) = (subject_id IS NULL)),
+    CONSTRAINT domain_event_details_object CHECK (jsonb_typeof(details) = 'object'),
+    CONSTRAINT domain_event_hash_format CHECK (
+        prev_hash ~ '^[0-9a-f]{64}$' AND entry_hash ~ '^[0-9a-f]{64}$')
+);
+CREATE INDEX IF NOT EXISTS domain_event_recorded
+    ON audit_events.domain_event (recorded_at DESC, event_id DESC);
+CREATE INDEX IF NOT EXISTS domain_event_kind_recorded
+    ON audit_events.domain_event (kind, recorded_at DESC);
+CREATE INDEX IF NOT EXISTS domain_event_actor_user
+    ON audit_events.domain_event (actor_user_id) WHERE actor_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS domain_event_model_version
+    ON audit_events.domain_event (model_version_id) WHERE model_version_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS domain_event_subject_key
+    ON audit_events.domain_event (subject_type, subject_id) WHERE subject_type IS NOT NULL;
+
+-- Second layer after the privileges (ADR-0072 section 6): even the owner's
+-- UPDATE, DELETE or TRUNCATE is refused unless the operator's archiving script
+-- drops these triggers first.
+CREATE OR REPLACE FUNCTION audit_events.refuse_change() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $refuse$
+BEGIN
+    RAISE EXCEPTION 'domain events are append-only (% refused)', TG_OP
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'domain_event_append_only';
+END
+$refuse$;
+CREATE OR REPLACE TRIGGER domain_event_append_only
+BEFORE UPDATE OR DELETE ON audit_events.domain_event
+FOR EACH ROW EXECUTE FUNCTION audit_events.refuse_change();
+CREATE OR REPLACE TRIGGER domain_event_no_truncate
+BEFORE TRUNCATE ON audit_events.domain_event
+FOR EACH STATEMENT EXECUTE FUNCTION audit_events.refuse_change();
+
+-- The canonical form: the jsonb text of every column but entry_hash, with
+-- timestamps in UTC whatever the session's TimeZone. audit-trail recomputes
+-- it to verify the chain.
+CREATE OR REPLACE FUNCTION audit_events.entry_hash_v1(e audit_events.domain_event)
+RETURNS text
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog, pg_temp
+SET timezone = 'UTC'
+AS $hash$
+    SELECT encode(sha256(convert_to((to_jsonb(e) - 'entry_hash')::text, 'UTF8')), 'hex')
+$hash$;
+
+-- RN-29: a key naming a credential, or a string shaped like a token or a
+-- password hash, anywhere in a value.
+CREATE OR REPLACE FUNCTION audit_events.credential_text(t text) RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $cred$
+    SELECT t IS NOT NULL AND (
+        t ~ '^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$'
+        OR t ~ '(^|[^A-Za-z0-9_-])eyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.'
+        OR t ~ '\$argon2(id|i|d)\$'
+        OR t ~ '\$2[aby]\$[0-9]{2}\$')
+$cred$;
+
+CREATE OR REPLACE FUNCTION audit_events.credential_found(j jsonb) RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $found$
+DECLARE
+    k text;
+    v jsonb;
+BEGIN
+    CASE jsonb_typeof(j)
+        WHEN 'object' THEN
+            FOR k, v IN SELECT key, value FROM jsonb_each(j) LOOP
+                IF k ~* '(password|hash|secret|token|key|credential)'
+                   OR audit_events.credential_found(v) THEN
+                    RETURN true;
+                END IF;
+            END LOOP;
+        WHEN 'array' THEN
+            FOR v IN SELECT value FROM jsonb_array_elements(j) LOOP
+                IF audit_events.credential_found(v) THEN
+                    RETURN true;
+                END IF;
+            END LOOP;
+        WHEN 'string' THEN
+            RETURN audit_events.credential_text(j #>> '{}');
+        ELSE
+            NULL;
+    END CASE;
+    RETURN false;
+END
+$found$;
+
+-- One key's value: a string in a closed set, a string matching a pattern, a
+-- non-negative integer, or an array of distinct members of a closed set.
+CREATE OR REPLACE FUNCTION audit_events.str_in(d jsonb, k text, allowed text[])
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $$ SELECT coalesce(jsonb_typeof(d -> k) = 'string' AND (d ->> k) = ANY (allowed), false) $$;
+
+CREATE OR REPLACE FUNCTION audit_events.str_like(d jsonb, k text, pattern text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $$ SELECT coalesce(jsonb_typeof(d -> k) = 'string' AND (d ->> k) ~ pattern, false) $$;
+
+CREATE OR REPLACE FUNCTION audit_events.count_ok(d jsonb, k text)
+RETURNS boolean
+LANGUAGE sql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $$ SELECT coalesce(jsonb_typeof(d -> k) = 'number' AND (d ->> k) ~ '^[0-9]{1,18}$', false) $$;
+
+-- Whether details carries exactly the keys a kind allows, with values of the
+-- right type and set. Values are scalars, or flat arrays where allowed.
+CREATE OR REPLACE FUNCTION audit_events.details_valid(p_kind text, d jsonb)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = pg_catalog, pg_temp
+AS $valid$
+DECLARE
+    required text[];
+    optional text[];
+    role_code constant text := '^[A-Z][A-Z_]{1,29}$';
+    reason constant text := '^[A-Z][A-Z0-9_]{0,39}$';
+    stamp constant text :=
+        '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?(Z|[+-][0-9]{2}:[0-9]{2})$';
+    change text;
+BEGIN
+    IF d IS NULL OR jsonb_typeof(d) <> 'object' THEN
+        RETURN false;
+    END IF;
+    CASE p_kind
+        WHEN 'CALCULATION_RUN' THEN
+            required := ARRAY['calculation', 'status', 'input_count', 'output_count'];
+            optional := ARRAY['parameters_digest', 'window_from', 'window_to', 'data_origin'];
+        WHEN 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK' THEN
+            required := ARRAY['previous_version_id', 'reason_code'];
+            optional := ARRAY[]::text[];
+        WHEN 'PERMISSION_CHANGED' THEN
+            required := ARRAY['change'];
+            optional := ARRAY['from_role', 'to_role', 'store_ids'];
+        WHEN 'CRITICAL_ACTION' THEN
+            required := ARRAY['action'];
+            optional := ARRAY['reason_code'];
+        WHEN 'HISTORY_READ' THEN
+            required := ARRAY['history'];
+            optional := ARRAY[]::text[];
+        WHEN 'AUDIT_READ' THEN
+            required := ARRAY['resource', 'filters'];
+            optional := ARRAY[]::text[];
+        ELSE
+            RETURN false;
+    END CASE;
+    IF NOT (d ?& required)
+       OR EXISTS (SELECT 1 FROM jsonb_object_keys(d) AS key
+                  WHERE key <> ALL (required || optional)) THEN
+        RETURN false;
+    END IF;
+
+    CASE p_kind
+        WHEN 'CALCULATION_RUN' THEN
+            RETURN audit_events.str_in(d, 'calculation', ARRAY['RFM', 'SEGMENTATION', 'KPI'])
+               AND audit_events.str_in(d, 'status', ARRAY['COMPLETED', 'FAILED'])
+               AND audit_events.count_ok(d, 'input_count')
+               AND audit_events.count_ok(d, 'output_count')
+               AND (NOT d ? 'parameters_digest' OR audit_events.str_like(d, 'parameters_digest', '^[0-9a-f]{64}$'))
+               AND (NOT d ? 'window_from' OR audit_events.str_like(d, 'window_from', stamp))
+               AND (NOT d ? 'window_to' OR audit_events.str_like(d, 'window_to', stamp))
+               AND (NOT d ? 'data_origin' OR audit_events.str_in(d, 'data_origin', ARRAY['OBSERVED', 'SEEDED']));
+        WHEN 'MODEL_PUBLISHED', 'MODEL_ROLLED_BACK' THEN
+            RETURN (jsonb_typeof(d -> 'previous_version_id') = 'null'
+                    OR (jsonb_typeof(d -> 'previous_version_id') = 'number'
+                        AND (d ->> 'previous_version_id') ~ '^[1-9][0-9]{0,17}$'))
+               AND audit_events.str_like(d, 'reason_code', reason);
+        WHEN 'PERMISSION_CHANGED' THEN
+            IF NOT audit_events.str_in(d, 'change', ARRAY[
+                    'ROLE_ASSIGNED', 'ADMINISTRATOR_TRANSFERRED', 'USER_DEACTIVATED',
+                    'USER_REACTIVATED', 'STORES_ASSIGNED', 'STORES_UNASSIGNED']) THEN
+                RETURN false;
+            END IF;
+            change := d ->> 'change';
+            IF change IN ('ROLE_ASSIGNED', 'ADMINISTRATOR_TRANSFERRED') THEN
+                RETURN NOT d ? 'store_ids'
+                   AND audit_events.str_like(d, 'from_role', role_code)
+                   AND audit_events.str_like(d, 'to_role', role_code)
+                   AND d ->> 'from_role' <> d ->> 'to_role';
+            ELSIF change IN ('STORES_ASSIGNED', 'STORES_UNASSIGNED') THEN
+                RETURN NOT d ? 'from_role' AND NOT d ? 'to_role'
+                   AND jsonb_typeof(d -> 'store_ids') = 'array'
+                   AND jsonb_array_length(d -> 'store_ids') > 0
+                   AND NOT EXISTS (
+                       SELECT 1 FROM jsonb_array_elements(d -> 'store_ids') AS s(v)
+                       WHERE jsonb_typeof(s.v) <> 'number'
+                          OR (s.v #>> '{}') !~ '^[1-9][0-9]{0,4}$'
+                          OR (s.v #>> '{}')::int > 32767)
+                   AND (SELECT count(DISTINCT v) = count(*)
+                          FROM jsonb_array_elements(d -> 'store_ids') AS s(v));
+            ELSE
+                RETURN NOT d ? 'from_role' AND NOT d ? 'to_role' AND NOT d ? 'store_ids';
+            END IF;
+        WHEN 'CRITICAL_ACTION' THEN
+            RETURN audit_events.str_in(d, 'action', ARRAY[
+                    'SALE_REVERSED', 'STOCK_ADJUSTED', 'CUSTOMER_ANONYMIZED',
+                    'AUDIT_PAYLOAD_REDACTED', 'EXPERIMENT_FROZEN', 'CAMPAIGN_ACTIVATED'])
+               AND (NOT d ? 'reason_code' OR audit_events.str_like(d, 'reason_code', reason));
+        WHEN 'HISTORY_READ' THEN
+            RETURN audit_events.str_in(d, 'history', ARRAY['CONSENT', 'SEGMENT', 'SALES']);
+        WHEN 'AUDIT_READ' THEN
+            RETURN audit_events.str_in(d, 'resource', ARRAY[
+                    'AUDIT_ENTRIES', 'DOMAIN_EVENTS', 'DOMAIN_EVENT_VERIFICATION'])
+               AND jsonb_typeof(d -> 'filters') = 'array'
+               AND NOT EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(d -> 'filters') AS f(v)
+                   WHERE jsonb_typeof(f.v) <> 'string'
+                      OR (f.v #>> '{}') <> ALL (ARRAY[
+                          'entity', 'entity_pk', 'user_id', 'action', 'kind',
+                          'actor_user_id', 'actor_role', 'model_version_id',
+                          'subject_type', 'subject_id', 'store_id', 'outcome',
+                          'source', 'from', 'to', 'page', 'size']))
+               AND (SELECT count(DISTINCT v) = count(*)
+                      FROM jsonb_array_elements(d -> 'filters') AS f(v));
+    END CASE;
+    RETURN false;
+END
+$valid$;
+
+-- The checks and the append. p_source is the recording role: record_event_v1
+-- passes session_user, and only the seed, run by the owner, names one. No
+-- svc_* role may call this directly.
+CREATE OR REPLACE FUNCTION audit_events.append_v1(
+    p_source text,
+    p_event_id uuid,
+    p_kind text,
+    p_outcome text,
+    p_occurred_at timestamptz,
+    p_actor_type text,
+    p_actor_user_id uuid,
+    p_actor_role text,
+    p_store_id smallint,
+    p_subject_type text,
+    p_subject_id text,
+    p_model_version_id bigint,
+    p_rule_set_version bigint,
+    p_correlation_id text,
+    p_details jsonb
+) RETURNS TABLE (recorded_at timestamptz, entry_hash text, created boolean)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $append$
+#variable_conflict use_column
+DECLARE
+    writers text[];
+    stored audit_events.domain_event;
+    r audit_events.domain_event;
+    subjects text[] := ARRAY[
+        'user', 'customer', 'model_version', 'calculation', 'sale', 'sale_reversal',
+        'stock_level', 'campaign', 'experiment', 'audit_entry', 'domain_event'];
+BEGIN
+    -- 1. The kind is in the closed list and mapped to the recording role.
+    writers := CASE p_kind
+        WHEN 'CALCULATION_RUN' THEN ARRAY['svc_rfm', 'svc_segments', 'svc_kpis']
+        WHEN 'MODEL_PUBLISHED' THEN ARRAY['svc_models']
+        WHEN 'MODEL_ROLLED_BACK' THEN ARRAY['svc_models']
+        WHEN 'PERMISSION_CHANGED' THEN ARRAY['svc_users']
+        WHEN 'CRITICAL_ACTION' THEN ARRAY['svc_sales', 'svc_stock', 'svc_customers',
+                                          'svc_experiments', 'svc_campaigns']
+        WHEN 'HISTORY_READ' THEN ARRAY['svc_preferences', 'svc_segments', 'svc_sales']
+        WHEN 'AUDIT_READ' THEN ARRAY['svc_audit_trail']
+    END;
+    IF writers IS NULL OR p_source IS NULL OR NOT (p_source = ANY (writers)) THEN
+        RAISE EXCEPTION '% may not record kind %', p_source, coalesce(p_kind, 'NULL')
+            USING ERRCODE = 'MA001', CONSTRAINT = 'event_kind_not_permitted';
+    END IF;
+
+    -- 2. No credential anywhere (RN-29), before the key check so a credential
+    -- is always reported as one.
+    IF audit_events.credential_found(p_details)
+       OR audit_events.credential_text(p_subject_id)
+       OR audit_events.credential_text(p_correlation_id) THEN
+        RAISE EXCEPTION 'a domain event never carries a credential'
+            USING ERRCODE = 'MA003', CONSTRAINT = 'event_credential_refused';
+    END IF;
+
+    -- 3. Exactly the keys the kind allows.
+    IF NOT audit_events.details_valid(p_kind, p_details) THEN
+        RAISE EXCEPTION 'details do not match kind %', p_kind
+            USING ERRCODE = 'MA002', CONSTRAINT = 'event_details_invalid';
+    END IF;
+
+    -- 4. The common fields.
+    IF p_event_id IS NULL
+       OR p_outcome IS NULL OR p_outcome NOT IN ('SUCCESS', 'REFUSED')
+       OR (p_outcome = 'REFUSED' AND p_kind <> 'HISTORY_READ')
+       OR p_occurred_at IS NULL OR p_occurred_at > now() + interval '5 minutes'
+       OR p_actor_type IS NULL OR p_actor_type NOT IN ('USER', 'SYSTEM')
+       OR (p_actor_type = 'USER' AND (p_actor_user_id IS NULL OR p_actor_role IS NULL
+                                      OR p_actor_role !~ '^[A-Z][A-Z_]{1,29}$'))
+       OR (p_actor_type = 'SYSTEM' AND (p_actor_user_id IS NOT NULL OR p_actor_role IS NOT NULL))
+       OR (p_kind = 'AUDIT_READ' AND p_actor_type <> 'USER')
+       OR (p_subject_type IS NULL) <> (p_subject_id IS NULL)
+       OR (p_subject_type IS NOT NULL AND p_subject_type <> ALL (subjects))
+       OR (p_subject_id IS NOT NULL AND length(p_subject_id) NOT BETWEEN 1 AND 80)
+       OR (p_kind = 'PERMISSION_CHANGED' AND p_subject_type IS DISTINCT FROM 'user')
+       OR (p_kind = 'HISTORY_READ' AND p_subject_type IS DISTINCT FROM 'customer')
+       OR (p_kind IN ('MODEL_PUBLISHED', 'MODEL_ROLLED_BACK')
+           AND (p_subject_type IS DISTINCT FROM 'model_version' OR p_model_version_id IS NULL))
+       OR (p_kind = 'CRITICAL_ACTION' AND p_subject_type IS NULL)
+       OR (p_kind = 'CALCULATION_RUN' AND p_subject_type IS NOT NULL
+           AND p_subject_type <> 'calculation')
+       OR (p_kind = 'AUDIT_READ' AND p_subject_type IS NOT NULL
+           AND p_subject_type NOT IN ('domain_event', 'audit_entry'))
+       OR (p_store_id IS NOT NULL AND p_store_id < 1)
+       OR (p_model_version_id IS NOT NULL AND p_model_version_id < 1)
+       OR (p_rule_set_version IS NOT NULL AND p_rule_set_version < 1)
+       OR (p_correlation_id IS NOT NULL AND p_correlation_id !~ '^[0-9A-Za-z-]{1,64}$') THEN
+        RAISE EXCEPTION 'the event''s common fields are invalid'
+            USING ERRCODE = 'MA004', CONSTRAINT = 'event_invalid';
+    END IF;
+
+    -- One head: every writer appends under the same transaction lock
+    -- (contracts/db/advisory-locks.md).
+    PERFORM pg_advisory_xact_lock(272001);
+
+    SELECT * INTO stored FROM audit_events.domain_event d WHERE d.event_id = p_event_id;
+    IF FOUND THEN
+        IF stored.source <> p_source OR stored.kind <> p_kind THEN
+            RAISE EXCEPTION 'event % was recorded by another source or kind', p_event_id
+                USING ERRCODE = 'MA005', CONSTRAINT = 'event_id_conflict';
+        END IF;
+        RETURN QUERY SELECT stored.recorded_at, stored.entry_hash, false;
+        RETURN;
+    END IF;
+
+    SELECT coalesce(max(d.seq), 0) + 1 INTO r.seq FROM audit_events.domain_event d;
+    SELECT coalesce((SELECT d.entry_hash FROM audit_events.domain_event d
+                      ORDER BY d.seq DESC LIMIT 1), repeat('0', 64))
+      INTO r.prev_hash;
+    r.event_id := p_event_id;
+    r.kind := p_kind;
+    r.outcome := p_outcome;
+    r.occurred_at := p_occurred_at;
+    r.recorded_at := now();
+    r.actor_type := p_actor_type;
+    r.actor_user_id := p_actor_user_id;
+    r.actor_role := p_actor_role;
+    r.source := p_source;
+    r.store_id := p_store_id;
+    r.subject_type := p_subject_type;
+    r.subject_id := p_subject_id;
+    r.model_version_id := p_model_version_id;
+    r.rule_set_version := p_rule_set_version;
+    r.correlation_id := p_correlation_id;
+    r.details := p_details;
+    r.entry_hash := audit_events.entry_hash_v1(r);
+
+    INSERT INTO audit_events.domain_event SELECT r.*;
+    RETURN QUERY SELECT r.recorded_at, r.entry_hash, true;
+END
+$append$;
+ALTER FUNCTION audit_events.append_v1(text, uuid, text, text, timestamptz, text, uuid, text,
+    smallint, text, text, bigint, bigint, text, jsonb) OWNER TO definer_audit;
+REVOKE EXECUTE ON FUNCTION audit_events.append_v1(text, uuid, text, text, timestamptz, text,
+    uuid, text, smallint, text, text, bigint, bigint, text, jsonb) FROM PUBLIC;
+
+-- The one writer a producer calls. source is session_user, which neither SET
+-- ROLE nor this function's SECURITY DEFINER changes.
+CREATE OR REPLACE FUNCTION api_audit.record_event_v1(
+    p_event_id uuid,
+    p_kind text,
+    p_outcome text,
+    p_occurred_at timestamptz,
+    p_actor_type text,
+    p_actor_user_id uuid,
+    p_actor_role text,
+    p_store_id smallint,
+    p_subject_type text,
+    p_subject_id text,
+    p_model_version_id bigint,
+    p_rule_set_version bigint,
+    p_correlation_id text,
+    p_details jsonb
+) RETURNS TABLE (recorded_at timestamptz, entry_hash text, created boolean)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $record$
+    SELECT * FROM audit_events.append_v1(
+        session_user::text, p_event_id, p_kind, p_outcome, p_occurred_at, p_actor_type,
+        p_actor_user_id, p_actor_role, p_store_id, p_subject_type, p_subject_id,
+        p_model_version_id, p_rule_set_version, p_correlation_id, p_details)
+$record$;
+ALTER FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid, text,
+    smallint, text, text, bigint, bigint, text, jsonb) OWNER TO definer_audit;
+REVOKE EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text,
+    uuid, text, smallint, text, text, bigint, bigint, text, jsonb) FROM PUBLIC;
+
+REVOKE ALL ON audit_events.domain_event FROM PUBLIC;
+GRANT USAGE ON SCHEMA audit_events TO definer_audit, svc_audit_trail;
+GRANT SELECT, INSERT ON audit_events.domain_event TO definer_audit;
+GRANT SELECT ON audit_events.domain_event TO svc_audit_trail;
+
+-- The writers whose roles exist; svc_rfm, svc_models, svc_kpis and
+-- svc_experiments receive theirs with the role.
+GRANT USAGE ON SCHEMA api_audit TO svc_users, svc_sales, svc_segments, svc_preferences,
+    svc_stock, svc_customers, svc_campaigns, svc_audit_trail;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb)
+    TO svc_users, svc_sales, svc_segments, svc_preferences, svc_stock, svc_customers,
+       svc_campaigns, svc_audit_trail;
 -- END BOUNDARY audit-trail
+
+-- BEGIN BOUNDARY rfm-engine
+-- rfm-engine (F22-04, F22-05, RN-65, ADR-0034, ADR-0045, ADR-0046, ADR-0063): it
+-- owns the rfm schema for its tables, rfm_events for its outbox and api_rfm for the
+-- contract objects it publishes. A sale changes one customer's row and nothing else:
+-- the profile is recomputed from that customer's net purchases and scored against
+-- the boundaries frozen in a rule set, never against the population. The stories
+-- after this one add the rest (rule-set creation, the daily pass, recalculation) in
+-- this section. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS rfm;
+REVOKE ALL ON SCHEMA rfm FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS rfm_events;
+REVOKE ALL ON SCHEMA rfm_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_rfm;
+REVOKE ALL ON SCHEMA api_rfm FROM PUBLIC;
+GRANT USAGE ON SCHEMA rfm, rfm_events, api_rfm TO svc_rfm;
+
+-- A rule set: the window and the boundaries a customer is scored against, frozen
+-- when it is created (ADR-0063). The scores are read off the boundaries: recency
+-- 5, 4, 3 and 2 hold up to the first four recency values, frequency and monetary
+-- from the first four values up; anything beyond scores 1. The seed holds the one
+-- rule set of the web's published version; F22-09 creates the others, and
+-- model-registry publishes the version that names one.
+CREATE TABLE IF NOT EXISTS rfm.rule_set (
+    rule_set_id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name                 varchar(80) NOT NULL UNIQUE CHECK (length(name) >= 1),
+    window_days          integer NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+    recency_boundaries   integer[] NOT NULL
+        CHECK (cardinality(recency_boundaries) = 4
+               AND recency_boundaries[1] >= 0
+               AND recency_boundaries[1] <= recency_boundaries[2]
+               AND recency_boundaries[2] <= recency_boundaries[3]
+               AND recency_boundaries[3] <= recency_boundaries[4]),
+    frequency_boundaries integer[] NOT NULL
+        CHECK (cardinality(frequency_boundaries) = 4
+               AND frequency_boundaries[4] >= 1
+               AND frequency_boundaries[1] >= frequency_boundaries[2]
+               AND frequency_boundaries[2] >= frequency_boundaries[3]
+               AND frequency_boundaries[3] >= frequency_boundaries[4]),
+    monetary_boundaries  numeric(12,2)[] NOT NULL
+        CHECK (cardinality(monetary_boundaries) = 4
+               AND monetary_boundaries[1] >= monetary_boundaries[2]
+               AND monetary_boundaries[2] >= monetary_boundaries[3]
+               AND monetary_boundaries[3] >= monetary_boundaries[4]
+               AND monetary_boundaries[4] >= 0),
+    fallback_label_code  varchar(40) NOT NULL CHECK (length(fallback_label_code) >= 1),
+    created_at           timestamptz NOT NULL DEFAULT now(),
+    created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT
+);
+
+-- The boxes of scores that map to a label, one row per box: a repeated group is a
+-- table of its own (4NF). No two boxes of one rule set overlap (RN-46), which
+-- F22-09 checks when it creates one; the lowest band_no wins in any case, as the
+-- lowest segment_id does in the web.
+CREATE TABLE IF NOT EXISTS rfm.rule_set_band (
+    rule_set_id bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    band_no     smallint NOT NULL CHECK (band_no >= 1),
+    label_code  varchar(40) NOT NULL CHECK (length(label_code) >= 1),
+    r_min       smallint NOT NULL CHECK (r_min BETWEEN 1 AND 5),
+    r_max       smallint NOT NULL CHECK (r_max BETWEEN 1 AND 5),
+    f_min       smallint NOT NULL CHECK (f_min BETWEEN 1 AND 5),
+    f_max       smallint NOT NULL CHECK (f_max BETWEEN 1 AND 5),
+    m_min       smallint NOT NULL CHECK (m_min BETWEEN 1 AND 5),
+    m_max       smallint NOT NULL CHECK (m_max BETWEEN 1 AND 5),
+    PRIMARY KEY (rule_set_id, band_no),
+    CHECK (r_min <= r_max AND f_min <= f_max AND m_min <= m_max)
+);
+
+-- One row per customer who has been processed; a customer with no row is `pending`
+-- in the contract view. `scored` holds a customer with a net purchase in the window,
+-- `unassigned` one with none (RN-21). r_days, computed_at and next_change_at move
+-- with the clock and are not captured by the outbox trigger; the other measures,
+-- the scores, the label and the rule set are.
+CREATE TABLE IF NOT EXISTS rfm.customer_profile (
+    customer_id    uuid PRIMARY KEY
+        REFERENCES public.customer (customer_id) ON DELETE CASCADE,
+    state          varchar(12) NOT NULL CHECK (state IN ('scored', 'unassigned')),
+    rule_set_id    bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    r_days         integer CHECK (r_days >= 0),
+    f_count        integer NOT NULL CHECK (f_count >= 0),
+    m_total        numeric(12,2) NOT NULL CHECK (m_total >= 0),
+    r_score        smallint CHECK (r_score BETWEEN 1 AND 5),
+    f_score        smallint CHECK (f_score BETWEEN 1 AND 5),
+    m_score        smallint CHECK (m_score BETWEEN 1 AND 5),
+    label_code     varchar(40),
+    via_fallback   boolean,
+    computed_at    timestamptz NOT NULL,
+    next_change_at timestamptz,
+    CONSTRAINT customer_profile_state_shape CHECK (
+        (state = 'scored' AND r_days IS NOT NULL AND f_count >= 1
+            AND r_score IS NOT NULL AND f_score IS NOT NULL AND m_score IS NOT NULL
+            AND label_code IS NOT NULL AND via_fallback IS NOT NULL)
+        OR
+        (state = 'unassigned' AND r_days IS NULL AND f_count = 0 AND m_total = 0
+            AND r_score IS NULL AND f_score IS NULL AND m_score IS NULL
+            AND label_code IS NULL AND via_fallback IS NULL
+            AND next_change_at IS NULL))
+);
+-- The daily pass reads only the customers who are due (ADR-0063, F22-06).
+CREATE INDEX IF NOT EXISTS customer_profile_due
+    ON rfm.customer_profile (next_change_at) WHERE next_change_at IS NOT NULL;
+
+-- stream:rfm.v1.profile_changed (contracts/streams/rfm.profile_changed.v1.md).
+-- Keys only, never state: consumers re-read api_rfm.current_profile_v1.
+CREATE TABLE IF NOT EXISTS rfm_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON rfm_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE FUNCTION rfm_events.capture_profile_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO rfm_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:rfm.v1.profile_changed', TG_OP, NEW.customer_id::text);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('rfm_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION rfm_events.capture_profile_changed() OWNER TO definer_rfm;
+REVOKE EXECUTE ON FUNCTION rfm_events.capture_profile_changed() FROM PUBLIC;
+
+-- A first profile is announced. A later write announces only when one of the
+-- captured columns moved: a recomputation that gives the same result, or that only
+-- advances r_days, computed_at or next_change_at, is silent.
+CREATE OR REPLACE TRIGGER trg_capture_profile_inserted
+AFTER INSERT ON rfm.customer_profile
+FOR EACH ROW EXECUTE FUNCTION rfm_events.capture_profile_changed();
+CREATE OR REPLACE TRIGGER trg_capture_profile_changed
+AFTER UPDATE OF state, rule_set_id, f_count, m_total, r_score, f_score, m_score,
+                label_code ON rfm.customer_profile
+FOR EACH ROW
+WHEN ((OLD.state, OLD.rule_set_id, OLD.f_count, OLD.m_total, OLD.r_score,
+       OLD.f_score, OLD.m_score, OLD.label_code)
+      IS DISTINCT FROM
+      (NEW.state, NEW.rule_set_id, NEW.f_count, NEW.m_total, NEW.r_score,
+       NEW.f_score, NEW.m_score, NEW.label_code))
+EXECUTE FUNCTION rfm_events.capture_profile_changed();
+
+-- contracts/db/api_rfm.current_profile.v1.md: one row for every customer, `pending`
+-- until a profile exists. Definer rights, so a consumer needs no privilege on the
+-- table. next_change_at is the producer's own scheduling state and is not published.
+CREATE OR REPLACE VIEW api_rfm.current_profile_v1
+WITH (security_invoker = off) AS
+SELECT c.customer_id,
+       COALESCE(p.state, 'pending')::text AS state,
+       p.rule_set_id,
+       p.r_days,
+       p.f_count,
+       p.m_total,
+       p.r_score,
+       p.f_score,
+       p.m_score,
+       p.label_code,
+       p.via_fallback,
+       p.computed_at
+FROM api_customers.customer_ref_v1 AS c
+LEFT JOIN rfm.customer_profile AS p ON p.customer_id = c.customer_id;
+REVOKE ALL ON api_rfm.current_profile_v1 FROM PUBLIC;
+
+-- svc_rfm reads sales only through api_sales (ADR-0044) and writes its own
+-- profile; it reads rule sets and creates none yet (F22-09). A profile's
+-- customer_id never changes. Each is a row of contracts/db/grants.csv.
+GRANT USAGE ON SCHEMA api_sales TO svc_rfm;
+GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1 TO svc_rfm;
+GRANT SELECT ON rfm.rule_set, rfm.rule_set_band TO svc_rfm;
+GRANT SELECT, INSERT ON rfm.customer_profile TO svc_rfm;
+GRANT UPDATE (state, rule_set_id, r_days, f_count, m_total, r_score, f_score, m_score,
+              label_code, via_fallback, computed_at, next_change_at)
+    ON rfm.customer_profile TO svc_rfm;
+
+GRANT USAGE ON SCHEMA rfm_events TO svc_rfm, definer_rfm;
+GRANT INSERT ON rfm_events.outbox TO definer_rfm;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON rfm_events.outbox TO svc_rfm;
+
+-- model-registry reads the profile; analytics-kpis receives its grant with its role.
+GRANT USAGE ON SCHEMA api_rfm TO svc_models;
+GRANT SELECT ON api_rfm.current_profile_v1 TO svc_models;
+-- END BOUNDARY rfm-engine
+
+-- BEGIN BOUNDARY experimentation
+-- experimentation (F25-07, RN-23, RN-24, RN-42, RN-48, RN-49, ADR-0034, ADR-0046,
+-- ADR-0059, ADR-0068): stood up. It owns the experiments schema for the tables the
+-- stories after it add, and api_experiments for the contract objects it publishes.
+-- It also takes ownership of the five experiment tables the web wrote in public
+-- (E-09): svc_experiments is the one service role that holds privileges on them.
+-- The privileges mirror what retail_app holds, so the append-only rules of
+-- ADR-0026, ADR-0027 and ADR-0050 hold for the service exactly as for the web:
+-- assignments, exposures and conversions are INSERT and SELECT only, and nothing
+-- is ever deleted (ADR-0029). The treatment-only and group-immutability triggers
+-- fire for every writer. Identity columns need no sequence grant, and the
+-- experiment and group ids are allocated under the experiment lock as the web
+-- does. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS experiments;
+REVOKE ALL ON SCHEMA experiments FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_experiments;
+REVOKE ALL ON SCHEMA api_experiments FROM PUBLIC;
+GRANT USAGE ON SCHEMA experiments, api_experiments TO svc_experiments;
+
+-- Real floor exposures arrive from engagement's at-least-once stream (F25-10,
+-- ADR-0075). The source event id is nullable because the frozen web still
+-- writes exposures directly; for projected events it is the durable
+-- idempotency key. The partial unique index makes a relay duplicate harmless.
+ALTER TABLE public.experiment_exposure
+    ADD COLUMN IF NOT EXISTS source_event_id UUID;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_experiment_exposure_source_event
+    ON public.experiment_exposure (source_event_id)
+    WHERE source_event_id IS NOT NULL;
+
+-- A notice ledger keeps the projection append-only while allowing a VOIDED
+-- notice to remove a source exposure from service counts. It also remembers a
+-- void that arrives before RECORDED and a RECORDED event suppressed by RN-49's
+-- 60-second rule. One row per (source event, notice) makes every re-application
+-- converge without rewriting an assignment, exposure or conversion fact.
+CREATE TABLE IF NOT EXISTS experiments.exposure_notice (
+    source_event_id UUID NOT NULL,
+    notice         VARCHAR(10) NOT NULL CHECK (notice IN ('RECORDED', 'VOIDED')),
+    assignment_id  BIGINT REFERENCES public.experiment_assignment(assignment_id)
+                       ON DELETE CASCADE,
+    occurred_at    TIMESTAMPTZ NOT NULL,
+    disposition    VARCHAR(10) NOT NULL CHECK (
+        disposition IN ('EXPOSURE', 'REPEAT', 'CONTROL', 'OUTSIDE', 'VOIDED')
+    ),
+    PRIMARY KEY (source_event_id, notice)
+);
+REVOKE ALL ON experiments.exposure_notice FROM PUBLIC;
+GRANT SELECT, INSERT, UPDATE ON public.experiment, public.experiment_group TO svc_experiments;
+GRANT SELECT, INSERT ON public.experiment_assignment, public.experiment_exposure,
+    public.experiment_conversion TO svc_experiments;
+GRANT SELECT, INSERT ON experiments.exposure_notice TO svc_experiments;
+-- Conversions (F25-11, ADR-0069): a conversion is a qualifying sale of an assigned
+-- customer, read net of reversals from the two views sales publishes. The gross view
+-- still names a sale that was fully reversed, which the net view no longer lists.
+GRANT USAGE ON SCHEMA api_sales TO svc_experiments;
+GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1
+    TO svc_experiments;
+-- It is a recording role of audit-trail's CRITICAL_ACTION (api_audit.record_event_v1).
+GRANT USAGE ON SCHEMA api_audit TO svc_experiments;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_experiments;
+
+-- The plan of an experiment (F25-09, ADR-0068 sections 1 and 4): what is fixed before anyone is
+-- assigned. The experiment itself, its arms (public.experiment_group), its metric
+-- (`target_metric`), window, start and origin stay where the web wrote them; these four tables
+-- hold only what a plan adds, and exist only for an experiment planned through the service.
+-- An experiment without a row in experiment_plan is assignment rule V0 (the web's earlier
+-- shuffle): readable, with no frame and no salt. A plan is frozen: svc_experiments holds SELECT
+-- and INSERT, and the trigger refuses an UPDATE or DELETE from anyone. docs/data-model.md holds
+-- the normal-form note.
+--
+-- Derived, so not stored: the design kind (a control arm or not), an arm's position (control
+-- first, then by group id), the estimator and the secondary metric (functions of the primary
+-- metric), the frame's size (the members counted), and the state (assignments exist or not).
+CREATE TABLE IF NOT EXISTS experiments.experiment_plan (
+    experiment_id             integer PRIMARY KEY
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    alpha                     numeric(7,6) NOT NULL
+        CONSTRAINT experiment_plan_alpha_check CHECK (alpha > 0 AND alpha < 1),
+    comparison_alpha          numeric(12,10) NOT NULL
+        CONSTRAINT experiment_plan_comparison_alpha_check
+        CHECK (comparison_alpha > 0 AND comparison_alpha <= alpha),
+    power                     numeric(7,6) NOT NULL
+        CONSTRAINT experiment_plan_power_check CHECK (power > 0 AND power < 1),
+    minimum_detectable_effect numeric(14,6) NOT NULL
+        CONSTRAINT experiment_plan_mde_check CHECK (minimum_detectable_effect > 0),
+    baseline                  double precision NOT NULL
+        CONSTRAINT experiment_plan_baseline_check CHECK (baseline >= 0),
+    baseline_std_dev          double precision
+        CONSTRAINT experiment_plan_std_dev_check CHECK (baseline_std_dev >= 0),
+    required_per_arm          integer NOT NULL
+        CONSTRAINT experiment_plan_required_check CHECK (required_per_arm >= 1),
+    smallest_detectable_effect double precision
+        CONSTRAINT experiment_plan_smallest_check CHECK (smallest_detectable_effect > 0),
+    settle_days               smallint NOT NULL
+        CONSTRAINT experiment_plan_settle_check CHECK (settle_days >= 0),
+    frame_taken_at            timestamptz NOT NULL,
+    frame_digest              char(64) NOT NULL
+        CONSTRAINT experiment_plan_digest_check CHECK (frame_digest ~ '^[0-9a-f]{64}$'),
+    label_code                varchar(40) NOT NULL
+        REFERENCES public.segment_label (label_code) ON DELETE RESTRICT,
+    model_version_id          bigint
+        CONSTRAINT experiment_plan_model_version_check CHECK (model_version_id >= 1),
+    salt                      char(64) NOT NULL
+        CONSTRAINT experiment_plan_salt_check CHECK (salt ~ '^[0-9a-f]{64}$'),
+    planned_at                timestamptz NOT NULL,
+    planned_by                uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT
+);
+
+-- The frame, one row per customer: who was eligible at the frame instant, the only record of it
+-- (a customer who later acquires the label is never added).
+CREATE TABLE IF NOT EXISTS experiments.experiment_frame_member (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    customer_id   uuid NOT NULL
+        REFERENCES public.customer (customer_id) ON DELETE RESTRICT,
+    PRIMARY KEY (experiment_id, customer_id)
+);
+CREATE INDEX IF NOT EXISTS experiment_frame_member_customer
+    ON experiments.experiment_frame_member (customer_id);
+
+-- How many customers one reason removed from the frame: an independent multivalued fact of the
+-- plan (reasons, each with its count), so its own relation.
+CREATE TABLE IF NOT EXISTS experiments.experiment_frame_exclusion (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    reason        varchar(40) NOT NULL
+        CONSTRAINT experiment_frame_exclusion_reason_check
+        CHECK (reason ~ '^[A-Z][A-Z0-9_]*$'),
+    removed       integer NOT NULL
+        CONSTRAINT experiment_frame_exclusion_removed_check CHECK (removed >= 0),
+    PRIMARY KEY (experiment_id, reason)
+);
+
+-- The flags that apply to an experiment: a second independent multivalued fact. The plan stores
+-- UNDERPOWERED; the later stories add the others (ExperimentFlag in the contract).
+CREATE TABLE IF NOT EXISTS experiments.experiment_flag (
+    experiment_id integer NOT NULL
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    flag          varchar(30) NOT NULL
+        CONSTRAINT experiment_flag_flag_check
+        CHECK (flag IN ('UNDERPOWERED', 'SAMPLE_RATIO_FAILED', 'BALANCE_FLAGGED',
+                        'RECOMPUTATION_MISMATCH')),
+    PRIMARY KEY (experiment_id, flag)
+);
+
+CREATE OR REPLACE FUNCTION experiments.fn_plan_is_frozen() RETURNS trigger
+LANGUAGE plpgsql AS $frozen$
+BEGIN
+    RAISE EXCEPTION 'A plan is frozen: % on % is refused', TG_OP, TG_TABLE_NAME
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'experiment_plan_frozen';
+END
+$frozen$;
+REVOKE EXECUTE ON FUNCTION experiments.fn_plan_is_frozen() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_experiment_plan_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_plan
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_frame_member_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_frame_member
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_frame_exclusion_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_frame_exclusion
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_flag_frozen
+BEFORE DELETE ON experiments.experiment_flag
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.experiment_plan, experiments.experiment_frame_member,
+    experiments.experiment_frame_exclusion, experiments.experiment_flag TO svc_experiments;
+
+-- The frame is read from published objects only (ADR-0044), each a row of contracts/db/grants.csv:
+-- the campaign's target and exclusions (#1051, granted in the campaigns section), the label a
+-- customer holds, consent and restrictions, the channels, and the customers.
+GRANT USAGE ON SCHEMA api_segments, api_preferences, api_customers TO svc_experiments;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_experiments;
+GRANT SELECT ON api_preferences.consent_state_v1, api_preferences.restriction_v1
+    TO svc_experiments;
+GRANT SELECT ON api_customers.customer_ref_v1 TO svc_experiments;
+GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
+-- END BOUNDARY experimentation
+
+-- BEGIN BOUNDARY model-registry
+-- model-registry-service (F22-11, RN-66, ADR-0059, ADR-0064, ADR-0046). The
+-- registry owns every model version, which method and parameters produced it,
+-- the dataset it was fitted on, its metrics and the reference distribution
+-- drift is judged against. A version is immutable: nothing in this section
+-- lets any role edit its definition or delete a row, and the publication
+-- history is append-only. Publication and rollback (F22-13) own the outbox
+-- for stream:models.v1.publication_recorded and the current-version view.
+-- Training (F22-12) and the drift tables (F23-09) are their own stories.
+--
+-- The web has no privilege here (ADR-0046): retail_app gets no USAGE on
+-- `models`, so it cannot even name these tables.
+CREATE SCHEMA IF NOT EXISTS models;
+REVOKE ALL ON SCHEMA models FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS models_events;
+REVOKE ALL ON SCHEMA models_events FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_models;
+REVOKE ALL ON SCHEMA api_models FROM PUBLIC;
+
+-- Keys only, never version state: consumers re-read the published view.
+CREATE TABLE IF NOT EXISTS models_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON models_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+-- One row per version. The definition is scalar columns, so that a boundary,
+-- a tolerance or the dataset can be read, compared and constrained one by one;
+-- the two documents that are only ever frozen and read whole (the scoring a
+-- customer is scored against, and the reference histogram) are jsonb.
+-- `state`, `published_at` and `retired_at` are the only columns that ever
+-- change, and only together with an appended models.model_publication row
+-- (F22-13); trg_model_version_immutable refuses any other change and every
+-- DELETE, for every role including the owner. The partial unique index is the
+-- schema's half of "exactly one version is PUBLISHED" (ADR-0064): the service
+-- checks it first and maps the index's refusal to a 409, never a 500.
+CREATE TABLE IF NOT EXISTS models.model_version (
+    version_id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name                   VARCHAR(80) NOT NULL UNIQUE CHECK (length(name) >= 1),
+    method                 VARCHAR(20) NOT NULL CHECK (method IN ('RFM_RULES', 'KMEANS')),
+    source                 VARCHAR(20) NOT NULL
+                           CHECK (source IN ('REGISTERED', 'TRAINING', 'WEB_RUN')),
+    window_days            INTEGER NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+    seed                   BIGINT,
+    rule_set_id            BIGINT CHECK (rule_set_id >= 1),
+    k                      INTEGER CHECK (k BETWEEN 2 AND 20),
+    max_iterations         INTEGER CHECK (max_iterations BETWEEN 1 AND 1000),
+    tolerance              DOUBLE PRECISION CHECK (tolerance > 0),
+    normalization          VARCHAR(20) NOT NULL CHECK (normalization IN ('NONE', 'MIN_MAX')),
+    frozen_scoring         JSONB NOT NULL CHECK (jsonb_typeof(frozen_scoring) = 'object'),
+    reference_distribution JSONB NOT NULL
+                           CHECK (jsonb_typeof(reference_distribution) = 'object'),
+    dataset_fingerprint    CHAR(64) NOT NULL CHECK (dataset_fingerprint ~ '^[0-9a-f]{64}$'),
+    dataset_origin         VARCHAR(20) NOT NULL CHECK (dataset_origin IN ('OBSERVED', 'SEEDED')),
+    dataset_row_count      INTEGER NOT NULL CHECK (dataset_row_count >= 0),
+    inertia                DOUBLE PRECISION CHECK (inertia >= 0),
+    silhouette             DOUBLE PRECISION CHECK (silhouette BETWEEN -1 AND 1),
+    stability              DOUBLE PRECISION CHECK (stability BETWEEN 0 AND 1),
+    owner_id               UUID REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    state                  VARCHAR(20) NOT NULL DEFAULT 'DRAFT'
+                           CHECK (state IN ('DRAFT', 'PUBLISHED', 'RETIRED')),
+    published_at           TIMESTAMPTZ,
+    retired_at             TIMESTAMPTZ,
+    -- A method owns its definition; the other's fields stay null (ADR-0018).
+    CONSTRAINT model_version_method_definition CHECK (
+        (method = 'RFM_RULES' AND seed IS NULL AND k IS NULL AND max_iterations IS NULL
+            AND tolerance IS NULL AND normalization = 'NONE')
+        OR
+        (method = 'KMEANS' AND rule_set_id IS NULL AND k IS NOT NULL
+            AND max_iterations IS NOT NULL AND tolerance IS NOT NULL
+            AND normalization = 'MIN_MAX')),
+    -- A web run has no owner; a registered or trained version always does.
+    CONSTRAINT model_version_owner CHECK ((source = 'WEB_RUN') = (owner_id IS NULL)),
+    CONSTRAINT model_version_state_times CHECK (
+        (state = 'DRAFT') = (published_at IS NULL)
+        AND (state = 'RETIRED') = (retired_at IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS model_version_one_published
+    ON models.model_version (state) WHERE state = 'PUBLISHED';
+
+-- The variables a version uses: a multivalued fact of the version, so a row
+-- per feature and not an array in the version's row (4NF).
+CREATE TABLE IF NOT EXISTS models.model_version_feature (
+    version_id BIGINT NOT NULL REFERENCES models.model_version(version_id)
+               ON DELETE RESTRICT,
+    feature    CHAR(1) NOT NULL CHECK (feature IN ('R', 'F', 'M')),
+    PRIMARY KEY (version_id, feature)
+);
+
+-- Append-only: a publication or a rollback is a fact, and a rollback is a new
+-- row naming the restored version, never an edit (ADR-0064). Written by
+-- F22-13; svc_models can only read it until then.
+CREATE TABLE IF NOT EXISTS models.model_publication (
+    publication_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    version_id          BIGINT NOT NULL REFERENCES models.model_version(version_id)
+                        ON DELETE RESTRICT,
+    action              VARCHAR(20) NOT NULL CHECK (action IN ('PUBLISH', 'ROLLBACK')),
+    previous_version_id BIGINT REFERENCES models.model_version(version_id)
+                        ON DELETE RESTRICT,
+    reason              VARCHAR(500) NOT NULL CHECK (length(reason) >= 1),
+    published_by        UUID REFERENCES public.app_user(user_id) ON DELETE RESTRICT,
+    published_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (previous_version_id IS DISTINCT FROM version_id),
+    CHECK (action = 'PUBLISH' OR previous_version_id IS NOT NULL)
+);
+CREATE INDEX IF NOT EXISTS model_publication_version
+    ON models.model_publication (version_id, publication_id);
+
+-- Every writer is captured in the publication transaction. The event carries
+-- only the publication id; its consumer re-reads api_models after commit.
+CREATE OR REPLACE FUNCTION models_events.capture_publication_recorded() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO models_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:models.v1.publication_recorded', TG_OP, NEW.publication_id::text);
+    PERFORM pg_notify('models_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION models_events.capture_publication_recorded() OWNER TO definer_models;
+REVOKE EXECUTE ON FUNCTION models_events.capture_publication_recorded() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_capture_publication_recorded
+AFTER INSERT ON models.model_publication
+FOR EACH ROW EXECUTE FUNCTION models_events.capture_publication_recorded();
+
+-- contracts/db/api_models.published_version.v1.md. The latest publication of
+-- the PUBLISHED row is the fact that made it current.
+CREATE OR REPLACE VIEW api_models.published_version_v1
+WITH (security_invoker = off) AS
+SELECT v.version_id,
+       v.method,
+       v.name,
+       v.window_days,
+       v.seed,
+       v.rule_set_id,
+       v.k,
+       ARRAY(SELECT f.feature::text
+               FROM models.model_version_feature AS f
+              WHERE f.version_id = v.version_id
+              ORDER BY array_position(ARRAY['R', 'F', 'M'], f.feature::text)) AS features,
+       v.normalization,
+       v.frozen_scoring,
+       v.dataset_origin AS data_origin,
+       p.publication_id,
+       p.published_at
+  FROM models.model_version AS v
+  JOIN LATERAL (
+      SELECT publication_id, published_at
+        FROM models.model_publication
+       WHERE version_id = v.version_id
+       ORDER BY publication_id DESC
+       LIMIT 1
+  ) AS p ON true
+ WHERE v.state = 'PUBLISHED';
+REVOKE ALL ON api_models.published_version_v1 FROM PUBLIC;
+
+-- Every segmentation run has a version (ADR-0064): the run the web recorded,
+-- and the version whose method and parameters it matched or created. It names
+-- the web's run by value and never changes it, so run_id has no foreign key: no
+-- application role can delete a run (ADR-0029), only the owner's maintenance
+-- can, and the registry's record must outlive such a delete, not block it or
+-- vanish with it. A WEB_RUN version's source run is the earliest run linked to
+-- it.
+CREATE TABLE IF NOT EXISTS models.run_version (
+    run_id     BIGINT PRIMARY KEY,
+    version_id BIGINT NOT NULL REFERENCES models.model_version(version_id)
+               ON DELETE RESTRICT,
+    linked_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS run_version_version ON models.run_version (version_id, run_id);
+
+-- contracts/db/api_models.run_version.v1.md. A missing row is deliberately
+-- pending; consumers must not replace it with the current published version.
+CREATE OR REPLACE VIEW api_models.run_version_v1
+WITH (security_invoker = off) AS
+SELECT run_id, version_id, linked_at
+  FROM models.run_version;
+REVOKE ALL ON api_models.run_version_v1 FROM PUBLIC;
+
+-- Immutability, for every role. Only state, published_at and retired_at of a
+-- version may change; nothing is ever deleted, in any of the four tables.
+CREATE OR REPLACE FUNCTION models.refuse_change() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+    IF TG_TABLE_NAME = 'model_version' AND TG_OP = 'UPDATE'
+       AND (to_jsonb(NEW) - 'state' - 'published_at' - 'retired_at')
+           = (to_jsonb(OLD) - 'state' - 'published_at' - 'retired_at') THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'models.% is immutable: % refused (ADR-0064)', TG_TABLE_NAME, TG_OP
+        USING ERRCODE = '23000', CONSTRAINT = TG_TABLE_NAME || '_immutable';
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_model_version_immutable
+BEFORE UPDATE OR DELETE ON models.model_version
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_version_feature_immutable
+BEFORE UPDATE OR DELETE ON models.model_version_feature
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_publication_immutable
+BEFORE UPDATE OR DELETE ON models.model_publication
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_run_version_immutable
+BEFORE UPDATE OR DELETE ON models.run_version
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
+-- Each is a row of contracts/db/grants.csv. svc_models registers versions and
+-- publishes by changing only state/times and appending a publication fact. It
+-- holds no DELETE and cannot rewrite any definition or publication history.
+GRANT USAGE ON SCHEMA models TO svc_models;
+GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO svc_models;
+GRANT UPDATE (state, published_at, retired_at) ON models.model_version TO svc_models;
+GRANT SELECT, INSERT ON models.model_publication TO svc_models;
+GRANT SELECT ON models.run_version TO svc_models;
+
+GRANT USAGE ON SCHEMA models_events TO svc_models, definer_models;
+GRANT INSERT ON models_events.outbox TO definer_models;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON models_events.outbox TO svc_models;
+
+-- Consumer grants arrive with their stories; the producer can verify its view.
+GRANT USAGE ON SCHEMA api_models TO svc_models;
+GRANT SELECT ON api_models.published_version_v1 TO svc_models;
+GRANT USAGE ON SCHEMA api_models TO svc_segments;
+GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
+
+-- Publications and rollbacks are critical domain events in the same transaction.
+GRANT USAGE ON SCHEMA api_audit TO svc_models;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_models;
+-- END BOUNDARY model-registry
+
+-- BEGIN BOUNDARY recommendations
+-- recommendations-service (F24-05, ADR-0067, ADR-0046): the explanation of each
+-- recommendation it serves, kept so that "why was this product offered" can be
+-- answered after the stock and the rules have moved on. It holds identifiers,
+-- figures and codes only: no name, email, phone, SKU, price or free text. The
+-- web has no privilege here, and nothing else reads these tables: the service
+-- publishes them through its own `recommendation-decisions` resource, not a
+-- database view. docs/data-model.md §2.4 holds the 4NF justification.
+--
+-- Kept 90 days, then deleted by the service's own job (ADR-0067). A customer's
+-- anonymization (F21-19) clears customer_id and leaves the figures: the
+-- foreign key does it when a customer row goes, and the service does it by
+-- UPDATE (customer_id) when the customer is anonymized in place.
+--
+-- Nothing derivable is stored. The availability channel is the decision's own
+-- channel; the availability store is the decision's store except on an
+-- `elsewhere` item, which names its own; and an item's factors (signals matched,
+-- segment buyers, category share) are read from its reason rows.
+CREATE SCHEMA IF NOT EXISTS recommendations;
+REVOKE ALL ON SCHEMA recommendations FROM PUBLIC;
+
+-- One decision per answer. model_version_id has no foreign key because the
+-- model registry is another boundary's (ADR-0064): the figure is the one the
+-- run was scored under when the decision was made, null while the run has none.
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_decision (
+    decision_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    customer_id UUID,
+    status TEXT NOT NULL,
+    computed_at TIMESTAMPTZ NOT NULL,
+    run_id BIGINT,
+    model_version_id BIGINT,
+    store_id SMALLINT,
+    store_source TEXT,
+    channel_id SMALLINT
+);
+
+-- The exclusion counts of a decision: one row per reason above zero. A
+-- multivalued fact of the decision, independent of its items (4NF).
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_exclusion (
+    decision_id UUID NOT NULL,
+    reason TEXT NOT NULL,
+    product_count INTEGER NOT NULL
+);
+
+-- One row per product the answer offered, of any kind. category_id is the
+-- product's category when the decision was made: a later re-categorization
+-- must not rewrite what was shown.
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_item (
+    decision_id UUID NOT NULL,
+    position SMALLINT NOT NULL,
+    product_id INTEGER NOT NULL,
+    category_id SMALLINT NOT NULL,
+    kind TEXT NOT NULL,
+    quantity_on_hand INTEGER NOT NULL,
+    held_at_store_id SMALLINT,
+    alternative_for INTEGER,
+    unavailable_reason TEXT
+);
+
+-- The signals behind an item, one row each. relation_substitute is the single
+-- reason of an alternative and carries no figure.
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_reason (
+    decision_id UUID NOT NULL,
+    position SMALLINT NOT NULL,
+    signal TEXT NOT NULL,
+    segment_buyers INTEGER,
+    category_id SMALLINT,
+    share NUMERIC(5, 4)
+);
+
+-- Every named constraint is added separately so this boundary is safe to
+-- re-apply to a database that already contains the tables.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_pkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_pkey PRIMARY KEY (decision_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_customer_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_customer_id_fkey
+        FOREIGN KEY (customer_id) REFERENCES public.customer(customer_id)
+        ON DELETE SET NULL; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_run_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_run_id_fkey
+        FOREIGN KEY (run_id) REFERENCES public.segmentation_run(run_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_store_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_store_id_fkey
+        FOREIGN KEY (store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_channel_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_channel_id_fkey
+        FOREIGN KEY (channel_id) REFERENCES public.channel(channel_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_status_check'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_status_check
+        CHECK (status IN ('recommended', 'none_match', 'no_open_assignment',
+                          'unassigned_result', 'no_usual_store',
+                          'PERSONALIZATION_WITHDRAWN')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_store_source_check'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_store_source_check
+        CHECK ((store_id IS NULL) = (store_source IS NULL)
+               AND (store_source IS NULL OR store_source IN ('given', 'usual_store')));
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_decision'::regclass
+      AND conname = 'recommendation_decision_model_version_id_check'
+) THEN ALTER TABLE recommendations.recommendation_decision
+        ADD CONSTRAINT recommendation_decision_model_version_id_check
+        CHECK (model_version_id >= 1); END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_pkey'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_pkey PRIMARY KEY (decision_id, reason);
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_decision_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_decision_id_fkey
+        FOREIGN KEY (decision_id) REFERENCES recommendations.recommendation_decision(decision_id)
+        ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_reason_check'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_reason_check
+        CHECK (reason IN ('already_bought', 'inactive', 'not_sellable',
+                          'store_not_selling', 'channel_not_enabled',
+                          'out_of_stock', 'PERSONALIZATION_WITHDRAWN')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_exclusion'::regclass
+      AND conname = 'recommendation_exclusion_product_count_check'
+) THEN ALTER TABLE recommendations.recommendation_exclusion
+        ADD CONSTRAINT recommendation_exclusion_product_count_check
+        CHECK (product_count >= 1); END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_pkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_pkey PRIMARY KEY (decision_id, position);
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_decision_product_key'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_decision_product_key
+        UNIQUE (decision_id, product_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_decision_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_decision_id_fkey
+        FOREIGN KEY (decision_id) REFERENCES recommendations.recommendation_decision(decision_id)
+        ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_product_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_product_id_fkey
+        FOREIGN KEY (product_id) REFERENCES public.product(product_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_category_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_category_id_fkey
+        FOREIGN KEY (category_id) REFERENCES public.category(category_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_held_at_store_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_held_at_store_id_fkey
+        FOREIGN KEY (held_at_store_id) REFERENCES public.store(store_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_alternative_for_fkey'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_alternative_for_fkey
+        FOREIGN KEY (alternative_for) REFERENCES public.product(product_id)
+        ON DELETE RESTRICT; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_position_check'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_position_check
+        CHECK (position >= 1 AND quantity_on_hand >= 1); END IF; END $$;
+-- What each kind carries (the contract's RecommendationItemV2): a primary
+-- has no alternative_for and no unavailable_reason; an alternative has both;
+-- an elsewhere entry has the reason and the other store, and no alternative_for.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_kind_check'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_kind_check
+        CHECK (CASE kind
+                 WHEN 'primary' THEN num_nonnulls(held_at_store_id, alternative_for,
+                                                  unavailable_reason) = 0
+                 WHEN 'alternative' THEN held_at_store_id IS NULL
+                                         AND alternative_for IS NOT NULL
+                                         AND unavailable_reason IS NOT NULL
+                 WHEN 'elsewhere' THEN held_at_store_id IS NOT NULL
+                                       AND alternative_for IS NULL
+                                       AND unavailable_reason IS NOT NULL
+                 ELSE false END); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_item'::regclass
+      AND conname = 'recommendation_item_unavailable_reason_check'
+) THEN ALTER TABLE recommendations.recommendation_item
+        ADD CONSTRAINT recommendation_item_unavailable_reason_check
+        CHECK (unavailable_reason IN ('not_sellable', 'channel_not_enabled',
+                                      'out_of_stock')); END IF; END $$;
+
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_pkey'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_pkey PRIMARY KEY (decision_id, position, signal);
+        END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_item_fkey'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_item_fkey
+        FOREIGN KEY (decision_id, position)
+        REFERENCES recommendations.recommendation_item(decision_id, position)
+        ON DELETE CASCADE; END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_category_id_fkey'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_category_id_fkey
+        FOREIGN KEY (category_id) REFERENCES public.category(category_id)
+        ON DELETE RESTRICT; END IF; END $$;
+-- Each signal carries exactly the figures it owns, and no other.
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_reason'::regclass
+      AND conname = 'recommendation_reason_signal_check'
+) THEN ALTER TABLE recommendations.recommendation_reason
+        ADD CONSTRAINT recommendation_reason_signal_check
+        CHECK (CASE signal
+                 WHEN 'segment' THEN segment_buyers IS NOT NULL AND segment_buyers >= 1
+                                     AND category_id IS NULL AND share IS NULL
+                 WHEN 'preferred_category' THEN segment_buyers IS NULL
+                                                AND category_id IS NOT NULL
+                                                AND share IS NULL
+                 WHEN 'purchase_history' THEN segment_buyers IS NULL
+                                              AND category_id IS NOT NULL
+                                              AND share IS NOT NULL
+                                              AND share > 0 AND share <= 1
+                 WHEN 'relation_substitute' THEN num_nonnulls(segment_buyers,
+                                                              category_id, share) = 0
+                 ELSE false END); END IF; END $$;
+
+-- The retention job deletes by age, and a reader lists by customer or store.
+CREATE INDEX IF NOT EXISTS recommendation_decision_computed
+    ON recommendations.recommendation_decision (computed_at);
+CREATE INDEX IF NOT EXISTS recommendation_decision_customer_computed
+    ON recommendations.recommendation_decision (customer_id, computed_at DESC)
+    WHERE customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS recommendation_decision_store_computed
+    ON recommendations.recommendation_decision (store_id, computed_at DESC)
+    WHERE store_id IS NOT NULL;
+
+-- A decision is written once and read back unchanged: SELECT and INSERT,
+-- DELETE for the 90-day retention, and UPDATE of customer_id alone, which is
+-- anonymization. The web has no privilege on this schema.
+GRANT USAGE ON SCHEMA recommendations TO svc_recommendations;
+GRANT SELECT, INSERT, DELETE ON recommendations.recommendation_decision,
+    recommendations.recommendation_exclusion, recommendations.recommendation_item,
+    recommendations.recommendation_reason TO svc_recommendations;
+GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_recommendations;
+-- END BOUNDARY recommendations
+
+-- BEGIN BOUNDARY analytics-kpis
+-- analytics-kpis (F26-02, RN-68, ADR-0034, ADR-0046, ADR-0059, ADR-0060): a read
+-- rule. It owns no table and writes nothing; svc_kpis holds no privilege on a
+-- base table and reads only the api_* views other boundaries publish. kpis and
+-- api_kpis are the schemas ADR-0059 names for it, created empty so a later story
+-- that needs an object of its own does not have to take a schema decision. The
+-- three views are those the net-sales report reads: api_sales.net_purchase_line_v1
+-- (the reversal-aware lines and their data_origin, ADR-0062, ADR-0052),
+-- api_segments.current_label_v1 (the label a customer holds now) and
+-- api_users.store_assignment_v1 (the stores of a store-scoped caller, read on each
+-- request, ADR-0060). F26-05 adds the two views the demand-coverage report reads:
+-- api_stock.stock_level_v1 (the units held per store and product) and
+-- api_products.product_ref_v1 (the product's current category and is_active).
+-- The stories that add a report add the grants it needs here.
+-- Each is a row of contracts/db/grants.csv. Idempotent: an operator re-applies it.
+CREATE SCHEMA IF NOT EXISTS kpis;
+REVOKE ALL ON SCHEMA kpis FROM PUBLIC;
+CREATE SCHEMA IF NOT EXISTS api_kpis;
+REVOKE ALL ON SCHEMA api_kpis FROM PUBLIC;
+GRANT USAGE ON SCHEMA kpis, api_kpis TO svc_kpis;
+GRANT USAGE ON SCHEMA api_sales, api_segments, api_users, api_stock, api_products TO svc_kpis;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_kpis;
+GRANT SELECT ON api_segments.current_label_v1 TO svc_kpis;
+GRANT SELECT ON api_users.store_assignment_v1 TO svc_kpis;
+GRANT SELECT ON api_stock.stock_level_v1 TO svc_kpis;
+GRANT SELECT ON api_products.product_ref_v1 TO svc_kpis;
+-- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION
 -- F1-05 (#53). Opt-in acceptance checks, kept here because even a rejected
@@ -2388,6 +5900,26 @@ BEGIN
     EXCEPTION WHEN invalid_parameter_value THEN
         RAISE NOTICE 'PASS: svc-sales: namespace refused (SQLSTATE 22023)';
     END;
+
+    -- ADR-0062: a line's returned_quantity is written by svc_sales alone. The
+    -- web's update is refused by the BOUNDARY sales guard with 22023, and the
+    -- views it reads for net units are read-only to it.
+    BEGIN
+        UPDATE public.transaction_line SET returned_quantity = 0
+         WHERE (transaction_id, product_id) = (
+               SELECT transaction_id, product_id FROM public.transaction_line
+                ORDER BY transaction_id, product_id LIMIT 1);
+        RAISE EXCEPTION 'FAIL: retail_app wrote returned_quantity';
+    EXCEPTION WHEN invalid_parameter_value THEN
+        RAISE NOTICE 'PASS: returned_quantity refused (SQLSTATE 22023)';
+    END;
+    IF NOT has_table_privilege('public.net_sale', 'SELECT')
+       OR NOT has_table_privilege('public.net_sale_line', 'SELECT')
+       OR has_table_privilege('public.net_sale', 'INSERT, UPDATE, DELETE')
+       OR has_table_privilege('public.net_sale_line', 'INSERT, UPDATE, DELETE') THEN
+        RAISE EXCEPTION 'FAIL: the net sale views are not read-only to the application role';
+    END IF;
+    RAISE NOTICE 'PASS: net sale views are read-only';
     RAISE NOTICE 'PASS: SELECT, INSERT, UPDATE, DELETE and audit sequence access';
 END;
 $verify$;

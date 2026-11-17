@@ -1,0 +1,91 @@
+{
+  "from": "2026-10-01",
+  "to": "2026-10-28",
+  "window_days": 28,
+  "target_cover_days": 14,
+  "generated_at": "2026-10-29T06:00:00Z",
+  "calculation": "daily_demand = net_units / window_days, to 4 places. days_of_cover = on_hand / daily_demand, to 2 places, absent when net_units is 0. replenishment_units = max(0, ceil(net_units * target_cover_days / window_days) - on_hand). Demand is net of reversals over the window, on_hand is read at generated_at, and only active products count.",
+  "store_scope": {
+    "restricted": false,
+    "store_ids": []
+  },
+  "data_origin": {
+    "views": [
+      "api_products.product_ref_v1",
+      "api_sales.net_purchase_line_v1",
+      "api_segments.current_label_v1",
+      "api_stock.stock_level_v1"
+    ],
+    "synthetic": true,
+    "spans_model_versions": false,
+    "model_version_ids": [
+      4
+    ]
+  },
+  "rows": [
+    {
+      "store_id": 3,
+      "category_id": 4,
+      "net_units": 336,
+      "daily_demand": "12.0000",
+      "on_hand": 120,
+      "days_of_cover": "10.00",
+      "replenishment_units": 48,
+      "synthetic": false,
+      "segments": [
+        {
+          "segment_code": "LOYAL",
+          "segment_state": "assigned",
+          "net_units": 168,
+          "share": "0.5000"
+        },
+        {
+          "segment_code": "AT_RISK",
+          "segment_state": "assigned",
+          "net_units": 112,
+          "share": "0.3333"
+        },
+        {
+          "segment_code": null,
+          "segment_state": "no_open_assignment",
+          "net_units": 56,
+          "share": "0.1667"
+        }
+      ]
+    },
+    {
+      "store_id": 3,
+      "category_id": 7,
+      "net_units": 0,
+      "daily_demand": "0.0000",
+      "on_hand": 90,
+      "days_of_cover": null,
+      "replenishment_units": 0,
+      "synthetic": false,
+      "segments": []
+    },
+    {
+      "store_id": 3,
+      "category_id": 9,
+      "net_units": 42,
+      "daily_demand": "1.5000",
+      "on_hand": 0,
+      "days_of_cover": "0.00",
+      "replenishment_units": 21,
+      "synthetic": true,
+      "segments": [
+        {
+          "segment_code": "LOYAL",
+          "segment_state": "assigned",
+          "net_units": 42,
+          "share": "1.0000"
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

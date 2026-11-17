@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The same restriction appears twice in the list of decisions.",
+  "correlation_id": "corr-invalid-restriction-body",
+  "details": [
+    {
+      "field": "decisions[1]",
+      "code": "duplicate"
+    }
+  ]
+}

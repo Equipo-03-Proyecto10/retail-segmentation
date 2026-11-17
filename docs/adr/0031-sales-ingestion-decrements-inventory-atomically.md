@@ -1,10 +1,10 @@
 # ADR-0031 — Accepted sales decrement inventory atomically
 
-**Status:** Accepted
+**Status:** Partially superseded by ADR-0061 (the reserved entry point)
 **Owner:** Team 03
 **Issue:** #362
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0061](0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md), in part
 
 ---
 

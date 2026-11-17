@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordRestrictionDecisionsRequest xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <decisions>
+    <kind>PRODUCT</kind>
+    <target_id>5</target_id>
+    <decision>IMPOSED</decision>
+  </decisions>
+</RecordRestrictionDecisionsRequest>

@@ -43,11 +43,30 @@ def test_the_section_creates_its_objects_in_order() -> None:
         "CREATE TABLE IF NOT EXISTS checkins.check_in_review",
         "CREATE INDEX IF NOT EXISTS store_check_in_store_occurred",
         "GRANT USAGE ON SCHEMA checkins TO svc_checkins;",
+        "CREATE SCHEMA IF NOT EXISTS api_checkins;",
+        "CREATE OR REPLACE VIEW api_checkins.customer_last_visit_v1",
     ]
     positions = [SECTION.index(statement) for statement in order]
     assert positions == sorted(positions)
     assert "CREATE SCHEMA IF NOT EXISTS checkins_events" not in SECTION
-    assert "api_checkins" not in SECTION
+
+
+def test_the_one_published_object_is_the_latest_visit_for_customers() -> None:
+    """#1061: api_checkins publishes one view, read by customers alone."""
+
+    published = re.findall(
+        r"CREATE OR REPLACE (?:VIEW|FUNCTION) (api_checkins\.\w+)", SECTION
+    )
+    assert published == ["api_checkins.customer_last_visit_v1"]
+    rows = {
+        (g["role"], g["object"], g["privilege"])
+        for g in GRANTS
+        if g["object"].startswith("api_checkins")
+    }
+    assert rows == {
+        ("svc_customers", "api_checkins", "USAGE"),
+        ("svc_customers", "api_checkins.customer_last_visit_v1", "SELECT"),
+    }
 
 
 def test_no_verified_column_is_stored() -> None:
@@ -78,7 +97,7 @@ def test_check_ins_are_append_only_in_the_section_and_the_manifest() -> None:
     rows = {
         (g["role"], g["object"], g["privilege"])
         for g in GRANTS
-        if "checkins" in g["object"]
+        if g["object"].split(".", 1)[0] == "checkins"
     }
     assert rows == {
         ("svc_checkins", "checkins", "USAGE"),
@@ -86,6 +105,8 @@ def test_check_ins_are_append_only_in_the_section_and_the_manifest() -> None:
         ("svc_checkins", "checkins.store_check_in", "INSERT"),
         ("svc_checkins", "checkins.check_in_review", "SELECT"),
         ("svc_checkins", "checkins.check_in_review", "INSERT"),
+        ("svc_checkins", "checkins.customer_visit", "SELECT"),
+        ("svc_checkins", "checkins.customer_visit", "INSERT"),
     }
 
 

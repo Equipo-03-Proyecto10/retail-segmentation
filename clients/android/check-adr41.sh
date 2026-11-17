@@ -8,6 +8,9 @@
 # forbidden XML types in order to look for them.
 set -uo pipefail
 
+# The paths below are relative to the repository root.
+cd "$(dirname "$0")/../.." || exit 1
+
 main=clients/android/app/src/main
 registry=contracts/registry.yaml
 
@@ -27,5 +30,34 @@ grep -rhoE "api/[a-z][a-z0-9-]*/v[0-9]+" "$main" --include='*.kt' | cut -d/ -f2 
 # WorkManager worker.
 grep -rln "UUID.randomUUID" clients/android/ --include='*Worker*.kt' \
   | sed 's/^/retry id generated per attempt: /'
+
+# ADR-0057: color, type size, shape and spacing values live in ui/theme/ and nowhere else.
+grep -rnE "Color\(0x|[0-9]\.?[0-9]*\.(sp|dp)\b|RoundedCornerShape\(" "$main" --include='*.kt' \
+  | grep -v '/ui/theme/' | sed 's/^/outside ui\/theme: /'
+
+# ADR-0060: the floor roles are the four store profiles' roles and the administrator, and each is a
+# role users-service knows. The decided roles are read from the ADR's profile table.
+decided=$( { sed -nE 's/^\| [^|]+ \| `([A-Z_]+)`.*/\1/p' docs/adr/0060-*.md; echo ADMIN; } | sort -u)
+floor_roles_file=$main/java/online/maxthecoder/mosaiq/floor/auth/SessionRepository.kt
+declared=$(sed -n '/val FLOOR_ROLES/,/)/p' "$floor_roles_file" | grep -oE '"[A-Z_]+"' | tr -d '"' | sort -u)
+[ -n "$decided" ] || echo "no profile roles read from ADR-0060"
+[ "$decided" = "$declared" ] \
+  || echo "FLOOR_ROLES ($(echo $declared)) is not the roles ADR-0060 decides ($(echo $decided))"
+for role in $declared; do
+  grep -qE "^[[:space:]]+- $role\$" contracts/users/openapi.yaml \
+    || echo "FLOOR_ROLES names $role, which contracts/users does not know"
+done
+
+# Every operation a section of the floor shell calls is a service the registry names, and an operation
+# its contract defines (FloorAccess.operations; FloorAccessContractTest checks their roles).
+access=$main/java/online/maxthecoder/mosaiq/floor/auth/FloorAccess.kt
+grep -oE 'ServiceOperation\("[a-z][a-z0-9-]*", "[A-Za-z]+"\)' "$access" | sort -u \
+  | while IFS= read -r call; do
+    service=$(sed -E 's/ServiceOperation\("([^"]+)", "([^"]+)"\)/\1/' <<<"$call")
+    operation=$(sed -E 's/ServiceOperation\("([^"]+)", "([^"]+)"\)/\2/' <<<"$call")
+    grep -qx "$service" <<<"$registered" || echo "FloorAccess names unregistered service: $service"
+    grep -q "operationId: $operation\$" "contracts/$service/openapi.yaml" 2>/dev/null \
+      || echo "FloorAccess names $operation, which contracts/$service does not define"
+  done
 
 exit 0

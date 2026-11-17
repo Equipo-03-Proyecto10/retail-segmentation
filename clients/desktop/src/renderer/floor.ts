@@ -59,7 +59,7 @@ function submit(text: string): HTMLButtonElement {
 }
 
 /** A store picker filled from stores-service; the first option means any store. */
-function storePicker(ctx: ScreenContext, any: string): HTMLSelectElement {
+export function storePicker(ctx: ScreenContext, any: string): HTMLSelectElement {
   const picker = select([['', any]], '');
   void ctx.api.stores().then((res) => {
     if (!res.ok) return;

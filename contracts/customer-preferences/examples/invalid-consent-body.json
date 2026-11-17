@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "A purpose appears twice in the list of decisions.",
+  "correlation_id": "corr-invalid-consent-body",
+  "details": [
+    {
+      "field": "decisions[1].purpose",
+      "code": "duplicate"
+    }
+  ]
+}

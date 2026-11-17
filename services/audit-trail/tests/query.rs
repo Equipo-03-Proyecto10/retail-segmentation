@@ -34,7 +34,7 @@ fn every_filter_parses() {
 }
 
 #[test]
-fn the_thirteen_entities_and_three_actions_are_accepted() {
+fn every_audited_entity_and_three_actions_are_accepted() {
     for entity in ENTITIES {
         assert!(
             parse_filters(&format!("entity={entity}")).is_ok(),
@@ -47,7 +47,7 @@ fn the_thirteen_entities_and_three_actions_are_accepted() {
             "{action}"
         );
     }
-    assert_eq!(ENTITIES.len(), 13);
+    assert_eq!(ENTITIES.len(), 25);
 }
 
 #[test]

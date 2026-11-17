@@ -10,7 +10,7 @@
 --    script, and so that a reload produces the same database twice.
 --
 -- 2) role, channel and segment_label hold fewer than 30 rows. Their domains
---    are seven roles, five sales channels and six ordered business labels;
+--    are ten roles, five sales channels and six ordered business labels;
 --    padding them with filler to reach the minimum would make the seed
 --    misrepresent the business. Those three, and only those, are listed in
 --    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
@@ -48,7 +48,10 @@ INSERT INTO role (role_id, code, description) VALUES
 (4,'MARKETING','Marketing'),
 (5,'INVENTORY_PLANNER','Inventory planner'),
 (6,'AUDITOR','Auditor'),
-(7,'CUSTOMER','Loyalty programme customer');
+(7,'CUSTOMER','Loyalty programme customer'),
+(8,'SALES_ASSOCIATE','Store seller'),
+(9,'LOYALTY_OFFICER','Loyalty officer'),
+(10,'COMMERCIAL_SUPERVISOR','Commercial supervisor');
 
 -- ---------- channel (5) ----------
 INSERT INTO channel (channel_id, name) VALUES
@@ -143,7 +146,7 @@ SELECT n, 'Segment ' || n, 'Segment derived from RULE_' || lpad(n::text,3,'0'), 
 FROM generate_series(1,30) n;
 
 
--- ---------- app_user (30, exactly one administrator) ----------
+-- ---------- app_user (33, exactly one administrator) ----------
 -- AGENTS.md: there is exactly one administrator. User 1 holds role 1 and no
 -- other user does, so the partial unique index F4-02 adds applies to this data
 -- without anyone having to rewrite the seed first.
@@ -163,6 +166,30 @@ SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
        now() - (n || ' days')::interval
 FROM generate_series(1,30) n;
 
+-- One demonstration account per floor role ADR-0060 adds (F19-04, #754):
+-- user 31 is SALES_ASSOCIATE, 32 LOYALTY_OFFICER and 33 COMMERCIAL_SUPERVISOR.
+-- They are appended rather than folded into the rotation above, so users 2 to
+-- 30 keep the roles every other seeded table and test already relies on.
+INSERT INTO app_user (user_id, role_id, name, email, password_hash, is_active, created_at)
+SELECT ('11111111-1111-1111-1111-' || lpad(n::text,12,'0'))::uuid,
+       n - 23,
+       'Demo User ' || n,
+       'user' || n || '@mosaiq-demo.com',
+       '$argon2id$v=19$m=65536,t=3,p=4$BTg0ZDnIiX0UXEv10Pa1Pw$kPMnEtE7i3rQKZhkDCbDiN3R6FEKkEmsN2CKncGfd1c',
+       TRUE,
+       now() - (n || ' days')::interval
+FROM generate_series(31,33) n;
+
+-- ---------- users.store_assignment (30) ----------
+-- The five seeded STORE_MANAGER accounts and the three new floor profiles
+-- each have stores. A role change or deactivation keeps these rows as history;
+-- api_users.store_assignment_v1 exposes only currently active floor users.
+INSERT INTO users.store_assignment (user_id, store_id)
+SELECT ('11111111-1111-1111-1111-' ||
+        lpad((ARRAY[3,9,15,21,27,31,32,33])[1+((n-1)%8)]::text, 12, '0'))::uuid,
+       n
+FROM generate_series(1,30) n;
+
 -- ---------- stores.store_location (30, one per seeded store) ----------
 -- Coordinates cycle through plausible city centres in the same order as the
 -- seeded store cities. The sole administrator is the source of every value.
@@ -172,6 +199,69 @@ SELECT n,
        (ARRAY[25.6866,25.6776,25.7417,25.7816,20.6597,19.4326,19.0414,20.5888,32.5149,20.9674]::numeric[])[1+((n-1)%10)],
        (ARRAY[-100.3161,-100.2597,-100.3022,-100.1887,-103.3496,-99.1332,-98.2063,-100.3899,-117.0382,-89.5926]::numeric[])[1+((n-1)%10)],
        100 + (n * 10),
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+-- ---------- stores.store_status (30, one per seeded store) ----------
+-- Twenty-seven stores are OPEN, stores 10 and 20 are TEMPORARILY_CLOSED and
+-- store 30 is CLOSED, so a consumer of api_stores.store_directory_v2 sees all
+-- three values. Every row is set by the sole administrator.
+INSERT INTO stores.store_status (store_id, status, set_by, set_at)
+SELECT n,
+       CASE WHEN n = 30 THEN 'CLOSED'
+            WHEN n IN (10, 20) THEN 'TEMPORARILY_CLOSED'
+            ELSE 'OPEN' END,
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+-- ---------- stores.store_hours (30) and stores.store_hours_interval (190) ----------
+-- The time zone follows the seeded city (the same cycle as the locations).
+-- Every store opens Monday to Friday 09:00-21:00 and Saturday 10:00-18:00;
+-- every third store also opens Sunday 11:00-17:00.
+INSERT INTO stores.store_hours (store_id, time_zone, set_by, set_at)
+SELECT n,
+       (ARRAY['America/Monterrey','America/Monterrey','America/Monterrey','America/Monterrey',
+              'America/Mexico_City','America/Mexico_City','America/Mexico_City','America/Mexico_City',
+              'America/Tijuana','America/Merida'])[1+((n-1)%10)],
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+INSERT INTO stores.store_hours_interval (store_id, day_of_week, opens_at, closes_at)
+SELECT n, d,
+       CASE WHEN d <= 5 THEN TIME '09:00' WHEN d = 6 THEN TIME '10:00' ELSE TIME '11:00' END,
+       CASE WHEN d <= 5 THEN TIME '21:00' WHEN d = 6 THEN TIME '18:00' ELSE TIME '17:00' END
+FROM generate_series(1,30) n
+CROSS JOIN generate_series(1,7) d
+WHERE d <= 6 OR n % 3 = 0;
+
+-- ---------- stores.store_channel_set (30) and stores.store_channel (65) ----------
+-- Every store enables physical_store (3). Even stores add mobile_app (1),
+-- multiples of 3 add web (2), of 5 marketplace (4) and of 7 call_center (5).
+INSERT INTO stores.store_channel_set (store_id, set_by, set_at)
+SELECT n, '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - (n || ' hours')::interval
+FROM generate_series(1,30) n;
+
+INSERT INTO stores.store_channel (store_id, channel_id)
+SELECT n, c
+FROM generate_series(1,30) n
+CROSS JOIN generate_series(1,5) c
+WHERE c = 3
+   OR (c = 1 AND n % 2 = 0)
+   OR (c = 2 AND n % 3 = 0)
+   OR (c = 4 AND n % 5 = 0)
+   OR (c = 5 AND n % 7 = 0);
+
+-- ---------- stores.store_commercial_rule (30) ----------
+-- The cap cycles through 10, 15, 20, 25 and 30 percent; every sixth store has
+-- no cap of its own (NULL), which a consumer reads as "no store limit".
+INSERT INTO stores.store_commercial_rule (store_id, max_discount_percent, set_by, set_at)
+SELECT n,
+       CASE WHEN n % 6 = 0 THEN NULL
+            ELSE (ARRAY[10,15,20,25,30])[1+(n%5)]::numeric(5,2) END,
        '11111111-1111-1111-1111-000000000001'::uuid,
        now() - (n || ' hours')::interval
 FROM generate_series(1,30) n;
@@ -286,6 +376,23 @@ SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
        CURRENT_DATE - (180 + n)
 FROM generate_series(1,30) n;
 
+-- ---------- customers.loyalty_card (30) ----------
+-- One durable identifier per seeded customer. Half remain active and half
+-- demonstrate revocation; production codes use a CSPRNG in customers-service.
+INSERT INTO customers.loyalty_card
+    (card_id, customer_id, code, status, issued_at, issued_by,
+     revoked_at, revoked_by, revocation_reason)
+SELECT ('8c000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
+       ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid,
+       '7M' || lpad(n::text, 24, '0'),
+       CASE WHEN n <= 15 THEN 'ACTIVE' ELSE 'REVOKED' END,
+       now() - make_interval(days => 60 - n),
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       CASE WHEN n > 15 THEN now() - make_interval(days => 30 - (n - 16)) END,
+       CASE WHEN n > 15 THEN '11111111-1111-1111-1111-000000000001'::uuid END,
+       CASE WHEN n > 15 THEN 'CUSTOMER_REQUEST' END
+FROM generate_series(1,30) AS g(n);
+
 -- ---------- segmentation runs (F7-02) ----------
 -- Every seeded run is SEEDED (ADR-0052): it scored the seeded sales below.
 -- The origin guard on segmentation_run checks OBSERVED runs only, so these
@@ -382,6 +489,90 @@ SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
 FROM generate_series(1,30) n
 CROSS JOIN generate_series(0,1) c;
 
+-- ---------- preferences.consent_decision (one default per customer and purpose) ----------
+-- ADR-0066 section 1: customers registered before consent existed get PROFILING
+-- and PERSONALIZATION granted and MARKETING_CONTACT withdrawn, as MIGRATION rows
+-- with no actor and PROGRAMME_DEFAULT as the basis. The staff decisions that
+-- follow are by the sole administrator and show a log that grows: every fourth
+-- customer then grants MARKETING_CONTACT and every fifth withdraws
+-- PERSONALIZATION, so customer 20 has both.
+INSERT INTO preferences.consent_decision
+    (customer_id, purpose, decision, recorded_at, recorded_by, source, basis)
+SELECT c.customer_id, p.purpose, p.decision, now() - interval '30 days',
+       NULL, 'MIGRATION', 'PROGRAMME_DEFAULT'
+FROM customer AS c
+CROSS JOIN (VALUES ('PERSONALIZATION', 'GRANTED'),
+                   ('MARKETING_CONTACT', 'WITHDRAWN'),
+                   ('PROFILING', 'GRANTED')) AS p(purpose, decision)
+ORDER BY c.customer_id, p.purpose;
+
+INSERT INTO preferences.consent_decision
+    (customer_id, purpose, decision, recorded_at, recorded_by, source, basis)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       'MARKETING_CONTACT', 'GRANTED', now() - ((n + 100) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF', 'EXPLICIT'
+FROM generate_series(1,30) n WHERE n % 4 = 0;
+
+INSERT INTO preferences.consent_decision
+    (customer_id, purpose, decision, recorded_at, recorded_by, source, basis)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       'PERSONALIZATION', 'WITHDRAWN', now() - ((n + 50) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF', 'EXPLICIT'
+FROM generate_series(1,30) n WHERE n % 5 = 0;
+
+-- ---------- preferences.restriction_decision (30 imposed, 4 of them lifted) ----------
+-- Each of the 30 customers restricts one target: an even customer a channel,
+-- an odd one a top-level category. Customers 7, 14, 21 and 28 then lift theirs,
+-- so the published view carries 26 restrictions and the log keeps all 34.
+INSERT INTO preferences.restriction_decision
+    (customer_id, kind, channel_id, category_id, decision, recorded_at, recorded_by, source)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       CASE WHEN n % 2 = 0 THEN 'CHANNEL' ELSE 'INTEREST_CATEGORY' END,
+       CASE WHEN n % 2 = 0 THEN (1 + (n % 5))::smallint END,
+       CASE WHEN n % 2 = 1 THEN (1 + (n % 10))::smallint END,
+       'IMPOSED', now() - ((n + 200) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF'
+FROM generate_series(1,30) n;
+
+INSERT INTO preferences.restriction_decision
+    (customer_id, kind, channel_id, category_id, decision, recorded_at, recorded_by, source)
+SELECT ('00000000-0000-0000-0000-' || lpad(n::text,12,'0'))::uuid,
+       CASE WHEN n % 2 = 0 THEN 'CHANNEL' ELSE 'INTEREST_CATEGORY' END,
+       CASE WHEN n % 2 = 0 THEN (1 + (n % 5))::smallint END,
+       CASE WHEN n % 2 = 1 THEN (1 + (n % 10))::smallint END,
+       'LIFTED', now() - ((n + 150) || ' hours')::interval,
+       '11111111-1111-1111-1111-000000000001'::uuid, 'STAFF_ON_BEHALF'
+FROM generate_series(1,30) n WHERE n % 7 = 0;
+
+-- ---------- preferences.preference_change (60) and preference_change_member (120) ----------
+-- The history of the two declared sets seeded above: each customer's first
+-- replace of each set, from empty to the set it holds, by the sole
+-- administrator. The members are read from the sets, so the history cannot
+-- disagree with them.
+INSERT INTO preferences.preference_change (customer_id, preference_set, changed_at, changed_by)
+SELECT s.customer_id, 'PREFERRED_CHANNELS', now() - interval '20 days',
+       '11111111-1111-1111-1111-000000000001'::uuid
+FROM (SELECT DISTINCT customer_id FROM customer_preferred_channel) AS s
+ORDER BY s.customer_id;
+
+INSERT INTO preferences.preference_change (customer_id, preference_set, changed_at, changed_by)
+SELECT s.customer_id, 'INTEREST_CATEGORIES', now() - interval '20 days',
+       '11111111-1111-1111-1111-000000000001'::uuid
+FROM (SELECT DISTINCT customer_id FROM customer_interest_category) AS s
+ORDER BY s.customer_id;
+
+INSERT INTO preferences.preference_change_member (change_id, side, member_id)
+SELECT h.change_id, 'AFTER', c.channel_id
+FROM preferences.preference_change AS h
+JOIN customer_preferred_channel AS c USING (customer_id)
+WHERE h.preference_set = 'PREFERRED_CHANNELS';
+
+INSERT INTO preferences.preference_change_member (change_id, side, member_id)
+SELECT h.change_id, 'AFTER', i.category_id
+FROM preferences.preference_change AS h
+JOIN customer_interest_category AS i USING (customer_id)
+WHERE h.preference_set = 'INTEREST_CATEGORIES';
+
 -- ---------- product (40) ----------
 -- image_path stays NULL: F3-07 writes it when a file is actually uploaded, and
 -- a seeded path pointing at a file that does not exist would make the upload
@@ -393,6 +584,52 @@ SELECT n, 'SKU-' || lpad(n::text,5,'0'), 'Demo Product ' || n,
        NULL,
        TRUE
 FROM generate_series(1,40) n;
+
+-- ---------- products.* commercial details (F21-10, #790) ----------
+-- One block for the boundary's four tables, after product and before anything
+-- sells it. Every seeded product is active, so each status row says what
+-- is_active already says and the two never disagree (the trigger in the
+-- products boundary keeps them so). Nothing uses random().
+--
+-- product_status (40): one row per seeded product.
+INSERT INTO products.product_status (product_id, commercial_status)
+SELECT product_id, CASE WHEN is_active THEN 'active' ELSE 'discontinued' END
+FROM product
+ORDER BY product_id;
+
+-- product_attribute (120): three attributes per product, from short
+-- vocabularies by modular arithmetic.
+INSERT INTO products.product_attribute (product_id, name, value)
+SELECT p.product_id, a.name, a.value
+FROM product AS p
+CROSS JOIN LATERAL (VALUES
+    ('brand',     (ARRAY['Aurora','Norte','Sierra','Delta','Valle','Costa','Pinar','Mesa'])[1 + (p.product_id % 8)]),
+    ('color',     (ARRAY['black','white','graphite','blue','green','red'])[1 + (p.product_id % 6)]),
+    ('pack_size', (ARRAY['1 unit','2 units','6 units','12 units'])[1 + (p.product_id % 4)])
+) AS a(name, value)
+ORDER BY p.product_id, a.name;
+
+-- product_barcode (40): a GTIN-13 under the GS1 Mexico prefix 750, the body
+-- numbered from the product id and its check digit computed by the same
+-- function the CHECK uses.
+INSERT INTO products.product_barcode (product_id, barcode)
+SELECT product_id,
+       b.body || products.gtin_check_digit(b.body)::text
+FROM product AS p
+CROSS JOIN LATERAL (SELECT '7501' || lpad(p.product_id::text, 8, '0') AS body) AS b
+ORDER BY product_id;
+
+-- product_relation (50, directed). Products n and n + 30 share a category
+-- (category = 1 + (n - 1) % 30), so each of the ten pairs substitutes both
+-- ways (20 rows); product n is bought with product n + 1, whose category
+-- differs, for n = 1 to 30, and the complement is not mirrored (30 rows).
+INSERT INTO products.product_relation (product_id, related_product_id, relation_kind)
+SELECT n, n + 30, 'substitute' FROM generate_series(1,10) AS n
+UNION ALL
+SELECT n + 30, n, 'substitute' FROM generate_series(1,10) AS n
+UNION ALL
+SELECT n, n + 1, 'complement' FROM generate_series(1,30) AS n
+ORDER BY 3, 1, 2;
 
 -- ---------- transaction (300, varied by customer, within the last 180 days) ----------
 -- Customers do not behave alike. Each one has a purchase count, a day of last
@@ -607,6 +844,55 @@ SELECT n, 'Campaign ' || n,
        (ARRAY['DRAFT','ACTIVE','FINISHED','CANCELLED'])[1+((n-1)%4)]
 FROM generate_series(1,30) n;
 
+-- ---------- campaigns.campaign_* (30 each, F25-04) ----------
+-- What each seeded campaign may reach and spend, one row per campaign. The cap, the
+-- amounts and the windows vary with the campaign so no two read alike; a campaign
+-- excludes one customer (a different one for each campaign, chosen by position) and
+-- the label two positions away from its own, which removes nobody: a label exclusion
+-- only matters when the campaign's own label is listed.
+INSERT INTO campaigns.campaign_audience (campaign_id, max_customers)
+SELECT n, 100 * n FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_budget (campaign_id, total_amount, per_customer_cap)
+SELECT n, (1000 + 250 * n)::numeric(12,2), (10 + n)::numeric(12,2)
+FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_eligibility
+    (campaign_id, registered_on_or_before, min_purchases, purchase_window_days)
+SELECT n, DATE '2026-01-01' + (n || ' days')::interval, 1 + (n % 5), 30 * (1 + (n % 12))
+FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_excluded_customer (campaign_id, customer_id)
+SELECT n, (SELECT customer_id FROM customer ORDER BY customer_id OFFSET (n % 30) LIMIT 1)
+FROM generate_series(1,30) n;
+
+INSERT INTO campaigns.campaign_excluded_label (campaign_id, label_code)
+SELECT n, (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n+1)%6)]
+FROM generate_series(1,30) n;
+
+-- ---------- checkins.customer_visit (30, consent-authorized customers) ----------
+-- Every seeded customer has a latest PROFILING decision of GRANTED above.
+-- Visit n uses that customer and store n, and even visits name campaign n.
+-- The seed demonstrates the consent rule instead of bypassing it; no loyalty
+-- code is copied from customers.loyalty_card into this table.
+INSERT INTO checkins.customer_visit
+    (visit_id, customer_id, store_id, campaign_id, occurred_at, recorded_at, recorded_by)
+SELECT ('80808080-8080-4080-8080-' || lpad(n::text, 12, '0'))::uuid,
+       c.customer_id,
+       n::smallint,
+       CASE WHEN n % 2 = 0 THEN n END,
+       now() - make_interval(days => n),
+       now() - make_interval(days => n) + interval '2 seconds',
+       '11111111-1111-1111-1111-000000000001'::uuid
+FROM generate_series(1, 30) AS n
+JOIN public.customer AS c
+  ON c.customer_id = ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid
+JOIN api_preferences.consent_state_v1 AS consent
+  ON consent.customer_id = c.customer_id
+ AND consent.purpose = 'PROFILING'
+ AND consent.decision = 'GRANTED'
+ORDER BY n;
+
 -- ---------- experiment (30) ----------
 -- Every seeded experiment is synthetic (ADR-0019): none may claim OBSERVED,
 -- which would show its figures as real results without the Synthetic label
@@ -702,6 +988,54 @@ SELECT s, p, 10 + ((s+p) % 90)
 FROM generate_series(1,30) s
 CROSS JOIN generate_series(1,5) p;
 
+-- ---------- stock.movement_request, stock.stock_movement (30 requests, 35 rows) ----------
+-- The movements of the last thirty days, applied through the function the
+-- service calls, so each row and its inventory change are consistent: fifteen
+-- receipts of product 1, five transfers of product 2 (two rows each, so thirty
+-- requests make thirty-five movements), five counts of product 3 and five
+-- adjustments of product 4. They are on top of the opening stock above, so
+-- on-hand equals opening stock plus movements (ADR-0061). The movements go to
+-- the twenty stores no golden case reads: stores 1, 2, 5, 11, 14, 17, 20, 24,
+-- 26 and 29 keep their opening stock, which the sales and recommendations
+-- fixtures were captured against (ADR-0045, tests/golden/).
+DO $seed$
+DECLARE
+    admin constant uuid := '11111111-1111-1111-1111-000000000001';
+    reasons constant text[] := ARRAY['DAMAGE', 'LOSS', 'EXPIRY', 'CORRECTION', 'DAMAGE'];
+    stores constant smallint[] := ARRAY[3, 4, 6, 7, 8, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22,
+        23, 25, 27, 28, 30];
+    n integer;
+    k uuid;
+BEGIN
+    FOR n IN 1..30 LOOP
+        k := md5('seed-stock-request-' || n)::uuid;
+        IF n <= 15 THEN
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'RECEIPT',
+                stores[n], NULL, 1, 20, 'DN-2026-' || lpad(n::text, 4, '0'), NULL, NULL,
+                'Delivery received at the dock');
+        ELSIF n <= 20 THEN
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'TRANSFER',
+                stores[n - 15], stores[n - 5], 2, 5, NULL, NULL, NULL,
+                'Rebalancing between stores');
+        ELSIF n <= 25 THEN
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'COUNT',
+                stores[n - 20], NULL, 3, 40 + n, NULL, NULL, 'Seed counter',
+                'Quarterly count');
+        ELSE
+            PERFORM stock.record_movement(k, 'seed-' || n, admin, 'ADJUSTMENT',
+                stores[n - 25], NULL, 4, -2, NULL, reasons[n - 25], NULL,
+                'Written off after inspection');
+        END IF;
+        UPDATE stock.movement_request
+           SET accepted_at = now() - make_interval(days => 31 - n)
+         WHERE idempotency_key = k;
+        UPDATE stock.stock_movement
+           SET recorded_at = now() - make_interval(days => 31 - n)
+         WHERE idempotency_key = k;
+    END LOOP;
+END
+$seed$;
+
 -- ---------- sales_load (30 uploads of 10 accepted sales each) ----------
 -- Sales CSV uploads by the administrator (F8-01, #334): one a day for the last
 -- thirty days, version 1 of the contract. Each accepted ten sales, 300 in all,
@@ -789,7 +1123,418 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- ---------- audit_log ----------
 -- Filled by the triggers as the statements above ran: segment, segment_rule,
 -- campaign, experiment, category, product, store, channel, role, customer,
--- app_user and customer_segment_history. Nothing is inserted here by hand.
+-- app_user, customer_segment_history, the stores boundary's seven tables and the products
+-- boundary's four tables. Nothing is inserted here by hand.
+
+-- ---------- models.* (F22-11, ADR-0064) ----------
+-- The registry starts with the two definitions the seed already holds, each
+-- registered as the version a web run produces (source WEB_RUN, no owner):
+-- the existing RFM rules, from the newest RFM_RULES run, and the K-means run.
+-- Every segmentation run is linked to the version of its method and
+-- parameters, so the 29 earlier rule runs and the last one share the first,
+-- and a version's source run is the earliest run linked to it. Everything a
+-- version carries is read from that run's own history rows, not invented:
+--   * dataset: the SHA-256 of the canonical rows the run scored, one line
+--     `customer|last purchase|purchases|total` per customer, by customer id;
+--   * RFM frozen scoring: the boundaries the run's quintile scores imply;
+--   * K-means frozen scoring: each label's cluster (its rank in
+--     label_mapping.labels_by_rank), its centroid as the mean of the members'
+--     min-max values (recency reversed, a constant feature 0), and the raw
+--     bounds; the run converged with a final shift of 0, so the means are the
+--     fitted centroids;
+--   * reference distribution: four equal-width bins per feature over the
+--     scored customers, and the share of each label;
+--   * metrics: inertia and silhouette as the run recorded them.
+-- The newest run is rule-based and every customer's current assignment comes
+-- from it, so its version is the published one; the K-means version is a
+-- draft. The seed publication is the one a first run of the web would make.
+DO $seed_models$
+DECLARE
+    r        record;
+    v_id     bigint;
+    scoring  jsonb;
+    ref      jsonb;
+    ds       record;
+    q        jsonb;
+BEGIN
+    FOR r IN
+        SELECT s.run_id, s.method, s.window_days, s.parameters, s.run_at, s.data_origin
+        FROM segmentation_run AS s
+        WHERE s.run_id IN (
+            (SELECT max(run_id) FROM segmentation_run WHERE method = 'RFM_RULES'),
+            (SELECT max(run_id) FROM segmentation_run WHERE method = 'KMEANS'))
+        ORDER BY s.method DESC
+    LOOP
+        -- The rows the run scored, with recency in days: before the run for
+        -- the rule bands, before the run's latest purchase for K-means (the
+        -- reference point the web's fit uses).
+        CREATE TEMP TABLE seed_scored ON COMMIT DROP AS
+        SELECT h.customer_id, h.label_code, h.recency_last_purchase_at AS last_at,
+               h.frequency_count AS f, h.monetary_total AS m,
+               h.r_score, h.f_score, h.m_score,
+               extract(epoch FROM (
+                   CASE WHEN r.method = 'KMEANS'
+                        THEN max(h.recency_last_purchase_at) OVER ()
+                        ELSE r.run_at END
+                   - h.recency_last_purchase_at)) / 86400.0 AS r_days
+        FROM customer_segment_history AS h
+        WHERE h.run_id = r.run_id AND h.frequency_count IS NOT NULL;
+
+        SELECT count(*) AS n,
+               encode(sha256(convert_to(string_agg(
+                   customer_id::text || '|' || to_char(last_at AT TIME ZONE 'UTC',
+                       'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') || '|' || f || '|' || m,
+                   E'\n' ORDER BY customer_id), 'UTF8')), 'hex') AS fingerprint
+        INTO ds FROM seed_scored;
+
+        -- Four equal-width bins per feature: edges and the share in each.
+        SELECT jsonb_build_object(
+            'sample_size', ds.n,
+            'captured_at', to_char(r.run_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+            'features', (
+                SELECT jsonb_agg(jsonb_build_object(
+                    'feature', f.feature,
+                    'bin_edges', (SELECT jsonb_agg(round(f.a + (f.b - f.a) * i / 4.0, 4) ORDER BY i)
+                                  FROM generate_series(0, 4) AS i),
+                    'proportions', (SELECT jsonb_agg(
+                        (SELECT count(*) FROM seed_scored AS x
+                          WHERE least(4, 1 + floor(4 * (CASE f.feature
+                                    WHEN 'R' THEN x.r_days WHEN 'F' THEN x.f ELSE x.m END - f.a)
+                                    / (f.b - f.a))::int) = bins.bin)::float8 / ds.n
+                        ORDER BY bins.bin) FROM generate_series(1, 4) AS bins(bin))
+                ) ORDER BY f.ord)
+                FROM (SELECT 'R' AS feature, 1 AS ord, min(r_days) AS a, max(r_days) AS b FROM seed_scored
+                      UNION ALL SELECT 'F', 2, min(f), max(f) FROM seed_scored
+                      UNION ALL SELECT 'M', 3, min(m), max(m) FROM seed_scored) AS f),
+            'labels', (SELECT jsonb_agg(jsonb_build_object(
+                           'label_code', label_code, 'share', c::float8 / ds.n)
+                           ORDER BY label_code)
+                       FROM (SELECT label_code, count(*) AS c FROM seed_scored
+                             WHERE label_code IS NOT NULL GROUP BY label_code) AS l))
+        INTO ref;
+
+        IF r.method = 'RFM_RULES' THEN
+            scoring := jsonb_build_object(
+                'quintile_boundaries', jsonb_build_object(
+                    'recency_boundaries', (SELECT jsonb_agg(floor(b) ORDER BY s DESC) FROM (
+                        SELECT r_score AS s, max(r_days) AS b FROM seed_scored
+                        WHERE r_score BETWEEN 2 AND 5 GROUP BY r_score) AS t),
+                    'frequency_boundaries', (SELECT jsonb_agg(b ORDER BY s DESC) FROM (
+                        SELECT f_score AS s, min(f) AS b FROM seed_scored
+                        WHERE f_score BETWEEN 2 AND 5 GROUP BY f_score) AS t),
+                    'monetary_boundaries', (SELECT jsonb_agg(b::text ORDER BY s DESC) FROM (
+                        SELECT m_score AS s, min(m) AS b FROM seed_scored
+                        WHERE m_score BETWEEN 2 AND 5 GROUP BY m_score) AS t)),
+                'centroids', '[]'::jsonb,
+                'normalization_bounds', NULL);
+        ELSE
+            scoring := jsonb_build_object(
+                'quintile_boundaries', NULL,
+                'centroids', (
+                    SELECT jsonb_agg(jsonb_build_object(
+                        'cluster_index', rk.ord - 1, 'label_code', rk.label,
+                        'r', round((1 - (c.r - b.r_min) / nullif(b.r_max - b.r_min, 0))::numeric, 6),
+                        'f', round(coalesce((c.f - b.f_min) / nullif(b.f_max - b.f_min, 0), 0)::numeric, 6),
+                        'm', round(coalesce((c.m - b.m_min) / nullif(b.m_max - b.m_min, 0), 0)::numeric, 6))
+                        ORDER BY rk.ord)
+                    FROM jsonb_array_elements_text(r.parameters -> 'label_mapping' -> 'labels_by_rank')
+                             WITH ORDINALITY AS rk(label, ord)
+                    JOIN (SELECT label_code, avg(r_days) AS r, avg(f) AS f, avg(m) AS m
+                          FROM seed_scored GROUP BY label_code) AS c ON c.label_code = rk.label
+                    CROSS JOIN (SELECT min(r_days) AS r_min, max(r_days) AS r_max,
+                                       min(f) AS f_min, max(f) AS f_max,
+                                       min(m) AS m_min, max(m) AS m_max FROM seed_scored) AS b),
+                'normalization_bounds', (SELECT jsonb_build_object(
+                    'r_min', min(r_days), 'r_max', max(r_days),
+                    'f_min', min(f), 'f_max', max(f), 'm_min', min(m), 'm_max', max(m))
+                    FROM seed_scored));
+            -- The centroid of a constant recency is 0, as the fit normalizes it.
+            scoring := jsonb_set(scoring, '{centroids}', coalesce((
+                SELECT jsonb_agg(CASE WHEN e -> 'r' = 'null'::jsonb
+                                      THEN jsonb_set(e, '{r}', '0') ELSE e END)
+                FROM jsonb_array_elements(scoring -> 'centroids') AS e), '[]'::jsonb));
+        END IF;
+
+        INSERT INTO models.model_version
+            (name, method, source, window_days, seed, rule_set_id, k, max_iterations,
+             tolerance, normalization, frozen_scoring, reference_distribution,
+             dataset_fingerprint, dataset_origin, dataset_row_count,
+             inertia, silhouette, stability, owner_id, created_at)
+        VALUES (
+            CASE r.method WHEN 'RFM_RULES' THEN 'web-rfm-rules-' || r.window_days || 'd'
+                 ELSE 'web-kmeans-k' || (r.parameters ->> 'k') || '-seed' || (r.parameters ->> 'seed')
+                      || '-' || r.window_days || 'd' END,
+            r.method, 'WEB_RUN', r.window_days,
+            (r.parameters ->> 'seed')::bigint, NULL,
+            (r.parameters ->> 'k')::int, (r.parameters ->> 'max_iterations')::int,
+            (r.parameters ->> 'tolerance')::float8,
+            CASE r.method WHEN 'RFM_RULES' THEN 'NONE' ELSE 'MIN_MAX' END,
+            scoring, ref, ds.fingerprint, r.data_origin, ds.n,
+            (r.parameters -> 'quality' ->> 'inertia')::float8,
+            (r.parameters -> 'quality' ->> 'silhouette')::float8,
+            NULL, NULL, r.run_at)
+        RETURNING version_id INTO v_id;
+
+        INSERT INTO models.model_version_feature (version_id, feature)
+        SELECT v_id, f FROM unnest(ARRAY['R', 'F', 'M']) AS f;
+
+        -- Every run of this method and these parameters has this version.
+        INSERT INTO models.run_version (run_id, version_id, linked_at)
+        SELECT s.run_id, v_id, s.run_at FROM segmentation_run AS s
+        WHERE s.method = r.method AND s.window_days = r.window_days
+          AND s.parameters = r.parameters;
+
+        DROP TABLE seed_scored;
+    END LOOP;
+
+    -- The rule version is the one every customer is scored under today.
+    INSERT INTO models.model_publication
+        (version_id, action, previous_version_id, reason, published_by, published_at)
+    SELECT v.version_id, 'PUBLISH', NULL,
+           'First publication: the web run that scored every customer', NULL, v.created_at
+    FROM models.model_version AS v WHERE v.method = 'RFM_RULES';
+    UPDATE models.model_version
+       SET state = 'PUBLISHED', published_at = created_at
+     WHERE method = 'RFM_RULES';
+END
+$seed_models$;
+
+-- ---------- rfm.rule_set and rfm.rule_set_band (F22-05) ----------
+-- The one rule set rfm-engine starts with: the scoring the published version of the
+-- web's last rule-based run froze (the quintile boundaries above), and the bands of
+-- the segments valid today, one per segment in segment_id order, with the label of
+-- the segment as the box's label. The fallback is the worst-ranked label, as the
+-- web's. A customer is scored under it exactly as the web scored the seed, and
+-- F22-09 adds the others. rfm.customer_profile starts empty: the first sale event,
+-- or the daily pass, creates a customer's row, and a customer with none is pending.
+INSERT INTO rfm.rule_set
+    (name, window_days, recency_boundaries, frequency_boundaries, monetary_boundaries,
+     fallback_label_code)
+SELECT 'web-rfm-rules-' || v.window_days || 'd', v.window_days,
+       ARRAY(SELECT e::int FROM jsonb_array_elements_text(
+                 v.frozen_scoring -> 'quintile_boundaries' -> 'recency_boundaries') AS e),
+       ARRAY(SELECT e::int FROM jsonb_array_elements_text(
+                 v.frozen_scoring -> 'quintile_boundaries' -> 'frequency_boundaries') AS e),
+       ARRAY(SELECT e::numeric(12,2) FROM jsonb_array_elements_text(
+                 v.frozen_scoring -> 'quintile_boundaries' -> 'monetary_boundaries') AS e),
+       (SELECT label_code FROM segment_label ORDER BY ordinal_position DESC LIMIT 1)
+FROM models.model_version AS v
+WHERE v.method = 'RFM_RULES' AND v.state = 'PUBLISHED';
+
+INSERT INTO rfm.rule_set_band
+    (rule_set_id, band_no, label_code, r_min, r_max, f_min, f_max, m_min, m_max)
+SELECT (SELECT min(rule_set_id) FROM rfm.rule_set),
+       row_number() OVER (ORDER BY g.segment_id), g.label_code,
+       sr.r_min, sr.r_max, sr.f_min, sr.f_max, sr.m_min, sr.m_max
+FROM segment AS g
+JOIN segment_rule AS sr ON sr.rule_id = g.rule_id
+WHERE g.valid_from <= CURRENT_DATE AND (g.valid_to IS NULL OR g.valid_to >= CURRENT_DATE);
+
+-- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
+-- Runtime history, seeded like app_session rather than exempted (ADR-0051).
+-- Each row goes through audit_events.append_v1, the function behind
+-- api_audit.record_event_v1, so it passes the same kind, credential, key and
+-- common-field checks and joins the same hash chain; only the owner may name
+-- the recording role here, since a producer's is always its session_user.
+-- Users: 1 ADMIN, 2 ANALYST, 3 STORE_MANAGER, 5 INVENTORY_PLANNER, 6 AUDITOR.
+DO $seed_events$
+DECLARE
+    e record;
+BEGIN
+    FOR e IN
+        SELECT * FROM (VALUES
+        -- n, source, kind, outcome, days ago, actor (null = SYSTEM), role,
+        -- store, subject type, subject id, model version, rule set, details
+        ( 1, 'svc_rfm',         'CALCULATION_RUN',    'SUCCESS', 40, NULL, NULL, NULL::smallint, 'calculation', '401', NULL::bigint, 1::bigint,
+          '{"calculation":"RFM","status":"COMPLETED","input_count":300,"output_count":30,"data_origin":"SEEDED"}'),
+        ( 2, 'svc_segments',    'CALCULATION_RUN',    'SUCCESS', 39, NULL, NULL, NULL, 'calculation', '402', 1, 1,
+          '{"calculation":"SEGMENTATION","status":"COMPLETED","input_count":30,"output_count":30,"data_origin":"SEEDED"}'),
+        ( 3, 'svc_kpis',        'CALCULATION_RUN',    'SUCCESS', 38, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+          '{"calculation":"KPI","status":"COMPLETED","input_count":300,"output_count":7,"window_from":"2026-09-01T00:00:00Z","window_to":"2026-10-01T00:00:00Z"}'),
+        ( 4, 'svc_rfm',         'CALCULATION_RUN',    'SUCCESS', 37, NULL, NULL, NULL, 'calculation', '403', NULL, 2,
+          '{"calculation":"RFM","status":"FAILED","input_count":300,"output_count":0,"parameters_digest":"5f2b8e8c1d0a4b7e9c3f6a1d2e4b8c0f7a9d3e5b1c6f8a2d4e7b9c1f3a5d7e9b"}'),
+        ( 5, 'svc_models',      'MODEL_PUBLISHED',    'SUCCESS', 36, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '1', 1, NULL,
+          '{"previous_version_id":null,"reason_code":"FIRST_PUBLICATION"}'),
+        ( 6, 'svc_models',      'MODEL_PUBLISHED',    'SUCCESS', 30, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '2', 2, NULL,
+          '{"previous_version_id":1,"reason_code":"QUARTERLY_REFIT"}'),
+        ( 7, 'svc_models',      'MODEL_ROLLED_BACK',  'SUCCESS', 29, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '1', 1, NULL,
+          '{"previous_version_id":2,"reason_code":"DRIFT_ALERT"}'),
+        ( 8, 'svc_models',      'MODEL_PUBLISHED',    'SUCCESS', 28, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'model_version', '3', 3, NULL,
+          '{"previous_version_id":1,"reason_code":"DRIFT_CORRECTED"}'),
+        ( 9, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 27, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000008', NULL, NULL,
+          '{"change":"ROLE_ASSIGNED","from_role":"MARKETING","to_role":"ANALYST"}'),
+        (10, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 26, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000014', NULL, NULL,
+          '{"change":"ROLE_ASSIGNED","from_role":"ANALYST","to_role":"MARKETING"}'),
+        (11, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 25, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000020', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ANALYST","to_role":"ADMIN"}'),
+        (12, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 25, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000001', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ADMIN","to_role":"ANALYST"}'),
+        (13, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 24, '11111111-1111-1111-1111-000000000020', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000020', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ADMIN","to_role":"ANALYST"}'),
+        (14, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 24, '11111111-1111-1111-1111-000000000020', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000001', NULL, NULL,
+          '{"change":"ADMINISTRATOR_TRANSFERRED","from_role":"ANALYST","to_role":"ADMIN"}'),
+        (15, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 23, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000025', NULL, NULL,
+          '{"change":"USER_DEACTIVATED"}'),
+        (16, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 22, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000025', NULL, NULL,
+          '{"change":"USER_REACTIVATED"}'),
+        (17, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 21, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000003', NULL, NULL,
+          '{"change":"STORES_ASSIGNED","store_ids":[3,9]}'),
+        (18, 'svc_users',       'PERMISSION_CHANGED', 'SUCCESS', 20, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'user', '11111111-1111-1111-1111-000000000003', NULL, NULL,
+          '{"change":"STORES_UNASSIGNED","store_ids":[9]}'),
+        (19, 'svc_sales',       'CRITICAL_ACTION',    'SUCCESS', 19, '11111111-1111-1111-1111-000000000003', 'STORE_MANAGER', 3, 'sale_reversal', '1', NULL, NULL,
+          '{"action":"SALE_REVERSED","reason_code":"CUSTOMER_RETURN"}'),
+        (20, 'svc_stock',       'CRITICAL_ACTION',    'SUCCESS', 18, '11111111-1111-1111-1111-000000000003', 'STORE_MANAGER', 3, 'stock_level', '3:7', NULL, NULL,
+          '{"action":"STOCK_ADJUSTED","reason_code":"PHYSICAL_COUNT"}'),
+        (21, 'svc_customers',   'CRITICAL_ACTION',    'SUCCESS', 17, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'customer', '00000000-0000-0000-0000-000000000030', NULL, NULL,
+          '{"action":"CUSTOMER_ANONYMIZED","reason_code":"SUBJECT_REQUEST"}'),
+        (22, 'svc_customers',   'CRITICAL_ACTION',    'SUCCESS', 16, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, 'audit_entry', '1', NULL, NULL,
+          '{"action":"AUDIT_PAYLOAD_REDACTED","reason_code":"ANONYMIZATION"}'),
+        (23, 'svc_experiments', 'CRITICAL_ACTION',    'SUCCESS', 15, '11111111-1111-1111-1111-000000000004', 'MARKETING', NULL, 'experiment', '1', NULL, NULL,
+          '{"action":"EXPERIMENT_FROZEN"}'),
+        (24, 'svc_campaigns',   'CRITICAL_ACTION',    'SUCCESS', 14, '11111111-1111-1111-1111-000000000004', 'MARKETING', NULL, 'campaign', '1', NULL, NULL,
+          '{"action":"CAMPAIGN_ACTIVATED"}'),
+        (25, 'svc_sales',       'HISTORY_READ',       'SUCCESS', 13, '11111111-1111-1111-1111-000000000002', 'ANALYST', NULL, 'customer', '00000000-0000-0000-0000-000000000007', NULL, NULL,
+          '{"history":"SALES"}'),
+        (26, 'svc_segments',    'HISTORY_READ',       'SUCCESS', 12, '11111111-1111-1111-1111-000000000003', 'STORE_MANAGER', NULL, 'customer', '00000000-0000-0000-0000-000000000007', NULL, NULL,
+          '{"history":"SEGMENT"}'),
+        (27, 'svc_preferences', 'HISTORY_READ',       'SUCCESS', 11, '11111111-1111-1111-1111-000000000004', 'MARKETING', NULL, 'customer', '00000000-0000-0000-0000-000000000012', NULL, NULL,
+          '{"history":"CONSENT"}'),
+        (28, 'svc_segments',    'HISTORY_READ',       'REFUSED', 10, '11111111-1111-1111-1111-000000000005', 'INVENTORY_PLANNER', NULL, 'customer', '00000000-0000-0000-0000-000000000007', NULL, NULL,
+          '{"history":"SEGMENT"}'),
+        (29, 'svc_sales',       'HISTORY_READ',       'REFUSED', 9, '11111111-1111-1111-1111-000000000005', 'INVENTORY_PLANNER', NULL, 'customer', '00000000-0000-0000-0000-000000000012', NULL, NULL,
+          '{"history":"SALES"}'),
+        (30, 'svc_audit_trail', 'AUDIT_READ',         'SUCCESS', 8, '11111111-1111-1111-1111-000000000006', 'AUDITOR', NULL, NULL, NULL, NULL, NULL,
+          '{"resource":"AUDIT_ENTRIES","filters":["entity","action"]}'),
+        (31, 'svc_audit_trail', 'AUDIT_READ',         'SUCCESS', 7, '11111111-1111-1111-1111-000000000006', 'AUDITOR', NULL, NULL, NULL, NULL, NULL,
+          '{"resource":"DOMAIN_EVENTS","filters":["kind","subject_type","subject_id"]}'),
+        (32, 'svc_audit_trail', 'AUDIT_READ',         'SUCCESS', 6, '11111111-1111-1111-1111-000000000001', 'ADMIN', NULL, NULL, NULL, NULL, NULL,
+          '{"resource":"DOMAIN_EVENT_VERIFICATION","filters":[]}')
+        ) AS v(n, source, kind, outcome, days_ago, actor, actor_role, store_id,
+               subject_type, subject_id, model_version_id, rule_set_version, details)
+        ORDER BY n
+    LOOP
+        PERFORM audit_events.append_v1(
+            e.source,
+            ('7a0c5e1d-0000-4000-8000-' || lpad(e.n::text, 12, '0'))::uuid,
+            e.kind,
+            e.outcome,
+            now() - make_interval(days => e.days_ago),
+            CASE WHEN e.actor IS NULL THEN 'SYSTEM' ELSE 'USER' END,
+            e.actor::uuid,
+            e.actor_role,
+            e.store_id::smallint,
+            e.subject_type,
+            e.subject_id,
+            e.model_version_id,
+            e.rule_set_version,
+            'seed-' || e.n,
+            e.details::jsonb);
+    END LOOP;
+END
+$seed_events$;
+
+-- ---------- recommendations.* (30 decisions, F24-05, ADR-0067) ----------
+-- Decision n is for customer n, the answer to the question "what to recommend
+-- to them" some hours ago, kept as the service keeps it: ids, figures and
+-- codes. n mod 10 gives the status: 1 to 5 recommended (15), 6 none_match,
+-- 7 no_usual_store, 8 no_open_assignment, 9 unassigned_result and 0
+-- PERSONALIZATION_WITHDRAWN, three of each of those five. The reference store
+-- is store n, as given for every third customer and as the usual store
+-- otherwise; the channel is given only with the store. A decision that never
+-- reached a reference store has none, and one without a segment has no run.
+-- No model version is seeded: the run behind these decisions has none yet.
+INSERT INTO recommendations.recommendation_decision
+    (decision_id, customer_id, status, computed_at, run_id, model_version_id,
+     store_id, store_source, channel_id)
+SELECT ('c0de0000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
+       ('00000000-0000-0000-0000-' || lpad(n::text, 12, '0'))::uuid,
+       s.status,
+       now() - make_interval(hours => 2 * n),
+       CASE WHEN s.status IN ('no_open_assignment', 'unassigned_result',
+                              'PERSONALIZATION_WITHDRAWN')
+            THEN NULL ELSE (SELECT max(run_id) FROM segmentation_run) END,
+       NULL,
+       CASE WHEN s.status IN ('recommended', 'none_match')
+                 OR (s.status = 'PERSONALIZATION_WITHDRAWN' AND n % 3 = 0)
+            THEN n END,
+       CASE WHEN s.status IN ('recommended', 'none_match')
+                 OR (s.status = 'PERSONALIZATION_WITHDRAWN' AND n % 3 = 0)
+            THEN CASE WHEN n % 3 = 0 THEN 'given' ELSE 'usual_store' END END,
+       CASE WHEN n % 3 = 0 THEN 1 + n % 5 END
+FROM generate_series(1, 30) AS n
+CROSS JOIN LATERAL (
+    SELECT CASE n % 10
+               WHEN 6 THEN 'none_match'
+               WHEN 7 THEN 'no_usual_store'
+               WHEN 8 THEN 'no_open_assignment'
+               WHEN 9 THEN 'unassigned_result'
+               WHEN 0 THEN 'PERSONALIZATION_WITHDRAWN'
+               ELSE 'recommended'
+           END AS status
+) AS s;
+
+-- Counts per reason above zero: a recommended decision left out two products
+-- that matched (already bought, and out of stock here), a none_match one lost
+-- its only candidates to the shelf. 15 x 2 + 3 = 33 rows.
+INSERT INTO recommendations.recommendation_exclusion (decision_id, reason, product_count)
+SELECT d.decision_id, r.reason, r.product_count
+FROM recommendations.recommendation_decision AS d
+CROSS JOIN LATERAL (
+    VALUES ('already_bought', 1 + (right(d.decision_id::text, 2)::int) % 3),
+           ('out_of_stock', 1 + (right(d.decision_id::text, 2)::int) % 2)
+) AS r(reason, product_count)
+WHERE d.status = 'recommended'
+UNION ALL
+SELECT decision_id, 'out_of_stock', 2
+FROM recommendations.recommendation_decision
+WHERE status = 'none_match';
+
+-- Two primary items for every recommended decision: product n by the segment
+-- signal, and product n + 10 by purchase history, so the reasons are the two
+-- figures RN-40 orders by. Every other decision of them (n mod 10 = 2 or 4)
+-- also offers an alternative for a product that sold out, and n mod 10 = 4 an
+-- elsewhere entry, held by the next store, for another one. Products are
+-- chosen so that no decision names one twice.
+INSERT INTO recommendations.recommendation_item
+    (decision_id, position, product_id, category_id, kind, quantity_on_hand,
+     held_at_store_id, alternative_for, unavailable_reason)
+SELECT d.decision_id, i.position, i.product_id, p.category_id, i.kind,
+       i.quantity_on_hand, i.held_at_store_id, i.alternative_for, i.unavailable_reason
+FROM recommendations.recommendation_decision AS d
+CROSS JOIN LATERAL (SELECT right(d.decision_id::text, 12)::int AS n) AS k
+CROSS JOIN LATERAL (
+    VALUES (1, k.n, 'primary', 4 + k.n, NULL::int, NULL::int, NULL::text),
+           (2, k.n + 10, 'primary', 3 + k.n % 7, NULL, NULL, NULL)
+    UNION ALL
+    SELECT 3, (k.n + 29) % 40 + 1, 'alternative', 2 + k.n % 5, NULL,
+           (k.n + 19) % 40 + 1, 'out_of_stock'
+    WHERE k.n % 10 IN (2, 4)
+    UNION ALL
+    SELECT 4, k.n + 6, 'elsewhere', 6 + k.n % 4, k.n % 30 + 1, NULL, 'out_of_stock'
+    WHERE k.n % 10 = 4
+) AS i(position, product_id, kind, quantity_on_hand, held_at_store_id,
+       alternative_for, unavailable_reason)
+JOIN product AS p ON p.product_id = i.product_id
+WHERE d.status = 'recommended';
+
+-- The reasons: the first primary item has the segment signal and the second
+-- purchase history in its category, the elsewhere entry has both, and an
+-- alternative the one reason of a substitute.
+INSERT INTO recommendations.recommendation_reason
+    (decision_id, position, signal, segment_buyers, category_id, share)
+SELECT i.decision_id, i.position, r.signal, r.segment_buyers, r.category_id, r.share
+FROM recommendations.recommendation_item AS i
+CROSS JOIN LATERAL (SELECT right(i.decision_id::text, 12)::int AS n) AS k
+CROSS JOIN LATERAL (
+    SELECT 'segment', 2 + k.n, NULL::smallint, NULL::numeric
+    WHERE i.position IN (1, 4)
+    UNION ALL
+    SELECT 'purchase_history', NULL, i.category_id, round((1 + k.n % 4) / 8.0, 4)
+    WHERE i.position IN (2, 4)
+    UNION ALL
+    SELECT 'relation_substitute', NULL, NULL, NULL
+    WHERE i.position = 3
+) AS r(signal, segment_buyers, category_id, share);
 
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured
@@ -798,6 +1543,7 @@ JOIN app_user AS u ON u.role_id = r.role_id AND u.is_active;
 -- runtime events must still be delivered. Each new outbox adds its line here;
 -- the database test discovers every outbox and requires it to be empty.
 DELETE FROM categories_events.outbox;
+DELETE FROM models_events.outbox;
 DELETE FROM preferences_events.outbox;
 DELETE FROM products_events.outbox;
 DELETE FROM sales_events.outbox;
@@ -807,3 +1553,32 @@ DELETE FROM stores_events.outbox;
 DELETE FROM users_events.outbox;
 
 COMMIT;
+
+-- ---------- preferences.inferred_interest (F21-18) ----------
+-- What the inference of #796 leaves for the seeded customers: for each one whose
+-- PROFILING is GRANTED, the categories of at least 1% of their net purchases of
+-- the last 180 days, the declared interests left out, at one instant. Computed
+-- from the seeded sales, so the rows and the sales cannot disagree.
+INSERT INTO preferences.inferred_interest
+    (customer_id, category_id, source, window_days, strength, inferred_at)
+WITH purchases AS (
+    SELECT DISTINCT n.customer_id, n.transaction_id, p.category_id
+    FROM public.net_sale_line AS n
+    JOIN public.product AS p ON p.product_id = n.product_id
+    WHERE n.occurred_at >= now() - interval '180 days'
+), totals AS (
+    SELECT customer_id, count(DISTINCT transaction_id) AS sales FROM purchases GROUP BY customer_id
+), shares AS (
+    SELECT u.customer_id, u.category_id,
+           round(100.0 * count(*) / t.sales)::smallint AS strength
+    FROM purchases AS u JOIN totals AS t USING (customer_id)
+    GROUP BY u.customer_id, u.category_id, t.sales
+)
+SELECT s.customer_id, s.category_id, 'NET_PURCHASES', 180, s.strength, now()
+FROM shares AS s
+JOIN api_preferences.consent_state_v1 AS c
+  ON c.customer_id = s.customer_id AND c.purpose = 'PROFILING' AND c.decision = 'GRANTED'
+WHERE s.strength >= 1
+  AND NOT EXISTS (SELECT FROM public.customer_interest_category AS d
+                  WHERE d.customer_id = s.customer_id AND d.category_id = s.category_id)
+ORDER BY s.customer_id, s.category_id;

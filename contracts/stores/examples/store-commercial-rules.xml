@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StoreCommercialRules xmlns="https://mosaiq.maxthecoder.online/xml/stores/v1">
+  <max_discount_percent>15.00</max_discount_percent>
+  <updated_at>2026-10-31T16:05:00Z</updated_at>
+</StoreCommercialRules>

@@ -1,0 +1,728 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:ex="https://mosaiq.maxthecoder.online/xml/experimentation/v1"
+           xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"
+           targetNamespace="https://mosaiq.maxthecoder.online/xml/experimentation/v1"
+           elementFormDefault="qualified">
+  <xs:import namespace="https://mosaiq.maxthecoder.online/xml/common/v1"
+             schemaLocation="../common/v1/common.xsd"/>
+
+  <xs:simpleType name="Uuid">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A decimal string with exactly two places, as everywhere in MOSAIQ. -->
+  <xs:simpleType name="Money">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9]+\.[0-9]{2}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Money that may be negative: a difference. -->
+  <xs:simpleType name="SignedMoney">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="-?[0-9]+\.[0-9]{2}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Sha256">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-f]{64}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Name">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="120"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Description">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+      <xs:maxLength value="500"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- An open vocabulary: the schema fixes the shape, not the values. -->
+  <xs:simpleType name="Code">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[A-Z][A-Z0-9_]*"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="WindowDays">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="365"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PositiveNumber">
+    <xs:restriction base="xs:decimal">
+      <xs:minExclusive value="0"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Fraction">
+    <xs:restriction base="xs:decimal">
+      <xs:minInclusive value="0"/>
+      <xs:maxInclusive value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="Probability">
+    <xs:restriction base="xs:decimal">
+      <xs:minExclusive value="0"/>
+      <xs:maxExclusive value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- PLANNED: the plan is frozen and nobody is assigned. ASSIGNED: the
+       whole frame is assigned and the primary result is not stored yet.
+       ANALYZED: the primary result was stored at the analysis instant. -->
+  <xs:simpleType name="ExperimentState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PLANNED"/>
+      <xs:enumeration value="ASSIGNED"/>
+      <xs:enumeration value="ANALYZED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- CONTROLLED: one control and one or more treatments, the only design
+       that may state an effect. OFFER_COMPARISON: two treatments and no
+       control (ADR-0028), a comparison of two offers that states a
+       difference between treatments and never an effect (ADR-0068). -->
+  <xs:simpleType name="DesignKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CONTROLLED"/>
+      <xs:enumeration value="OFFER_COMPARISON"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Whether the arm is the untreated control. -->
+  <xs:simpleType name="ArmKind">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CONTROL"/>
+      <xs:enumeration value="TREATMENT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- OBSERVED is a real experiment over real assignments. SEEDED and
+       INJECTED are the A/A and injected-effect validations (ADR-0019); their
+       figures are Synthetic (RN-26). -->
+  <xs:simpleType name="DataOrigin">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OBSERVED"/>
+      <xs:enumeration value="SEEDED"/>
+      <xs:enumeration value="INJECTED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The provenance of the sale itself (ADR-0052). -->
+  <xs:simpleType name="SaleOrigin">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="OBSERVED"/>
+      <xs:enumeration value="SEEDED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- V1 is ADR-0068's rule: a stored frame, a published salt and an HMAC
+       key, so anyone can recompute the assignment. V0 is the web's earlier
+       shuffle: such an experiment is readable but has no frame, salt or key,
+       cannot be recomputed and is not called verified. -->
+  <xs:simpleType name="AssignmentRule">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="V0"/>
+      <xs:enumeration value="V1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Arms are dealt round-robin, so their sizes differ by at most one.
+       Unequal allocation is out of scope until an ADR asks for it. -->
+  <xs:simpleType name="Allocation">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="EQUAL"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- CONVERSION: the share of assigned customers with a qualifying sale in
+       their window. REVENUE_PER_CUSTOMER: the net sales total per assigned
+       customer in the window, zero for a customer who bought nothing. Both
+       are intent to treat. AVERAGE_TICKET is not a metric (ADR-0053,
+       ADR-0068). -->
+  <xs:simpleType name="Metric">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="CONVERSION"/>
+      <xs:enumeration value="REVENUE_PER_CUSTOMER"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- DIFFERENCE_OF_PROPORTIONS: the unpooled Wald interval and the pooled
+       two-sided test (CONVERSION). DIFFERENCE_OF_MEANS: the Welch interval
+       and two-sided test, with a seeded percentile bootstrap beside it
+       (REVENUE_PER_CUSTOMER). -->
+  <xs:simpleType name="Estimator">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DIFFERENCE_OF_PROPORTIONS"/>
+      <xs:enumeration value="DIFFERENCE_OF_MEANS"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- UNDERPOWERED: the frame cannot supply the planned customers per arm.
+       SAMPLE_RATIO_FAILED: the sample ratio check failed, so the result is
+       INVALID. BALANCE_FLAGGED: a balance check is above its threshold; it
+       is a diagnostic and never changes an estimate. RECOMPUTATION_MISMATCH:
+       recomputing the assignment from the plan did not give the stored one. -->
+  <xs:simpleType name="ExperimentFlag">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="UNDERPOWERED"/>
+      <xs:enumeration value="SAMPLE_RATIO_FAILED"/>
+      <xs:enumeration value="BALANCE_FLAGGED"/>
+      <xs:enumeration value="RECOMPUTATION_MISMATCH"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The outcome of a stored check. -->
+  <xs:simpleType name="CheckStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PASSED"/>
+      <xs:enumeration value="FAILED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- A pre-assignment measure compared between arms: days since the last
+       net purchase, the count of net purchases, and the net spend, all over
+       the period before the frame instant. -->
+  <xs:simpleType name="BalanceMeasure">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PRE_RECENCY_DAYS"/>
+      <xs:enumeration value="PRE_PURCHASE_COUNT"/>
+      <xs:enumeration value="PRE_NET_SPEND"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- PRIMARY is the result computed once at the analysis instant and
+       stored. RE_READ is a labelled read computed at the time of the
+       request; it never replaces the primary result. -->
+  <xs:simpleType name="ResultBasis">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PRIMARY"/>
+      <xs:enumeration value="RE_READ"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- PENDING: counts only, no interval, p-value or direction, because the
+       analysis instant has not been reached or its result is not stored yet.
+       COMPLETE: the estimate is present. INVALID: the sample ratio check
+       failed and the estimate is withheld. -->
+  <xs:simpleType name="ResultStatus">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PENDING"/>
+      <xs:enumeration value="COMPLETE"/>
+      <xs:enumeration value="INVALID"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- EFFECT: a treatment against the control. TREATMENT_DIFFERENCE: one
+       treatment against another, which is never an effect of the campaign
+       against no treatment. -->
+  <xs:simpleType name="ComparisonLabel">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="EFFECT"/>
+      <xs:enumeration value="TREATMENT_DIFFERENCE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Every attributed figure carries this label. Attribution is commercial:
+       which campaign a sale is credited to. It is not a claim that the
+       campaign caused the sale (ADR-0069). -->
+  <xs:simpleType name="AttributionLabel">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="ATTRIBUTION"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The primary metric is declared before assignment and carries the
+       conclusion. The other metric is secondary: reported with its interval
+       and no claim. -->
+  <xs:simpleType name="MetricRole">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PRIMARY"/>
+      <xs:enumeration value="SECONDARY"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- The primary comparison's reading at its alpha. A non-significant
+       result of an underpowered experiment is INCONCLUSIVE, never 'no
+       effect' (ADR-0068). -->
+  <xs:simpleType name="Conclusion">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="SIGNIFICANT"/>
+      <xs:enumeration value="NOT_SIGNIFICANT"/>
+      <xs:enumeration value="INCONCLUSIVE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- POOLED_Z: the pooled two-proportion two-sided test. WELCH_T: the
+       unequal-variance two-sided test. -->
+  <xs:simpleType name="TestName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="POOLED_Z"/>
+      <xs:enumeration value="WELCH_T"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- One arm of an experiment, fixed at planning. Arms are dealt in
+       `position` order: the control first, then the treatments by `arm_id`. -->
+  <xs:complexType name="Arm">
+    <xs:sequence>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="position" type="xs:nonNegativeInteger"/>
+      <xs:element name="kind" type="ex:ArmKind"/>
+      <xs:element name="name" type="ex:Name"/>
+      <xs:element name="treatment_description" type="ex:Description"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- An arm as planned. The service allocates `arm_id` and `position`. -->
+  <xs:complexType name="ArmRequest">
+    <xs:sequence>
+      <xs:element name="kind" type="ex:ArmKind"/>
+      <xs:element name="name" type="ex:Name"/>
+      <xs:element name="treatment_description" type="ex:Description"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The inputs of a plan. The service takes the frame at one recorded
+       instant, estimates the baseline from it, computes the customers per
+       arm, draws the salt and stores all of it immutably in one transaction
+       (ADR-0068). The baseline, the sample size, the frame and the salt are
+       never inputs. -->
+  <xs:complexType name="ExperimentRequest">
+    <xs:sequence>
+      <xs:element name="name" type="ex:Name"/>
+      <xs:element name="campaign_id" type="xs:long"/>
+      <xs:element name="primary_metric" type="ex:Metric"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="conversion_window_days" type="ex:WindowDays"/>
+      <xs:element name="minimum_detectable_effect" type="ex:PositiveNumber"/>
+      <xs:element name="alpha" type="ex:Probability" minOccurs="0"/>
+      <xs:element name="power" type="ex:Probability" minOccurs="0"/>
+      <xs:element name="data_origin" type="ex:DataOrigin" minOccurs="0"/>
+      <xs:element name="arms" type="ex:ArmRequest" minOccurs="2" maxOccurs="5"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The experiment's design values: what was fixed before anyone was
+       assigned (ADR-0068). The same object is read on the experiment and on
+       every result, so a result is never read without the design it was
+       planned under. Every value but the metric, the window and the start is
+       absent for assignment rule V0, which planned none of them. -->
+  <xs:complexType name="Design">
+    <xs:sequence>
+      <xs:element name="primary_metric" type="ex:Metric"/>
+      <xs:element name="secondary_metric" type="ex:Metric" minOccurs="0"/>
+      <xs:element name="estimator" type="ex:Estimator" minOccurs="0"/>
+      <xs:element name="alpha" type="ex:Probability" minOccurs="0"/>
+      <xs:element name="comparison_alpha" type="ex:Probability" minOccurs="0"/>
+      <xs:element name="power" type="ex:Probability" minOccurs="0"/>
+      <xs:element name="minimum_detectable_effect" type="ex:PositiveNumber" minOccurs="0"/>
+      <xs:element name="baseline" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="baseline_std_dev" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="required_per_arm" type="xs:positiveInteger" minOccurs="0"/>
+      <xs:element name="smallest_detectable_effect" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="allocation" type="ex:Allocation" minOccurs="0"/>
+      <xs:element name="conversion_window_days" type="ex:WindowDays"/>
+      <xs:element name="settle_days" type="xs:nonNegativeInteger" minOccurs="0"/>
+      <xs:element name="starts_on" type="xs:date"/>
+      <xs:element name="analysis_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- How many customers one exclusion reason removed from the frame. The
+       reasons are decided at the frame instant, before randomization, so
+       they apply to every arm alike. -->
+  <xs:complexType name="FrameExclusion">
+    <xs:sequence>
+      <xs:element name="reason" type="ex:Code"/>
+      <xs:element name="count" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The stored eligible population (ADR-0068). One row per customer is
+       kept, and a customer who later acquires the label is never added. The
+       customers themselves are read as the assignment, which holds the same
+       set once the experiment is assigned. -->
+  <xs:complexType name="Frame">
+    <xs:sequence>
+      <xs:element name="taken_at" type="xs:dateTime"/>
+      <xs:element name="size" type="xs:nonNegativeInteger"/>
+      <xs:element name="digest" type="ex:Sha256"/>
+      <xs:element name="label_code" type="xs:string"/>
+      <xs:element name="model_version_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="exclusions" type="ex:FrameExclusion" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The customers dealt to one arm. -->
+  <xs:complexType name="ArmCount">
+    <xs:sequence>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="kind" type="ex:ArmKind"/>
+      <xs:element name="assigned" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A chi-square goodness-of-fit test of the arm counts against the
+       planned allocation. The deal is exact, so it detects pipeline faults,
+       not randomization. `p_value` below `threshold` fails the check. -->
+  <xs:complexType name="SampleRatioCheck">
+    <xs:sequence>
+      <xs:element name="status" type="ex:CheckStatus"/>
+      <xs:element name="p_value" type="ex:Fraction"/>
+      <xs:element name="threshold" type="ex:Fraction"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The standardized mean difference of one pre-assignment measure between
+       an arm and the reference arm. A diagnostic: it never changes an
+       estimate and is never used to redraw an assignment. -->
+  <xs:complexType name="BalanceCheck">
+    <xs:sequence>
+      <xs:element name="measure" type="ex:BalanceMeasure"/>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="reference_arm_id" type="xs:long"/>
+      <xs:element name="standardized_mean_difference" type="xs:decimal"/>
+      <xs:element name="flagged" type="xs:boolean"/>
+      <xs:element name="threshold" type="xs:decimal"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- What was checked when the assignment completed (F25-08). -->
+  <xs:complexType name="AssignmentChecks">
+    <xs:sequence>
+      <xs:element name="recomputation_matches" type="xs:boolean"/>
+      <xs:element name="sample_ratio" type="ex:SampleRatioCheck"/>
+      <xs:element name="balance" type="ex:BalanceCheck" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The whole assignment of one experiment, written once in one
+       transaction and never rewritten (RN-42). The customers are read as
+       `experiment-assignments`. -->
+  <xs:complexType name="AssignmentSummary">
+    <xs:sequence>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="assigned_at" type="xs:dateTime"/>
+      <xs:element name="assigned_by" type="ex:Uuid" minOccurs="0"/>
+      <xs:element name="assigned_total" type="xs:nonNegativeInteger"/>
+      <xs:element name="acknowledged_underpowered" type="xs:boolean"/>
+      <xs:element name="arms" type="ex:ArmCount" minOccurs="1" maxOccurs="unbounded"/>
+      <xs:element name="checks" type="ex:AssignmentChecks" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A frozen plan and what became of it. Arms are part of the experiment
+       and are fixed at planning (RN-24). Exposures are not part of it: they
+       arrive from engagement's stream (ADR-0075) and are counted per
+       assignment. -->
+  <xs:complexType name="Experiment">
+    <xs:sequence>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="name" type="ex:Name"/>
+      <xs:element name="campaign_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="state" type="ex:ExperimentState"/>
+      <xs:element name="design_kind" type="ex:DesignKind"/>
+      <xs:element name="assignment_rule" type="ex:AssignmentRule"/>
+      <xs:element name="data_origin" type="ex:DataOrigin"/>
+      <xs:element name="arms" type="ex:Arm" minOccurs="2" maxOccurs="5"/>
+      <xs:element name="design" type="ex:Design"/>
+      <xs:element name="frame" type="ex:Frame" minOccurs="0"/>
+      <xs:element name="salt" type="ex:Sha256" minOccurs="0"/>
+      <xs:element name="assignment" type="ex:AssignmentSummary" minOccurs="0"/>
+      <xs:element name="flags" type="ex:ExperimentFlag" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="planned_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="planned_by" type="ex:Uuid" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Assigns the whole frame of one experiment, once. -->
+  <xs:complexType name="AssignmentRequest">
+    <xs:sequence>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="acknowledge_underpowered" type="xs:boolean" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One customer's place in one experiment, written once and never
+       rewritten (RN-23, RN-42). Assignment, exposure and sale are three
+       separate facts: `exposure_count` is read from this service's own
+       projection of engagement's `CAMPAIGN_EXPOSURE` notices and is
+       eventually consistent; the control is never exposed (ADR-0027). -->
+  <xs:complexType name="ExperimentAssignment">
+    <xs:sequence>
+      <xs:element name="assignment_id" type="xs:long"/>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="campaign_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="customer_id" type="ex:Uuid"/>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="arm_kind" type="ex:ArmKind"/>
+      <xs:element name="arm_name" type="ex:Name"/>
+      <xs:element name="assignment_key" type="ex:Sha256" minOccurs="0"/>
+      <xs:element name="assigned_at" type="xs:dateTime"/>
+      <xs:element name="exposure_count" type="xs:nonNegativeInteger"/>
+      <xs:element name="first_exposed_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A qualifying sale of an assigned customer inside the experiment's
+       window (RN-27). The row is append-only (ADR-0050) and stays when its
+       sale is reversed; `counts` says whether it counts now (ADR-0069). -->
+  <xs:complexType name="Conversion">
+    <xs:sequence>
+      <xs:element name="conversion_id" type="xs:long"/>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="customer_id" type="ex:Uuid"/>
+      <xs:element name="sale_id" type="xs:long"/>
+      <xs:element name="sold_at" type="xs:dateTime"/>
+      <xs:element name="converted_at" type="xs:dateTime"/>
+      <xs:element name="sale_data_origin" type="ex:SaleOrigin"/>
+      <xs:element name="counts" type="xs:boolean"/>
+      <xs:element name="net_amount" type="ex:Money"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- What one evaluation did. Evaluating again adds nothing that was
+       recorded, so repeating it records the same conversions (F25-11). -->
+  <xs:complexType name="ConversionEvaluation">
+    <xs:sequence>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="evaluated_at" type="xs:dateTime"/>
+      <xs:element name="recorded" type="xs:nonNegativeInteger"/>
+      <xs:element name="already_recorded" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One arm's counts over every assigned customer, exposed or not (intent
+       to treat). `converted + pending + not_converted` is `analysed`. A
+       customer whose only qualifying sale is fully reversed is not
+       converted, or pending while the window is open (ADR-0069). -->
+  <xs:complexType name="ArmOutcome">
+    <xs:sequence>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="kind" type="ex:ArmKind"/>
+      <xs:element name="name" type="ex:Name"/>
+      <xs:element name="assigned" type="xs:nonNegativeInteger"/>
+      <xs:element name="analysed" type="xs:nonNegativeInteger"/>
+      <xs:element name="exposed" type="xs:nonNegativeInteger"/>
+      <xs:element name="converted" type="xs:nonNegativeInteger"/>
+      <xs:element name="pending" type="xs:nonNegativeInteger"/>
+      <xs:element name="not_converted" type="xs:nonNegativeInteger"/>
+      <xs:element name="conversion_rate" type="ex:Fraction"/>
+      <xs:element name="exposed_conversion_rate" type="ex:Fraction" minOccurs="0"/>
+      <xs:element name="net_revenue" type="ex:Money"/>
+      <xs:element name="revenue_per_customer" type="ex:Money"/>
+      <xs:element name="revenue_std_dev" type="xs:decimal"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- An effect in money, derived only from the difference against the
+       control, with its interval: the difference in revenue per assigned
+       customer times the customers assigned to the compared treatment. -->
+  <xs:complexType name="RevenueEffect">
+    <xs:sequence>
+      <xs:element name="amount" type="ex:SignedMoney"/>
+      <xs:element name="lower" type="ex:SignedMoney"/>
+      <xs:element name="upper" type="ex:SignedMoney"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The seeded percentile bootstrap that runs beside the Welch interval.
+       It must agree with it on the sign and on whether the interval excludes
+       zero; a disagreement is reported here, not hidden. -->
+  <xs:complexType name="BootstrapCheck">
+    <xs:sequence>
+      <xs:element name="resamples" type="xs:positiveInteger"/>
+      <xs:element name="lower" type="xs:decimal"/>
+      <xs:element name="upper" type="xs:decimal"/>
+      <xs:element name="agrees" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A difference between two arms with its interval and its test. An
+       effect is only ever a treatment's difference against the control, and
+       every field that carries one has its interval beside it. -->
+  <xs:complexType name="Comparison">
+    <xs:sequence>
+      <xs:element name="label" type="ex:ComparisonLabel"/>
+      <xs:element name="metric" type="ex:Metric"/>
+      <xs:element name="role" type="ex:MetricRole"/>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="against_arm_id" type="xs:long"/>
+      <xs:element name="difference" type="xs:decimal"/>
+      <xs:element name="lower" type="xs:decimal"/>
+      <xs:element name="upper" type="xs:decimal"/>
+      <xs:element name="confidence_level" type="ex:Probability"/>
+      <xs:element name="test" type="ex:TestName"/>
+      <xs:element name="p_value" type="ex:Fraction"/>
+      <xs:element name="degrees_of_freedom" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="conclusion" type="ex:Conclusion" minOccurs="0"/>
+      <xs:element name="incremental_revenue" type="ex:RevenueEffect" minOccurs="0"/>
+      <xs:element name="bootstrap" type="ex:BootstrapCheck" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The checks of the counts that reach the analysis. -->
+  <xs:complexType name="ResultChecks">
+    <xs:sequence>
+      <xs:element name="sample_ratio" type="ex:SampleRatioCheck"/>
+      <xs:element name="balance" type="ex:BalanceCheck" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Why no effect is stated. An experiment with no control holds no
+       untreated population, so it cannot separate a campaign's effect from
+       seasonality, price changes or a general rise in traffic (ADR-0019,
+       ADR-0068). -->
+  <xs:complexType name="EffectRefusal">
+    <xs:sequence>
+      <xs:element name="code" type="ex:Code"/>
+      <xs:element name="message" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The sales one treatment arm holds for the campaign. -->
+  <xs:complexType name="ArmAttribution">
+    <xs:sequence>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="attributed_sales" type="xs:nonNegativeInteger"/>
+      <xs:element name="attributed_customers" type="xs:nonNegativeInteger"/>
+      <xs:element name="attributed_revenue" type="ex:Money"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Commercial attribution: which campaign a sale is credited to. A sale
+       is credited to at most one campaign, so campaign totals can be summed.
+       It is not an effect: a treated customer who bought without a recorded
+       exposure is a conversion and is counted in the comparison, but is
+       attributed to nothing, so attributed revenue is below the arm's
+       revenue by design (ADR-0069). -->
+  <xs:complexType name="Attribution">
+    <xs:sequence>
+      <xs:element name="label" type="ex:AttributionLabel"/>
+      <xs:element name="window_days" type="ex:WindowDays"/>
+      <xs:element name="arms" type="ex:ArmAttribution" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="attributed_sales" type="xs:nonNegativeInteger"/>
+      <xs:element name="attributed_revenue" type="ex:Money"/>
+      <xs:element name="unattributed_conversions" type="xs:nonNegativeInteger"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- One statement the estimate depends on. -->
+  <xs:complexType name="Assumption">
+    <xs:sequence>
+      <xs:element name="code" type="ex:Code"/>
+      <xs:element name="statement" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- A result, with the design it was planned under. Attribution and effect
+       are separate sections and are never merged: `attribution` says which
+       campaign a sale is credited to, and `comparisons` say what an arm did
+       against another, with its interval. Only a `comparisons` entry
+       labelled EFFECT, and `incremental_revenue` inside it, may be called an
+       effect. -->
+  <xs:complexType name="ExperimentResult">
+    <xs:sequence>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="campaign_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="basis" type="ex:ResultBasis"/>
+      <xs:element name="status" type="ex:ResultStatus"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+      <xs:element name="elapsed_share" type="ex:Fraction"/>
+      <xs:element name="data_origin" type="ex:DataOrigin"/>
+      <xs:element name="synthetic" type="xs:boolean"/>
+      <xs:element name="design_kind" type="ex:DesignKind"/>
+      <xs:element name="design" type="ex:Design"/>
+      <xs:element name="arms" type="ex:ArmOutcome" minOccurs="2" maxOccurs="5"/>
+      <xs:element name="checks" type="ex:ResultChecks" minOccurs="0"/>
+      <xs:element name="comparisons" type="ex:Comparison" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="effect_refusal" type="ex:EffectRefusal" minOccurs="0"/>
+      <xs:element name="attribution" type="ex:Attribution" minOccurs="0"/>
+      <xs:element name="assumptions" type="ex:Assumption" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="flags" type="ex:ExperimentFlag" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- The one campaign that holds a sale (ADR-0069). The sale is unique
+       here, a holder is never reassigned and is never reopened when the sale
+       is reversed. Nothing in this resource is an effect. -->
+  <xs:complexType name="SaleAttribution">
+    <xs:sequence>
+      <xs:element name="attribution_id" type="xs:long"/>
+      <xs:element name="sale_id" type="xs:long"/>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="campaign_id" type="xs:long"/>
+      <xs:element name="assignment_id" type="xs:long"/>
+      <xs:element name="customer_id" type="ex:Uuid"/>
+      <xs:element name="arm_id" type="xs:long"/>
+      <xs:element name="exposed_at" type="xs:dateTime"/>
+      <xs:element name="sold_at" type="xs:dateTime"/>
+      <xs:element name="window_closes_at" type="xs:dateTime"/>
+      <xs:element name="net_amount" type="ex:Money"/>
+      <xs:element name="counts" type="xs:boolean"/>
+      <xs:element name="attributed_at" type="xs:dateTime"/>
+      <xs:element name="label" type="ex:AttributionLabel"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Experiments">
+    <xs:sequence>
+      <xs:element name="Experiment" type="ex:Experiment" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="ExperimentAssignments">
+    <xs:sequence>
+      <xs:element name="ExperimentAssignment" type="ex:ExperimentAssignment" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Conversions">
+    <xs:sequence>
+      <xs:element name="Conversion" type="ex:Conversion" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleAttributions">
+    <xs:sequence>
+      <xs:element name="SaleAttribution" type="ex:SaleAttribution" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="ExperimentRequest" type="ex:ExperimentRequest"/>
+  <xs:element name="AssignmentSummary" type="ex:AssignmentSummary"/>
+  <xs:element name="Experiment" type="ex:Experiment"/>
+  <xs:element name="AssignmentRequest" type="ex:AssignmentRequest"/>
+  <xs:element name="ExperimentAssignment" type="ex:ExperimentAssignment"/>
+  <xs:element name="Conversion" type="ex:Conversion"/>
+  <xs:element name="ConversionEvaluation" type="ex:ConversionEvaluation"/>
+  <xs:element name="ExperimentResult" type="ex:ExperimentResult"/>
+  <xs:element name="SaleAttribution" type="ex:SaleAttribution"/>
+  <xs:element name="Experiments" type="ex:Experiments"/>
+  <xs:element name="ExperimentAssignments" type="ex:ExperimentAssignments"/>
+  <xs:element name="Conversions" type="ex:Conversions"/>
+  <xs:element name="SaleAttributions" type="ex:SaleAttributions"/>
+</xs:schema>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_barcode</code>
+  <message>The barcode is not a valid GTIN.</message>
+  <correlation_id>corr-details-422b</correlation_id>
+  <details>
+    <field>barcode</field>
+    <code>check_digit</code>
+  </details>
+</Error>

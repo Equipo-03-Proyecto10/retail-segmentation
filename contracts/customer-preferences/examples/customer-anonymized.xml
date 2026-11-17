@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>customer_anonymized</code>
+  <message>The customer has been anonymized and accepts no new decision.</message>
+  <correlation_id>corr-customer-anonymized</correlation_id>
+</Error>

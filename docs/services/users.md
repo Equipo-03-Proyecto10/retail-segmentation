@@ -1,7 +1,7 @@
 # users
 
 > **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, and are deactivated, never deleted (RN-01, RN-02, RN-04)
+> **One rule:** Accounts obey the single-administrator rule (never two, never zero, moved only by an explicit transfer), have case-insensitively unique emails, are deactivated, never deleted, and say which stores a floor user works in through one assignment per user and store (RN-01, RN-02, RN-04, ADR-0060)
 
 ## Summary
 
@@ -57,6 +57,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_users.credential_v1` | auth (its only consumer; E-15) |
+| Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): one `PERMISSION_CHANGED` per role assignment, administrator transfer (one per moved role), deactivation and reactivation, in the change's transaction |
 
 ## Events
 

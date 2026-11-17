@@ -1,0 +1,11 @@
+{
+  "code": "unknown_customer",
+  "message": "The customer does not exist.",
+  "correlation_id": "corr-791-customer",
+  "details": [
+    {
+      "field": "customer_id",
+      "code": "not_found"
+    }
+  ]
+}

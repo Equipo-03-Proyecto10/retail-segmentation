@@ -1,0 +1,82 @@
+{
+  "experiment_id": 18,
+  "campaign_id": 8,
+  "basis": "PRIMARY",
+  "status": "PENDING",
+  "as_of": "2026-11-09T08:00:00Z",
+  "elapsed_share": 0.2857,
+  "data_origin": "OBSERVED",
+  "synthetic": false,
+  "design_kind": "CONTROLLED",
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": "REVENUE_PER_CUSTOMER",
+    "estimator": "DIFFERENCE_OF_PROPORTIONS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.05,
+    "power": 0.80,
+    "minimum_detectable_effect": 0.02,
+    "baseline": 0.10,
+    "baseline_std_dev": null,
+    "required_per_arm": 3839,
+    "smallest_detectable_effect": 0.0281,
+    "allocation": "EQUAL",
+    "conversion_window_days": 14,
+    "settle_days": 7,
+    "starts_on": "2026-11-05",
+    "analysis_at": "2026-11-26T08:00:00Z"
+  },
+  "arms": [
+    {
+      "arm_id": 61,
+      "kind": "CONTROL",
+      "name": "No offer",
+      "assigned": 2000,
+      "analysed": 2000,
+      "exposed": 0,
+      "converted": 61,
+      "pending": 1939,
+      "not_converted": 0,
+      "conversion_rate": 0.0305,
+      "exposed_conversion_rate": null,
+      "net_revenue": "2318.00",
+      "revenue_per_customer": "1.16",
+      "revenue_std_dev": 20.50
+    },
+    {
+      "arm_id": 62,
+      "kind": "TREATMENT",
+      "name": "Free coffee with any basket",
+      "assigned": 2000,
+      "analysed": 2000,
+      "exposed": 1710,
+      "converted": 83,
+      "pending": 1917,
+      "not_converted": 0,
+      "conversion_rate": 0.0415,
+      "exposed_conversion_rate": 0.0415,
+      "net_revenue": "3154.00",
+      "revenue_per_customer": "1.58",
+      "revenue_std_dev": 21.20
+    }
+  ],
+  "checks": null,
+  "comparisons": [],
+  "effect_refusal": null,
+  "attribution": null,
+  "assumptions": [
+    {
+      "code": "INTENT_TO_TREAT",
+      "statement": "Every assigned customer counts in the arm they were assigned to, exposed or not."
+    },
+    {
+      "code": "NET_OF_REVERSALS",
+      "statement": "Conversions and revenue count sales net of reversals, as known at `as_of`."
+    },
+    {
+      "code": "SINGLE_LOOK",
+      "statement": "The result is read once, at the analysis instant; stopping early or adding a look needs a new experiment."
+    }
+  ],
+  "flags": []
+}

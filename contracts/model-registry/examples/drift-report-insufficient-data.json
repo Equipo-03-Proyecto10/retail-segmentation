@@ -1,0 +1,26 @@
+{
+  "report_id": 29,
+  "kind": "DATA_DRIFT",
+  "model_version": {
+    "version_id": 5,
+    "name": "kmeans-k4-2026-10",
+    "method": "KMEANS"
+  },
+  "comparison": "INSUFFICIENT_DATA",
+  "not_compared_reason": null,
+  "window": {
+    "start": "2026-11-03T03:00:00Z",
+    "end": "2026-12-03T03:00:00Z",
+    "days": 30,
+    "customer_count": 187
+  },
+  "reference": {
+    "sample_size": 18432,
+    "captured_at": "2026-10-29T03:00:00Z"
+  },
+  "previous_report_id": 28,
+  "variables": [],
+  "outcome_test": null,
+  "alert_ids": [],
+  "computed_at": "2026-12-03T03:00:52Z"
+}

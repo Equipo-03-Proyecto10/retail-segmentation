@@ -1,0 +1,11 @@
+{
+  "code": "idempotency_key_reused",
+  "message": "The Idempotency-Key was already used for a different reversal.",
+  "correlation_id": "corr-reversal-idempotency-key-reused",
+  "details": [
+    {
+      "field": "Idempotency-Key",
+      "code": "reused"
+    }
+  ]
+}

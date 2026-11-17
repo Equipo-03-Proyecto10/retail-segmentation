@@ -1,0 +1,18 @@
+{
+  "event_id": "a3c1f7e2-5b48-4d0e-9f6a-1c2b3d4e5f75",
+  "client_event_id": "0e6d5c4b-3a29-4817-96f5-a4b3c2d1e105",
+  "type": "NAVIGATION",
+  "store_id": 3,
+  "product_id": null,
+  "customer_id": "3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68",
+  "campaign_id": null,
+  "label_code": null,
+  "rank": null,
+  "quantity": null,
+  "screen": "PRODUCT_DETAIL",
+  "recorded_by": "5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33",
+  "occurred_at": "2026-10-15T15:24:10Z",
+  "recorded_at": "2026-10-15T15:24:11Z",
+  "voided": false,
+  "history": []
+}

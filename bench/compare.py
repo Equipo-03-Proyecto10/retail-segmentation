@@ -1,6 +1,6 @@
 """Fairness rule 1 of ADR-0042: both builds answer a fixed sample identically.
 
-Sends the same 20 requests per format to products-service and to the twin,
+Sends the same fixed sample of requests per format to products-service and to the twin,
 with the same token and the same `X-Correlation-ID`, and compares the status,
 the parsed JSON, and the XML after `xmllint --c14n`. Prints each difference and
 exits 1 on any; prints one summary line otherwise.
@@ -47,6 +47,16 @@ SAMPLE = [
     "/v1/products?ids=0",
     "/v1/products?ids=" + FIFTY_ONE,
     "/v1/products?size=101",
+    "/v1/products/3/details",
+    "/v1/products/100017/details",
+    "/v1/products/999999/details",
+    "/v1/products/1/relations",
+    "/v1/products/1/relations?kind=substitute",
+    "/v1/products/1/relations?page=2&size=1",
+    "/v1/products/100017/relations",
+    "/v1/products/999999/relations",
+    "/v1/products/1/relations?kind=upsell",
+    "/v1/products/1/relations?size=101",
 ]
 CORRELATION = "bench-compare"
 

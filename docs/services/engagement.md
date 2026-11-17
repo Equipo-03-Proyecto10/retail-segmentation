@@ -1,7 +1,9 @@
 # engagement
 
-> **Status:** Planned (phase 14, core). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
-> **One rule:** In-store engagement (`QR_SCAN`, `RECO_CLICK`) is recorded once per client event, attributed, voided rather than deleted, and summarized (RN-55)
+> **Status:** Implemented (phase 14 core; `/v2` taxonomy in phase 21; capture incidents in phase 27, F27-12, #866).
+> **One rule:** A client-originated field event (`QR_SCAN`, `RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`, `CART_REMOVE`, `NAVIGATION`, or a refused queued write reported as a capture incident) is recorded once per client id as a distinct fact that is never a sale, attributed, voided or closed rather than deleted, and summarized (RN-55).
+>
+> **Contract:** `/v1` records `QR_SCAN`, `RECO_CLICK` and capture incidents. `/v2` keeps the event meaning and adds the six other kinds. Engagement 2.5.0 is served by service 0.4.0.
 
 ## Summary
 
@@ -15,23 +17,54 @@
 | Redis ACL user | `svc_engagement`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | Database `engagement`, user `svc_engagement` (`readWrite` on it only) |
 | Compose project / image | `mosaiq-engagement` / `ghcr.io/equipo-03-proyecto10/mosaiq-engagement` |
-| Used by | Android: `QR_SCAN` after each decoded scan, one `RECO_CLICK` per tap (F17-02, F17-05). Electron: summaries and voids (F16-04). |
+| Used by | Android: `QR_SCAN` after each decoded scan, one `RECO_CLICK` per tap (F17-02, F17-05). Electron: summaries and voids (F16-04). Experimentation and analytics-kpis: the interaction facts, through the stream decided in ADR-0075, never through this service's API. |
 | Governing ADRs | [ADR-0038](../adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md), [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md), [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md), [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md) |
 
 ## Business rule
 
 - Each event is recorded once per `client_event_id` (unique index; a retry hits `E11000`), attributed to the token's `sub`, and never deleted: a void adds a history entry. Summaries count only events that are not voided.
 - Before writing, the service validates store, product and customer against three published views. engagement is the only owner of the recommendation-click fact. Check-ins and purchases stay in PostgreSQL.
+- There are eight kinds of event, each a distinct fact (taxonomy of #798, `/v2`). Every kind carries `client_event_id`, `type`, `store_id` and `occurred_at`; the rest is per kind:
+
+  | Kind | Also required | Meaning |
+  |---|---|---|
+  | `QR_SCAN` | `product_id` | A product QR decoded on the floor |
+  | `RECO_CLICK` | `product_id`, `label_code`, `rank` | A tap on a shown recommendation |
+  | `RECO_IMPRESSION` | `product_id`, `label_code`, `rank` | A recommendation shown on screen, before any tap |
+  | `STORE_VISIT` | none | A customer or visitor arriving at a store |
+  | `CAMPAIGN_EXPOSURE` | `campaign_id`, `customer_id` | A customer shown a campaign |
+  | `CART_ADD`, `CART_REMOVE` | `product_id`, `quantity` | A product added to or removed from a cart |
+  | `NAVIGATION` | `screen` | A screen opened in a client |
+
+- No event is a sale. A cart is intent, an exposure is not a conversion, and a confirmed transaction exists only in sales-service. A summary counts events that are not voided and gives each kind its own key.
+- The floor roles work only in their assigned stores (ADR-0060, F19-07). Recording an event, reading one by id, listing events and summarizing (`/v1` and `/v2`) are narrowed by `api_users.store_assignment_v1`, read per request with no cache and no token claim. A confined caller recording for another store gets 403 `forbidden_store` before any reference is checked and nothing is stored; a list or summary with no `store_id` covers only the caller's stores; a floor user with no assignment gets an empty page. `ADMIN` and every other role are not confined.
+- A capture incident records a finally refused queued write once under either unique identity. It is narrowed to live store assignments on every non-admin request, moves forward through review history, and is closed rather than deleted. Its stored shape has no credential or customer field.
 
 ## Endpoints
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
-| POST | `/v1/engagement-events` | Record a `QR_SCAN` or `RECO_CLICK` (`client_event_id`, store, product; `label_code` and `rank` for a click) | ADMIN, STORE_MANAGER |
+| POST | `/v1/engagement-events` | Record a `QR_SCAN` or `RECO_CLICK` (`client_event_id`, store, product; `label_code` and `rank` for a click). Frozen | ADMIN, STORE_MANAGER |
 | GET | `/v1/engagement-events` | List events (`type`, `store_id`, `customer_id`, `voided`, `from`, `to`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/engagement-events/{event_id}` | One event | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | POST | `/v1/engagement-events/{event_id}/void` | Void with a reason | ADMIN |
 | GET | `/v1/engagement-summaries` | Counts by store, day or type (`from`, `to`, `store_id`, `group_by`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, INVENTORY_PLANNER, AUDITOR |
+| POST | `/v1/capture-incidents` | Report a refused queued write once | ADMIN and the four floor roles |
+| GET | `/v1/capture-incidents`, `/{incident_id}` | List or read incidents | ADMIN, COMMERCIAL_SUPERVISOR |
+| POST | `/v1/capture-incidents/{incident_id}/reviews` | Acknowledge or resolve, preserving author and note | ADMIN, COMMERCIAL_SUPERVISOR |
+| GET | `/v1/capture-incident-summaries` | Counts by store, day, source type or refusal code | ADMIN, COMMERCIAL_SUPERVISOR |
+
+`/v2` has the same five operations with the same roles, over all eight kinds:
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/v2/engagement-events` | Record any of the eight kinds, one shape per `type` |
+| GET | `/v2/engagement-events` | List events (`type` may be any of the eight) |
+| GET | `/v2/engagement-events/{event_id}` | One event |
+| POST | `/v2/engagement-events/{event_id}/void` | Void with a reason |
+| GET | `/v2/engagement-summaries` | Counts by store, day or type, every kind under its own key |
+
+`GET /schema.v2.xsd` serves `engagement.v2.xsd` and is already served.
 
 Roles follow the [service operation policy](../requirements.md#service-operation-policy-distributed-stage). Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`.
 
@@ -41,9 +74,10 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `engagement_event` | MongoDB collection | insert, query, update (void) | Strict `$jsonSchema` validator; unique `client_event_id`; three secondary indexes |
+| `engagement_event` | MongoDB collection | insert, query, update (void, relay `$pull`) | Strict `$jsonSchema` validator, one shape per kind, plus the outbox field `relay_pending` (ADR-0075); unique `client_event_id`; three secondary indexes and the relay's partial index `relay_pending_occurred_at_1` |
 | `engagement_daily` | MongoDB collection | `$inc` upsert, aggregation | Rollup by store, UTC day and type; rebuildable by a maintenance `$merge` |
-| PostgreSQL | — | No table | SELECT on three published views |
+| `capture_incident` | MongoDB collection | insert, query, forward-only review | Strict allow-list; unique client id and source operation; closed rather than deleted |
+| PostgreSQL | — | No table | SELECT on four published views |
 
 ## Database contracts
 
@@ -52,10 +86,15 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_products.product_ref_v1` | products |
 | Consumes | `api_stores.store_directory_v1` | stores |
 | Consumes | `api_customers.customer_ref_v1` | customers |
+| Consumes | `api_users.store_assignment_v1` | users |
 
 ## Events
 
-None.
+ADR-0075 (accepted, issue #948) decides how the interaction facts leave this service, and #799 implements it. The stream's contract is [`contracts/streams/engagement.interaction_recorded.v1.md`](../../contracts/streams/engagement.interaction_recorded.v1.md). engagement relays them on one stream, `stream:engagement.v1.interaction_recorded`, from an outbox kept on the `engagement_event` document itself, because a standalone `mongod` cannot write an event and a second document atomically. The facts carried are `RECO_IMPRESSION`, `RECO_CLICK` and `CAMPAIGN_EXPOSURE`; a void is a later `VOIDED` notice. Delivery is at least once and consumers deduplicate by the entry's `event_id`.
+
+experimentation consumes a `CAMPAIGN_EXPOSURE` (the campaign and the customer) from that stream into its own projection, and counts exposures per campaign and customer from its own schema. It does not call this service and reads none of its stores (ADR-0044). The count is eventually consistent, and a voided exposure stops counting when the `VOIDED` notice arrives. analytics-kpis never consumes the stream: it reads the owners' `api_*` views (ADR-0059).
+
+The relay is a thread of the service's container. Every second it reads up to 100 events with a notice pending, through the partial index, publishes them with the kit's `StreamPublisher` (`XADD`, then `WAITAOF 1 0 2000`, kit-py 0.1.8) and only then `$pull`s them. The Redis ACL line grants `+waitaof` and `+xadd` on this one stream. A relay or `redis-state` outage leaves the notices on the documents until it returns.
 
 ## Redis keys
 
@@ -64,6 +103,7 @@ None.
 | cache | `engagement:live:{store_id}:{yyyymmdd}:{type}` | 48 h | Live counters, rebuilt from `engagement_daily` on a miss |
 | state | `engagement:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
+| state | `stream:engagement.v1.interaction_recorded` | none; `MAXLEN ~ 10000` | Interaction facts for experimentation and recommendations (ADR-0075); `XADD` by the relay only |
 
 ## Service-specific errors
 
@@ -73,10 +113,14 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 |---|---|---|
 | 409 | `client_event_conflict` | The same `client_event_id` with a different type, store or product |
 | 409 | `already_voided` | The event is already voided |
+| 409 | `client_incident_conflict` | An incident identity names a different refused operation |
+| 409 | `invalid_transition` | An incident review does not move its status forward |
+| 403 | `forbidden_store` | A floor caller is not currently assigned to the store of the incident or event, or names such a store (ADR-0060) |
 | 422 | `unknown_store` | The store must exist and be active |
 | 422 | `unknown_product`, `unknown_customer` | A reference does not exist |
 | 422 | `occurred_in_future` | More than five minutes ahead of the server |
 | 404 | `event_not_found` | An unknown `{event_id}` on a read or a void |
+| 404 | `incident_not_found` | An unknown `{incident_id}` on a read or review |
 | 422 | `invalid_query` | `to` before `from`, or an unknown `group_by`; `details` names the parameter |
 | 503 | `schema_not_ready` | `/health/ready` while a collection or index is missing |
 
@@ -116,19 +160,20 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 | Dependency down | Effect |
 |---|---|
-| PostgreSQL unreachable | `/health/ready` reports not ready. `POST /v1/engagement-events` answers 503 `database_unavailable`, never 500, because it validates store, product and customer against the three published views; reads, voids and summaries use MongoDB only. `/health/live` stays 200 |
+| PostgreSQL unreachable | `/health/ready` reports not ready. Event writes, incident reports and non-admin incident operations answer 503 `database_unavailable`, never 500, because reference and current-assignment checks read the published views. Event reads and admin incident reads use MongoDB only. `/health/live` stays 200 |
 | MongoDB down | Event operations and summaries that reach MongoDB answer 503 `database_unavailable`, never 500 (ADR-0035); `/health/ready` is 503. Other services are unaffected |
 | `redis-cache` down | A one-store summary of today falls back to `engagement_daily` |
-| `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone |
+| `redis-state` unreachable or over 200 ms | Every authenticated request returns 503 `auth_unavailable`; authentication fails closed and never falls back to the signature alone. The relay keeps the notices pending and publishes them when it returns |
 | Any other service down | No effect: services never call each other over HTTP |
 
 ## Operations
 
 | Task | Command | Notes |
 |---|---|---|
-| Create the database, user, validator and indexes | `mongo/init.js` in mongosh as root, with `MONGO_ENGAGEMENT_PASSWORD` set | Before the service version that needs it; idempotent, and a later run brings an older validator and the index set back to the definition. The service never creates or alters any of it, and `/health/ready` is 503 until it exists |
+| Create the database, user, validator and indexes | `mongo/init.js` in mongosh as root, with `MONGO_ENGAGEMENT_PASSWORD` set | Before the service version that needs it; idempotent, and a later run brings an older validator and the index set back to the definition. The service never creates or alters any of it, and `/health/ready` is 503 until it exists. **0.2.0 needs it re-applied first** (eight shapes, `relay_pending`, the relay's partial index): its readiness is 503 against the older validator, which would refuse its inserts |
 | Load demonstration data | `mongo/seed.js` in mongosh | 40 `QR_SCAN` and 36 `RECO_CLICK` over stores 1-6, products 1-40 and customers 1-30 on ten fixed UTC days; fixed ids, so a second run inserts nothing; ends by rebuilding `engagement_daily` for those days |
 | Rebuild the rollup | `python -m app rebuild-rollup --from YYYY-MM-DD --to YYYY-MM-DD` in the service's container | Recomputes `engagement_daily` from the events that are not voided for the UTC days, inclusive, and sets the live counters still alive to the rebuilt counts. A crash between an insert and its `$inc` is repaired by it. Not an endpoint |
+| Re-queue the interaction stream | `python -m app requeue-relay --from YYYY-MM-DD --to YYYY-MM-DD` in the service's container | Sets `relay_pending` again on every relayed event of the UTC days, inclusive (`RECORDED`, and `VOIDED` when voided), so the relay publishes them again: for a consumer that fell behind the stream's retention or joined later (ADR-0075). Consumers dedupe by `event_id`. Not an endpoint |
 
 The first request after a counter on `redis-cache` expires or is lost repairs it: the `INCR` or `DECR` returns 1 or -1, so the counter is overwritten with the count the rollup update returned.
 

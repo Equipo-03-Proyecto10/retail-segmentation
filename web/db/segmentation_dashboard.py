@@ -71,9 +71,9 @@ def list_run_revenue_by_label(
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT h.label_code, sum(t.total)
+            SELECT h.label_code, sum(t.net_total)
             FROM customer_segment_history AS h
-            JOIN transaction AS t ON t.customer_id = h.customer_id
+            JOIN net_sale AS t ON t.customer_id = h.customer_id
             WHERE h.run_id = %s
               AND t.occurred_at >= %s
               AND t.occurred_at <= %s

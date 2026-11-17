@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VersionedSegmentAssignments xmlns="https://mosaiq.maxthecoder.online/xml/segments/v1"
+        xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <VersionedSegmentAssignment>
+    <customer_id>0c9f6a3e-5d2b-4c8e-9a41-7e3b2d1f8a66</customer_id>
+    <run_id>58</run_id>
+    <cause>FULL_RUN</cause>
+    <label_code>AT_RISK</label_code>
+    <r_score>2</r_score>
+    <f_score>4</f_score>
+    <m_score>3</m_score>
+    <valid_from>2026-10-30T03:00:00Z</valid_from>
+  </VersionedSegmentAssignment>
+  <common:PageInfo>
+    <common:page>1</common:page>
+    <common:size>20</common:size>
+    <common:total>1</common:total>
+  </common:PageInfo>
+</VersionedSegmentAssignments>

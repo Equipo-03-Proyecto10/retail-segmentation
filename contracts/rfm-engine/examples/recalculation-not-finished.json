@@ -1,0 +1,6 @@
+{
+  "code": "recalculation_not_finished",
+  "message": "The recalculation has not finished, so it has no differences yet.",
+  "correlation_id": "corr-recalculation-not-finished",
+  "details": []
+}

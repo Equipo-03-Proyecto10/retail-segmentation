@@ -1,6 +1,6 @@
-"""users-service: accounts, passwords, the role vocabulary and RN-01 (F14-04).
+"""users-service: accounts, roles and store assignments (F14-04, F19-06).
 
-The eleven operations of contracts/users/openapi.yaml on mosaiq-kit. Every
+The thirteen operations of contracts/users/openapi.yaml on mosaiq-kit. Every
 write runs in `kit.db.transaction()`, which names the caller to fn_audit. Any
 change to an account's access (role, active flag, password) is captured by the
 schema's trigger into users_events.outbox, and the relay started here carries
@@ -29,7 +29,7 @@ from mosaiq_kit import (
     configure_logging,
 )
 
-from app import rules
+from app import audit, rules
 from app.passwords import hash_password, verify_password
 
 LOGGER = logging.getLogger(__name__)
@@ -42,6 +42,9 @@ ROLE_CODES = (
     "INVENTORY_PLANNER",
     "AUDITOR",
     "CUSTOMER",
+    "SALES_ASSOCIATE",
+    "LOYALTY_OFFICER",
+    "COMMERCIAL_SUPERVISOR",
 )
 # More than five failed current-password checks for one user in 15 minutes.
 PASSWORD_FAILURES = 5
@@ -188,13 +191,22 @@ def create_app(*, start_relay: bool = True) -> Flask:
     def update_user(user_id: UUID) -> Representation:
         body = kit.body
         with kit.db.transaction() as connection:
-            user = rules.update_user(
+            before, user = rules.update_user(
                 connection,
                 user_id,
                 name=body.get("name"),
                 email=body.get("email"),
                 role_code=body.get("role_code"),
             )
+            if user["role_code"] != before["role_code"]:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user["user_id"],
+                    "ROLE_ASSIGNED",
+                    from_role=before["role_code"],
+                    to_role=user["role_code"],
+                )
         return _user(user)
 
     @kit.operation("changeUserPassword")
@@ -228,15 +240,26 @@ def create_app(*, start_relay: bool = True) -> Flask:
             rules.set_password_hash(connection, user_id, password_hash)
         return NoContent()
 
+    def set_active(user_id: UUID, is_active: bool) -> Representation:
+        with kit.db.transaction() as connection:
+            before, user = rules.set_active(connection, user_id, is_active)
+            # Setting the flag it already has changes no permission.
+            if before["is_active"] != user["is_active"]:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user["user_id"],
+                    "USER_REACTIVATED" if is_active else "USER_DEACTIVATED",
+                )
+        return _user(user)
+
     @kit.operation("deactivateUser")
     def deactivate_user(user_id: UUID) -> Representation:
-        with kit.db.transaction() as connection:
-            return _user(rules.set_active(connection, user_id, False))
+        return set_active(user_id, False)
 
     @kit.operation("reactivateUser")
     def reactivate_user(user_id: UUID) -> Representation:
-        with kit.db.transaction() as connection:
-            return _user(rules.set_active(connection, user_id, True))
+        return set_active(user_id, True)
 
     @kit.operation("listRoles")
     def list_roles() -> Page:
@@ -261,14 +284,63 @@ def create_app(*, start_relay: bool = True) -> Flask:
                     return Representation("Role", role)
         raise ApiError(404, "role_not_found", "The role does not exist.")
 
+    @kit.operation("getStoreAssignment")
+    def get_store_assignment(user_id: UUID) -> Representation:
+        principal = caller()
+        if principal.get("role") in rules.STORE_BOUND_ROLES and str(
+            principal["sub"]
+        ) != str(user_id):
+            raise ApiError(
+                403,
+                "forbidden_user",
+                "A floor role may read only its own store assignment.",
+            )
+        with kit.db.connection() as connection:
+            assignment = rules.store_assignment(connection, user_id)
+        return Representation("StoreAssignment", assignment)
+
+    @kit.operation("replaceStoreAssignment")
+    def replace_store_assignment(user_id: UUID) -> Representation:
+        with kit.db.transaction() as connection:
+            assignment, added, removed = rules.replace_store_assignment(
+                connection, user_id, kit.body["store_ids"]
+            )
+            if added:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user_id,
+                    "STORES_ASSIGNED",
+                    store_ids=added,
+                )
+            if removed:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    user_id,
+                    "STORES_UNASSIGNED",
+                    store_ids=removed,
+                )
+        return Representation("StoreAssignment", assignment)
+
     @kit.operation("transferAdministrator")
     def transfer_administrator() -> NoContent:
         with kit.db.transaction() as connection:
-            rules.transfer_administrator(
+            moved = rules.transfer_administrator(
                 connection,
                 caller=str(caller()["sub"]),
                 successor_id=kit.body["successor_user_id"],
             )
+            # One event per user whose role moved, in the transfer's transaction.
+            for subject, from_role, to_role in moved:
+                audit.permission_changed(
+                    connection,
+                    caller(),
+                    subject,
+                    "ADMINISTRATOR_TRANSFERRED",
+                    from_role=from_role,
+                    to_role=to_role,
+                )
         return NoContent()
 
     dsn = os.environ.get("DATABASE_URL")

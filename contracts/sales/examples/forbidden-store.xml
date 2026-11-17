@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>forbidden_store</code>
+  <message>The sale belongs to a store the caller is not assigned to.</message>
+  <correlation_id>corr-forbidden-store</correlation_id>
+  <details>
+    <field>sale_id</field>
+    <code>other_store</code>
+  </details>
+</Error>

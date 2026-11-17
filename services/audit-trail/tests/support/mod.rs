@@ -2,6 +2,8 @@
 //! and as `svc_audit_trail`.
 #![allow(dead_code)]
 
+pub mod http;
+
 use std::time::Duration;
 
 use mosaiq_kit::Database;

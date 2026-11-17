@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Promotion xmlns="https://mosaiq.maxthecoder.online/xml/campaigns/v1">
+  <promotion_id>41</promotion_id>
+  <campaign_id>301</campaign_id>
+  <name>Holiday preview 10 percent</name>
+  <discount_percent>ten</discount_percent>
+  <starts_on>2026-11-15</starts_on>
+  <ends_on>2026-12-24</ends_on>
+  <store_ids>1</store_ids>
+  <channel_ids>1</channel_ids>
+  <is_active>false</is_active>
+</Promotion>

@@ -1,0 +1,11 @@
+{
+  "code": "no_return_lines",
+  "message": "A return needs at least one line.",
+  "correlation_id": "corr-no-return-lines",
+  "details": [
+    {
+      "field": "lines",
+      "code": "empty"
+    }
+  ]
+}

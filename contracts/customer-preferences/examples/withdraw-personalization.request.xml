@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RecordConsentDecisionsRequest xmlns="https://mosaiq.maxthecoder.online/xml/customer-preferences/v1">
+  <decisions>
+    <purpose>PERSONALIZATION</purpose>
+    <decision>WITHDRAWN</decision>
+  </decisions>
+</RecordConsentDecisionsRequest>

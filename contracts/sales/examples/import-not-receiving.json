@@ -1,0 +1,11 @@
+{
+  "code": "import_not_receiving",
+  "message": "Import 17 is PROCESSING and takes no more chunks.",
+  "correlation_id": "corr-import-not-receiving",
+  "details": [
+    {
+      "field": "status",
+      "code": "not_receiving"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<StockMovementRequest xmlns="https://mosaiq.maxthecoder.online/xml/stock/v1">
+  <movement_type>RECEIPT</movement_type>
+  <store_id>3</store_id>
+  <quantity>40</quantity>
+  <reference>DN-2026-00417</reference>
+</StockMovementRequest>

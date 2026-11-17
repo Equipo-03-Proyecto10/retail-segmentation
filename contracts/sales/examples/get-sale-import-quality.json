@@ -1,0 +1,31 @@
+{
+  "import_id": 17,
+  "status": "COMPLETED",
+  "total_rows": 9,
+  "received": 9,
+  "accepted": 5,
+  "rejected": 4,
+  "pending": 0,
+  "created_at": "2026-10-28T15:02:11Z",
+  "finished_at": "2026-10-28T15:02:14Z",
+  "failures": [
+    {
+      "code": "duplicate_row",
+      "count": 2
+    },
+    {
+      "code": "future_dated",
+      "count": 1
+    },
+    {
+      "code": "invalid_quantity",
+      "count": 1
+    }
+  ],
+  "reconciliation": {
+    "found": 3,
+    "open": 2,
+    "distinct": 0,
+    "duplicate": 1
+  }
+}

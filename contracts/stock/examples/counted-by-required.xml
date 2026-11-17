@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>counted_by_required</code>
+  <message>A count must state who counted.</message>
+  <correlation_id>corr-counted-by-required</correlation_id>
+  <details>
+    <field>counted_by</field>
+    <code>required</code>
+  </details>
+</Error>

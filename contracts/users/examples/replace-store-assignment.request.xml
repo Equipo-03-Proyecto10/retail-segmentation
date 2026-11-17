@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReplaceStoreAssignmentRequest xmlns="https://mosaiq.maxthecoder.online/xml/users/v1">
+  <store_ids>9</store_ids>
+  <store_ids>2</store_ids>
+  <store_ids>5</store_ids>
+</ReplaceStoreAssignmentRequest>

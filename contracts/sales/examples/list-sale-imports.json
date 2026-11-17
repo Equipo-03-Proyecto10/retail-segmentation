@@ -1,0 +1,54 @@
+{
+  "sale_imports": [
+    {
+      "import_id": 18,
+      "status": "CANCELLED",
+      "contract_version": 1,
+      "total_rows": 40000,
+      "chunk_count": 267,
+      "next_sequence": 120,
+      "received": 18000,
+      "accepted": 12000,
+      "rejected": 300,
+      "pending": 5700,
+      "created_at": "2026-10-29T09:00:00Z",
+      "finished_at": "2026-10-29T09:02:03Z",
+      "created_by": "11111111-1111-1111-1111-000000000001"
+    },
+    {
+      "import_id": 17,
+      "status": "COMPLETED",
+      "contract_version": 1,
+      "total_rows": 9,
+      "chunk_count": 2,
+      "next_sequence": 2,
+      "received": 9,
+      "accepted": 5,
+      "rejected": 4,
+      "pending": 0,
+      "created_at": "2026-10-28T15:02:11Z",
+      "finished_at": "2026-10-28T15:02:14Z",
+      "created_by": "11111111-1111-1111-1111-000000000001"
+    },
+    {
+      "import_id": 16,
+      "status": "EXPIRED",
+      "contract_version": 1,
+      "total_rows": 1200,
+      "chunk_count": 8,
+      "next_sequence": 0,
+      "received": 0,
+      "accepted": 0,
+      "rejected": 0,
+      "pending": 0,
+      "created_at": "2026-10-20T08:15:00Z",
+      "finished_at": "2026-10-21T08:15:00Z",
+      "created_by": "11111111-1111-1111-1111-000000000001"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

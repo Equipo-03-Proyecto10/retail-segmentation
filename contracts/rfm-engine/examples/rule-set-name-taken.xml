@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>rule_set_name_taken</code>
+  <message>A rule set with this name already exists.</message>
+  <correlation_id>corr-rule-set-name-taken</correlation_id>
+</Error>

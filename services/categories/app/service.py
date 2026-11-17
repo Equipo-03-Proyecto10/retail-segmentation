@@ -43,6 +43,9 @@ PRIMARY_KEY = "category_pkey"
 PARENT_FKEY = "category_parent_category_id_fkey"
 PRODUCT_FKEY = "product_category_id_fkey"
 INTEREST_GUARD = "category_has_customer_interest"
+# A customer-preferences restriction on an interest category (F21-17) is an
+# append-only fact, so its foreign key restricts the delete instead of cascading.
+RESTRICTION_FKEY = "restriction_decision_category_id_fkey"
 CYCLE_CHECKS = ("category_not_own_parent", "category_no_cycle")
 CATEGORY_ID_MAX = 32767
 INT32_MIN, INT32_MAX = -(2**31), 2**31 - 1
@@ -96,6 +99,12 @@ def refusal(error: psycopg.errors.IntegrityError, *, deleting: bool) -> ApiError
                 409,
                 "category_has_customer_interest",
                 "A customer names the category as an interest.",
+            )
+        if constraint == RESTRICTION_FKEY and deleting:
+            return ApiError(
+                409,
+                "category_has_customer_interest",
+                "A customer names the category in an interest restriction.",
             )
     if isinstance(error, errors.CheckViolation) and constraint in CYCLE_CHECKS:
         return ApiError(

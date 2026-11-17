@@ -1,0 +1,6 @@
+{
+  "code": "version_not_retired",
+  "message": "Only a version that was published and then retired can be rolled back to.",
+  "correlation_id": "corr-version-not-retired",
+  "details": []
+}

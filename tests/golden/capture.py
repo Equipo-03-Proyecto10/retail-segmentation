@@ -33,7 +33,15 @@ from uuid import UUID
 
 import psycopg
 
-from tests.golden.cases import Case, Context, campaigns, recommendations, sales, users
+from tests.golden.cases import (
+    Case,
+    Context,
+    campaigns,
+    recommendations,
+    sales,
+    segments,
+    users,
+)
 from web.db.transactions import atomic
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +51,7 @@ PORTS: dict[str, ModuleType] = {
     "recommendations": recommendations,
     "users": users,
     "campaigns": campaigns,
+    "segments": segments,
 }
 
 

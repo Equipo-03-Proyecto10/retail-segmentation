@@ -1,0 +1,11 @@
+{
+  "code": "invalid_body",
+  "message": "The reversal violates its schema.",
+  "correlation_id": "corr-reversal-invalid-body",
+  "details": [
+    {
+      "field": "kind",
+      "code": "unknown_kind"
+    }
+  ]
+}

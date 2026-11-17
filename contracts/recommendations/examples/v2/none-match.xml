@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Recommendation xmlns="https://mosaiq.maxthecoder.online/xml/recommendations/v2">
+  <decision_id>5d7f3b92-0c18-4e6a-9b44-a8c1e6f20d73</decision_id>
+  <customer_id>3f6c1d52-8e4a-4b7d-a0c9-5d2e7b1f4a68</customer_id>
+  <status>none_match</status>
+  <computed_at>2026-10-15T16:42:10Z</computed_at>
+  <window>
+    <days>180</days>
+    <start>2026-04-18T00:00:00Z</start>
+    <end>2026-10-15T00:00:00Z</end>
+  </window>
+  <label_code>LOYAL_HIGH_VALUE</label_code>
+  <run_id>41</run_id>
+  <model_version_id>7</model_version_id>
+  <usual_store_id>3</usual_store_id>
+  <store_id>3</store_id>
+  <store_source>usual_store</store_source>
+  <exclusions>
+    <reason>already_bought</reason>
+    <count>3</count>
+  </exclusions>
+  <exclusions>
+    <reason>out_of_stock</reason>
+    <count>4</count>
+  </exclusions>
+</Recommendation>

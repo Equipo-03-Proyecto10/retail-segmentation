@@ -70,6 +70,10 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # packages: write so this job can push ADR-0080's test images. It pushes no release image.
+    permissions:
+      contents: read
+      packages: write
     env:
       COMPOSE: docker compose -f compose.distributed.yaml
     steps:
@@ -89,16 +93,27 @@ jobs:
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v6
 
-      # The same stack as the nightly demonstration chain (F13-08). The
+      # The same stack as the nightly demonstration chain (F13-08), with each
+      # service image pulled by its content key or built (ADR-0080). The
       # emulator reaches its gateway at http://10.0.2.2:8080, the debug
       # build's base URL.
       - name: Bring the local stack up
         working-directory: ${{ github.workspace }}
+        env:
+          GHCR_TOKEN: ${{ github.token }}
         run: |
           docker network create mosaiq
           bash .github/scripts/stage-contracts.sh --all
           bash docker/distributed/auth-keys.sh
-          $COMPOSE up --build --wait --wait-timeout 600
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          bash .github/scripts/ci-images.sh prepare
+          $COMPOSE up --no-build --wait --wait-timeout 600
+
+      # After the stack came up healthy, so a broken image is never kept.
+      - name: Keep the images built here for the next run (ADR-0080)
+        if: github.ref == 'refs/heads/develop'
+        working-directory: ${{ github.workspace }}
+        run: bash .github/scripts/ci-images.sh push
 
       - name: Build the app and its tests
         run: ./gradlew assembleDebug assembleDebugAndroidTest

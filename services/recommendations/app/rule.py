@@ -21,6 +21,14 @@ first, and a customer without one is answered without reading further:
 `no_open_assignment`, or `unassigned_result` when the open assignment is the
 unassigned result (the web reports both as `no_segment`). Then
 `no_usual_store` (no accepted sale in the window), then `none_match`.
+
+**Consent and restrictions (ADR-0066, ADR-0067).** Before any of the above, a
+customer whose PERSONALIZATION is not granted is recommended nothing and none
+of their signals is read. A missing decision, a withdrawal and a consent view
+that cannot be read all mean not granted. A restricted interest category
+removes every product in it and below it, whatever signal would have chosen it.
+`/v1` is frozen and cannot name the reason, so it answers `none_match` with no
+items; the reason belongs to `/v2`.
 """
 
 from __future__ import annotations
@@ -64,8 +72,22 @@ class Stocked:
     quantity_on_hand: int
 
 
+class Unreadable(Exception):
+    """A consent or restriction view could not be read."""
+
+
+@dataclass(frozen=True)
+class Eligibility:
+    personalization: bool
+    restricted: frozenset[int] = frozenset()
+
+
 class Reads(Protocol):
     """What the rule reads, one method per published view read."""
+
+    def personalization_granted(self, customer_id: str) -> bool: ...
+
+    def restricted_categories(self, customer_id: str) -> frozenset[int]: ...
 
     def current_label(self, customer_id: str) -> Label: ...
 
@@ -182,8 +204,10 @@ def rank(
     purchased: Collection[int],
     buyers: Mapping[int, int],
     limit: int,
+    restricted: Collection[int] = (),
 ) -> list[dict[str, Any]]:
-    """The products to recommend, best first, each with its reasons."""
+    """The products to recommend, best first, each with its reasons. A product
+    in a restricted category, or below one, is never a candidate."""
     bought = {c for c, count in category_purchases.items() if count >= 1}
     ranked: list[tuple[tuple[int, int, int, int], dict[str, Any]]] = []
     for product in stocked:
@@ -201,6 +225,8 @@ def rank(
                 }
             )
         chain = lineage(product.category_id, parents)
+        if any(category in restricted for category in chain):
+            continue
         liked = _nearest(chain, preferred)
         if liked is not None:
             reasons.append(
@@ -245,7 +271,43 @@ def rank(
 # ---------- the whole computation ----------
 
 
-def recommend(reads: Reads, customer_id: str, as_of: datetime, limit: int) -> Result:
+def eligibility(reads: Reads, customer_id: str) -> Eligibility:
+    """What the customer's consent and restrictions allow. Anything that cannot
+    be read is not granted."""
+    try:
+        if not reads.personalization_granted(customer_id):
+            return Eligibility(False)
+        return Eligibility(True, reads.restricted_categories(customer_id))
+    except Unreadable:
+        return Eligibility(False)
+
+
+def withdrawn(customer_id: str, as_of: datetime) -> Result:
+    """The answer for a customer who is not personalized: nothing, and nothing
+    of theirs is named."""
+    return Result(
+        customer_id=customer_id,
+        status="none_match",
+        window_start=as_of - timedelta(days=WINDOW_DAYS),
+        window_end=as_of,
+    )
+
+
+def answer(reads: Reads, customer_id: str, as_of: datetime, limit: int) -> Result:
+    """Consent first, then the recommendation."""
+    allowed = eligibility(reads, customer_id)
+    if not allowed.personalization:
+        return withdrawn(customer_id, as_of)
+    return recommend(reads, customer_id, as_of, limit, allowed.restricted)
+
+
+def recommend(
+    reads: Reads,
+    customer_id: str,
+    as_of: datetime,
+    limit: int,
+    restricted: Collection[int] = (),
+) -> Result:
     """Recommend for one known customer, as of a moment. Each read happens only
     once the status still depends on it."""
     until = as_of
@@ -277,6 +339,7 @@ def recommend(reads: Reads, customer_id: str, as_of: datetime, limit: int) -> Re
         purchased={line.product_id for line in lines},
         buyers=reads.segment_buyers(label.label_code, customer_id, since, until),
         limit=limit,
+        restricted=restricted,
     )
     return Result(
         **base,

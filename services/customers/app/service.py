@@ -10,17 +10,38 @@ INSERT itself refuses it.
 
 from __future__ import annotations
 
+import json
+import os
+import secrets
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
-from flask import Flask, request
-from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
+from flask import Flask, g, request
+from lxml import etree
+from mosaiq_kit import (
+    ApiError,
+    Kit,
+    OutboxRelay,
+    Page,
+    Representation,
+    configure_logging,
+)
+from mosaiq_kit.rendering import wire_value
 from psycopg import errors, sql
+
+import redis
+from app import anonymization
 
 EMAIL_KEY = "ux_customer_email_lower"
 CHANNEL_FKEY = "customer_registration_channel_id_fkey"
 EMAIL_CHECK = "customer_email_check"
+ACTIVE_CARD_KEY = "ux_loyalty_card_one_active_customer"
+CUSTOMER_FKEY = "loyalty_card_customer_id_fkey"
+ANONYMIZED_CHECK = "customer_anonymized"
+STREAM = "stream:customers.v1.anonymized"
+CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[1] / "contracts"
 
@@ -34,6 +55,31 @@ COLUMNS = sql.SQL(", ").join(
         "registration_channel_id",
         "registered_on",
     )
+)
+
+# ADR-0066 section 3: a customer with no sale and no visit for this many months
+# is a retention candidate, and only an administrator anonymizes one.
+RETENTION_MONTHS = 36
+
+# The customers that are not anonymized and whose latest activity falls before
+# %(inactive_before)s. The latest activity is the latest of the registration
+# date and the UTC dates of the latest sale and the latest visit; GREATEST
+# ignores the nulls of a customer with no sale or no visit. Sales come from
+# the sales boundary's published lines and visits from the check-ins view, the
+# only routes this service has to either (ADR-0044).
+RETENTION_ACTIVITY = sql.SQL(
+    "SELECT * FROM ("
+    " SELECT c.customer_id, c.registered_on, s.last_sale_at,"
+    " v.last_visited_at AS last_visit_at,"
+    " GREATEST(c.registered_on, (s.last_sale_at AT TIME ZONE 'UTC')::date,"
+    " (v.last_visited_at AT TIME ZONE 'UTC')::date) AS last_activity_on"
+    " FROM public.customer AS c"
+    " LEFT JOIN (SELECT customer_id, max(occurred_at) AS last_sale_at"
+    " FROM api_sales.purchase_line_v1 GROUP BY customer_id) AS s"
+    " USING (customer_id)"
+    " LEFT JOIN api_checkins.customer_last_visit_v1 AS v USING (customer_id)"
+    " WHERE c.anonymized_at IS NULL"
+    ") AS activity WHERE last_activity_on < %(inactive_before)s"
 )
 
 # The fields a correction may name; registered_on and customer_id are refused
@@ -86,6 +132,54 @@ def customer_json(row: tuple[Any, ...]) -> dict[str, Any]:
     }
 
 
+def floor_customer_json(row: tuple[Any, ...], role: str) -> dict[str, Any]:
+    customer = {"customer_id": str(row[0]), "name": row[1]}
+    if role == "LOYALTY_OFFICER":
+        customer.update({"email": row[2], "phone": row[3]})
+    return customer
+
+
+def card_json(row: tuple[Any, ...]) -> dict[str, Any]:
+    return {
+        "card_id": str(row[0]),
+        "customer_id": str(row[1]),
+        "code": row[2],
+        "status": row[3],
+        "issued_at": row[4],
+        "issued_by": str(row[5]),
+        "revoked_at": row[6],
+        "revoked_by": str(row[7]) if row[7] is not None else None,
+        "revocation_reason": row[8],
+    }
+
+
+def generate_card_code() -> str:
+    """Encode 128 CSPRNG bits as exactly 26 Crockford base32 characters."""
+
+    value = int.from_bytes(secrets.token_bytes(16), "big")
+    encoded = []
+    for _ in range(26):
+        value, digit = divmod(value, 32)
+        encoded.append(CROCKFORD[digit])
+    return "".join(reversed(encoded))
+
+
+CARD_COLUMNS = sql.SQL(", ").join(
+    sql.Identifier(name)
+    for name in (
+        "card_id",
+        "customer_id",
+        "code",
+        "status",
+        "issued_at",
+        "issued_by",
+        "revoked_at",
+        "revoked_by",
+        "revocation_reason",
+    )
+)
+
+
 def email_taken() -> ApiError:
     return ApiError(
         409,
@@ -95,10 +189,41 @@ def email_taken() -> ApiError:
     )
 
 
+def customer_anonymized() -> ApiError:
+    return ApiError(
+        409,
+        "customer_anonymized",
+        "The customer has been anonymized and accepts no change.",
+    )
+
+
+def relay_redis(url: str) -> redis.Redis:
+    """svc_customers on redis-state, with time for WAITAOF's two seconds.
+
+    The kit's request client gives up after 0.2 s, which suits a liveness
+    lookup but would fail every durable stream write.
+    """
+
+    parsed = urlsplit(url)
+    hostname = parsed.hostname or ""
+    if ":" in hostname:
+        hostname = "[" + hostname + "]"
+    netloc = hostname + ((":" + str(parsed.port)) if parsed.port else "")
+    return redis.Redis.from_url(
+        urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, "")),
+        username="svc_customers",
+        password=os.environ.get("REDIS_CUSTOMERS_PASSWORD"),
+        socket_connect_timeout=1,
+        socket_timeout=3,
+    )
+
+
 def refusal(error: psycopg.errors.IntegrityError) -> ApiError | None:
     """The contract's error for a constraint of customer, or None."""
 
     constraint = error.diag.constraint_name
+    if isinstance(error, errors.CheckViolation) and constraint == ANONYMIZED_CHECK:
+        return customer_anonymized()
     if isinstance(error, errors.UniqueViolation) and constraint == EMAIL_KEY:
         return email_taken()
     if isinstance(error, errors.ForeignKeyViolation) and constraint == CHANNEL_FKEY:
@@ -115,10 +240,24 @@ def refusal(error: psycopg.errors.IntegrityError) -> ApiError | None:
             "The parsed body violates the request schema.",
             [{"field": "email", "code": "invalid_format"}],
         )
+    if isinstance(error, errors.UniqueViolation) and constraint == ACTIVE_CARD_KEY:
+        return ApiError(
+            409,
+            "active_card_exists",
+            "The customer already has an active loyalty card.",
+            [{"field": "customer_id", "code": "already_active"}],
+        )
+    if isinstance(error, errors.ForeignKeyViolation) and constraint == CUSTOMER_FKEY:
+        return ApiError(
+            422,
+            "unknown_customer",
+            "The customer does not exist.",
+            [{"field": "customer_id", "code": "not_found"}],
+        )
     return None
 
 
-def create_app() -> Flask:
+def create_app(*, start_relay: bool | None = None) -> Flask:
     app = Flask(__name__)
     configure_logging()
     holder: dict[str, Kit] = {}
@@ -140,6 +279,30 @@ def create_app() -> Flask:
     )
     holder["kit"] = kit
     app.extensions["mosaiq_kit"] = kit
+
+    @app.after_request
+    def add_page_head(response):
+        """Add the list-wide fields that come before the items, outside the
+        kit's generic Page: a customer's `loyalty_state`, or the retention
+        candidates' `as_of` and `inactive_before`, in the contract's order."""
+
+        head = getattr(g, "page_head", None)
+        if not head or response.status_code != 200:
+            return response
+        if response.mimetype == "application/json":
+            payload = response.get_json()
+            payload = {**head, **payload}
+            response.set_data(json.dumps(payload, separators=(",", ":")))
+        elif response.mimetype == "application/xml":
+            root = etree.fromstring(response.data)
+            for index, (name, value) in enumerate(head.items()):
+                element = etree.Element(etree.QName(kit.contract.namespace, name))
+                element.text = value
+                root.insert(index, element)
+            response.set_data(
+                etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+            )
+        return response
 
     @kit.operation("searchCustomers")
     def search_customers() -> Page:
@@ -193,6 +356,238 @@ def create_app() -> Flask:
         if row is None:
             raise not_found()
         return Representation("Customer", customer_json(row))
+
+    @kit.operation("searchFloorCustomers")
+    def search_floor_customers() -> Page:
+        raw_q = request.args.get("q")
+        q = raw_q.strip() if raw_q is not None else ""
+        if raw_q is None:
+            raise ApiError(
+                422,
+                "invalid_query",
+                "q is required.",
+                [{"field": "q", "code": "required"}],
+            )
+        if len(q) < 3:
+            raise ApiError(
+                422,
+                "invalid_query",
+                "q is shorter than its allowed length.",
+                [{"field": "q", "code": "too_short"}],
+            )
+        if kit.size > 20:
+            raise ApiError(
+                422,
+                "invalid_pagination",
+                "The pagination values are outside their allowed ranges.",
+                [{"field": "size", "code": "out_of_range"}],
+            )
+        role = str(g.principal["role"])
+        pattern = like_pattern(q)
+        if role == "SALES_ASSOCIATE":
+            filters = sql.SQL("WHERE name ILIKE %(pattern)s ESCAPE '\\'")
+        else:
+            filters = sql.SQL(
+                "WHERE (name ILIKE %(pattern)s ESCAPE '\\'"
+                " OR email ILIKE %(pattern)s ESCAPE '\\'"
+                " OR phone ILIKE %(pattern)s ESCAPE '\\')"
+            )
+        params = {"pattern": pattern}
+        offset = (kit.page - 1) * kit.size
+        with kit.db.connection() as connection:
+            total = connection.execute(
+                sql.SQL("SELECT count(*) FROM public.customer {filters}").format(
+                    filters=filters
+                ),
+                params,
+            ).fetchone()[0]
+            rows = connection.execute(
+                sql.SQL(
+                    "SELECT customer_id, name, email, phone FROM public.customer"
+                    " {filters} ORDER BY name, customer_id"
+                    " LIMIT %(limit)s OFFSET %(offset)s"
+                ).format(filters=filters),
+                params | {"limit": kit.size, "offset": offset},
+            ).fetchall()
+        return Page(
+            "FloorCustomers",
+            "FloorCustomer",
+            "customers",
+            [floor_customer_json(row, role) for row in rows],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("listRetentionCandidates")
+    def list_retention_candidates() -> Page:
+        """ADR-0066 section 3: who has had no sale and no visit for 36 months.
+
+        A read that rewrites nothing. One transaction, so `as_of` and every
+        count below come from one snapshot; the cutoff is computed by
+        PostgreSQL, which clamps a month end (29 February less 36 months is
+        28 February).
+        """
+
+        offset = (kit.page - 1) * kit.size
+        with kit.db.transaction() as connection:
+            as_of, inactive_before = connection.execute(
+                "SELECT now(), ((now() AT TIME ZONE 'UTC')::date"
+                " - make_interval(months => %s))::date",
+                (RETENTION_MONTHS,),
+            ).fetchone()
+            params = {"inactive_before": inactive_before}
+            total = connection.execute(
+                sql.SQL("SELECT count(*) FROM ({}) AS c").format(RETENTION_ACTIVITY),
+                params,
+            ).fetchone()[0]
+            rows = connection.execute(
+                sql.SQL(
+                    "SELECT customer_id, registered_on, last_sale_at, last_visit_at,"
+                    " last_activity_on FROM ({}) AS c"
+                    " ORDER BY last_activity_on, customer_id"
+                    " LIMIT %(limit)s OFFSET %(offset)s"
+                ).format(RETENTION_ACTIVITY),
+                params | {"limit": kit.size, "offset": offset},
+            ).fetchall()
+        g.page_head = {
+            "as_of": wire_value(as_of),
+            "inactive_before": wire_value(inactive_before),
+        }
+        return Page(
+            "RetentionCandidates",
+            "RetentionCandidate",
+            "candidates",
+            [
+                {
+                    "customer_id": str(row[0]),
+                    "registered_on": row[1],
+                    "last_sale_at": row[2],
+                    "last_visit_at": row[3],
+                    "last_activity_on": row[4],
+                }
+                for row in rows
+            ],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getFloorCustomer")
+    def get_floor_customer(customer_id: Any) -> Representation:
+        with kit.db.connection() as connection:
+            row = connection.execute(
+                "SELECT customer_id, name, email, phone FROM public.customer"
+                " WHERE customer_id = %s",
+                (customer_id,),
+            ).fetchone()
+        if row is None:
+            raise not_found()
+        return Representation(
+            "FloorCustomer", floor_customer_json(row, str(g.principal["role"]))
+        )
+
+    @kit.operation("issueLoyaltyCard")
+    def issue_loyalty_card() -> Representation:
+        try:
+            with kit.db.transaction() as connection:
+                row = connection.execute(
+                    sql.SQL(
+                        "INSERT INTO customers.loyalty_card"
+                        " (customer_id, code, issued_by) VALUES (%s, %s, %s)"
+                        " RETURNING {}"
+                    ).format(CARD_COLUMNS),
+                    (
+                        kit.body["customer_id"],
+                        generate_card_code(),
+                        str(g.principal["sub"]),
+                    ),
+                ).fetchone()
+        except psycopg.errors.IntegrityError as error:
+            mapped = refusal(error)
+            if mapped is None:
+                raise
+            raise mapped from None
+        return Representation("LoyaltyCard", card_json(row), status=201)
+
+    @kit.operation("listLoyaltyCards")
+    def list_loyalty_cards() -> Page:
+        customer_id = request.args["customer_id"]
+        offset = (kit.page - 1) * kit.size
+        with kit.db.connection() as connection:
+            summary = connection.execute(
+                "SELECT count(*), bool_or(status = 'ACTIVE')"
+                " FROM customers.loyalty_card WHERE customer_id = %s",
+                (customer_id,),
+            ).fetchone()
+            rows = connection.execute(
+                sql.SQL(
+                    "SELECT {} FROM customers.loyalty_card"
+                    " WHERE customer_id = %s"
+                    " ORDER BY issued_at DESC, card_id DESC LIMIT %s OFFSET %s"
+                ).format(CARD_COLUMNS),
+                (customer_id, kit.size, offset),
+            ).fetchall()
+        total, has_active = summary
+        g.page_head = {
+            "loyalty_state": (
+                "NONE" if total == 0 else "ACTIVE" if has_active else "REVOKED"
+            )
+        }
+        return Page(
+            "LoyaltyCards",
+            "LoyaltyCard",
+            "loyalty_cards",
+            [card_json(row) for row in rows],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("lookupLoyaltyCard")
+    def lookup_loyalty_card() -> Representation:
+        with kit.db.connection() as connection:
+            row = connection.execute(
+                "SELECT card_id, customer_id, status"
+                " FROM customers.loyalty_card WHERE code = %s",
+                (kit.body["code"],),
+            ).fetchone()
+        if row is None:
+            raise card_not_found("code")
+        if row[2] == "REVOKED":
+            raise ApiError(
+                409,
+                "card_revoked",
+                "The loyalty card was revoked.",
+                [{"field": "code", "code": "revoked"}],
+            )
+        return Representation(
+            "LoyaltyCardLookup",
+            {"card_id": str(row[0]), "customer_id": str(row[1])},
+        )
+
+    @kit.operation("revokeLoyaltyCard")
+    def revoke_loyalty_card(card_id: Any) -> Representation:
+        with kit.db.transaction() as connection:
+            row = connection.execute(
+                sql.SQL(
+                    "UPDATE customers.loyalty_card SET status = 'REVOKED',"
+                    " revoked_at = CURRENT_TIMESTAMP, revoked_by = %s,"
+                    " revocation_reason = %s"
+                    " WHERE card_id = %s AND status = 'ACTIVE' RETURNING {}"
+                ).format(CARD_COLUMNS),
+                (str(g.principal["sub"]), kit.body["reason"], card_id),
+            ).fetchone()
+            if row is None:
+                row = connection.execute(
+                    sql.SQL(
+                        "SELECT {} FROM customers.loyalty_card WHERE card_id = %s"
+                    ).format(CARD_COLUMNS),
+                    (card_id,),
+                ).fetchone()
+        if row is None:
+            raise card_not_found("card_id")
+        return Representation("LoyaltyCard", card_json(row))
 
     @kit.operation("registerCustomer")
     def register_customer() -> Representation:
@@ -274,6 +669,38 @@ def create_app() -> Flask:
             raise not_found()
         return Representation("Customer", customer_json(row))
 
+    @kit.operation("anonymizeCustomer")
+    def anonymize_customer(customer_id: Any) -> Representation:
+        with kit.db.transaction() as connection:
+            outcome, anonymized_at = anonymization.anonymize(
+                connection, g.principal, str(customer_id), kit.body["reason"]
+            )
+        return Representation(
+            "Anonymization",
+            {
+                "customer_id": str(customer_id),
+                "outcome": outcome,
+                "anonymized_at": anonymized_at,
+            },
+        )
+
+    enabled = (
+        os.environ.get("OUTBOX_RELAY_ENABLED", "true").lower()
+        in {"1", "true", "yes", "on"}
+        if start_relay is None
+        else start_relay
+    )
+    if enabled and kit.db.dsn:
+        relay = OutboxRelay(
+            kit.db.dsn,
+            "customers",
+            [STREAM],
+            relay_redis(
+                os.environ.get("REDIS_STATE_URL", "redis://redis-state:6379/0")
+            ),
+        )
+        relay.start()
+        app.extensions["customers_relay"] = relay
     return app
 
 
@@ -298,4 +725,13 @@ def not_found() -> ApiError:
         "customer_not_found",
         "The customer does not exist.",
         [{"field": "customer_id", "code": "not_found"}],
+    )
+
+
+def card_not_found(field: str) -> ApiError:
+    return ApiError(
+        404,
+        "card_not_found",
+        "No loyalty card matches.",
+        [{"field": field, "code": "not_found"}],
     )

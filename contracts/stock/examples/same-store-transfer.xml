@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>same_store_transfer</code>
+  <message>A transfer needs two different stores.</message>
+  <correlation_id>corr-same-store-transfer</correlation_id>
+  <details>
+    <field>destination_store_id</field>
+    <code>same_as_origin</code>
+  </details>
+</Error>

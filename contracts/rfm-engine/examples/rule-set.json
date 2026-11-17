@@ -1,0 +1,65 @@
+{
+  "rule_set_id": 3,
+  "name": "Seeded bands, 180-day window",
+  "window_days": 180,
+  "recency_boundaries": [
+    14,
+    35,
+    70,
+    120
+  ],
+  "frequency_boundaries": [
+    8,
+    5,
+    3,
+    2
+  ],
+  "monetary_boundaries": [
+    "1200.00",
+    "800.00",
+    "450.00",
+    "200.00"
+  ],
+  "bands": [
+    {
+      "label_code": "CHAMPION",
+      "r_min": 5,
+      "r_max": 5,
+      "f_min": 5,
+      "f_max": 5,
+      "m_min": 4,
+      "m_max": 5
+    },
+    {
+      "label_code": "LOYAL",
+      "r_min": 4,
+      "r_max": 5,
+      "f_min": 4,
+      "f_max": 5,
+      "m_min": 3,
+      "m_max": 5
+    },
+    {
+      "label_code": "AT_RISK",
+      "r_min": 2,
+      "r_max": 3,
+      "f_min": 4,
+      "f_max": 5,
+      "m_min": 1,
+      "m_max": 5
+    },
+    {
+      "label_code": "LOST",
+      "r_min": 1,
+      "r_max": 1,
+      "f_min": 1,
+      "f_max": 3,
+      "m_min": 1,
+      "m_max": 2
+    }
+  ],
+  "fallback_label_code": "LOST",
+  "published": true,
+  "created_at": "2026-09-01T12:00:00Z",
+  "created_by": null
+}

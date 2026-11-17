@@ -1,0 +1,15 @@
+{
+  "customer_id": "2f6c1d90-4a8e-4c3b-9d57-0b1e6a7c8d12",
+  "state": "unassigned",
+  "rule_set_id": 3,
+  "r_days": null,
+  "f_count": 0,
+  "m_total": "0.00",
+  "r_score": null,
+  "f_score": null,
+  "m_score": null,
+  "label_code": null,
+  "via_fallback": null,
+  "computed_at": "2026-10-30T02:00:04Z",
+  "next_change_at": null
+}

@@ -1,0 +1,6 @@
+{
+  "code": "underpowered_not_acknowledged",
+  "message": "The plan is underpowered; assign it only with acknowledge_underpowered true.",
+  "correlation_id": "corr-underpowered-not-acknowledged",
+  "details": []
+}

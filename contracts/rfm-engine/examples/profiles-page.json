@@ -1,0 +1,54 @@
+{
+  "profiles": [
+    {
+      "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+      "state": "scored",
+      "rule_set_id": 3,
+      "r_days": 30,
+      "f_count": 9,
+      "m_total": "842.50",
+      "r_score": 4,
+      "f_score": 5,
+      "m_score": 4,
+      "label_code": "LOYAL",
+      "via_fallback": false,
+      "computed_at": "2026-10-30T14:22:05Z",
+      "next_change_at": "2026-11-05T08:10:00Z"
+    },
+    {
+      "customer_id": "2f6c1d90-4a8e-4c3b-9d57-0b1e6a7c8d12",
+      "state": "unassigned",
+      "rule_set_id": 3,
+      "r_days": null,
+      "f_count": 0,
+      "m_total": "0.00",
+      "r_score": null,
+      "f_score": null,
+      "m_score": null,
+      "label_code": null,
+      "via_fallback": null,
+      "computed_at": "2026-10-30T02:00:04Z",
+      "next_change_at": null
+    },
+    {
+      "customer_id": "9c41e7b2-5d36-4f08-a1b9-3e2d7c6f5a40",
+      "state": "pending",
+      "rule_set_id": null,
+      "r_days": null,
+      "f_count": null,
+      "m_total": null,
+      "r_score": null,
+      "f_score": null,
+      "m_score": null,
+      "label_code": null,
+      "via_fallback": null,
+      "computed_at": null,
+      "next_change_at": null
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 3
+  }
+}

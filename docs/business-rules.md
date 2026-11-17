@@ -130,6 +130,21 @@ date is not in the future.
 lower-cases the address it writes and refuses a future date. **Verified** —
 `services/customers/tests/test_rules.py`.
 
+Retention ends in anonymization, never deletion (ADR-0066 section 3): an
+administrator anonymizes a customer in place, after a request or 36 months with
+no sale and no check-in. The name becomes `Anonymized customer`, the email, phone
+and account link are removed, the active loyalty card is revoked and the identity
+is redacted from the customer's audit entries, while the key, the sales, R, F and
+M and the segment history stay, so every figure still reconciles. It is
+irreversible and idempotent, and it is recorded as `CUSTOMER_ANONYMIZED` and
+`AUDIT_PAYLOAD_REDACTED` domain events naming the administrator.
+
+**Enforced:** `customer_anonymized_identity_check` (a marked row holds no
+identity), `trg_customer_anonymized_is_final` (a marked row never changes) and
+`trg_loyalty_card_not_for_anonymized`, for every writer; the service refuses a
+correction or a card with 409 `customer_anonymized`. **Verified** —
+`services/customers/tests/test_anonymization.py`.
+
 ### RN-09 — Deleting a sale removes its lines
 A sale line has no meaning without its sale.
 
@@ -311,9 +326,14 @@ sales in the window are clustered; the rest are the unassigned result (RN-21).
 | A customer is equidistant from two centroids | They go to the lower-numbered cluster | `tie_break` |
 | Fewer customers have sales than k | The run is refused and nothing is written | — |
 
-Quality is recorded as inertia, mean silhouette (absent above 2,000 customers,
-where it would be quadratic in pure Python, and for a single cluster, where it is
-undefined) and the cluster sizes, largest first. Sizes are a list and not a mapping
+Quality is recorded as inertia, mean silhouette and the cluster sizes, largest
+first. The silhouette is absent only for a single cluster, where it is undefined.
+Up to 2,000 customers it compares every customer with every other. Above 2,000,
+where that would be quadratic in pure Python, it is the mean over a sample of 1,000
+customers, each still compared with every clustered customer, chosen by a shuffle
+seeded from the run's seed, so the same run gives the same figure; the run records
+`quality.silhouette_sampled`, `quality.silhouette_sample_size` and
+`quality.silhouette_sample_seed`, and an exact silhouette records none of them (#815). Sizes are a list and not a mapping
 by cluster number: a raw cluster number means something only inside one fit and is
 never something a report can key on (ADR-0018). A clustered customer carries their
 raw recency, frequency and monetary values and no quintile scores, which are
@@ -481,14 +501,31 @@ threshold's edge, the rank-only case, K-means rows without scores, absent versus
 unassigned), `tests/test_migration_explanation_route.py`, and
 `tests/test_customer_timeline_route.py` for the links. · `F7-08`
 
-### RN-40 — A recommendation is in stock at the customer's usual store, matches a stated signal, and says why
+### RN-40 — A recommendation is available at the reference store and channel, matches a stated signal, and says why
 A product is recommended to a customer only when all of these hold:
 
-* **It is eligible.** It is active, has a *positive* quantity on hand in the customer's
-  **usual store**, and the customer has not already bought it in the window. The usual
-  store is the consumption profile's dominant store (RN-35), so it is the store the
-  profile names. A product with no stock there never appears, whatever it scores, and
-  neither does one that only another store holds.
+* **It is eligible.** It is active, has a *positive* quantity on hand in the **reference
+  store**, and the customer has not already bought it in the window. By default the
+  reference store is the customer's **usual store**, the consumption profile's dominant
+  store (RN-35), so it is the store the profile names. A product with no stock there
+  never appears, whatever it scores, and neither does one that only another store holds.
+  The web implements this default path and nothing else.
+* **It is available where it is judged** (ADR-0067, extending ADR-0061). The caller of
+  recommendations-service may name the reference store, which then takes precedence over
+  the usual store, and a reference channel, which is never defaulted from the customer's
+  habits. A product is available when its commercial status allows the sale, the store's
+  status permits sales, the store enables the channel when one is given, and on-hand is
+  above zero; hours are not part of it. A product that matches a signal and fails is
+  excluded for exactly one reason, taken in this order: `already_bought`, `inactive`,
+  `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`,
+  `PERSONALIZATION_WITHDRAWN`. A customer who objected to personalization is not
+  recommended to and nothing about them is read. When the reason is `not_sellable`,
+  `channel_not_enabled` or `out_of_stock`, one substitute (a declared substitute relation,
+  itself available and not bought) may be offered in its place, marked as an alternative
+  and naming the product it replaces; another store holding the product is reported only
+  as `elsewhere`, never as a recommendation. Each decision is recorded with its
+  explanation. Decided in ADR-0067; parity with the web holds on the default path only
+  (E-17). Published in `contracts/recommendations/` (F24-03).
 * **It is relevant.** At least one of three signals says why *this* customer: other
   customers whose **open** assignment carries the same label bought it in the window
   (*segment*); it is in a category the customer registered an interest in (*preferred
@@ -789,6 +826,14 @@ column. The application only ever adds conversions, and the database enforces
 it: as for exposures (ADR-0027), `retail_app` holds no `UPDATE` or `DELETE`
 privilege on `experiment_conversion` (ADR-0050).
 
+**Conversion, net of reversals (F25-11, ADR-0069).** The experimentation service
+evaluates the same window, and reads sales net (ADR-0062). A sale reversed in full
+before an evaluation is not recorded. A sale reversed after it converted stays
+recorded and is never changed; it counts as a conversion only while its net amount
+is above zero, read when the conversion is listed (`counts`, `net_amount`, `as_of`).
+A customer whose only qualifying sale was reversed in full is *pending* while their
+window is open and *not converted* once it has closed.
+
 **Uplift (F11-07).** The result is intent to treat: each treatment arm's
 conversion rate minus the control's, over every assigned customer whether or not
 they were exposed, with a 95% interval and a two-sided test at alpha 0.05 (each
@@ -905,14 +950,28 @@ transaction id names a `SEEDED` sale is refused as
 `duplicate: <id> is a seeded sale`, even when it repeats that sale's header
 exactly, so a sale's lines always share its one origin.
 
+The service import is a second enforcer of this rule
+([ADR-0070](adr/0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md)).
+sales-service takes a file's rows as numbered chunks and applies each one through the
+same checks as `POST /v1/sales`, one row and one transaction at a time. Every refusal
+is reported by line, column and reason, and a repeat inside the file is told apart
+from a sale already recorded. Its sales carry the source id prefix `svc-sales:imp:`,
+and the database refuses the same file through both paths. The web's page does not
+change.
+
 **Enforced:** application — `web/services/ingestion.py` and
 `web/services/sales_csv.py`; parameterized reads in `web/db/sales.py`; the
 header lock in `get_transaction_by_source_id`; and the upper bound in
-`web/db/segments.py`. Database — `transaction.data_origin` is `NOT NULL` with
+`web/db/segments.py`. The service import's contract is
+`contracts/sales/openapi.yaml` (#852), and sales-service enforces it in
+`services/sales/app/imports.py`, `rows.py` and `import_worker.py`, with the one sale
+rule in `salerules.py` (F26-08, #853). Database — `transaction.data_origin` is `NOT NULL` with
 no default and `CHECK IN ('OBSERVED','SEEDED')`. **Verified** — by
 `tests/test_ingestion_service.py`, `tests/test_sales_csv.py`,
 `tests/test_sales_db.py`, `tests/test_segments_pipeline_db.py` and
-`tests/test_data_origin_postgres.py`. · #355 · #356 · #559
+`tests/test_data_origin_postgres.py`; for the service import, by
+`services/sales/tests/test_imports.py` and `test_import_golden.py`, which replays
+the web's captured outcomes as one-row imports. · #355 · #356 · #559
 
 ## Consumption profile
 
@@ -1216,11 +1275,21 @@ through its pinned kit, failing closed with 503 when Redis is unreachable
 ### RN-53 — A store has at most one location, with valid coordinates and a 25–2000 m geofence, set by the administrator only
 A store's location is optional. When set, its latitude lies between −90 and
 90, its longitude between −180 and 180, and its geofence radius between 25 and
-2000 metres. Only `ADMIN` sets or clears it.
+2000 metres. A store also has one operating status (`OPEN`,
+`TEMPORARILY_CLOSED` or `CLOSED`), weekly opening hours (at most one interval
+per day, each closing later than it opens, in one IANA time zone), a set of
+enabled channels, and a maximum discount from 0.00 to 100.00 percent or none.
+Only `ADMIN` sets or clears any of them, and each change is validated,
+audited and announced on `stores.v1.changed`. The status is separate from the
+directory's `is_active` flag, which only the web writes; a store sells only
+when both allow it and the channel is enabled.
 
-**Enforced:** stores-service (planned), ADR-0034 and ADR-0046 —
-`stores.store_location` is keyed by `store_id` and its CHECK constraints bound
-the three values; the service accepts location writes from `ADMIN` only.
+**Enforced:** stores-service, ADR-0034 and ADR-0046 — `stores.store_location`
+is keyed by `store_id` and its CHECK constraints bound the three values;
+`stores.store_status`, `stores.store_hours` with `stores.store_hours_interval`,
+`stores.store_channel_set` with `stores.store_channel`, and
+`stores.store_commercial_rule` hold the rest under their own keys and CHECKs;
+the service accepts writes from `ADMIN` only.
 · #398
 
 ### RN-54 — Each of a customer's preference sets is replaced atomically, as a whole set
@@ -1230,20 +1299,38 @@ the whole set at once with existing channels or categories, so no reader sees
 half an update, and two concurrent replacements of one set leave exactly one of
 them.
 
-**Enforced:** customer-preferences-service (planned), ADR-0034 — each
+**Enforced:** customer-preferences-service, ADR-0034 — each
 replacement runs in one transaction that takes
 `pg_advisory_xact_lock(290001, hashtext(customer_id::text))` before deleting
 and inserting the set; the foreign keys refuse an unknown channel or category.
 · #398
 
-### RN-55 — In-store engagement is recorded once per client event, attributed, voided rather than deleted, and summarized
-A `QR_SCAN` or `RECO_CLICK` from the floor is stored once per client event id,
-with the user who recorded it. A wrong event is voided with a reason and kept,
-and summaries count only events that are not voided.
+### RN-55 — A client-originated field event is recorded once per client id as a distinct fact that is never a sale, attributed, voided or closed rather than deleted, and summarized
+A client-originated field event is either in-store engagement or a capture
+incident.
 
-**Enforced:** engagement-service (planned), ADR-0038 — the unique
-`client_event_id` index and the `$jsonSchema` validator on `engagement_event`
-in MongoDB, and a void operation that never deletes. · #398
+An engagement event from the floor is one of eight kinds: `QR_SCAN`,
+`RECO_CLICK`, `STORE_VISIT`, `RECO_IMPRESSION`, `CAMPAIGN_EXPOSURE`, `CART_ADD`,
+`CART_REMOVE` and `NAVIGATION`. It is stored once per client event id, with the
+user who recorded it. Each kind is its own fact: an impression is never read as
+a visit or a click, and a cart is intent, never a sale. A confirmed transaction
+exists only in sales-service. A wrong event is voided with a reason and kept,
+and summaries count only events that are not voided, each kind under its own key.
+
+A capture incident is the device's report that a queued write was finally
+refused (ADR-0071). It is stored once per client incident id, and once per
+refused write (`source_type`, `source_operation_id`), with the user who reported
+it, and it carries no customer field and no free text. It is a claim, shown as
+reported, never a sale. A supervisor moves it forward only, `OPEN` to
+`ACKNOWLEDGED` to `RESOLVED`, each review appended to its history; it is closed,
+never deleted, and summaries count incidents by store, day, source and
+refusal code.
+
+**Enforced:** engagement-service (planned), ADR-0038, ADR-0071 — the unique
+`client_event_id` index and the `$jsonSchema` validator on `engagement_event`,
+and the unique `client_incident_id` and `(source_type, source_operation_id)`
+indexes and the `$jsonSchema` validator on `capture_incident`, in MongoDB; a
+void operation and a forward-only review that never delete. · #398, #798, #865
 
 ### RN-56 — A staff check-in is verified only within the store's geofence at acceptable accuracy, and overrides are append-only reviews
 The server computes the distance from the reported position to the store's
@@ -1255,6 +1342,215 @@ never updated or deleted.
 **Enforced:** check-ins-service (planned), ADR-0034 and ADR-0046 —
 `checkins.store_check_in` keeps the computed reason, and
 `checkins.check_in_review` is insert-only for `svc_checkins`. · #398
+
+### RN-65 — A customer's R, F and M are a function of their net purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation
+A customer's raw recency, frequency and monetary total, their scores and their
+label are computed from their accepted purchases net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)),
+in the rule set's window ending at the instant they are processed, scored against the
+boundaries that rule set froze and never against the population. A sale, a
+reversal, the passing of time, a published version or a verification recomputes
+the customer from those purchases, never from a delta, so replaying or reordering
+events cannot change a result. Only the customers an event touched, or whose
+`next_change_at` has passed, are recomputed. A full recomputation of the same rule
+set at the same instant gives every customer the same raw R, F and M and the same
+label as the profile held incrementally, and a verification reports each customer
+for whom it does not. A customer with no net purchase in the window is unassigned
+(RN-21).
+
+**Enforced:** rfm-engine (planned), ADR-0059 and
+[ADR-0063](adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md) —
+`rfm.customer_profile` is written only by `svc_rfm`, recomputing the touched
+customer from the net purchase view; `next_change_at` is an indexed column the
+daily pass selects on; `POST /v1/rfm-recalculations` and the weekly pass compare
+every customer with a recomputation and record the difference. · #743
+
+### RN-66 — A model version is immutable once published, carries what it was fitted on, and changes state only by an explicit publication or rollback
+A model version records its method, definition, window, seed, frozen scoring
+(quintile boundaries, or centroids and normalization bounds), dataset
+fingerprint and origin, metrics, reference distribution and owner. Once
+created, none of that changes, and no role edits or deletes a version. Exactly
+one version is published at a time. A version becomes published, and the
+previous one retired, only through a recorded publication; a rollback is a new
+publication of an earlier version, never an edit of history. Each publication
+names its version, the one it replaced, who made it and why. A comparison across
+versions is marked methodological and is never counted as behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)).
+Every drift alert is judged against the reference distribution of the version
+it concerns (F23-07). A report carries the statistic, the reference, the current
+window, the threshold and the version; a window that crosses a change of version is
+not compared, and "concept drift" is said only of an outcome-test result
+([ADR-0065](adr/0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md)).
+
+**Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
+`models.model_version` is insert-only for `svc_models` apart from its state, a
+partial unique index allows one `PUBLISHED` row, and `models.model_publication`
+is append-only. The contract of F22-10 (#805) specifies versions, training runs,
+metrics, publications and rollbacks, and that of F23-08 (#820) drift reports and
+alerts. ·
+#743
+
+### RN-67 — An experiment is frozen before it assigns anyone, a sale is attributed to one campaign at most, and an effect is claimed only against a control, with its interval
+An experiment is a frozen plan. Before anyone is assigned, one transaction stores
+its frame (the eligible customers at one recorded instant), its primary metric,
+estimator, alpha, power, minimum detectable effect, baseline, customers per arm,
+allocation and conversion window, and a salt
+([ADR-0068](adr/0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md)).
+Nothing in it changes afterwards, and its arms are fixed (RN-24, RN-49). The
+assignment is a function of that plan that anyone can recompute, is written once
+for the whole frame and never rewritten (RN-23, RN-42), and a customer is
+assigned in at most one experiment whose period overlaps. Assignment, exposure
+and conversion are separate append-only facts (RN-27,
+[ADR-0027](adr/0027-experiment-exposures-are-treatment-only-and-append-only.md),
+[ADR-0050](adr/0050-experiment-conversions-are-append-only-for-the-application-role.md)),
+and the control is never exposed. Outcomes are intent to treat, over every
+assigned customer, and net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+The primary result is computed once, at the analysis instant, and a later read is
+labelled as of its own time.
+
+A sale is attributed to at most one campaign
+([ADR-0069](adr/0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md)):
+a recorded conversion of a treatment assignment, with a recorded exposure before
+the sale, inside the experiment's own conversion window. The latest eligible
+exposure holds it, a tie going to the lower assignment id, and the holder is never
+reassigned or reopened, even when the sale is later reversed. Attribution is
+commercial. It is not a claim that the campaign caused the sale.
+
+An effect, an incremental amount or an uplift is stated only as a treatment's
+difference against a control, with its interval and its test, over every assigned
+customer. An experiment with no control compares two offers and states no effect.
+An underpowered experiment is flagged, and a non-significant result of one is
+inconclusive, never "no effect". Every report, export and contract field names
+whether it shows attribution or effect.
+
+**Enforced:** experimentation (planned), ADR-0059, ADR-0068 and ADR-0069 — the
+plan, assignments, conversions and attributions are written once and never
+rewritten, and a unique constraint leaves one holder per sale (F25-12). The
+contract of F25-06 (#837) specifies experiments, assignments, conversions,
+attributions and results in `contracts/experimentation/`, and a contract test
+fails if an attribution field says incremental or uplift, or if a field that
+carries an effect has no interval. RN-23, RN-24, RN-27, RN-48 and RN-49 stay as
+the web enforces them until the implementing stories rewrite them. · #746, #837
+
+### RN-68 — A KPI is reported only under its published definition, window and data origin, and only to the roles and stores allowed to read it
+A KPI has one published definition, one window and one data origin, and a report
+names the version of the definition it follows, so a figure cannot mean two
+things. Its figures are read only from the `api_*` views the producers publish,
+never from another boundary's table, and sales figures are net of reversals
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+A figure counted from facts, a sale credited to a campaign and an effect against
+a control are labelled `OBSERVED`, `ATTRIBUTED` and `INCREMENTAL`, and one kind
+is never presented as another. A report whose window holds a change of model
+version is marked, because the change is methodological and not behaviour
+([ADR-0064](adr/0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md)),
+and a figure that aggregates a seeded sale is marked synthetic
+([ADR-0052](adr/0052-data-provenance-is-recorded-per-sale-and-per-segmentation-run.md)).
+A role confined to its stores ([ADR-0060](adr/0060-four-store-profiles-map-to-four-roles-and-services-read-each-users-stores-per-request.md))
+reads only those stores, a store it is not assigned to is refused, and a KPI whose
+figure has no store is not readable by it. No report carries a customer.
+
+**Enforced:** analytics-kpis (planned), ADR-0059 — the catalog served at
+`GET /v1/kpi-reports/definitions` is the only statement of a figure, the service
+holds `SELECT` on `api_*` views only, and the store scope is read from
+`api_users.store_assignment_v1` on each request. · #747
+
+### RN-69 — Stock changes only through a sale, its reversal or a recorded movement with a reason, and is never negative
+`inventory` keeps one on-hand quantity per store and product, and it is never
+negative ([ADR-0061](adr/0061-stock-keeps-one-quantity-per-store-and-changes-only-through-a-sale-a-reversal-or-a-recorded-movement.md)).
+Beyond an accepted sale (RN-14), it changes only through a sale's reversal or a
+recorded movement: a receipt with its reference, a transfer between two stores, a
+count with who counted, an adjustment with a reason of damage, loss, expiry or
+correction, or a restock from a reversal. A transfer subtracts at the origin and adds
+at the destination in one transaction. A movement is never edited or deleted, and a
+repeated `Idempotency-Key` records nothing new. A product is available in a store and
+channel when its commercial status allows the sale, the store enables the channel,
+and its on-hand quantity is above zero.
+
+**Enforced:** stock-service (planned) and ADR-0061 — `stock.stock_movement` is
+insert-only, `definer_stock` applies a movement and its `inventory` change in one
+transaction, and quantities change by a conditional `UPDATE`, so two movements on
+one row add up. · #772
+
+### RN-70 — A sale is never edited or deleted: a cancellation or return is recorded beside it, and every reader counts net units
+A cancellation or a return is an append-only reversal recorded beside the sale
+([ADR-0062](adr/0062-a-reversal-is-a-recorded-fact-and-every-reader-counts-net-units.md)).
+It never edits or deletes the sale. A cancellation covers the whole sale on its
+calendar day, a return covers one or more lines within 30 days of the sale (both are
+configuration defaults), and each states a reason. Returning more units than remain is
+refused. A line's returned units are restored to stock in the same transaction unless
+the line says the goods cannot be resold. Every reader of accepted sales counts net
+units, `quantity - returned_quantity`, and a sale whose net amount is zero stops
+counting as a purchase. A repeated `Idempotency-Key` or `source_transaction_id`
+records nothing new.
+
+**Enforced:** sales-service (F21-03, #774) and ADR-0062 — `sales.sale_reversal` and
+`sales.sale_reversal_line` are insert-only; `transaction_line.returned_quantity` is
+written only by `svc_sales`, with `CHECK (returned_quantity BETWEEN 0 AND quantity)`,
+and equals the sum of the line's reversal lines at commit; a trigger refuses
+reversals that add up to more than was sold, even for a direct `INSERT`; the
+`net_sale_line` and `net_sale` views carry the one definition of net, which the web's
+reports read. · #770, #774
+
+### RN-71 — A promotion belongs to one campaign, discounts by a percentage above zero, and is valid only within its campaign's dates
+A promotion names exactly one campaign, a discount percentage greater than zero
+and at most 100, the stores and channels where it applies, and a validity that
+begins no earlier than its campaign's start and ends no later than its end
+(`starts_on` is never after `ends_on`). It is created and replaced only while its
+campaign is a draft (RN-32), and it is usable for a discount only while the
+campaign is `ACTIVE` and today lies within its validity, both ends inclusive. A
+promotion outside its campaign's dates is refused as `promotion_outside_campaign`.
+
+**Enforced:** campaigns-service (planned), ADR-0059 and ADR-0034 — the service
+checks the rule on every write, and `api_campaigns.active_promotion_v1` publishes
+only promotions of an `ACTIVE` campaign whose validity contains `CURRENT_DATE`. · #834
+
+### RN-72 — A customer visit is recorded only for an active loyalty code and a customer who has not withdrawn profiling, once per duplicate window, and holds no position
+A customer visit is a fact about a customer, kept apart from a staff check-in
+(RN-56): it names a customer, a store, a time and optionally a campaign, and
+never a position. It is recorded only when the loyalty code resolves to an
+active card and the customer's current `PROFILING` decision is granted
+(ADR-0066); a decision that was withdrawn, never recorded or cannot be read is
+not granted. Anything else is refused and nothing is stored. A second post for
+the same customer and store whose `occurred_at` lies within 2 hours of a
+recorded visit is the same visit, and the stored visit is returned unchanged. A
+visit is kept 36 months from `occurred_at`; after that it stops naming the
+customer and keeps its store, time and campaign.
+
+**Enforced:** check-ins-service, ADR-0034, ADR-0046 and ADR-0066 — the
+service checks the code through `api_customers.resolve_loyalty_code_v1` and the
+consent through `api_preferences.consent_state_v1` on every write, and the table
+holds no coordinate column. · #801
+
+### RN-73 — A customer's consent and restrictions change only by an appended, attributed decision, and a reader that cannot read them treats the purpose as withdrawn
+A customer's consent is recorded per purpose (`PERSONALIZATION`,
+`MARKETING_CONTACT` and `PROFILING`) and their restrictions per channel or
+interest category, each as an append-only log. A decision is a new row with the
+decision (`GRANTED` or `WITHDRAWN`, `IMPOSED` or `LIFTED`), the server's time, the
+app user who took it, read from the verified token and never from the body, and its
+source; a consent decision also says whether the customer said it (`EXPLICIT`) or
+the programme assigned it (`PROGRAMME_DEFAULT`). The current state of a purpose is
+its latest row, a withdrawal never rewrites the grant before it, and no role edits
+or deletes a row. A purpose with no row is not granted. Every boundary reads the
+state through the published views and, when it cannot, treats the purpose as
+withdrawn
+([ADR-0066](adr/0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md)).
+Inferred interests are kept apart from declared ones and never overwrite them. The
+two preference sets keep the whole-set replace of RN-54.
+
+**Enforced:** customer-preferences-service, ADR-0066 and ADR-0034 —
+`svc_preferences` holds `SELECT` and `INSERT` only on the logs
+(`preferences.consent_decision` and `preferences.restriction_decision`), a trigger
+refuses `UPDATE`, `DELETE` and `TRUNCATE` for every other role, the owner
+included, the service exposes no route that edits or removes a row, and a decision
+commits with its outbox row in one transaction. The published views
+`api_preferences.consent_state_v1` and `api_preferences.restriction_v1`, and the
+web's `public.consent_state`, show the latest decision, and a customer registered
+before the log existed has the programme default of ADR-0066 section 1. The
+contract of F21-16 (#794) specifies the operations, the views and the stream; the
+log, its grants and the backfill are F21-17 (#795). Declared interests are
+replaced as RN-54 says, and each replace that changes a set appends its before and
+after to `preferences.preference_change`. · #794
 
 ---
 
@@ -1276,7 +1572,17 @@ service's implementation story in Phase 14 (epic #399): RN-52 on auth-service,
 RN-53 on stores-service, RN-54 on customer-preferences-service, RN-55 on
 engagement-service and RN-56 on check-ins-service. RN-57 belongs to the
 experiment dashboard; RN-58 to RN-60 uniquely identify the K-means,
-migration-matrix and migration-explanation rules.
+migration-matrix and migration-explanation rules. RN-65 belongs to rfm-engine
+(#743) and waits on its implementation story, F22-05 (#779).
+
+migration-matrix and migration-explanation rules. RN-68 belongs to analytics-kpis (#747) and waits on its
+implementation story, F26-02 (#847).
+
+RN-67 belongs to experimentation (#746) and waits on its stand-up story, F25-07
+(#838).
+
+RN-72 belongs to check-ins (#800) and waits on its implementation story, F21-23
+(#801).
 
 RN-01 was the one to watch — a hard rule in `AGENTS.md` and a success criterion
 in [`scope.md`](scope.md) §7 that held only because the seed happened to contain

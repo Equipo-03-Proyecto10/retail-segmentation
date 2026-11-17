@@ -1,0 +1,131 @@
+{
+  "experiment_id": 19,
+  "campaign_id": 10,
+  "basis": "PRIMARY",
+  "status": "INVALID",
+  "as_of": "2026-10-19T08:00:08Z",
+  "elapsed_share": 1,
+  "data_origin": "OBSERVED",
+  "synthetic": false,
+  "design_kind": "CONTROLLED",
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": "REVENUE_PER_CUSTOMER",
+    "estimator": "DIFFERENCE_OF_PROPORTIONS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.05,
+    "power": 0.80,
+    "minimum_detectable_effect": 0.02,
+    "baseline": 0.10,
+    "baseline_std_dev": null,
+    "required_per_arm": 3839,
+    "smallest_detectable_effect": 0.0122,
+    "allocation": "EQUAL",
+    "conversion_window_days": 14,
+    "settle_days": 7,
+    "starts_on": "2026-09-28",
+    "analysis_at": "2026-10-19T08:00:00Z"
+  },
+  "arms": [
+    {
+      "arm_id": 81,
+      "kind": "CONTROL",
+      "name": "No offer",
+      "assigned": 10000,
+      "analysed": 10000,
+      "exposed": 0,
+      "converted": 1011,
+      "pending": 0,
+      "not_converted": 8989,
+      "conversion_rate": 0.1011,
+      "exposed_conversion_rate": null,
+      "net_revenue": "61200.00",
+      "revenue_per_customer": "6.12",
+      "revenue_std_dev": 30.00
+    },
+    {
+      "arm_id": 82,
+      "kind": "TREATMENT",
+      "name": "Welcome voucher",
+      "assigned": 10000,
+      "analysed": 9400,
+      "exposed": 8330,
+      "converted": 1052,
+      "pending": 0,
+      "not_converted": 8348,
+      "conversion_rate": 0.1119,
+      "exposed_conversion_rate": 0.1188,
+      "net_revenue": "60300.00",
+      "revenue_per_customer": "6.41",
+      "revenue_std_dev": 30.40
+    }
+  ],
+  "checks": {
+    "sample_ratio": {
+      "status": "FAILED",
+      "p_value": 0.000016,
+      "threshold": 0.001
+    },
+    "balance": [
+      {
+        "measure": "PRE_RECENCY_DAYS",
+        "arm_id": 82,
+        "reference_arm_id": 81,
+        "standardized_mean_difference": 0.010,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_PURCHASE_COUNT",
+        "arm_id": 82,
+        "reference_arm_id": 81,
+        "standardized_mean_difference": 0.007,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_NET_SPEND",
+        "arm_id": 82,
+        "reference_arm_id": 81,
+        "standardized_mean_difference": 0.013,
+        "flagged": false,
+        "threshold": 0.25
+      }
+    ]
+  },
+  "comparisons": [],
+  "effect_refusal": null,
+  "attribution": {
+    "label": "ATTRIBUTION",
+    "window_days": 14,
+    "arms": [
+      {
+        "arm_id": 82,
+        "attributed_sales": 801,
+        "attributed_customers": 744,
+        "attributed_revenue": "22830.40"
+      }
+    ],
+    "attributed_sales": 801,
+    "attributed_revenue": "22830.40",
+    "unattributed_conversions": 253,
+    "as_of": "2026-10-19T08:00:08Z"
+  },
+  "assumptions": [
+    {
+      "code": "INTENT_TO_TREAT",
+      "statement": "Every assigned customer counts in the arm they were assigned to, exposed or not."
+    },
+    {
+      "code": "NET_OF_REVERSALS",
+      "statement": "Conversions and revenue count sales net of reversals, as known at `as_of`."
+    },
+    {
+      "code": "SINGLE_LOOK",
+      "statement": "The result is read once, at the analysis instant; stopping early or adding a look needs a new experiment."
+    }
+  ],
+  "flags": [
+    "SAMPLE_RATIO_FAILED"
+  ]
+}

@@ -44,6 +44,19 @@
     </xs:restriction>
   </xs:simpleType>
 
+  <xs:simpleType name="LoyaltyCode">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9A-HJKMNP-TV-Z]{26}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="CampaignId">
+    <xs:restriction base="xs:integer">
+      <xs:minInclusive value="1"/>
+      <xs:maxInclusive value="2147483647"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:complexType name="CheckInRequest">
     <xs:sequence>
       <xs:element name="client_check_in_id" type="xs:string"/>
@@ -113,10 +126,42 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="CustomerVisitRequest">
+    <xs:sequence>
+      <xs:element name="loyalty_code" type="ci:LoyaltyCode"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="occurred_at" type="xs:dateTime"/>
+      <xs:element name="campaign_id" type="ci:CampaignId" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CustomerVisit">
+    <xs:sequence>
+      <xs:element name="visit_id" type="xs:string"/>
+      <xs:element name="customer_id" type="xs:string" minOccurs="0"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="campaign_id" type="ci:CampaignId" minOccurs="0"/>
+      <xs:element name="occurred_at" type="xs:dateTime"/>
+      <xs:element name="recorded_at" type="xs:dateTime"/>
+      <xs:element name="recorded_by" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CustomerVisits">
+    <xs:sequence>
+      <xs:element name="CustomerVisit" type="ci:CustomerVisit"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:element name="CheckInRequest" type="ci:CheckInRequest"/>
   <xs:element name="CheckIn" type="ci:CheckIn"/>
   <xs:element name="CheckInDetail" type="ci:CheckInDetail"/>
   <xs:element name="CheckIns" type="ci:CheckIns"/>
   <xs:element name="Review" type="ci:Review"/>
   <xs:element name="ReviewRequest" type="ci:ReviewRequest"/>
+  <xs:element name="CustomerVisitRequest" type="ci:CustomerVisitRequest"/>
+  <xs:element name="CustomerVisit" type="ci:CustomerVisit"/>
+  <xs:element name="CustomerVisits" type="ci:CustomerVisits"/>
 </xs:schema>

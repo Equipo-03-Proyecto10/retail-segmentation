@@ -1,0 +1,53 @@
+{
+  "from": "2026-10-12T03:00:00Z",
+  "to": "2026-10-21T03:00:00Z",
+  "migration": {
+    "customer_id": "e4d1b7a2-93c6-4f08-b5a9-2c6d8e0f1a37",
+    "previous_state": "label",
+    "previous_label_code": "CHAMPION",
+    "new_state": "label",
+    "new_label_code": "LOYAL",
+    "movement": "declined",
+    "changed_at": "2026-10-20T02:00:00Z",
+    "cause": "VERSION_CHANGE",
+    "previous_run_id": 42,
+    "new_run_id": 52,
+    "previous_model_version_id": 3,
+    "new_model_version_id": 4,
+    "methodological": true,
+    "responsible_variables": [],
+    "rank_only": true
+  },
+  "measures": [
+    {
+      "variable": "recency",
+      "unit": "days",
+      "previous_value": "6",
+      "new_value": "11",
+      "judgement": "stable",
+      "not_compared_reason": null,
+      "rank_changed": true,
+      "statement": "Recency is stable: 6 days against 11, within the 7-day drift, but its score moved because the model changed."
+    },
+    {
+      "variable": "frequency",
+      "unit": "purchases",
+      "previous_value": "12",
+      "new_value": "12",
+      "judgement": "stable",
+      "not_compared_reason": null,
+      "rank_changed": false,
+      "statement": "Frequency is stable at 12 purchases."
+    },
+    {
+      "variable": "monetary",
+      "unit": "MXN",
+      "previous_value": "2310.00",
+      "new_value": "2310.00",
+      "judgement": "stable",
+      "not_compared_reason": null,
+      "rank_changed": false,
+      "statement": "Monetary is stable at 2310.00 MXN."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "code": "unknown_sale",
+  "message": "The sale does not exist.",
+  "correlation_id": "corr-unknown-sale",
+  "details": [
+    {
+      "field": "sale_id",
+      "code": "unknown"
+    }
+  ]
+}

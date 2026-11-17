@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>database_unavailable</code>
+  <message>The analytics database is unavailable.</message>
+  <correlation_id>corr-kpi-503b</correlation_id>
+</Error>

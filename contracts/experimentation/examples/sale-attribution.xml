@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleAttribution xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <attribution_id>8801</attribution_id>
+  <sale_id>90412</sale_id>
+  <experiment_id>12</experiment_id>
+  <campaign_id>4</campaign_id>
+  <assignment_id>70431</assignment_id>
+  <customer_id>c0a80001-0000-4000-8000-000000000101</customer_id>
+  <arm_id>32</arm_id>
+  <exposed_at>2026-10-02T11:05:00Z</exposed_at>
+  <sold_at>2026-10-03T15:20:11Z</sold_at>
+  <window_closes_at>2026-10-15T08:00:00Z</window_closes_at>
+  <net_amount>42.50</net_amount>
+  <counts>true</counts>
+  <attributed_at>2026-10-15T08:05:00Z</attributed_at>
+  <label>ATTRIBUTION</label>
+  <as_of>2026-10-22T08:00:07Z</as_of>
+</SaleAttribution>

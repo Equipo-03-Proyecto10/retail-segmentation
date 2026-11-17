@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>version_not_draft</code>
+  <message>Only a DRAFT version can be published; a retired version is restored by a rollback.</message>
+  <correlation_id>corr-version-not-draft</correlation_id>
+</Error>

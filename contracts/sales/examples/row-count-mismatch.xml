@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>row_count_mismatch</code>
+  <message>The 2 chunks of import 17 hold 8 rows, and the import announced 9. Cancel it and open a new import with the numbers of the file.</message>
+  <correlation_id>corr-row-count-mismatch</correlation_id>
+  <details>
+    <field>total_rows</field>
+    <code>mismatch</code>
+  </details>
+</Error>

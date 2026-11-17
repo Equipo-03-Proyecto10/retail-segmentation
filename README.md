@@ -83,7 +83,7 @@ Compose (Android) · TypeScript and Electron (desktop) · CentOS 10 Stream on GC
 | The accepted-exceptions register (E-01 to E-22) | [`docs/services/README.md`](docs/services/README.md#accepted-exceptions-register) |
 | The decisions of the distributed delivery, ADR-0034 to ADR-0046 | [`docs/adr/`](docs/adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md); the list is in [`docs/services/README.md`](docs/services/README.md) |
 | Scope of the distributed delivery | [`docs/scope-delivery-2-distributed.md`](docs/scope-delivery-2-distributed.md) |
-| The benchmark report, Flask against Rust | [`docs/evidence/products-reads-flask-vs-rust.md`](docs/evidence/products-reads-flask-vs-rust.md), method in [`bench/README.md`](bench/README.md) |
+| The benchmark reports, Flask against Rust | [`docs/evidence/products-reads-flask-vs-rust-x86.md`](docs/evidence/products-reads-flask-vs-rust-x86.md) (F15-03: the 160 MB limit enforced, CPU, PSS, five calibration passes) and the earlier [`docs/evidence/products-reads-flask-vs-rust.md`](docs/evidence/products-reads-flask-vs-rust.md) (F15-02, a Raspberry Pi); method in [`bench/README.md`](bench/README.md) |
 | The demonstration document | [`docs/demo-system-guide.md`](docs/demo-system-guide.md) (the web system's journey; the distributed demonstration is F18-05) |
 
 ## Analytics modules

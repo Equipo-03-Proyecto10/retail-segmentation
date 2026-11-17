@@ -1,0 +1,110 @@
+{
+  "kpi": "net-sales",
+  "definition_version": 1,
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "granularity": null,
+  "group_by": [
+    "store"
+  ],
+  "generated_at": "2026-10-31T18:00:00Z",
+  "store_scope": {
+    "restricted": true,
+    "store_ids": [
+      1,
+      3
+    ]
+  },
+  "data_origin": {
+    "views": [
+      "api_sales.net_purchase_line_v1",
+      "api_users.store_assignment_v1"
+    ],
+    "synthetic": true,
+    "spans_model_versions": false,
+    "model_version_ids": []
+  },
+  "rows": [
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 1,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": true,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "201875.25",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "1530",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "655",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    },
+    {
+      "period_start": null,
+      "period_end": null,
+      "segment_code": null,
+      "segment_state": null,
+      "from_segment_code": null,
+      "store_id": 3,
+      "channel_id": null,
+      "campaign_id": null,
+      "model_version_id": null,
+      "synthetic": false,
+      "measures": [
+        {
+          "code": "net_amount",
+          "kind": "OBSERVED",
+          "unit": "currency",
+          "value": "0.00",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_units",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        },
+        {
+          "code": "net_orders",
+          "kind": "OBSERVED",
+          "unit": "count",
+          "value": "0",
+          "lower": null,
+          "upper": null
+        }
+      ]
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

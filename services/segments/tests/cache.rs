@@ -388,3 +388,130 @@ async fn reads_answer_the_same_from_postgres_when_redis_cache_is_out() {
 
     clear_cache(&mut admin).await;
 }
+
+async fn pending(admin: &mut MultiplexedConnection) -> i64 {
+    let summary: redis::Value = redis::cmd("XPENDING")
+        .arg(STREAM)
+        .arg("segments")
+        .query_async(admin)
+        .await
+        .unwrap();
+    match summary {
+        redis::Value::Array(items) => redis::from_redis_value(&items[0]).unwrap(),
+        other => panic!("XPENDING answered {other:?}"),
+    }
+}
+
+/// #764 criterion 3: re-applying an event is idempotent by re-read (ADR-0044).
+///
+/// The production handler (spawn_stream_tasks) re-reads the latest run. It
+/// runs in a process that does not acknowledge it, as one that dies after its
+/// effect and before XACK leaves it; the restarted process, a fresh consumer
+/// with an empty `event_id` memory, applies the entry again from its pending
+/// list; then a duplicate entry, as a relay that crashed between XADD and its
+/// UPDATE appends, is applied once more. Each time reads serve the same run
+/// and the same list.
+#[tokio::test]
+async fn reapplying_an_event_leaves_the_same_run_and_list() {
+    let _turn = REDIS_USER.lock().await;
+    let Some(redis_url) = redis_url() else {
+        return;
+    };
+    let db_url = owner_url();
+    let mut owner = connect(&db_url).await;
+    let db = service_database(&db_url);
+    let mut admin = admin(&redis_url).await;
+    let password = load_acl(&mut admin).await;
+    let _: i64 = redis::cmd("DEL")
+        .arg(STREAM)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    clear_cache(&mut admin).await;
+    std::env::set_var("MOSAIQ_SERVICE_NAME", "segments");
+
+    let reader = Reader::new(Some(service_cache(&redis_url, &password)));
+    let consumer = |dies: bool| {
+        let (reader, db_url) = (reader.clone(), db_url.clone());
+        let (url, password) = (redis_url.clone(), password.clone());
+        async move {
+            StreamConsumer::new(
+                service_redis(&url, &password).await,
+                STREAM,
+                move |_event: HashMap<String, String>| {
+                    let (reader, db) = (reader.clone(), service_database(&db_url));
+                    async move {
+                        reader.refresh_run(&db).await.map(|_| ())?;
+                        if dies {
+                            return Err(mosaiq_kit::ApiError::new(
+                                500,
+                                "crashed",
+                                "the process died before XACK",
+                            ));
+                        }
+                        Ok(())
+                    }
+                },
+            )
+            .unwrap()
+        }
+    };
+    consumer(false).await.run_once(Some(100)).await.unwrap(); // the group
+    let before = reader.list(&db).await.unwrap(); // tracks the current run
+    let recorded = RecordedRun::record(&mut owner).await;
+    // Until the event runs, reads stay on the run they track.
+    assert_eq!(reader.list(&db).await.unwrap(), before);
+
+    let event_id = Uuid::new_v4().to_string();
+    let run_id = recorded.run_id.to_string();
+    let xadd = |admin: &mut MultiplexedConnection| {
+        let mut command = redis::cmd("XADD");
+        command.arg(STREAM).arg("*");
+        for (field, value) in [
+            ("event_id", event_id.as_str()),
+            ("v", "1"),
+            ("event_type", "INSERT"),
+            ("entity_id", run_id.as_str()),
+            ("occurred_at", "2026-11-09T00:00:00Z"),
+        ] {
+            command.arg(field).arg(value);
+        }
+        let mut admin = admin.clone();
+        async move {
+            let _: String = command.query_async(&mut admin).await.unwrap();
+        }
+    };
+    let observe = || {
+        let (reader, db) = (reader.clone(), &db);
+        async move { (reader.tracked_run(), reader.list(db).await.unwrap()) }
+    };
+
+    xadd(&mut admin).await;
+    consumer(true).await.run_once(Some(100)).await.unwrap();
+    let first = observe().await;
+    assert_eq!(
+        first.0,
+        Some(recorded.run_id),
+        "moved before the process died"
+    );
+    assert_eq!(first.1, read_list(&db).await.unwrap());
+    assert_eq!(pending(&mut admin).await, 1);
+
+    let mut restarted = consumer(false).await;
+    assert_eq!(restarted.run_once(Some(100)).await.unwrap(), 1);
+    assert_eq!(observe().await, first);
+
+    xadd(&mut admin).await;
+    let mut duplicate = consumer(false).await;
+    assert_eq!(duplicate.run_once(Some(100)).await.unwrap(), 1);
+    assert_eq!(observe().await, first);
+    assert_eq!(pending(&mut admin).await, 0);
+
+    let _: i64 = redis::cmd("DEL")
+        .arg(STREAM)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    clear_cache(&mut admin).await;
+    drop_acl(&mut admin).await;
+}

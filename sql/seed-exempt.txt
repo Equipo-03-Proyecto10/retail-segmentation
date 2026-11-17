@@ -12,16 +12,20 @@
 # A table in public is named bare (`role`). A table in a service schema is
 # named schema-qualified, as CI counts it (ADR-0046): `<suffix>_events.outbox`
 # for a boundary's outbox, which holds runtime events and no seed, and
-# `sales.sale_capture`. CI refuses any other schema-qualified name here.
+# `sales.sale_capture`, `sales.sale_reversal`, `sales.sale_reversal_line` and the
+# three tables of a sales import and `sales.reconciliation_case`, which hold runtime
+# facts and control state. CI refuses any other schema-qualified name here.
 #
 # Padding a catalog with filler rows to reach 30 is the alternative, and it
 # makes the seed misrepresent the business: a reader cannot tell which roles
 # the system actually has. The exemption is recorded here instead, where a
 # reviewer sees it.
 
-# Seven roles, from the permission matrix in docs/data-model.md. An eighth
-# would be a business decision, not seed data. Exactly one user holds ADMIN —
-# AGENTS.md, enforced in the schema by F4-02.
+# Ten roles: the seven of the permission matrix in docs/requirements.md §3,
+# and the three floor roles ADR-0060 added (SALES_ASSOCIATE, LOYALTY_OFFICER,
+# COMMERCIAL_SUPERVISOR, F19-04). An eleventh would be a business decision, not
+# seed data. Exactly one user holds ADMIN — AGENTS.md, enforced in the schema
+# by F4-02.
 role
 
 # Five sales channels: mobile app, web, physical store, marketplace and call
@@ -56,6 +60,11 @@ stores_events.outbox
 # seed's own preference rows pass through it once, as every writer's do (F14-16).
 preferences_events.outbox
 
+# customers-service relays an anonymization from here (F21-19, ADR-0066) and
+# purges relayed rows after seven days: runtime state, empty in a fresh
+# database. A seeded customer is not anonymized, because anonymization is final.
+customers_events.outbox
+
 # users-service relays access changes from here and purges them after seven
 # days: runtime state, empty in a fresh database, never seed data (F14-04).
 users_events.outbox
@@ -64,6 +73,31 @@ users_events.outbox
 # sale's own transaction; the seed records no phone sale, so it is empty in a
 # fresh database (F14-18, ADR-0039).
 sales.sale_capture
+
+# sales-service records a reversal (a cancellation or a return) only when a
+# seller or a manager reverses a sale; none exists in a fresh database, and the
+# seed is not allowed to invent them (F21-03, ADR-0062). Seeding thirty would
+# change what every seeded report, segmentation run and experiment conversion
+# counts as net, and every golden fixture captured against the seed, for the
+# sake of a row count. A reversal is a runtime fact like the phone sale's
+# provenance row above. `returned_quantity` is 0 on every seeded line, which the
+# reconciliation query in CI (a line's running total equals the sum of its
+# reversal lines) proves, and services/sales/tests proves with real reversals.
+sales.sale_reversal
+sales.sale_reversal_line
+
+# The control state of a sales import (F26-08, ADR-0070): an import exists only
+# while an administrator loads a file through sales-service, its staged chunks
+# are nulled as soon as they are applied, and the seed loads no file through the
+# service (its sales_load rows are the web page's uploads). A seeded import would
+# invent a load that never happened, and its outcomes would claim sales the
+# seed did not make.
+sales.import
+sales.import_chunk
+sales.import_row_outcome
+# F26-09: the look-alike pairs an import's reconciliation found and the
+# decision a person made about each. Runtime facts, not a catalog.
+sales.reconciliation_case
 
 # sales-service relays stream:sales.v1.recorded from here and purges relayed
 # rows after seven days: runtime state, never seed data. The capture trigger
@@ -76,3 +110,56 @@ sales_events.outbox
 # capture trigger on segmentation_run passes the seed's own runs through it
 # once, as every writer's do (F14-20).
 segments_events.outbox
+
+# models.model_version: the registry holds the versions of two methods, and
+# today the seed's two definitions, one rule set and one K-means fit (F22-11).
+# A version is a deliberate, immutable act of publication, not a population:
+# padding it with invented versions would fake a history the audit events and
+# the publications would then have to explain. The same holds for the three
+# tables that hang from a version. The 31 segmentation runs reach 30 rows in
+# models.run_version, which is not exempt.
+models.model_version
+
+# models.model_version_feature: R, F and M for each of those versions.
+models.model_version_feature
+
+# models.model_publication: one publication, the first, of the one published
+# version. The history grows only by an administrator's publication (F22-13).
+models.model_publication
+
+# rfm_events.outbox: relayed rows are purged after seven days, so it is runtime
+# state and never seed data (F22-05). The capture triggers on rfm.customer_profile
+# fill it as the service writes profiles.
+rfm_events.outbox
+
+# model-registry's publication outbox is runtime relay state under ADR-0044;
+# committed publications create it and relayed rows are purged after seven days.
+models_events.outbox
+
+# rfm.rule_set: the one rule set rfm-engine starts with, the scoring the published
+# version of the web's last rule-based run froze (F22-05). A rule set is a
+# deliberate, immutable act of creation (F22-09), not a population: padding it
+# with invented rule sets would fake a history of boundaries nobody chose.
+rfm.rule_set
+
+# rfm.customer_profile: runtime state, empty at the seed. The first sale event, or
+# the daily pass, creates a customer's row; a customer with none is `pending` in
+# api_rfm.current_profile_v1 (F22-05).
+rfm.customer_profile
+
+# experimentation's plan (F25-09, ADR-0068): a frozen plan exists only for an experiment
+# planned through the service, which draws its salt and takes its frame at one instant. The
+# thirty seeded experiments predate it: they are assignment rule V0, readable with no frame and
+# no salt, and a seeded plan for them would call an assignment the web shuffled recomputable.
+# Seeding thirty new experiments only to plan them would add experiments, conversions and
+# customers' assignments to every seeded report. Runtime facts, like a sale's reversal.
+experiments.experiment_plan
+# Frame members, the reasons that removed customers, and the flags: each hangs from a plan.
+experiments.experiment_frame_member
+experiments.experiment_frame_exclusion
+experiments.experiment_flag
+
+# experiments.exposure_notice is runtime projection state. Rows exist only as
+# experimentation consumes RECORDED and VOIDED notices from engagement's
+# stream; seeding them would invent floor observations that never occurred.
+experiments.exposure_notice

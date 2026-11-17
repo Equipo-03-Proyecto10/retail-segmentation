@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>barcode_taken</code>
+  <message>Another product already has this barcode.</message>
+  <correlation_id>corr-details-409</correlation_id>
+  <details>
+    <field>barcode</field>
+    <code>unique</code>
+  </details>
+</Error>

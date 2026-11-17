@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<RfmRecalculation xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <recalculation_id>15</recalculation_id>
+  <trigger>SCHEDULE</trigger>
+  <state>FAILED</state>
+  <rule_set_id>3</rule_set_id>
+  <as_of>2026-11-01T02:30:00Z</as_of>
+  <started_at>2026-11-01T02:30:00Z</started_at>
+  <finished_at>2026-11-01T02:30:09Z</finished_at>
+  <failure_code>source_unavailable</failure_code>
+</RfmRecalculation>

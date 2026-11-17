@@ -1,6 +1,8 @@
 package online.maxthecoder.mosaiq.floor.auth
 
 import java.io.IOException
+import online.maxthecoder.mosaiq.floor.AppText
+import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CurrentUser
 import online.maxthecoder.mosaiq.floor.net.Network
@@ -79,9 +81,14 @@ class SessionRepository(
      * stays open as the user it last confirmed, so queued writes and the outbox
      * stay reachable offline; the services check every request anyway.
      */
-    private fun offline(): SessionResult {
+    private suspend fun offline(): SessionResult {
         val known = session.profile()
         if (tokens.read() == null || known == null) return SessionResult.Failed(ApiError.unreachable(null))
+        // A role this build does not serve, kept from an older build, opens nothing either.
+        if (known.role !in FLOOR_ROLES) {
+            signOut()
+            return SessionResult.RoleRefused(known.role)
+        }
         return SessionResult.SignedIn(CurrentUser(known.userId, known.name, known.role))
     }
 
@@ -94,11 +101,17 @@ class SessionRepository(
 
     private fun friendly(error: ApiError): ApiError = when {
         error.code == "rate_limited" && error.retryAfterSeconds != null ->
-            error.copy(message = "Too many attempts. Try again in ${error.retryAfterSeconds} seconds.")
+            error.copy(
+                message = AppText.plural(
+                    R.plurals.auth_rate_limited,
+                    error.retryAfterSeconds.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(),
+                    error.retryAfterSeconds
+                )
+            )
         error.code == "auth_unavailable" ->
-            error.copy(message = "Authentication is unavailable. Try again.")
+            error.copy(message = AppText.get(R.string.auth_unavailable))
         error.code == "database_unavailable" ->
-            error.copy(message = "The service is unavailable. Try again.")
+            error.copy(message = AppText.get(R.string.auth_service_unavailable))
         else -> error
     }
 
@@ -109,8 +122,13 @@ class SessionRepository(
     }
 
     companion object {
-        /** ADR-0041: the floor process is for these two roles. */
-        val FLOOR_ROLES = setOf("STORE_MANAGER", "ADMIN")
+        /**
+         * ADR-0060: the four store profiles, one role each, and the administrator, who is not
+         * confined to stores. Any other code is turned away (ADR-0076). `FloorAccess.profiles`
+         * gives each of these its navigation, and a test keeps the two in step.
+         */
+        val FLOOR_ROLES =
+            setOf("SALES_ASSOCIATE", "STORE_MANAGER", "LOYALTY_OFFICER", "COMMERCIAL_SUPERVISOR", "ADMIN")
 
         private val SIGNED_OUT = setOf("invalid_refresh", "refresh_reused", "session_expired", "session_revoked")
     }

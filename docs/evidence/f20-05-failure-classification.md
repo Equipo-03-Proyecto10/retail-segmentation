@@ -23,7 +23,8 @@ On `develop` at **`f6c7bc74`** (the merge of #953), F20-03 ran three times. 17,
   `tests/negative`, tracked by #977 (`type:bug`), with its fix in PR #978. The
   same is true of the one case that failed in a single run.
 - **The one case that differed between two runs of the same commit**
-  (`service-categories`) is a second test defect, raised as its own issue.
+  (`service-categories`) is a second test defect, tracked by #1000 (`type:bug`), with its
+  fix in PR #1001.
 
 Classes:
 - **Defect.** The product does something its contract, ADR or rule forbids.
@@ -80,7 +81,7 @@ runs of 42750359330), and on #978's branch (42716817920).
 | 15 | `negative` `test_revocation::test_a_signed_out_session_is_refused_everywhere` | ✗ ✗ ✗ | ✓ | Test defect | #977 |
 | 16 | `negative` `test_infrastructure::test_redis_state_stopped_fails_closed` | ✗ ✗ ✗ | ✓ | Test defect | #977 |
 | 17 | `negative` `test_auth::test_sign_in_is_rate_limited_by_ip` | ✗ ✓ ✓ | ✓ | Test defect (timing) | #977 |
-| 18 | `service-categories` `tests.test_rules::test_a_write_is_audited_with_the_callers_identity` | ✓ ✗ ✓ | ✓ | Test defect (id reuse) | its own issue |
+| 18 | `service-categories` `tests.test_rules::test_a_write_is_audited_with_the_callers_identity` | ✓ ✗ ✓ | ✓ | Test defect (id reuse) | #1000 |
 
 ### 1–16. `tests/negative` probes three services that are not built
 
@@ -219,8 +220,9 @@ another test's history.
 - It passed in every other run listed above: 9 of the 10 runs.
 - `comparison.md` lists it as the only case that differs between the two runs.
 
-**Not corrected here.** F20-05 is timeboxed to classification. The fix is
-small, and it is described in its issue.
+**Corrected.** F20-05 is timeboxed to classification, so the fix is not
+here. #1000 tracks the defect, and PR #1001 (merged as `1cb36a2c`) keeps
+every id that already has `audit_log` rows out of `new_id`.
 
 ## Failures on earlier commits, already fixed
 
@@ -256,5 +258,5 @@ failures of the consolidated run. They are left for their own issue.
 ## Issues
 
 - **#977** (`type:bug`, opened by Marcelo): failures 1–17. Fix: PR #978.
-- **Failure 18** gets its own `type:bug` issue, for a test defect.
+- **#1000** (`type:bug`, opened by Marcelo): failure 18. Fix: PR #1001.
 - **No product defect was found**, so no product `type:bug` issue is needed.

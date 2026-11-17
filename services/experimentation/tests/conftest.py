@@ -154,8 +154,17 @@ def _with_database(url: str, database: str, *, role: str | None = None) -> str:
     return urlunsplit((parts.scheme, netloc, "/" + database, "", ""))
 
 
+@pytest.fixture(params=["UTC", "America/Mexico_City"])
+def session_time_zone(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> str:
+    """Every database test runs under a UTC and a non-UTC session TimeZone (libpq)."""
+    monkeypatch.setenv("PGTZ", request.param)
+    return request.param
+
+
 @pytest.fixture
-def database() -> Iterator[dict[str, str]]:
+def database(session_time_zone: str) -> Iterator[dict[str, str]]:
     """A private copy of the seeded database, as its owner, the service and the web."""
     url = os.environ.get("TEST_DATABASE_URL")
     if not url:

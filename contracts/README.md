@@ -184,7 +184,9 @@ optional request element, or error code on an existing status is not breaking.
 The one exception is a closed vocabulary that an accepted record grows: an
 entry in [`vocabulary-growth.yaml`](vocabulary-growth.yaml) excuses exactly the
 values it lists, for exactly the contract version that adds them
-([ADR-0076](../docs/adr/0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md)).
+([ADR-0076](../docs/adr/0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md)
+for the role codes, [ADR-0082](../docs/adr/0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md)
+for the audited entity names).
 
 A breaking version ships `/v2` beside `/v1` in the same OpenAPI document. Its
 schema is `<name>.v2.xsd`, uses namespace

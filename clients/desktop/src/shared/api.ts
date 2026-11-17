@@ -205,6 +205,18 @@ export const AUDITED_ENTITIES = [
   'role',
   'customer_segment_history',
   'store_location',
+  'loyalty_card',
+  'product_attribute',
+  'product_barcode',
+  'product_relation',
+  'product_status',
+  'store_assignment',
+  'store_channel',
+  'store_channel_set',
+  'store_commercial_rule',
+  'store_hours',
+  'store_hours_interval',
+  'store_status',
 ] as const;
 export const AUDIT_ACTIONS = ['INSERT', 'UPDATE', 'DELETE'] as const;
 

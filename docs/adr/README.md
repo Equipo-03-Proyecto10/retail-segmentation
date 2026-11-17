@@ -215,11 +215,12 @@ Later runtime events must be preserved.
 | [0073](0073-an-operation-published-ahead-of-its-implementation-is-marked-planned-and-skipped-by-conformance.md) | An operation published ahead of its implementation is marked planned and skipped by conformance | Accepted |
 | [0074](0074-the-desktop-console-exports-through-the-main-process-and-records-each-export-locally.md) | The desktop console exports tables through the main process and records each export locally | Partially superseded by [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) (the Reports module) |
 | [0075](0075-engagement-relays-interaction-facts-on-a-redis-stream-from-an-outbox-kept-on-the-event-document.md) | engagement relays interaction facts on a Redis stream, from an outbox kept on the event document | Accepted |
-| [0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) | Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role | Accepted |
+| [0076](0076-role-codes-grow-inside-v1-only-by-an-accepted-record-and-clients-grant-nothing-for-an-unknown-role.md) | Role codes grow inside v1 only by an accepted record, and clients grant nothing for an unknown role | Partially superseded by [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) (the vocabulary is no longer only the role codes) |
 | [0077](0077-desktop-executive-reports-export-pdf-csv-and-excel-from-the-report-main-served-and-keep-the-data-origin.md) | Desktop executive reports export PDF, CSV and Excel from the report main served, and keep the data origin | Accepted |
 | [0078](0078-the-bench-twin-serves-every-read-of-the-products-contract-and-the-load-comparison-stays-as-it-was.md) | The bench twin serves every read of the products contract, and the load comparison stays as it was | Accepted |
 | [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Accepted |
 | [0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) | The domain-event table is owned by the schema owner, and a subject is named once, in the common fields | Accepted |
+| [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) | Audited entity names grow inside v1 by the same accepted-record rule as role codes | Accepted |
 
 ## Writing one
 

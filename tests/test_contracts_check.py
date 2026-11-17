@@ -597,6 +597,32 @@ def test_a_listed_value_grows_the_vocabulary_at_its_version(tmp_path: Path) -> N
     assert result.stdout == ""
 
 
+def test_a_lower_case_name_grows_a_vocabulary_when_an_entry_lists_it(
+    tmp_path: Path,
+) -> None:
+    """ADR-0082: audited table names are lower case, and a listed one is excused."""
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "store_hours")
+    _entry(repo, "store_hours", adr="ADR-0001")
+    _commit(repo, "grow the vocabulary with a table name")
+
+    result = _run(repo, base)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout == ""
+
+
+def test_a_lower_case_name_the_entry_does_not_list_is_still_breaking(
+    tmp_path: Path,
+) -> None:
+    repo, base = _vocabulary_repository(tmp_path)
+    _grow(repo, "store_hours", "store_status")
+    _entry(repo, "store_hours")
+    _commit(repo, "a table name the entry does not list")
+
+    _assert_fails(_run(repo, base), "breaking OpenAPI change in v1: alpha")
+
+
 def test_a_value_added_without_an_entry_is_breaking(tmp_path: Path) -> None:
     repo, base = _vocabulary_repository(tmp_path)
     _grow(repo, "SALES_ASSOCIATE")

@@ -351,10 +351,10 @@ for index, entry in enumerate(entries):
         errors.append(f"{where}: version must be semver")
     values = entry["values"]
     if not isinstance(values, list) or not values or not all(
-        isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]*", value)
+        isinstance(value, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", value)
         for value in values
     ):
-        errors.append(f"{where}: values must be a non-empty list of codes")
+        errors.append(f"{where}: values must be a non-empty list of codes or names")
 print("\n".join(errors))
 sys.exit(1 if errors else 0)
 PY

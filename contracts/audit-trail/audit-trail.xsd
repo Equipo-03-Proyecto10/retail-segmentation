@@ -21,7 +21,7 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <!-- The audited tables, named as fn_audit records them in entity. -->
+  <!-- The audited tables, named as fn_audit records them in entity: every table that carries the trigger. -->
   <xs:simpleType name="AuditedEntity">
     <xs:restriction base="xs:string">
       <xs:enumeration value="category"/>
@@ -37,6 +37,18 @@
       <xs:enumeration value="role"/>
       <xs:enumeration value="customer_segment_history"/>
       <xs:enumeration value="store_location"/>
+      <xs:enumeration value="loyalty_card"/>
+      <xs:enumeration value="product_attribute"/>
+      <xs:enumeration value="product_barcode"/>
+      <xs:enumeration value="product_relation"/>
+      <xs:enumeration value="product_status"/>
+      <xs:enumeration value="store_assignment"/>
+      <xs:enumeration value="store_channel"/>
+      <xs:enumeration value="store_channel_set"/>
+      <xs:enumeration value="store_commercial_rule"/>
+      <xs:enumeration value="store_hours"/>
+      <xs:enumeration value="store_hours_interval"/>
+      <xs:enumeration value="store_status"/>
     </xs:restriction>
   </xs:simpleType>
 

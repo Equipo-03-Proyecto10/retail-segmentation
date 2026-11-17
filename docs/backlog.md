@@ -1126,6 +1126,7 @@ flowchart TD
     F25-10 --> F25-14
     F25-12 --> F25-14
     F25-13 --> F25-14
+    F25-05 --> F25-15
     F19-02 --> F26-01
     F19-03 --> F26-01
     F19-08 --> F26-02
@@ -1398,6 +1399,7 @@ Epic #746.
 | F25-12 | #843 | Attribute each sale to one campaign at most, and keep it apart from effect | P0 | F25-11 |
 | F25-13 | #844 | Measure incremental effect with its uncertainty | P0 | F25-11 |
 | F25-14 | #845 | Validate the experiment pipeline: A/A, injected effect, stability and contamination | P0 | F25-08, F25-10, F25-12, F25-13 |
+| F25-15 | #1048 | Report what a campaign has spent against its budget | P1 | F25-05 |
 
 ## Phase 26 — KPIs, planning and data quality
 

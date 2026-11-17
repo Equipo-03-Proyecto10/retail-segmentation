@@ -67,6 +67,9 @@ class FloorViewModel(
     val open: StateFlow<List<OutboxRow>> =
         graph.outbox.observeOpen().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** The rows whose request is on the wire right now. */
+    val sending: StateFlow<Set<Long>> = graph.inFlight.ids
+
     val userId: StateFlow<String?> = graph.session.userId
 
     fun searchStores(city: String = stores.value.city, page: Int = 1) {
@@ -128,6 +131,9 @@ class FloorViewModel(
             checkIn.value = CheckInState.Queued(rowId, note)
         }
     }
+
+    /** Asks the queue to send what is waiting now; each row goes out as stored, so it cannot become a second write. */
+    fun sendNow() = graph.kick()
 
     fun dismiss(row: OutboxRow) {
         viewModelScope.launch { graph.outbox.dismiss(row.id) }

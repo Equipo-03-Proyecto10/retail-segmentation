@@ -180,6 +180,9 @@ def build_app(
         monkeypatch.setenv("DATABASE_URL", service_url)
         monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
         monkeypatch.setenv("STREAM_CONSUMER_ENABLED", "true" if consumers else "false")
+        # The retention job is tested on its own; a thread per app would delete
+        # the old decisions a test sets up.
+        monkeypatch.setenv("RETENTION_ENABLED", "false")
         if cache_url is not None:
             monkeypatch.setenv("REDIS_CACHE_URL", cache_url)
         from app import create_app

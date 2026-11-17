@@ -2,10 +2,12 @@
 
 A result lives at ``recommendations:cache:{customer_id}:{run_id}:{limit}`` for
 120 s, keyed by the run behind the customer's open label, so a new run is a new
-key. Each key is also added to an index set under the same prefix. An event on
-any of the six streams renames the index away and deletes what it named, so no
-SCAN, KEYS or RANDOMKEY is ever needed (the ACL forbids them). Any Redis
-failure is a miss: the result is recomputed from the views. Each entry carries
+key. The entry carries the id of the decision recorded for it, so a cached answer
+is still attributable to a stored decision (ADR-0067). Each key is also added to
+an index set under the same prefix. An event on any of the six streams renames
+the index away and deletes what it named, so no SCAN, KEYS or RANDOMKEY is ever
+needed (the ACL forbids them). Any Redis failure is a miss: the result is
+recomputed from the views. Each entry carries
 its pre-computation generation; invalidation replaces the generation even when
 the index was evicted, so an in-flight old result cannot become a fresh hit.
 """
@@ -15,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
-from typing import Any
+from typing import Any, NamedTuple
 
 import redis
 
@@ -29,6 +31,13 @@ GENERATION = PREFIX + "generation"
 
 def result_key(customer_id: str, run_id: int | None, limit: int) -> str:
     return f"{PREFIX}{customer_id}:{'none' if run_id is None else run_id}:{limit}"
+
+
+class Cached(NamedTuple):
+    """A cached answer and the decision recorded for it (ADR-0067)."""
+
+    value: dict[str, Any]
+    decision_id: str
 
 
 class ResultCache:
@@ -50,7 +59,7 @@ class ResultCache:
             LOGGER.warning("Cache generation read failed: %r", error)
             return None
 
-    def get(self, key: str, generation: str | None) -> dict[str, Any] | None:
+    def get(self, key: str, generation: str | None) -> Cached | None:
         if self.client is None or generation is None:
             return None
         try:
@@ -66,10 +75,20 @@ class ResultCache:
             return None
         if not isinstance(cached, dict) or cached.get("generation") != generation:
             return None
-        value = cached.get("value")
-        return value if isinstance(value, dict) else None
+        value, decision_id = cached.get("value"), cached.get("decision_id")
+        # An entry with no decision was written before decisions were recorded:
+        # serving it would serve an answer no stored decision explains.
+        if not isinstance(value, dict) or not isinstance(decision_id, str):
+            return None
+        return Cached(value, decision_id)
 
-    def put(self, key: str, value: dict[str, Any], generation: str | None) -> None:
+    def put(
+        self,
+        key: str,
+        value: dict[str, Any],
+        generation: str | None,
+        decision_id: str,
+    ) -> None:
         if self.client is None or generation is None:
             return
         try:
@@ -82,7 +101,12 @@ class ResultCache:
             pipe.set(
                 key,
                 json.dumps(
-                    {"generation": generation, "value": value}, separators=(",", ":")
+                    {
+                        "generation": generation,
+                        "value": value,
+                        "decision_id": decision_id,
+                    },
+                    separators=(",", ":"),
                 ),
                 ex=CACHE_TTL_SECONDS,
             )

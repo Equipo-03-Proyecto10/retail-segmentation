@@ -1,6 +1,6 @@
 # recommendations
 
-> **Status:** `/v1` implemented (phase 14, core; F14-22, #477). The `/v2` contract is published (F24-03, #826, ADR-0067); its implementation is F24-04 to F24-07, so the rows and sections below that describe it are marked *planned*. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** `/v1` implemented (phase 14, core; F14-22, #477). The `/v2` contract is published (F24-03, #826, ADR-0067); its implementation is F24-04 to F24-07, so the rows and sections below that describe it are marked *planned*. The decision record is implemented (F24-05, #828): every `/v1` answer is recorded in schema `recommendations`, and `/v2` will record into the same tables. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Recommend only products that are available at the reference store and channel (the one the caller names, else the customer's usual store), not already bought and matching a stated signal, with reasons, marking any alternative and recording and reading back the explanation of each decision, or report why nothing qualifies (RN-40, ADR-0067)
 
 ## Summary
@@ -11,7 +11,7 @@
 | Port (loopback) | 5011 |
 | Public path | `/api/recommendations/v1/` |
 | Wave | core |
-| PostgreSQL role | `svc_recommendations`. `/v1` needs no table; the decision record is a schema of its own (ADR-0046, ADR-0067), created by F24-05 |
+| PostgreSQL role | `svc_recommendations`. The decision record is a schema of its own, `recommendations` (ADR-0046, ADR-0067, F24-05); SELECT, INSERT and DELETE on its four tables and UPDATE of `customer_id` alone |
 | Redis ACL user | `svc_recommendations`, same user line on `redis-state` and `redis-cache` |
 | MongoDB | — |
 | Compose project / image | `mosaiq-recommendations` / `ghcr.io/equipo-03-proyecto10/mosaiq-recommendations` |
@@ -22,7 +22,7 @@
 
 - A product is recommended only when it is active, in stock at the customer's usual store, not already bought in the window, and matches at least one signal: segment peers, an interest category or a purchase-history category, matched over the category subtree. Each item carries exactly `product_id`, `category_id` (the product's own category), `quantity_on_hand` (the stock held at the usual store, E-06) and `reasons`. Reasons come in the fixed order `segment`, `preferred_category`, `purchase_history`, each with its signal and figures: `segment_buyers`; the nearest matching category as `category_id`; that `category_id` and its `share`. A segment-only item has no category reason.
 - When nothing qualifies, the response says why: `no_open_assignment`, `unassigned_result` or `no_usual_store`. Items carry ids; clients fetch product names with `GET /v1/products?ids=`.
-- `/v1` owns no table. Its result cache lasts 120 s, and parity with the web's rule is proven by golden fixtures for the default path of all seeded customers (E-17).
+- `/v1` reads no table of its own, but since F24-05 it records each answer it computes (see below). Its result cache lasts 120 s, and parity with the web's rule is proven by golden fixtures for the default path of all seeded customers (E-17).
 
 ### Since ADR-0067 (`/v2`, contract published in F24-03, implementation planned in F24-04 to F24-07)
 
@@ -30,6 +30,16 @@
 - **Available** means: the commercial status allows the sale, the store's status permits sales, the store enables the channel when one is given, and on-hand is above zero. Opening hours are not part of it. A product that matches a signal and fails is excluded for exactly one reason, in this order: `already_bought`, `inactive`, `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`, `PERSONALIZATION_WITHDRAWN`. The response counts them (`exclusions`) and never lists them.
 - **Each item** has a `kind` (`primary`, `alternative`, `elsewhere`), a `position`, its `factors` (the figures RN-40 orders by), its `availability` (store, channel and the quantity used, E-06) and its `reasons`. An `alternative` is one product related to an unavailable one by a declared substitute relation and itself available; it names the product it replaces (`alternative_for`) and why that was unavailable. An `elsewhere` entry reports another store holding the product and is never a recommendation for the reference store.
 - **The explanation is recorded.** Every answer carries a `decision_id`. The decision (ids, figures and codes only, never a name, email, phone, SKU, price or free text) is kept for 90 days, subject to F21-15, and is read back with `GET /v2/recommendation-decisions/{decision_id}`.
+
+### The decision record (F24-05, implemented)
+
+- **What is stored.** One row per decision (customer, status, computation time, segmentation run, model version, reference store and its source, channel), one per exclusion reason above zero, one per item offered (position, product, its category then, kind, the quantity used, the other store of an `elsewhere` entry, `alternative_for`, the `unavailable_reason`) and one per reason of an item. Nothing derivable is stored: an item's factors are read from its reasons, its channel is the decision's, and its store is the decision's unless it is `elsewhere`. The 4NF justification is in [`data-model.md`](../data-model.md) §2.4.
+- **A `/v1` answer is recorded too**, judged at the usual store, with no channel, only `primary` items and no exclusion counts (the `/v1` rule does not count them; F24-04 does). It carries no decision id on the wire, because `/v1` is frozen. The model version is null: `api_segments.current_label_v1` does not publish one yet.
+- **Written before it is sent.** The decision is recorded on the request's own connection and committed before the answer is cached or returned, so an answer is never served without its decision. A failed write is a failed request.
+- **Read back as it was.** `decision_store.read` rebuilds the decision from its own rows and consults no live view, so it equals what the client received even after stock, products or rules changed.
+- **A cached answer is still attributable.** The cache entry carries the `decision_id` recorded for it; a hit writes nothing, serves the same answer and logs `Served cached decision <id>`. An entry without a decision id (written before F24-05) is a miss, so nothing is served that no stored decision explains. Recomputing within the cache window does not record twice, and a recording of the same `decision_id` writes nothing.
+- **Retention.** The service's own job deletes the decisions computed more than 90 days ago, with their exclusions, items and reasons, every hour (`RETENTION_ENABLED`, default on). Each worker runs it; two runs delete the same rows once.
+- **Anonymization.** The customer id is removed from every decision about the customer and the figures stay (F21-19): by the foreign key `ON DELETE SET NULL` when the customer row goes, and by `decision_store.clear_customer` when the customer is anonymized in place. F21-19 chooses what calls it.
 - **Consent.** A customer who objected to personalization gets `PERSONALIZATION_WITHDRAWN` with no items, and no segment, history or interest is read for them.
 - **Default path.** With no store, no channel and every product active and sellable, the answer is what the web returns, which the golden fixtures keep pinning; every other behaviour above is outside the parity claim (E-17).
 
@@ -50,8 +60,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| PostgreSQL | — | `/v1`: no table | SELECT on seven published views only; a result cache in `redis-cache` |
-| PostgreSQL, schema `recommendations` | tables | S (*planned*, F24-05) | The decision record (ADR-0067, ADR-0046): per decision the customer id, the reference store and channel, the status, the exclusion counts, the segmentation run and model version and the computation time; per item its product, kind, position, quantity, `alternative_for` and one row per reason. Ids, figures and codes only. Retained 90 days; anonymization clears the customer id. The tables, their 4NF justification, grants and seed arrive with F24-05 |
+| PostgreSQL | — | reads | SELECT on seven published views only; a result cache in `redis-cache` |
+| PostgreSQL, schema `recommendations` | `recommendation_decision`, `recommendation_exclusion`, `recommendation_item`, `recommendation_reason` | S (F24-05) | The decision record (ADR-0067, ADR-0046): per decision the customer id, the reference store and channel, the status, the segmentation run and model version and the computation time; per exclusion reason its count; per item its product, kind, position, quantity and `alternative_for`; one row per reason. Ids, figures and codes only. Retained 90 days; anonymization clears the customer id. No `api_*` view: the decisions are published by this service's own `recommendation-decisions` resource. Grants in `contracts/db/grants.csv`, 30 or more seed rows each |
 
 ## Database contracts
 
@@ -83,7 +93,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Instance | Key pattern | TTL | Purpose |
 |---|---|---|---|
-| cache | `recommendations:cache:{customer_id}:{run_id}:{limit}` | 120 s | `/v1` result cache; the staleness bound is stated in the contract. For `/v2` the key also carries the store and the channel (ADR-0067), or a seller's result would be served to another store |
+| cache | `recommendations:cache:{customer_id}:{run_id}:{limit}` | 120 s | `/v1` result cache, each entry carrying the `decision_id` recorded for it; the staleness bound is stated in the contract. For `/v2` the key also carries the store and the channel (ADR-0067), or a seller's result would be served to another store |
 | state | `recommendations:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
 

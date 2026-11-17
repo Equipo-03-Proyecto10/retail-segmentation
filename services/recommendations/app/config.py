@@ -21,6 +21,10 @@ DEFAULT_LIMIT = 10
 MAX_LIMIT = 50
 # The consumption profile's window (RN-34), closed at both ends.
 WINDOW_DAYS = 180
+# How long a recorded decision is kept before the service's own job deletes it
+# (ADR-0067, F24-02).
+RETENTION_DAYS = 90
+RETENTION_INTERVAL_SECONDS = 3600
 
 
 def _flag(name: str, default: bool = True) -> bool:
@@ -36,6 +40,7 @@ class Settings:
 
     cache_enabled: bool
     stream_consumer_enabled: bool
+    retention_enabled: bool
     redis_state_url: str
     redis_cache_url: str
     contracts_dir: Path
@@ -45,6 +50,7 @@ class Settings:
         return cls(
             cache_enabled=_flag("CACHE_ENABLED"),
             stream_consumer_enabled=_flag("STREAM_CONSUMER_ENABLED"),
+            retention_enabled=_flag("RETENTION_ENABLED"),
             redis_state_url=os.environ.get(
                 "REDIS_STATE_URL", "redis://redis-state:6379/0"
             ),

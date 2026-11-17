@@ -2247,4 +2247,100 @@ mod tests {
         assert_eq!(list_key(42), "segments:cache:42:list");
         assert_eq!(current_key(42, "abc"), "segments:cache:42:current:abc");
     }
+
+    fn snapshot(label: Option<&str>, version: Option<i64>, cause: Option<&str>) -> Snapshot {
+        Snapshot {
+            customer_id: Uuid::nil(),
+            state: MigrationState::new(label.map(str::to_owned), true),
+            run_id: Some(1),
+            model_version_id: version,
+            run_at: None,
+            valid_from: None,
+            cause: cause.map(str::to_owned),
+            recency_last_purchase_at: None,
+            frequency_count: None,
+            monetary_total: None,
+            r_score: None,
+            f_score: None,
+            m_score: None,
+        }
+    }
+
+    fn window() -> MigrationWindow {
+        let from = DateTime::parse_from_rfc3339("2026-09-01T00:00:00Z").unwrap();
+        MigrationWindow {
+            from: from.with_timezone(&Utc),
+            to: from.with_timezone(&Utc) + chrono::Duration::days(30),
+        }
+    }
+
+    #[test]
+    fn a_move_is_methodological_across_versions_unknown_versions_and_version_change_causes() {
+        let ordinals = HashMap::from([("LOYAL".to_owned(), 2), ("CHAMPION".to_owned(), 1)]);
+        let cases = [
+            (Some(1), Some(1), None, false),
+            (Some(1), Some(2), None, true),
+            (None, Some(1), None, true),
+            (Some(1), None, None, true),
+            (Some(1), Some(1), Some("VERSION_CHANGE"), true),
+            (Some(1), Some(1), Some("SALE"), false),
+        ];
+        for (before, after, cause, expected) in cases {
+            let migration = build_migration(
+                snapshot(Some("LOYAL"), before, None),
+                snapshot(Some("CHAMPION"), after, cause),
+                &window(),
+                &ordinals,
+            );
+            assert_eq!(
+                migration.methodological, expected,
+                "{before:?} {after:?} {cause:?}"
+            );
+            assert_eq!(migration.movement, "improved");
+        }
+    }
+
+    #[test]
+    fn a_label_change_with_no_variable_changed_is_rank_only() {
+        let ordinals = HashMap::from([("LOYAL".to_owned(), 2), ("CHAMPION".to_owned(), 1)]);
+        let migration = build_migration(
+            snapshot(Some("LOYAL"), Some(1), None),
+            snapshot(Some("CHAMPION"), Some(1), None),
+            &window(),
+            &ordinals,
+        );
+        assert!(migration.responsible_variables.is_empty() && migration.rank_only);
+    }
+
+    #[test]
+    fn the_tally_puts_every_customer_in_one_cell_and_reconciles_the_totals() {
+        let ordinals = HashMap::from([("LOYAL".to_owned(), 2), ("CHAMPION".to_owned(), 1)]);
+        let states = [
+            (Some("LOYAL"), Some("CHAMPION")),
+            (Some("CHAMPION"), Some("CHAMPION")),
+            (Some("LOYAL"), None),
+            (None, Some("LOYAL")),
+        ];
+        let migrations: Vec<_> = states
+            .iter()
+            .map(|(before, after)| {
+                build_migration(
+                    snapshot(*before, Some(1), None),
+                    snapshot(*after, Some(1), None),
+                    &window(),
+                    &ordinals,
+                )
+            })
+            .collect();
+        let (totals, cells) = tally(&migrations, &ordinals);
+        assert_eq!(cells.iter().map(|c| c.customer_count).sum::<i64>(), 4);
+        for total in &totals {
+            assert_eq!(
+                total.before_count + total.entries - total.exits,
+                total.after_count
+            );
+        }
+        assert_eq!(totals.iter().map(|t| t.before_count).sum::<i64>(), 4);
+        assert_eq!(totals.iter().map(|t| t.after_count).sum::<i64>(), 4);
+    }
 }

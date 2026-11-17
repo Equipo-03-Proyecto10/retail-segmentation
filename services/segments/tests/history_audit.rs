@@ -355,6 +355,68 @@ async fn migration_routes_enforce_roles_periods_and_both_representations() {
         .await;
     assert_eq!(status, 422, "{body}");
     assert!(body.contains("invalid_query"), "{body}");
+
+    // The list and the explanation: their refusals, and both representations.
+    let window = format!("from={from}&to={to}");
+    let ghost = "00000000-0000-0000-0000-00000000ffff";
+    for (path, expected, marker) in [
+        (
+            format!("/v1/segment-migrations?{window}&direction=entries"),
+            422,
+            "invalid_query",
+        ),
+        (
+            format!("/v1/segment-migrations?{window}&label_code=NOT_A_LABEL"),
+            404,
+            "segment_not_found",
+        ),
+        (
+            format!("/v1/segment-migrations?{window}&customer_id={ghost}"),
+            404,
+            "customer_not_found",
+        ),
+        (
+            format!("/v1/segment-migrations/explanation?{window}&customer_id={ghost}"),
+            404,
+            "customer_not_found",
+        ),
+        (
+            format!("/v1/segment-migrations/explanation?{window}"),
+            422,
+            "invalid_query",
+        ),
+    ] {
+        for accept in ["application/json", "application/xml"] {
+            let (status, body, _) = stack.get(&path, ANALYST, "ANALYST", accept).await;
+            assert_eq!(status, expected, "{path} {accept}: {body}");
+            assert!(body.contains(marker), "{path} {accept}: {body}");
+        }
+    }
+    let customer = "00000000-0000-0000-0000-000000000006";
+    for (path, marker) in [
+        (
+            format!("/v1/segment-migrations?{window}&size=5"),
+            ("\"migrations\"", "<SegmentMigrations"),
+        ),
+        (
+            format!("/v1/segment-migrations/explanation?{window}&customer_id={customer}"),
+            ("\"measures\"", "<SegmentMigrationExplanation"),
+        ),
+    ] {
+        for (accept, expected) in [
+            ("application/json", marker.0),
+            ("application/xml", marker.1),
+        ] {
+            let (status, body, _) = stack.get(&path, ANALYST, "ANALYST", accept).await;
+            assert_eq!(status, 200, "{path} {accept}: {body}");
+            assert!(body.contains(expected), "{path} {accept}: {body}");
+        }
+        let (status, body, _) = stack
+            .get(&path, PLANNER, "INVENTORY_PLANNER", "application/json")
+            .await;
+        assert_eq!(status, 403, "{path}: {body}");
+        assert!(body.contains("forbidden_role"), "{path}: {body}");
+    }
     stack.finish().await;
 }
 

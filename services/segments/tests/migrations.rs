@@ -7,8 +7,8 @@ use mosaiq_kit::rendering::{render_json, render_xml};
 use segments::{
     explanation_reply, frequency_judgement, matrix_reply, migration_movement, migration_query,
     migration_window, migrations_reply, monetary_judgement, read_migration_explanation,
-    read_migration_matrix, read_migrations, recency_judgement, MigrationFilter, MigrationQuery,
-    MigrationState, MigrationWindow,
+    read_migration_matrix, read_migrations, recency_judgement, tally, Migration, MigrationFilter,
+    MigrationQuery, MigrationState, MigrationWindow, Snapshot,
 };
 use std::collections::HashMap;
 use support::{connect, owner_url, service_database};
@@ -268,12 +268,13 @@ fn rust_port_reproduces_the_web_golden_fixture() {
         .map(|(label, value)| (label.clone(), value.as_i64().unwrap() as i16))
         .collect();
     let expected = rn39["outcome"]["migrations"].as_array().unwrap();
-    let mut cells: HashMap<String, i64> = HashMap::new();
+    let mut migrations = Vec::new();
     for row in expected {
         let before = row["before"].as_str().map(str::to_owned);
         let after = row["after"].as_str().map(str::to_owned);
+        let absent = row["category"] == "absent_from_earlier";
         let previous = MigrationState {
-            state: if row["category"] == "absent_from_earlier" {
+            state: if absent {
                 "new".to_owned()
             } else if before.is_some() {
                 "label".to_owned()
@@ -290,32 +291,85 @@ fn rust_port_reproduces_the_web_golden_fixture() {
             },
             label_code: after.clone(),
         };
+        // RN-39: the label comparison and its direction by the vocabulary's order.
         let movement = migration_movement(&previous, &new, &ordinals);
         let expected_movement = row["direction"].as_str().unwrap_or("not_ranked");
+        let expected_movement = if row["category"] == "unchanged" && before.is_some() {
+            "unchanged"
+        } else {
+            expected_movement
+        };
         assert_eq!(movement, expected_movement, "{}", row["customer_id"]);
-        let before_name = before.unwrap_or_else(|| {
-            if previous.state == "new" {
-                "Not in earlier run".to_owned()
-            } else {
-                "Unassigned".to_owned()
-            }
+        let snapshot = |state: &MigrationState, present: bool| Snapshot {
+            customer_id: Uuid::nil(),
+            state: state.clone(),
+            run_id: present.then_some(1),
+            model_version_id: None,
+            run_at: None,
+            valid_from: None,
+            cause: None,
+            recency_last_purchase_at: None,
+            frequency_count: None,
+            monetary_total: None,
+            r_score: None,
+            f_score: None,
+            m_score: None,
+        };
+        migrations.push(Migration {
+            customer_id: Uuid::nil(),
+            previous: snapshot(&previous, !absent),
+            new: snapshot(&new, true),
+            movement,
+            changed_at: None,
+            methodological: false,
+            responsible_variables: Vec::new(),
+            rank_only: false,
         });
-        let after_name = after.unwrap_or_else(|| "Unassigned".to_owned());
-        *cells
-            .entry(format!("{before_name}->{after_name}"))
-            .or_default() += 1;
     }
+
+    // RN-59: the matrix over those migrations, as the web's names its rows and columns.
+    let name = |state: &MigrationState| match (state.state.as_str(), &state.label_code) {
+        ("label", Some(label)) => label.clone(),
+        ("new", _) => "Not in earlier run".to_owned(),
+        _ => "Unassigned".to_owned(),
+    };
+    let (totals, cells) = tally(&migrations, &ordinals);
+    let nonzero = |value: &serde_json::Value| -> HashMap<String, i64> {
+        value
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter(|(_, count)| count.as_i64().unwrap() > 0)
+            .map(|(cell, count)| (cell.clone(), count.as_i64().unwrap()))
+            .collect()
+    };
     let rn59 = cases
         .iter()
         .find(|case| case["id"] == "rn59-traceable-matrix")
         .unwrap();
-    let expected_cells: HashMap<String, i64> = rn59["outcome"]["nonzero_cells"]
-        .as_object()
-        .unwrap()
+    let outcome = &rn59["outcome"];
+    let rows: HashMap<String, i64> = totals
         .iter()
-        .map(|(cell, count)| (cell.clone(), count.as_i64().unwrap()))
+        .filter(|total| total.before_count > 0)
+        .map(|total| (name(&total.state), total.before_count))
         .collect();
-    assert_eq!(cells, expected_cells);
+    let columns: HashMap<String, i64> = totals
+        .iter()
+        .filter(|total| total.after_count > 0)
+        .map(|total| (name(&total.state), total.after_count))
+        .collect();
+    let by_cell: HashMap<String, i64> = cells
+        .iter()
+        .map(|cell| {
+            (
+                format!("{}->{}", name(&cell.previous), name(&cell.new)),
+                cell.customer_count,
+            )
+        })
+        .collect();
+    assert_eq!(rows, nonzero(&outcome["row_totals"]));
+    assert_eq!(columns, nonzero(&outcome["column_totals"]));
+    assert_eq!(by_cell, nonzero(&outcome["nonzero_cells"]));
 
     let rn60 = cases
         .iter()
@@ -333,4 +387,79 @@ fn rust_port_reproduces_the_web_golden_fixture() {
         .map(|value| value.as_str().unwrap())
         .collect();
     assert_eq!(observed.as_slice(), expected.as_slice());
+}
+
+/// Every key path an answer carries, arrays merged: the shape a client reads.
+fn shape(value: &serde_json::Value, path: &str, into: &mut std::collections::BTreeSet<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let here = format!("{path}.{key}");
+                into.insert(here.clone());
+                shape(child, &here, into);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                shape(item, &format!("{path}[]"), into);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn shape_of(value: &serde_json::Value) -> std::collections::BTreeSet<String> {
+    let mut set = std::collections::BTreeSet::new();
+    shape(value, "", &mut set);
+    set
+}
+
+fn example(name: &str) -> serde_json::Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(format!("contracts/segments/examples/{name}")).unwrap(),
+    )
+    .unwrap()
+}
+
+#[tokio::test]
+async fn the_answers_carry_the_keys_of_the_contracts_examples() {
+    let url = owner_url();
+    let owner = connect(&url).await;
+    let db = service_database(&url);
+    let from = run_at(&owner, 29).await + Duration::minutes(1);
+    let to = run_at(&owner, 30).await + Duration::minutes(1);
+    let window = MigrationWindow { from, to };
+    let customer = Uuid::parse_str("00000000-0000-0000-0000-000000000006").unwrap();
+
+    let matrix = read_migration_matrix(&db, window.clone()).await.unwrap();
+    let json = render_json(&matrix_reply(&matrix, false), 20).unwrap();
+    assert_eq!(shape_of(&json), shape_of(&example("migration-matrix.json")));
+
+    let explanation = read_migration_explanation(&db, customer, window.clone())
+        .await
+        .unwrap();
+    let json = render_json(&explanation_reply(&explanation, false), 20).unwrap();
+    assert_eq!(
+        shape_of(&json),
+        shape_of(&example("migration-explanation.json"))
+    );
+
+    let all = read_migrations(
+        &db,
+        &MigrationQuery {
+            window: window.clone(),
+            filter: MigrationFilter::default(),
+        },
+    )
+    .await
+    .unwrap();
+    let json = render_json(
+        &migrations_reply(&window, &all[..2], 1, 2, all.len() as u64, false),
+        20,
+    )
+    .unwrap();
+    assert_eq!(
+        shape_of(&json),
+        shape_of(&example("migrations-cell-members.json"))
+    );
 }

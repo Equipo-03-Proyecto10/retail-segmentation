@@ -4308,11 +4308,13 @@ GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestampt
 -- END BOUNDARY audit-trail
 
 -- BEGIN BOUNDARY rfm-engine
--- rfm-engine (F22-04, RN-65, ADR-0034, ADR-0046): stood up empty. It owns the
--- rfm schema for its tables, rfm_events for its outbox and api_rfm for the
--- contract objects it publishes; the stories after it add those objects in this
--- section. svc_rfm holds USAGE on the three and nothing else yet. Idempotent:
--- an operator re-applies it.
+-- rfm-engine (F22-04, F22-05, RN-65, ADR-0034, ADR-0045, ADR-0046, ADR-0063): it
+-- owns the rfm schema for its tables, rfm_events for its outbox and api_rfm for the
+-- contract objects it publishes. A sale changes one customer's row and nothing else:
+-- the profile is recomputed from that customer's net purchases and scored against
+-- the boundaries frozen in a rule set, never against the population. The stories
+-- after this one add the rest (rule-set creation, the daily pass, recalculation) in
+-- this section. Idempotent: an operator re-applies it.
 CREATE SCHEMA IF NOT EXISTS rfm;
 REVOKE ALL ON SCHEMA rfm FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS rfm_events;
@@ -4320,6 +4322,177 @@ REVOKE ALL ON SCHEMA rfm_events FROM PUBLIC;
 CREATE SCHEMA IF NOT EXISTS api_rfm;
 REVOKE ALL ON SCHEMA api_rfm FROM PUBLIC;
 GRANT USAGE ON SCHEMA rfm, rfm_events, api_rfm TO svc_rfm;
+
+-- A rule set: the window and the boundaries a customer is scored against, frozen
+-- when it is created (ADR-0063). The scores are read off the boundaries: recency
+-- 5, 4, 3 and 2 hold up to the first four recency values, frequency and monetary
+-- from the first four values up; anything beyond scores 1. The seed holds the one
+-- rule set of the web's published version; F22-09 creates the others, and
+-- model-registry publishes the version that names one.
+CREATE TABLE IF NOT EXISTS rfm.rule_set (
+    rule_set_id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name                 varchar(80) NOT NULL UNIQUE CHECK (length(name) >= 1),
+    window_days          integer NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+    recency_boundaries   integer[] NOT NULL
+        CHECK (cardinality(recency_boundaries) = 4
+               AND recency_boundaries[1] >= 0
+               AND recency_boundaries[1] <= recency_boundaries[2]
+               AND recency_boundaries[2] <= recency_boundaries[3]
+               AND recency_boundaries[3] <= recency_boundaries[4]),
+    frequency_boundaries integer[] NOT NULL
+        CHECK (cardinality(frequency_boundaries) = 4
+               AND frequency_boundaries[4] >= 1
+               AND frequency_boundaries[1] >= frequency_boundaries[2]
+               AND frequency_boundaries[2] >= frequency_boundaries[3]
+               AND frequency_boundaries[3] >= frequency_boundaries[4]),
+    monetary_boundaries  numeric(12,2)[] NOT NULL
+        CHECK (cardinality(monetary_boundaries) = 4
+               AND monetary_boundaries[1] >= monetary_boundaries[2]
+               AND monetary_boundaries[2] >= monetary_boundaries[3]
+               AND monetary_boundaries[3] >= monetary_boundaries[4]
+               AND monetary_boundaries[4] >= 0),
+    fallback_label_code  varchar(40) NOT NULL CHECK (length(fallback_label_code) >= 1),
+    created_at           timestamptz NOT NULL DEFAULT now(),
+    created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT
+);
+
+-- The boxes of scores that map to a label, one row per box: a repeated group is a
+-- table of its own (4NF). No two boxes of one rule set overlap (RN-46), which
+-- F22-09 checks when it creates one; the lowest band_no wins in any case, as the
+-- lowest segment_id does in the web.
+CREATE TABLE IF NOT EXISTS rfm.rule_set_band (
+    rule_set_id bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    band_no     smallint NOT NULL CHECK (band_no >= 1),
+    label_code  varchar(40) NOT NULL CHECK (length(label_code) >= 1),
+    r_min       smallint NOT NULL CHECK (r_min BETWEEN 1 AND 5),
+    r_max       smallint NOT NULL CHECK (r_max BETWEEN 1 AND 5),
+    f_min       smallint NOT NULL CHECK (f_min BETWEEN 1 AND 5),
+    f_max       smallint NOT NULL CHECK (f_max BETWEEN 1 AND 5),
+    m_min       smallint NOT NULL CHECK (m_min BETWEEN 1 AND 5),
+    m_max       smallint NOT NULL CHECK (m_max BETWEEN 1 AND 5),
+    PRIMARY KEY (rule_set_id, band_no),
+    CHECK (r_min <= r_max AND f_min <= f_max AND m_min <= m_max)
+);
+
+-- One row per customer who has been processed; a customer with no row is `pending`
+-- in the contract view. `scored` holds a customer with a net purchase in the window,
+-- `unassigned` one with none (RN-21). r_days, computed_at and next_change_at move
+-- with the clock and are not captured by the outbox trigger; the other measures,
+-- the scores, the label and the rule set are.
+CREATE TABLE IF NOT EXISTS rfm.customer_profile (
+    customer_id    uuid PRIMARY KEY
+        REFERENCES public.customer (customer_id) ON DELETE CASCADE,
+    state          varchar(12) NOT NULL CHECK (state IN ('scored', 'unassigned')),
+    rule_set_id    bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    r_days         integer CHECK (r_days >= 0),
+    f_count        integer NOT NULL CHECK (f_count >= 0),
+    m_total        numeric(12,2) NOT NULL CHECK (m_total >= 0),
+    r_score        smallint CHECK (r_score BETWEEN 1 AND 5),
+    f_score        smallint CHECK (f_score BETWEEN 1 AND 5),
+    m_score        smallint CHECK (m_score BETWEEN 1 AND 5),
+    label_code     varchar(40),
+    via_fallback   boolean,
+    computed_at    timestamptz NOT NULL,
+    next_change_at timestamptz,
+    CONSTRAINT customer_profile_state_shape CHECK (
+        (state = 'scored' AND r_days IS NOT NULL AND f_count >= 1
+            AND r_score IS NOT NULL AND f_score IS NOT NULL AND m_score IS NOT NULL
+            AND label_code IS NOT NULL AND via_fallback IS NOT NULL)
+        OR
+        (state = 'unassigned' AND r_days IS NULL AND f_count = 0 AND m_total = 0
+            AND r_score IS NULL AND f_score IS NULL AND m_score IS NULL
+            AND label_code IS NULL AND via_fallback IS NULL
+            AND next_change_at IS NULL))
+);
+-- The daily pass reads only the customers who are due (ADR-0063, F22-06).
+CREATE INDEX IF NOT EXISTS customer_profile_due
+    ON rfm.customer_profile (next_change_at) WHERE next_change_at IS NOT NULL;
+
+-- stream:rfm.v1.profile_changed (contracts/streams/rfm.profile_changed.v1.md).
+-- Keys only, never state: consumers re-read api_rfm.current_profile_v1.
+CREATE TABLE IF NOT EXISTS rfm_events.outbox (
+    event_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    stream      text NOT NULL,
+    event_type  text NOT NULL,
+    entity_id   text NOT NULL,
+    occurred_at timestamptz NOT NULL DEFAULT now(),
+    relayed_at  timestamptz
+);
+CREATE INDEX IF NOT EXISTS outbox_unrelayed
+    ON rfm_events.outbox (occurred_at) WHERE relayed_at IS NULL;
+
+CREATE OR REPLACE FUNCTION rfm_events.capture_profile_changed() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $capture$
+BEGIN
+    INSERT INTO rfm_events.outbox (stream, event_type, entity_id)
+    VALUES ('stream:rfm.v1.profile_changed', TG_OP, NEW.customer_id::text);
+    -- An empty wake-up for the owner's relay; only that relay LISTENs.
+    PERFORM pg_notify('rfm_outbox', '');
+    RETURN NULL;
+END
+$capture$;
+ALTER FUNCTION rfm_events.capture_profile_changed() OWNER TO definer_rfm;
+REVOKE EXECUTE ON FUNCTION rfm_events.capture_profile_changed() FROM PUBLIC;
+
+-- A first profile is announced. A later write announces only when one of the
+-- captured columns moved: a recomputation that gives the same result, or that only
+-- advances r_days, computed_at or next_change_at, is silent.
+CREATE OR REPLACE TRIGGER trg_capture_profile_inserted
+AFTER INSERT ON rfm.customer_profile
+FOR EACH ROW EXECUTE FUNCTION rfm_events.capture_profile_changed();
+CREATE OR REPLACE TRIGGER trg_capture_profile_changed
+AFTER UPDATE OF state, rule_set_id, f_count, m_total, r_score, f_score, m_score,
+                label_code ON rfm.customer_profile
+FOR EACH ROW
+WHEN ((OLD.state, OLD.rule_set_id, OLD.f_count, OLD.m_total, OLD.r_score,
+       OLD.f_score, OLD.m_score, OLD.label_code)
+      IS DISTINCT FROM
+      (NEW.state, NEW.rule_set_id, NEW.f_count, NEW.m_total, NEW.r_score,
+       NEW.f_score, NEW.m_score, NEW.label_code))
+EXECUTE FUNCTION rfm_events.capture_profile_changed();
+
+-- contracts/db/api_rfm.current_profile.v1.md: one row for every customer, `pending`
+-- until a profile exists. Definer rights, so a consumer needs no privilege on the
+-- table. next_change_at is the producer's own scheduling state and is not published.
+CREATE OR REPLACE VIEW api_rfm.current_profile_v1
+WITH (security_invoker = off) AS
+SELECT c.customer_id,
+       COALESCE(p.state, 'pending')::text AS state,
+       p.rule_set_id,
+       p.r_days,
+       p.f_count,
+       p.m_total,
+       p.r_score,
+       p.f_score,
+       p.m_score,
+       p.label_code,
+       p.via_fallback,
+       p.computed_at
+FROM api_customers.customer_ref_v1 AS c
+LEFT JOIN rfm.customer_profile AS p ON p.customer_id = c.customer_id;
+REVOKE ALL ON api_rfm.current_profile_v1 FROM PUBLIC;
+
+-- svc_rfm reads sales only through api_sales (ADR-0044) and writes its own
+-- profile; it reads rule sets and creates none yet (F22-09). A profile's
+-- customer_id never changes. Each is a row of contracts/db/grants.csv.
+GRANT USAGE ON SCHEMA api_sales TO svc_rfm;
+GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1 TO svc_rfm;
+GRANT SELECT ON rfm.rule_set, rfm.rule_set_band TO svc_rfm;
+GRANT SELECT, INSERT ON rfm.customer_profile TO svc_rfm;
+GRANT UPDATE (state, rule_set_id, r_days, f_count, m_total, r_score, f_score, m_score,
+              label_code, via_fallback, computed_at, next_change_at)
+    ON rfm.customer_profile TO svc_rfm;
+
+GRANT USAGE ON SCHEMA rfm_events TO svc_rfm, definer_rfm;
+GRANT INSERT ON rfm_events.outbox TO definer_rfm;
+GRANT SELECT, DELETE, UPDATE (relayed_at) ON rfm_events.outbox TO svc_rfm;
+
+-- model-registry reads the profile; analytics-kpis receives its grant with its role.
+GRANT USAGE ON SCHEMA api_rfm TO svc_models;
+GRANT SELECT ON api_rfm.current_profile_v1 TO svc_models;
 -- END BOUNDARY rfm-engine
 
 -- BEGIN BOUNDARY experimentation

@@ -10,13 +10,17 @@ info:
     reaches the service as a sale import: its rows travel as numbered chunks under
     the 64 KiB body cap and a worker applies them one row at a time through the
     same rule, each row accepted or refused on its own and every refusal reported
-    by line, field and reason (ADR-0070).
+    by line, field and reason (ADR-0070). A finished import can then be reconciled:
+    a sale it made that looks like a sale recorded earlier under another source id is
+    listed as a case for a person to settle, never merged or removed silently, and the
+    import's quality report counts its failures by code (F26-09).
 security:
   - bearer: []
 tags:
   - name: Sales
   - name: Sale reversals
   - name: Sale imports
+  - name: Sale reconciliation
   - name: Channels
   - name: Meta
 paths:
@@ -1057,6 +1061,246 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/reconciliation:
+    post:
+      tags: [Sale reconciliation]
+      summary: Reconcile a finished import with the sales already recorded
+      description: >-
+        Lists, as cases, the sales this import made that look like a sale recorded
+        earlier: the same customer, store, instant and lines under a different source
+        id, which the guard of ADR-0070 section 5 cannot catch. Listing a pair changes
+        no sale, no stock and no count. A person settles each case with
+        `PUT .../reconciliation-cases/{case_id}/resolution`.
+
+        Running it again lists only the pairs not yet listed: a case that exists is left
+        as it is, settled or not. The import must have finished (`COMPLETED`, `CANCELLED`
+        or `EXPIRED`); one still receiving or processing is 409 `import_not_finished`.
+        The answer counts the cases the run added and where all of the import's cases
+        stand.
+      operationId: runSaleImportReconciliation
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: The import was reconciled.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReconciliation'
+              examples:
+                reconciled:
+                  externalValue: ./examples/reconcile-sale-import.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReconciliation'
+              examples:
+                reconciled:
+                  externalValue: ./examples/reconcile-sale-import.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/ImportNotFinished'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/reconciliation-cases:
+    get:
+      tags: [Sale reconciliation]
+      summary: List an import's reconciliation cases
+      description: >-
+        Returns the cases of one import, oldest first, each naming the sale the import
+        made and the earlier sale it looks like, with their source ids, so a person can
+        compare them. `status=OPEN` keeps the cases nobody has settled and
+        `status=RESOLVED` the settled ones, with who settled them and when.
+      operationId: listSaleReconciliationCases
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [OPEN, RESOLVED]
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: A page of cases.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReconciliationCasePage'
+              examples:
+                cases_page:
+                  externalValue: ./examples/list-sale-reconciliation-cases.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReconciliationCasePage'
+              examples:
+                cases_page:
+                  externalValue: ./examples/list-sale-reconciliation-cases.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidSaleQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/reconciliation-cases/{case_id}/resolution:
+    put:
+      tags: [Sale reconciliation]
+      summary: Settle a reconciliation case
+      description: >-
+        Records the person's decision once: `DISTINCT` (the two sales are both real) or
+        `DUPLICATE` (one sale was loaded twice), with an optional note of up to 500
+        characters. The decision is audited with its author, the caller's `sub`, and
+        the moment, and it changes no sale: a sale that is a duplicate is cancelled
+        with a reversal (ADR-0062), a separate act by someone allowed to make it.
+
+        A decision cannot be changed. Settling a case again with the same resolution is
+        200 with the decision that stands, its author and moment unchanged; with the
+        other resolution it is 409 `case_resolved`.
+      operationId: resolveSaleReconciliationCase
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+        - $ref: '#/components/parameters/CaseId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleReconciliationResolutionRequest'
+            examples:
+              duplicate:
+                externalValue: ./examples/resolve-sale-reconciliation-case.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/SaleReconciliationResolutionRequest'
+            examples:
+              duplicate:
+                externalValue: ./examples/resolve-sale-reconciliation-case.request.xml
+      responses:
+        '200':
+          description: The case is settled.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReconciliationCase'
+              examples:
+                settled:
+                  externalValue: ./examples/resolve-sale-reconciliation-case.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleReconciliationCase'
+              examples:
+                settled:
+                  externalValue: ./examples/resolve-sale-reconciliation-case.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ReconciliationCaseNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/CaseResolved'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/ResolutionRefused'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-imports/{import_id}/quality:
+    get:
+      tags: [Sale reconciliation]
+      summary: Read an import's quality report
+      description: >-
+        Reports one load, which is one file: its counts, how many of its rows failed for
+        each code (`failures`, most frequent first), and where its reconciliation cases
+        stand. The failure counts add up to `rejected`, and `received = accepted +
+        rejected + pending` as for the import itself. Reading it changes nothing.
+      operationId: getSaleImportQuality
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/ImportId'
+      responses:
+        '200':
+          description: The report.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleImportQuality'
+              examples:
+                quality:
+                  externalValue: ./examples/get-sale-import-quality.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SaleImportQuality'
+              examples:
+                quality:
+                  externalValue: ./examples/get-sale-import-quality.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SaleImportNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /v1/channels:
     get:
       tags: [Sales]
@@ -1221,6 +1465,13 @@ components:
         format: int64
     ImportId:
       name: import_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    CaseId:
+      name: case_id
       in: path
       required: true
       schema:
@@ -1915,6 +2166,238 @@ components:
           $ref: '#/components/schemas/PageInfo'
       xml:
         name: SaleImportRejections
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleReconciliation:
+      type: object
+      additionalProperties: false
+      required: [import_id, added, found, open, distinct, duplicate]
+      properties:
+        import_id:
+          type: integer
+          format: int64
+        added:
+          type: integer
+          minimum: 0
+          description: The cases this run listed for the first time.
+        found:
+          type: integer
+          minimum: 0
+          description: All of the import's cases, however they stand.
+        open:
+          type: integer
+          minimum: 0
+          description: Cases nobody has settled.
+        distinct:
+          type: integer
+          minimum: 0
+          description: Cases settled as two real sales.
+        duplicate:
+          type: integer
+          minimum: 0
+          description: Cases settled as one sale loaded twice.
+      xml:
+        name: SaleReconciliation
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleReconciliationCase:
+      type: object
+      additionalProperties: false
+      required:
+        - case_id
+        - import_id
+        - imported_sale_id
+        - imported_source_id
+        - matched_sale_id
+        - matched_source_id
+        - customer_id
+        - store_id
+        - occurred_at
+        - total
+        - found_at
+        - resolution
+        - resolved_by
+        - resolved_at
+        - note
+      properties:
+        case_id:
+          type: integer
+          format: int64
+        import_id:
+          type: integer
+          format: int64
+        imported_sale_id:
+          type: integer
+          format: int64
+          description: The sale the import made.
+        imported_source_id:
+          type: string
+          description: Its source id, with the `svc-sales:imp:` prefix of an import.
+        matched_sale_id:
+          type: integer
+          format: int64
+          description: The earlier sale it looks like.
+        matched_source_id:
+          type: string
+          description: The earlier sale's source id, which differs from the imported one.
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        store_id:
+          type: integer
+        occurred_at:
+          type: string
+          format: date-time
+          description: The instant both sales carry.
+        total:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: The imported sale's total, which the matched sale's equals.
+        found_at:
+          type: string
+          format: date-time
+        resolution:
+          type:
+            - string
+            - 'null'
+          enum: [DISTINCT, DUPLICATE, null]
+          description: >-
+            `null` while open. `DISTINCT`: two real sales. `DUPLICATE`: one sale
+            loaded twice.
+        resolved_by:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: The `sub` of the person who settled it.
+        resolved_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        note:
+          type:
+            - string
+            - 'null'
+          maxLength: 500
+      xml:
+        name: SaleReconciliationCase
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleReconciliationCasePage:
+      type: object
+      additionalProperties: false
+      required:
+        - sale_reconciliation_cases
+        - page_info
+      properties:
+        sale_reconciliation_cases:
+          type: array
+          items:
+            $ref: '#/components/schemas/SaleReconciliationCase'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: SaleReconciliationCases
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleReconciliationResolutionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - resolution
+      properties:
+        resolution:
+          type: string
+          enum: [DISTINCT, DUPLICATE]
+        note:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Why, in the person's words. Optional.
+      xml:
+        name: SaleReconciliationResolutionRequest
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SaleImportFailure:
+      type: object
+      additionalProperties: false
+      required: [code, count]
+      properties:
+        code:
+          type: string
+          description: A rejection code, as in `SaleImportRejection`.
+        count:
+          type: integer
+          minimum: 1
+    SaleImportReconciliationCounts:
+      type: object
+      additionalProperties: false
+      required: [found, open, distinct, duplicate]
+      properties:
+        found:
+          type: integer
+          minimum: 0
+        open:
+          type: integer
+          minimum: 0
+        distinct:
+          type: integer
+          minimum: 0
+        duplicate:
+          type: integer
+          minimum: 0
+    SaleImportQuality:
+      type: object
+      additionalProperties: false
+      required:
+        - import_id
+        - status
+        - total_rows
+        - received
+        - accepted
+        - rejected
+        - pending
+        - created_at
+        - finished_at
+        - failures
+        - reconciliation
+      properties:
+        import_id:
+          type: integer
+          format: int64
+          description: The load, which is one file.
+        status:
+          $ref: '#/components/schemas/ImportStatus'
+        total_rows:
+          type: integer
+          minimum: 1
+        received:
+          type: integer
+          minimum: 0
+        accepted:
+          type: integer
+          minimum: 0
+        rejected:
+          type: integer
+          minimum: 0
+        pending:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        failures:
+          type: array
+          description: >-
+            One entry for each code a row was refused with, most frequent first. The
+            counts add up to `rejected`.
+          items:
+            $ref: '#/components/schemas/SaleImportFailure'
+        reconciliation:
+          $ref: '#/components/schemas/SaleImportReconciliationCounts'
+      xml:
+        name: SaleImportQuality
         namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
     Channel:
       type: object
@@ -2626,3 +3109,75 @@ components:
           examples:
             invalid_body:
               externalValue: ./examples/import-status-invalid-body.xml
+    ImportNotFinished:
+      description: '`import_not_finished`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            import_not_finished:
+              externalValue: ./examples/import-not-finished.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            import_not_finished:
+              externalValue: ./examples/import-not-finished.xml
+    ReconciliationCaseNotFound:
+      description: '`sale_reconciliation_case_not_found`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_reconciliation_case_not_found:
+              externalValue: ./examples/sale-reconciliation-case-not-found.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            sale_reconciliation_case_not_found:
+              externalValue: ./examples/sale-reconciliation-case-not-found.xml
+    CaseResolved:
+      description: '`case_resolved`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            case_resolved:
+              externalValue: ./examples/case-resolved.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            case_resolved:
+              externalValue: ./examples/case-resolved.xml
+    ResolutionRefused:
+      description: '`invalid_body`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/resolution-invalid-body.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_body:
+              externalValue: ./examples/resolution-invalid-body.xml

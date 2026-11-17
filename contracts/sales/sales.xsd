@@ -278,6 +278,96 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- Reconciliation of a finished import (F26-09). A case pairs a sale the
+       import made with an earlier sale that looks the same under another source
+       id; a person settles it once. -->
+  <xs:simpleType name="ReconciliationResolution">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DISTINCT"/>
+      <xs:enumeration value="DUPLICATE"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="SaleReconciliationResolutionRequest">
+    <xs:sequence>
+      <xs:element name="resolution" type="sales:ReconciliationResolution"/>
+      <xs:element name="note" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleReconciliation">
+    <xs:sequence>
+      <xs:element name="import_id" type="xs:long"/>
+      <xs:element name="added" type="xs:nonNegativeInteger"/>
+      <xs:element name="found" type="xs:nonNegativeInteger"/>
+      <xs:element name="open" type="xs:nonNegativeInteger"/>
+      <xs:element name="distinct" type="xs:nonNegativeInteger"/>
+      <xs:element name="duplicate" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleReconciliationCase">
+    <xs:sequence>
+      <xs:element name="case_id" type="xs:long"/>
+      <xs:element name="import_id" type="xs:long"/>
+      <xs:element name="imported_sale_id" type="xs:long"/>
+      <xs:element name="imported_source_id" type="xs:string"/>
+      <xs:element name="matched_sale_id" type="xs:long"/>
+      <xs:element name="matched_source_id" type="xs:string"/>
+      <xs:element name="customer_id" type="sales:Uuid"/>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="occurred_at" type="xs:dateTime"/>
+      <xs:element name="total" type="sales:Money"/>
+      <xs:element name="found_at" type="xs:dateTime"/>
+      <xs:element name="resolution" type="sales:ReconciliationResolution"
+                  minOccurs="0"/>
+      <xs:element name="resolved_by" type="sales:Uuid" minOccurs="0"/>
+      <xs:element name="resolved_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="note" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleReconciliationCases">
+    <xs:sequence>
+      <xs:element name="SaleReconciliationCase" type="sales:SaleReconciliationCase"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="common:PageInfo"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImportFailure">
+    <xs:sequence>
+      <xs:element name="code" type="xs:string"/>
+      <xs:element name="count" type="xs:positiveInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImportReconciliationCounts">
+    <xs:sequence>
+      <xs:element name="found" type="xs:nonNegativeInteger"/>
+      <xs:element name="open" type="xs:nonNegativeInteger"/>
+      <xs:element name="distinct" type="xs:nonNegativeInteger"/>
+      <xs:element name="duplicate" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SaleImportQuality">
+    <xs:sequence>
+      <xs:element name="import_id" type="xs:long"/>
+      <xs:element name="status" type="sales:ImportStatus"/>
+      <xs:element name="total_rows" type="xs:positiveInteger"/>
+      <xs:element name="received" type="xs:nonNegativeInteger"/>
+      <xs:element name="accepted" type="xs:nonNegativeInteger"/>
+      <xs:element name="rejected" type="xs:nonNegativeInteger"/>
+      <xs:element name="pending" type="xs:nonNegativeInteger"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="finished_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="failures" type="sales:SaleImportFailure"
+                  minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="reconciliation" type="sales:SaleImportReconciliationCounts"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="Channel">
     <xs:sequence>
       <xs:element name="channel_id" type="xs:integer"/>
@@ -305,4 +395,10 @@
   <xs:element name="SaleImport" type="sales:SaleImport"/>
   <xs:element name="SaleImports" type="sales:SaleImports"/>
   <xs:element name="SaleImportRejections" type="sales:SaleImportRejections"/>
+  <xs:element name="SaleReconciliationResolutionRequest"
+              type="sales:SaleReconciliationResolutionRequest"/>
+  <xs:element name="SaleReconciliation" type="sales:SaleReconciliation"/>
+  <xs:element name="SaleReconciliationCase" type="sales:SaleReconciliationCase"/>
+  <xs:element name="SaleReconciliationCases" type="sales:SaleReconciliationCases"/>
+  <xs:element name="SaleImportQuality" type="sales:SaleImportQuality"/>
 </xs:schema>

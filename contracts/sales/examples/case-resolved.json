@@ -1,0 +1,11 @@
+{
+  "code": "case_resolved",
+  "message": "Reconciliation case 42 was already settled as DUPLICATE and cannot be settled again.",
+  "correlation_id": "corr-case-resolved",
+  "details": [
+    {
+      "field": "resolution",
+      "code": "already_settled"
+    }
+  ]
+}

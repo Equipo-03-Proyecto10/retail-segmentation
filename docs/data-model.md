@@ -764,6 +764,18 @@ and one column to `sales.sale_capture`:
   value each for that row and apply to some codes only (`import_row_outcome_shape_check`
   says which), so they are not independent multivalued facts. The outcome is written
   in the same transaction as the sale line, which is what makes a resume exact.
+- **`sales.reconciliation_case`** (F26-09) is keyed by `case_id`, and `(imported_transaction_id,
+  matched_transaction_id)` is unique: one case for each pair of a sale an import made and
+  an earlier sale that looks like it (same customer, store, instant and lines) under another
+  source id. Everything the case shows about the two sales (their source ids, the
+  customer, the store, the instant, the total) is read from `public.transaction`, so none of
+  it is stored twice. The columns it owns are the facts of that pair: when it was found and,
+  once a person settles it, `resolution`, `resolved_by`, `resolved_at` and `note`. Those four
+  are one fact, a decision, and each depends on the case alone, not on one another or on
+  an independent list, so the table is in 4NF (`reconciliation_case_resolved_check`
+  holds them all null or all set). A decision is written once: a trigger refuses any
+  later `UPDATE` or direct `DELETE`, whatever role writes. It is not seeded: it holds
+  runtime facts, and is named in `sql/seed-exempt.txt`.
 - **`sales.sale_capture.import_id`** says which import made a header. It is null for a
   phone sale, which is why it is a nullable column of the capture row and not a
   relation of its own: one capture has at most one import.
@@ -1357,6 +1369,24 @@ A partial unique index (`import_one_open`) allows one import in `RECEIVING` or
 | `first_line` | `INTEGER` | NULL | only with `FILE` | The first line of this file that made the row's line |
 | `sale_id` | `BIGINT` | NULL | only with `RECORDED_SALE` | The recorded sale |
 | `transaction_id`, `product_id` | `BIGINT`, `INTEGER` | NULL | with the pair, FK → `public.transaction_line`, `ON DELETE SET NULL`; set for `ACCEPTED` | The sale line the row made |
+
+#### `sales.reconciliation_case`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `case_id` | `BIGINT` | NN | PK, identity | The case |
+| `import_id` | `BIGINT` | NN | FK → `sales.import`, `ON DELETE CASCADE` | The import whose sale this is |
+| `imported_transaction_id` | `BIGINT` | NN | FK → `public.transaction`, `ON DELETE CASCADE`; `CHECK <>` the matched one | The sale the import made |
+| `matched_transaction_id` | `BIGINT` | NN | FK → `public.transaction`, `ON DELETE CASCADE`; unique with the imported one | The earlier sale it looks like |
+| `found_at` | `TIMESTAMPTZ` | NN | default `now()` | When reconciliation listed the pair |
+| `resolution` | `TEXT` | NULL | `DISTINCT` or `DUPLICATE` | A person's decision: two real sales, or one sale loaded twice |
+| `resolved_by` | `UUID` | NULL | FK → `public.app_user`, `ON DELETE RESTRICT` | The `sub` of whoever decided |
+| `resolved_at` | `TIMESTAMPTZ` | NULL | set with `resolution` | When |
+| `note` | `TEXT` | NULL | 1 to 500 characters, only with `resolution` | Why, in the person's words |
+
+`resolution`, `resolved_by` and `resolved_at` are all null or all set. Once set, the row
+cannot be changed or deleted directly (`reconciliation_case_write_once`); `svc_sales` holds
+`UPDATE` on those four columns only.
 
 #### `stock.movement_request`
 

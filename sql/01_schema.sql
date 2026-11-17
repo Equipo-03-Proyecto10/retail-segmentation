@@ -1695,6 +1695,85 @@ CREATE INDEX IF NOT EXISTS sale_capture_import
 GRANT UPDATE (total) ON public.transaction TO svc_sales;
 GRANT SELECT, INSERT, UPDATE ON sales.import, sales.import_chunk TO svc_sales;
 GRANT SELECT, INSERT ON sales.import_row_outcome TO svc_sales;
+
+-- Reconciliation of an import's sales with the sales already recorded (F26-09,
+-- ADR-0070 section 5: the guard does not unify a file whose ids were re-keyed
+-- between loads). A case is one pair: a sale an import made and an earlier
+-- sale that looks the same (same customer, store, instant and lines) under a
+-- different source id. Finding a pair changes no sale; a person settles it
+-- once, and the decision keeps its author and its moment. docs/data-model.md
+-- holds the 4NF justification.
+CREATE TABLE IF NOT EXISTS sales.reconciliation_case (
+    case_id                 bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    import_id               bigint NOT NULL
+        REFERENCES sales.import (import_id) ON DELETE CASCADE,
+    imported_transaction_id bigint NOT NULL
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    matched_transaction_id  bigint NOT NULL
+        REFERENCES public.transaction (transaction_id) ON DELETE CASCADE,
+    found_at                timestamptz NOT NULL DEFAULT now(),
+    resolution              text
+        CONSTRAINT reconciliation_case_resolution_check
+        CHECK (resolution IN ('DISTINCT', 'DUPLICATE')),
+    resolved_by             uuid
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    resolved_at             timestamptz,
+    note                    text
+        CONSTRAINT reconciliation_case_note_check
+        CHECK (note IS NULL OR char_length(note) BETWEEN 1 AND 500),
+    CONSTRAINT reconciliation_case_pair_key
+        UNIQUE (imported_transaction_id, matched_transaction_id),
+    CONSTRAINT reconciliation_case_distinct_sales_check
+        CHECK (imported_transaction_id <> matched_transaction_id),
+    CONSTRAINT reconciliation_case_resolved_check
+        CHECK ((resolution IS NULL) = (resolved_by IS NULL)
+               AND (resolution IS NULL) = (resolved_at IS NULL)
+               AND (note IS NULL OR resolution IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS reconciliation_case_import
+    ON sales.reconciliation_case (import_id, case_id);
+CREATE INDEX IF NOT EXISTS reconciliation_case_open
+    ON sales.reconciliation_case (import_id, case_id) WHERE resolution IS NULL;
+
+-- A decision is made once: it cannot be changed, deleted or made by someone
+-- else afterwards, whatever role writes (the column grant already limits
+-- svc_sales to these four columns; this holds for the schema owner too).
+CREATE OR REPLACE FUNCTION sales.refuse_case_rewrite() RETURNS trigger
+LANGUAGE plpgsql AS $refuse$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        -- A direct DELETE is refused. The cascade of a sale or an import that
+        -- is itself deleted runs one trigger deeper and is let through: the
+        -- decision is about a sale that no longer exists.
+        IF OLD.resolution IS NOT NULL AND pg_trigger_depth() = 1 THEN
+            RAISE EXCEPTION 'reconciliation case % is settled and cannot be deleted',
+                OLD.case_id
+                USING ERRCODE = 'check_violation',
+                      CONSTRAINT = 'reconciliation_case_write_once';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.resolution IS NOT NULL
+       OR (NEW.case_id, NEW.import_id, NEW.imported_transaction_id,
+           NEW.matched_transaction_id, NEW.found_at)
+          IS DISTINCT FROM
+          (OLD.case_id, OLD.import_id, OLD.imported_transaction_id,
+           OLD.matched_transaction_id, OLD.found_at) THEN
+        RAISE EXCEPTION 'reconciliation case % can only be settled once',
+            OLD.case_id
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'reconciliation_case_write_once';
+    END IF;
+    RETURN NEW;
+END
+$refuse$;
+CREATE OR REPLACE TRIGGER reconciliation_case_write_once
+BEFORE UPDATE OR DELETE ON sales.reconciliation_case
+FOR EACH ROW EXECUTE FUNCTION sales.refuse_case_rewrite();
+
+GRANT SELECT, INSERT ON sales.reconciliation_case TO svc_sales;
+GRANT UPDATE (resolution, resolved_by, resolved_at, note)
+    ON sales.reconciliation_case TO svc_sales;
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products

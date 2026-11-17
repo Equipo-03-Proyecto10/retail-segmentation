@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReconciliationResolutionRequest xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <resolution>DUPLICATE</resolution>
+  <note>Same ticket, re-keyed by the till export.</note>
+</SaleReconciliationResolutionRequest>

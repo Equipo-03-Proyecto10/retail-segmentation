@@ -35,38 +35,6 @@ PREFIX = "svc-sales:imp:"
 # ---- helpers ---------------------------------------------------------------------
 
 
-@pytest.fixture
-def world(owner):
-    """A customer, a channel and two stocked products at one store."""
-    rows = owner.execute(
-        "SELECT i.store_id, i.product_id FROM public.inventory AS i"
-        " JOIN public.product AS p USING (product_id)"
-        " WHERE p.is_active AND i.quantity_on_hand >= 10"
-        " ORDER BY i.store_id, i.product_id"
-    ).fetchall()
-    store = rows[0][0]
-    products = [product for found, product in rows if found == store][:3]
-    # Enough stock that no row is refused for it unless a test makes it so; the
-    # suite's cleanup puts the seed's quantities back.
-    owner.execute(
-        "UPDATE public.inventory SET quantity_on_hand = 500"
-        " WHERE store_id = %s AND product_id = ANY(%s)",
-        (store, products),
-    )
-    customer, registered = owner.execute(
-        "SELECT customer_id, registered_on FROM public.customer"
-        " ORDER BY registered_on, customer_id LIMIT 1"
-    ).fetchone()
-    channel = owner.execute("SELECT min(channel_id) FROM public.channel").fetchone()[0]
-    return {
-        "store": store,
-        "products": products,
-        "customer": str(customer),
-        "registered": registered,
-        "channel": channel,
-    }
-
-
 def when(days: float = 1.0) -> str:
     return (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
 

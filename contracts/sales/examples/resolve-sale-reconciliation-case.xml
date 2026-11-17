@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SaleReconciliationCase xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1">
+  <case_id>42</case_id>
+  <import_id>17</import_id>
+  <imported_sale_id>5121</imported_sale_id>
+  <imported_source_id>svc-sales:imp:T-2208</imported_source_id>
+  <matched_sale_id>4795</matched_sale_id>
+  <matched_source_id>T-0961</matched_source_id>
+  <customer_id>2f1d6e0a-4a52-4cf3-9d7c-3c1b6f0e8a10</customer_id>
+  <store_id>3</store_id>
+  <occurred_at>2026-10-21T10:05:00Z</occurred_at>
+  <total>24.50</total>
+  <found_at>2026-10-29T09:12:44Z</found_at>
+  <resolution>DUPLICATE</resolution>
+  <resolved_by>11111111-1111-1111-1111-000000000002</resolved_by>
+  <resolved_at>2026-10-29T10:30:02Z</resolved_at>
+  <note>Same ticket, re-keyed by the till export.</note>
+</SaleReconciliationCase>

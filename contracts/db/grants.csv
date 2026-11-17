@@ -421,3 +421,7 @@ svc_models,models.model_version_feature,SELECT
 svc_models,models.model_version_feature,INSERT
 svc_models,models.model_publication,SELECT
 svc_models,models.run_version,SELECT
+svc_experiments,api_campaigns,USAGE
+svc_experiments,api_campaigns.campaign_target_v1,SELECT
+svc_experiments,api_campaigns.campaign_excluded_customer_v1,SELECT
+svc_experiments,api_campaigns.campaign_excluded_label_v1,SELECT

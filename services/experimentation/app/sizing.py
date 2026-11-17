@@ -56,7 +56,7 @@ def comparison_alpha(alpha: float, comparisons: int) -> float:
 
 
 def _spread(alpha_each: float, power: float) -> float:
-    """`k = z(1 - alpha'/2) + z(power)`, the distance the two means must be apart in standard errors."""
+    """`k = z(1 - alpha'/2) + z(power)`: the gap to detect, in standard errors."""
     if not 0.0 < alpha_each < 1.0:
         raise ValueError("alpha must be strictly between 0 and 1")
     if not 0.0 < power < 1.0:

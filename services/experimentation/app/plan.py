@@ -191,11 +191,11 @@ INSERT_PLAN = """
 INSERT INTO experiments.experiment_plan (
     experiment_id, alpha, comparison_alpha, power, minimum_detectable_effect,
     baseline, baseline_std_dev, required_per_arm, smallest_detectable_effect,
-    settle_days, frame_taken_at, frame_size, frame_digest, label_code,
+    settle_days, frame_taken_at, frame_digest, label_code,
     model_version_id, salt, planned_at, planned_by)
 VALUES (%(experiment)s, %(alpha)s, %(comparison_alpha)s, %(power)s, %(mde)s,
         %(baseline)s, %(std_dev)s, %(required)s, %(smallest)s,
-        %(settle)s, %(taken_at)s, %(size)s, %(digest)s, %(label)s,
+        %(settle)s, %(taken_at)s, %(digest)s, %(label)s,
         NULL, %(salt)s, %(taken_at)s, %(actor)s)
 """
 INSERT_MEMBER = """
@@ -211,6 +211,21 @@ INSERT INTO experiments.experiment_flag (experiment_id, flag) VALUES (%s, %s)
 """
 
 
+MESSAGES = {
+    "control_count": (
+        "A control may appear at most once, and an experiment needs at least one "
+        "treatment."
+    ),
+    "treatment_count": (
+        "A control may appear at most once, and an experiment needs at least one "
+        "treatment."
+    ),
+    "unknown_campaign": "The campaign does not exist.",
+    "out_of_range": "A number is outside what the plan can size.",
+    "invalid_format": "A date is not a calendar date.",
+}
+
+
 def campaign_closed() -> ApiError:
     return ApiError(
         409,
@@ -223,7 +238,7 @@ def invalid_body(field: str, code: str) -> ApiError:
     return ApiError(
         422,
         "invalid_body",
-        "The request body breaks a rule of the plan.",
+        MESSAGES.get(code, "The request body breaks a rule of the plan."),
         [{"field": field, "code": code}],
     )
 
@@ -247,9 +262,7 @@ def ordered_arms(arms: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def estimator_of(metric: str) -> str:
     return (
-        "DIFFERENCE_OF_PROPORTIONS"
-        if metric == CONVERSION
-        else "DIFFERENCE_OF_MEANS"
+        "DIFFERENCE_OF_PROPORTIONS" if metric == CONVERSION else "DIFFERENCE_OF_MEANS"
     )
 
 
@@ -383,7 +396,10 @@ def plan(
     check_arms(body["arms"])
     if metric == CONVERSION and effect >= 1.0:
         raise invalid_body("minimum_detectable_effect", "out_of_range")
-    starts_on = date.fromisoformat(str(body["starts_on"]))
+    try:
+        starts_on = date.fromisoformat(str(body["starts_on"]))
+    except ValueError:
+        raise invalid_body("starts_on", "invalid_format") from None
     ends_on = starts_on + timedelta(days=window + SETTLE_DAYS)
     campaign_id = int(body["campaign_id"])
 
@@ -494,7 +510,6 @@ def plan(
                 "smallest": smallest,
                 "settle": SETTLE_DAYS,
                 "taken_at": taken_at,
-                "size": len(frame),
                 "digest": digest,
                 "label": label_code,
                 "salt": salt,

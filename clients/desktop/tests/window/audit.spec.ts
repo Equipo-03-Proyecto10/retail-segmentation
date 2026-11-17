@@ -29,6 +29,18 @@ const ENTITIES = [
   'role',
   'customer_segment_history',
   'store_location',
+  'loyalty_card',
+  'product_attribute',
+  'product_barcode',
+  'product_relation',
+  'product_status',
+  'store_assignment',
+  'store_channel',
+  'store_channel_set',
+  'store_commercial_rule',
+  'store_hours',
+  'store_hours_interval',
+  'store_status',
 ];
 const ACTOR = '5b0c2f3e-8a41-4d6b-9c10-2e7a1f4d9b33';
 const AUDITOR_ID = '11111111-1111-1111-1111-000000000006';

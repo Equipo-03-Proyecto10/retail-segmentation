@@ -37,9 +37,9 @@ use crate::events::{AuditRead, ENTRY_FILTERS, EVENT_FILTERS, RANGE_FILTERS};
 pub const SERVICE: &str = "audit-trail";
 pub const SUFFIX: &str = "audit_trail";
 
-/// The audited tables of RN-28, and the stores boundary's `store_location`
-/// (ADR-0046). The same thirteen names as the contract's `AuditedEntity`.
-pub const ENTITIES: [&str; 13] = [
+/// The audited tables of RN-28: every table that carries the `fn_audit` trigger,
+/// in every schema (ADR-0046). The same names as the contract's `AuditedEntity`.
+pub const ENTITIES: [&str; 25] = [
     "category",
     "product",
     "store",
@@ -53,6 +53,18 @@ pub const ENTITIES: [&str; 13] = [
     "role",
     "customer_segment_history",
     "store_location",
+    "loyalty_card",
+    "product_attribute",
+    "product_barcode",
+    "product_relation",
+    "product_status",
+    "store_assignment",
+    "store_channel",
+    "store_channel_set",
+    "store_commercial_rule",
+    "store_hours",
+    "store_hours_interval",
+    "store_status",
 ];
 pub const ACTIONS: [&str; 3] = ["INSERT", "UPDATE", "DELETE"];
 

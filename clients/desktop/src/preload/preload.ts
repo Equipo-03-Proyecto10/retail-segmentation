@@ -120,6 +120,11 @@ const bridge: MosaiqBridge = {
   getModelVersion: (versionId) => ipcRenderer.invoke(CHANNELS.getModelVersion, versionId),
   compareModelVersions: (firstVersionId, secondVersionId) =>
     ipcRenderer.invoke(CHANNELS.compareModelVersions, firstVersionId, secondVersionId),
+  listRfmRuleSets: (query) => ipcRenderer.invoke(CHANNELS.listRfmRuleSets, query),
+  getRfmRuleSet: (ruleSetId) => ipcRenderer.invoke(CHANNELS.getRfmRuleSet, ruleSetId),
+  previewRfmRuleSet: (draft, basisRuleSetId) =>
+    ipcRenderer.invoke(CHANNELS.previewRfmRuleSet, draft, basisRuleSetId),
+  createRfmRuleSet: (draft) => ipcRenderer.invoke(CHANNELS.createRfmRuleSet, draft),
   listTrainings: (query) => ipcRenderer.invoke(CHANNELS.listTrainings, query),
   getTraining: (trainingId) => ipcRenderer.invoke(CHANNELS.getTraining, trainingId),
   startTraining: (draft) => ipcRenderer.invoke(CHANNELS.startTraining, draft),

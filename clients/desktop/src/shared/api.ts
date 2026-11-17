@@ -1627,6 +1627,64 @@ export interface ModelComparisonView {
   cells: AgreementCellView[];
 }
 
+/** One band of a rule set: a box of scores that takes a label. */
+export interface RfmBandView {
+  label_code: string;
+  r_min: number;
+  r_max: number;
+  f_min: number;
+  f_max: number;
+  m_min: number;
+  m_max: number;
+}
+
+/** A rule set as the analyst edits it, before rfm-engine has stored it (F28-04, #873). */
+export interface RfmRuleSetDraft {
+  name: string;
+  window_days: number;
+  /** The largest recency, in days, that still scores 5, 4, 3 and 2. Non-decreasing. */
+  recency_boundaries: number[];
+  /** The smallest purchase count that scores 5, 4, 3 and 2. Non-increasing. */
+  frequency_boundaries: number[];
+  /** The smallest net total that scores 5, 4, 3 and 2, as `1200.00`. Non-increasing. */
+  monetary_boundaries: string[];
+  bands: RfmBandView[];
+  fallback_label_code: string;
+}
+
+/** A stored rule set. It is immutable: a change is a new rule set (ADR-0064). */
+export interface RfmRuleSetView extends RfmRuleSetDraft {
+  rule_set_id: number;
+  /** True while model-registry's published version points at it; rfm-engine never sets it. */
+  published: boolean;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface RfmRuleSetQuery {
+  published?: boolean;
+  page?: number;
+  size?: number;
+}
+
+export interface RfmPreviewLabelView {
+  label_code: string;
+  customers: number;
+  /** How many of them took the label only because no band matched. */
+  via_fallback: number;
+  /** The share of the scored customers, to four places. */
+  share: string;
+}
+
+/** What a draft would do to the customers rfm-engine has scored under a stored rule set. */
+export interface RfmPreviewView {
+  basis: { rule_set_id: number; name: string; window_days: number };
+  draft_window_days: number;
+  /** The scored customers the figures are taken from. */
+  customers: number;
+  labels: RfmPreviewLabelView[];
+}
+
 export interface TrainingQuery {
   state?: TrainingState;
   page?: number;
@@ -1884,6 +1942,12 @@ export interface MosaiqBridge {
   listModelVersions(query: ModelVersionQuery): Promise<Result<Paged<ModelVersionView>>>;
   getModelVersion(versionId: number): Promise<Result<ModelVersionView>>;
   compareModelVersions(firstVersionId: number, secondVersionId: number): Promise<Result<ModelComparisonView>>;
+  listRfmRuleSets(query: RfmRuleSetQuery): Promise<Result<Paged<RfmRuleSetView>>>;
+  getRfmRuleSet(ruleSetId: number): Promise<Result<RfmRuleSetView>>;
+  /** Scores the customers of a stored rule set under a draft's cut-points and bands; writes nothing. */
+  previewRfmRuleSet(draft: RfmRuleSetDraft, basisRuleSetId: number): Promise<Result<RfmPreviewView>>;
+  /** Stores a draft as a new, unpublished rule set. Publishing belongs to model-registry (ADR-0064). */
+  createRfmRuleSet(draft: RfmRuleSetDraft): Promise<Result<RfmRuleSetView>>;
   listTrainings(query: TrainingQuery): Promise<Result<Paged<TrainingView>>>;
   getTraining(trainingId: number): Promise<Result<TrainingView>>;
   /** Starts a K-means training; the answer is the run, RUNNING, and its result becomes a DRAFT version. */
@@ -2002,6 +2066,10 @@ export const CHANNELS = {
   listModelVersions: 'mosaiq:list-model-versions',
   getModelVersion: 'mosaiq:get-model-version',
   compareModelVersions: 'mosaiq:compare-model-versions',
+  listRfmRuleSets: 'mosaiq:list-rfm-rule-sets',
+  getRfmRuleSet: 'mosaiq:get-rfm-rule-set',
+  previewRfmRuleSet: 'mosaiq:preview-rfm-rule-set',
+  createRfmRuleSet: 'mosaiq:create-rfm-rule-set',
   listTrainings: 'mosaiq:list-trainings',
   getTraining: 'mosaiq:get-training',
   startTraining: 'mosaiq:start-training',

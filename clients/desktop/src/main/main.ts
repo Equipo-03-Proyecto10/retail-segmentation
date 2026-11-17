@@ -19,6 +19,7 @@ import { Floor } from './floor';
 import { Recommendations } from './recommendations';
 import { Models } from './models';
 import { ModelComparison } from './model-comparison';
+import { RfmRules } from './rfm-rules';
 import { Imports, systemImportEnv } from './imports';
 import { Planning } from './planning';
 import { Reports, type ReportExportEnv } from './reports';
@@ -307,6 +308,13 @@ function start(): void {
   ipcMain.handle(CHANNELS.compareModelVersions, (_e, first: unknown, second: unknown) =>
     modelComparison.compare(first, second),
   );
+  const rfmRules = new RfmRules(office);
+  ipcMain.handle(CHANNELS.listRfmRuleSets, (_e, query: unknown) => rfmRules.listRuleSets(query));
+  ipcMain.handle(CHANNELS.getRfmRuleSet, (_e, ruleSetId: unknown) => rfmRules.getRuleSet(ruleSetId));
+  ipcMain.handle(CHANNELS.previewRfmRuleSet, (_e, draft: unknown, basis: unknown) =>
+    rfmRules.previewRuleSet(draft, basis),
+  );
+  ipcMain.handle(CHANNELS.createRfmRuleSet, (_e, draft: unknown) => rfmRules.createRuleSet(draft));
   ipcMain.handle(CHANNELS.listTrainings, (_e, query: unknown) => models.listTrainings(query));
   ipcMain.handle(CHANNELS.getTraining, (_e, trainingId: unknown) => models.getTraining(trainingId));
   ipcMain.handle(CHANNELS.startTraining, (_e, draft: unknown) => models.startTraining(draft));

@@ -21,7 +21,8 @@ cancellation or a return adds a reversal and raises the line's
 `returned_quantity`; this view subtracts it. A line with no units left does not
 appear, and a sale whose every line is gone stops counting as a purchase. Like
 `api_sales.purchase_line_v1`, the view cannot tell a sale recorded through
-`POST /v1/sales` from one loaded by the web's CSV path. Consumers name only the
+`POST /v1/sales` from one loaded by the web's CSV path; it does tell an observed
+sale from a seeded one, through `data_origin`. Consumers name only the
 columns they read.
 
 Use this view to know what a customer bought, what they spent and when. Do not
@@ -45,6 +46,7 @@ accepted line, gross.
 | `net_quantity` | `integer` | `quantity - returned_quantity`; always positive in this view. |
 | `unit_price` | `numeric(10,2)` | The price actually charged for one unit (RN-13). |
 | `net_amount` | `numeric(12,2)` | `net_quantity * unit_price`. |
+| `data_origin` | `varchar(20)` | Where the sale came from, `OBSERVED` or `SEEDED` (ADR-0052). Appended last so the view can be replaced in place. A consumer that reports figures marks a result built on any `SEEDED` row as synthetic. |
 
 `(transaction_id, product_id)` is unique. A sale's net amount is the sum of
 `net_amount` over its rows. The view carries no product name, list price or

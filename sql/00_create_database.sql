@@ -213,7 +213,8 @@ BEGIN
     'definer_customers',
     'definer_preferences',
     'definer_sales',
-    'definer_segments'
+    'definer_segments',
+    'definer_rfm'
   ] LOOP
     IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = r) THEN
       EXECUTE format('CREATE ROLE %I NOLOGIN', r);

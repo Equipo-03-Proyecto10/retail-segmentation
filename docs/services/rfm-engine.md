@@ -1,6 +1,6 @@
 # rfm-engine
 
-> **Status:** Stood up empty (phase 22, third; F22-04, #778): the service answers its meta routes and registers no operation yet. The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Incremental update implemented (phase 22, third; F22-05, #779) on the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` recomputes the one customer it names, and `GET /v1/rfm-rule-sets` serves the seeded rule set. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
 > **One rule:** A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)
 
 ## Summary
@@ -48,18 +48,20 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| `rfm.customer_profile`, `rfm.rule_set`, `rfm.recalculation`, `rfm.recalculation_difference` | Tables (`rfm`) | S | Named by the schema story; the contract fixes only what the endpoints serve |
-| `rfm_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_rfm`; seed-exempt runtime state |
+| `rfm.customer_profile` | Table (`rfm`) | S | One row per processed customer; `scored` or `unassigned` (a customer with no row is `pending` in the view). Seed-exempt: the first event, or the daily pass, creates a row. Indexed on `next_change_at` for the pass (F22-06) |
+| `rfm.rule_set`, `rfm.rule_set_band` | Tables (`rfm`) | SELECT; the seed inserts the one rule set | The window, the frozen boundaries and the bands. The seed holds the scoring of the web's published rule version (`web-rfm-rules-180d`) with the 30 segment boxes as bands; F22-09 creates the others. `rule_set` is seed-exempt, `rule_set_band` has 30 rows |
+| `rfm.recalculation`, `rfm.recalculation_difference` | Tables (`rfm`) | S | Named by the verification story (F22-08) |
+| `rfm_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_rfm` through `trg_capture_profile_inserted` and `trg_capture_profile_changed`; seed-exempt runtime state |
 
 ## Database contracts
 
 | Direction | Object | Counterpart |
 |---|---|---|
-| Publishes | `api_rfm.current_profile_v1` | model-registry, analytics-kpis |
+| Publishes | `api_rfm.current_profile_v1` | model-registry (granted), analytics-kpis (granted with its role) |
 | Consumes | `api_customers.customer_ref_v1` | customers (a 404 for an unknown customer; the rows of `pending`) |
 | Consumes | `api_sales.purchase_line_v1` | sales (finds the customer of a sale) |
-| Consumes | The net view of `api_sales` (F21-02, #770) | sales (net purchases) |
-| Consumes | model-registry's published-version view (F22-10, #805) | model-registry (which rule set is published) |
+| Consumes | `api_sales.net_purchase_line_v1` | sales (net purchases, ADR-0062) |
+| Consumes | model-registry's published-version view (F22-13) | model-registry (which rule set is published). Until it exists the rule set in force is `RFM_RULE_SET_ID` (default 1, the seeded one) |
 | Calls | `api_segments.apply_assignment_v1` (ADR-0063) | segments (applies the label, in the same transaction as the profile) |
 
 ## Events
@@ -67,8 +69,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Stream | Captured from / consumer group | Effect |
 |---|---|---|---|
 | Produces | `stream:rfm.v1.profile_changed` | captured from `rfm.customer_profile` | Tells model-registry and analytics-kpis a customer's profile changed |
-| Consumes | `stream:sales.v1.recorded` | group `rfm-engine` | Recomputes the customer of the sale |
-| Consumes | `stream:sales.v1.reversed` | group `rfm-engine` | Recomputes the customer of the reversed sale |
+| Consumes | `stream:sales.v1.recorded` | group `rfm-engine` | Recomputes the customer of the sale (F22-05) |
+| Consumes | `stream:sales.v1.reversed` | group `rfm-engine` | Recomputes the customer of the reversed sale (F22-07) |
 | Consumes | model-registry's publication stream | group `rfm-engine` | Recomputes everyone under the new version, recorded as a change of version |
 
 ## Redis keys
@@ -77,6 +79,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | state | `rfm:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
+| state | `stream:sales.v1.recorded` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
+| state | `stream:rfm.v1.profile_changed` | the stream's `MAXLEN` | `XADD` by the outbox relay |
 
 ## Service-specific errors
 
@@ -107,6 +111,12 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 The call to `api_segments.apply_assignment_v1` (ADR-0063) is a synchronous cross-boundary write inside the database, the kind E-05 registers. Its register entry is amended by the story that publishes the function (F22-14, #810), not by this contract.
 
+## Concurrency and the clock
+
+- One advisory lock, `pg_advisory_xact_lock(295001, hashtext(customer_id::text))`, is taken before a customer's measures are read, so two consumers handling the same customer's events queue and the second reads what the first wrote (`contracts/db/advisory-locks.md`).
+- `computed_at` is the instant of the recomputation, `r_days` is measured to it, and `next_change_at` is the earlier of the oldest purchase leaving the window and the recency passing the largest value its score allows. Neither the outbox trigger nor the equality of two profiles looks at them (`rfm.profile_changed.v1.md`).
+- The scoring is `app/profile.py`: recency scores 5 up to the first boundary, 4 up to the second and so on, frequency and monetary the other way, a box of scores picks the label (the lowest band first) or the fallback label with `via_fallback` true. The seed derives its boundaries from the web's own scoring of the last rule-based run, so the service scores a seeded customer as the web did at that instant.
+
 ## Failure behaviour
 
 | Dependency down | Effect |
@@ -118,10 +128,11 @@ The call to `api_segments.apply_assignment_v1` (ADR-0063) is a synchronous cross
 
 ## Compliance
 
-- A test recomputes the same events twice and out of order and gets the same profile; another proves one sale writes one customer's profile (ADR-0063).
+- A test recomputes the same events twice and out of order and gets the same profile; another proves one sale writes one customer's profile (ADR-0063): every other profile row is locked by a second connection during the recomputation, which would time out if it read one for writing.
+- 1,000 sales cost the same with 5,000 more customers: [`f22-05-incremental-cost.md`](../evidence/f22-05-incremental-cost.md).
 - The verification reports zero differences over a scripted history of sales, reversals, late sales and redeliveries (F22-08).
 - [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) Compliance (registry: one rule, RN ids resolve), and ADR-0035 (resources are unique).
 
 ## Backlog
 
-F22-03 contract (#777), F22-04 stand-up (#778), F22-05 to F22-08 and F22-09 implementation; consumed by F28-03, F28-04. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F22-03 contract (#777), F22-04 stand-up (#778), F22-05 incremental update on a sale (#779), F22-06 to F22-08 and F22-09 implementation; consumed by F28-03, F28-04. Issue numbers live in [`docs/backlog.md`](../backlog.md).

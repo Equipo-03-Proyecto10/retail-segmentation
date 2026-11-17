@@ -73,6 +73,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_sales.purchase_line_v1` | recommendations |
+| Publishes | `api_sales.channel_v1` | stock (the set of channel ids availability is derived over, F21-07) |
 | Publishes | `api_sales.net_purchase_line_v1` | recommendations (SELECT granted); the net definition of ADR-0062, also read by the web as `public.net_sale_line` |
 | Consumes | `api_products.product_ref_v1` | products |
 | Consumes | `api_customers.customer_ref_v1` | customers |

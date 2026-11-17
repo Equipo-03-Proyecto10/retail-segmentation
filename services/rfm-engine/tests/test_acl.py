@@ -16,6 +16,8 @@ EXPECTED = (
     "user svc_rfm on {{password}} resetchannels -@all +@connection +@read"
     " +@write -@dangerous -scan -randomkey ~rfm:rl:* +waitaof"
     " (%R~pub:auth:v1:live:* +exists) (~stream:rfm.v1.profile_changed +xadd)"
+    " (~stream:sales.v1.recorded +xreadgroup +xack +xgroup|create +xpending"
+    " +xclaim)"
 )
 USER = "svc_rfm_acltest"
 
@@ -60,6 +62,26 @@ def _dryrun(client: Any, *command: str) -> str:
         ("XADD", "stream:rfm.v1.profile_changed", "*", "a", "b"),
         ("INCR", "rfm:rl:actor:window"),
         ("EXPIRE", "rfm:rl:actor:window", "60"),
+        ("XGROUP", "CREATE", "stream:sales.v1.recorded", "rfm-engine", "$"),
+        (
+            "XREADGROUP",
+            "GROUP",
+            "rfm-engine",
+            "c",
+            "STREAMS",
+            "stream:sales.v1.recorded",
+            ">",
+        ),
+        ("XACK", "stream:sales.v1.recorded", "rfm-engine", "1-1"),
+        ("XPENDING", "stream:sales.v1.recorded", "rfm-engine"),
+        (
+            "XCLAIM",
+            "stream:sales.v1.recorded",
+            "rfm-engine",
+            "c",
+            "60000",
+            "1-1",
+        ),
     ],
 )
 def test_dryrun_allows_only_what_rfm_engine_needs(
@@ -73,6 +95,16 @@ def test_dryrun_allows_only_what_rfm_engine_needs(
     [
         ("XADD", "stream:segments.v1.run_recorded", "*", "a", "b"),
         ("XADD", "stream:sales.v1.recorded", "*", "a", "b"),
+        ("XGROUP", "DESTROY", "stream:sales.v1.recorded", "rfm-engine"),
+        (
+            "XREADGROUP",
+            "GROUP",
+            "rfm-engine",
+            "c",
+            "STREAMS",
+            "stream:segments.v1.run_recorded",
+            ">",
+        ),
         ("GET", "auth:session:x"),
         ("GET", "pub:auth:v1:live:session"),
         ("DEL", "pub:auth:v1:live:session"),

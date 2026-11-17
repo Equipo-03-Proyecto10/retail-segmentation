@@ -345,6 +345,18 @@ conversion row stores one event. Apart from the guarded key dependencies just
 explained, none carries two independent multivalued facts, so no further 4NF
 decomposition is needed.
 
+A campaign's limits (F25-04) are kept in five tables of the `campaigns` schema
+for the reason that rule gives. A campaign's excluded customers and its excluded
+labels are two independent multivalued facts of one campaign, so each has its
+own relation with one row per member, and neither is a list in a column or one
+relation holding both. The cap, the budget and the eligibility rules are three
+single-valued groups that change for different reasons, so they are three
+relations keyed by `campaign_id`. A row exists when its fact was written, so
+there is no NULL that means "no limit" next to one that means "not yet set".
+The two minimum-purchase columns are present together or not at all, and a
+per-customer amount never exceeds the total, both as `CHECK` constraints. They
+are separate from `campaign` because the frozen web still writes that table.
+
 `notification` and `notification_recipient` (AN-04, ADR-0047) split an event from
 the people it was written for, for the same reason `segmentation_run` and
 `customer_segment_history` do. One relation holding the event beside each
@@ -893,6 +905,26 @@ decision that matters is how a product's many-valued facts are split:
   `product` because it is optional, would be NULL on every product the web
   creates, and is the service's to write. A product has at most one barcode; a
   second barcode would be a multivalued fact and a relation of its own.
+
+- **`rfm.customer_profile`** (rfm-engine, F22-05, ADR-0063) is keyed by `customer_id`:
+  a customer has one current profile, and every other column is a fact of that
+  profile at one instant, so the relation is in BCNF. It is a stored result, not a
+  copy of a source: the measures and scores are what the customer's net purchases
+  come to under one rule set, kept because the daily pass selects on
+  `next_change_at` (indexed) and the profile-changed event is captured from its
+  columns. `customer_profile_state_shape` ties the nulls to the state: `scored` has
+  every measure, score, label and flag, `unassigned` has a count of zero and none of
+  them. A customer with no row is `pending`, which the view derives and nothing
+  stores.
+- **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
+  Its boundaries are four-element arrays: each is written once, frozen, and read
+  whole (a customer is scored against all four of a measure's boundaries, in order),
+  and no query selects or updates a part of one, so rows per boundary would store the
+  same facts without a dependency to remove; the CHECKs keep them ordered.
+- **`rfm.rule_set_band`** is the repeated group "this rule set maps this box of
+  scores to this label": one row per box, keyed `(rule_set_id, band_no)`, not a
+  document inside `rule_set`. `band_no` is the order the first box that holds a
+  customer's scores wins in; every column depends on the key and nothing else.
 
 - **`models.model_version`** (model-registry, F22-11, ADR-0064) is one relation
   keyed by `version_id`, with `name` a second candidate key, so every other

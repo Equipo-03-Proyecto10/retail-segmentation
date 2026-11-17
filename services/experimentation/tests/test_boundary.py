@@ -35,6 +35,10 @@ EXPECTED = {
     ("public.experiment_exposure", "INSERT"),
     ("public.experiment_conversion", "SELECT"),
     ("public.experiment_conversion", "INSERT"),
+    # F25-11: a conversion is a sale read net, from the two views sales publishes.
+    ("api_sales", "USAGE"),
+    ("api_sales.purchase_line_v1", "SELECT"),
+    ("api_sales.net_purchase_line_v1", "SELECT"),
 }
 FACTS = ("experiment_assignment", "experiment_exposure", "experiment_conversion")
 

@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | recommendations, customer-preferences |
+| Consumers | recommendations, customer-preferences, campaigns |
 
 The view publishes the purchases that still count: one row for each line of an
 accepted sale that has at least one unit left after its reversals. It is the
@@ -24,6 +24,10 @@ appear, and a sale whose every line is gone stops counting as a purchase. Like
 `POST /v1/sales` from one loaded by the web's CSV path; it does tell an observed
 sale from a seeded one, through `data_origin`. Consumers name only the
 columns they read.
+
+experimentation reads it as well (F25-11, ADR-0069): a recorded conversion counts
+while its sale has a row here, and its net amount is the sum of `net_amount`
+over the sale's rows.
 
 Use this view to know what a customer bought, what they spent and when. Do not
 use it to find a sale that has been reversed in full: such a sale has no row here.

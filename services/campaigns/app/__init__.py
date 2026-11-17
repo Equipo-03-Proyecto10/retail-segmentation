@@ -20,7 +20,7 @@ from flask import Flask, request
 from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 
-from app import rules
+from app import limits, rules
 
 
 @contextmanager
@@ -131,5 +131,68 @@ def create_app() -> Flask:
                 expected_status=body["expected_status"],
             )
         return Representation("Campaign", moved)
+
+    # --- Audience, budget, eligibility and exclusions (F25-04) --------------
+
+    @kit.operation("getCampaignAudience")
+    def get_audience(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "CampaignAudience", limits.get_audience(connection, campaign_id)
+            )
+
+    @kit.operation("putCampaignAudience")
+    def put_audience(campaign_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            saved = limits.put_audience(connection, campaign_id, dict(kit.body))
+        return Representation("CampaignAudience", saved)
+
+    @kit.operation("getCampaignAudienceBreakdown")
+    def get_breakdown(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "CampaignAudienceBreakdown",
+                limits.get_breakdown(connection, campaign_id),
+            )
+
+    @kit.operation("getCampaignBudget")
+    def get_budget(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "CampaignBudget", limits.get_budget(connection, campaign_id)
+            )
+
+    @kit.operation("putCampaignBudget")
+    def put_budget(campaign_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            saved = limits.put_budget(connection, campaign_id, dict(kit.body))
+        return Representation("CampaignBudget", saved)
+
+    @kit.operation("getCampaignEligibilityRules")
+    def get_eligibility(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "CampaignEligibilityRules",
+                limits.get_eligibility(connection, campaign_id),
+            )
+
+    @kit.operation("putCampaignEligibilityRules")
+    def put_eligibility(campaign_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            saved = limits.put_eligibility(connection, campaign_id, dict(kit.body))
+        return Representation("CampaignEligibilityRules", saved)
+
+    @kit.operation("getCampaignExclusions")
+    def get_exclusions(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "CampaignExclusions", limits.get_exclusions(connection, campaign_id)
+            )
+
+    @kit.operation("putCampaignExclusions")
+    def put_exclusions(campaign_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            saved = limits.put_exclusions(connection, campaign_id, dict(kit.body))
+        return Representation("CampaignExclusions", saved)
 
     return app

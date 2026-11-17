@@ -336,3 +336,10 @@ svc_experiments,public.experiment_conversion,SELECT
 svc_experiments,public.experiment_conversion,INSERT
 svc_experiments,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_experiments,api_audit,USAGE
+svc_models,models,USAGE
+svc_models,models.model_version,SELECT
+svc_models,models.model_version,INSERT
+svc_models,models.model_version_feature,SELECT
+svc_models,models.model_version_feature,INSERT
+svc_models,models.model_publication,SELECT
+svc_models,models.run_version,SELECT

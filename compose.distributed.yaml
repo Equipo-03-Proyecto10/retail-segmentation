@@ -59,6 +59,7 @@ include:
     env_file: docker/distributed/local.env
   - path: [services/rfm-engine/compose.yaml, docker/distributed/service.local.yaml]
   - path: [services/experimentation/compose.yaml, docker/distributed/service.local.yaml]
+  - path: [services/model-registry/compose.yaml, docker/distributed/service.local.yaml]
     env_file: docker/distributed/local.env
 
 services:

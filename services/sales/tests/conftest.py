@@ -396,6 +396,27 @@ def world(owner):
     }
 
 
+@pytest.fixture
+def anonymized_customer(owner: psycopg.Connection) -> Iterator[str]:
+    """A customer anonymized in place (ADR-0066 section 3), removed afterwards.
+
+    It is inserted already anonymized, so the identity CHECK holds and no
+    customers event is captured. Its registration date is the latest one, so a
+    fixture that picks the earliest customer never picks it. It names no sale,
+    so it can be deleted once the test is done.
+    """
+    customer_id = owner.execute(
+        "INSERT INTO public.customer (name, email, phone, registration_channel_id,"
+        " registered_on, anonymized_at)"
+        " SELECT %s, NULL, NULL, min(channel_id),"
+        " (SELECT max(registered_on) FROM public.customer), now()"
+        " FROM public.channel RETURNING customer_id::text",
+        ("Anonymized customer",),
+    ).fetchone()[0]
+    yield customer_id
+    owner.execute("DELETE FROM public.customer WHERE customer_id = %s", (customer_id,))
+
+
 def idempotency_headers(auth: dict[str, str], key: str | None = None) -> dict[str, str]:
     return {**auth, "Idempotency-Key": key or str(uuid.uuid4())}
 

@@ -93,13 +93,14 @@ def find_capture(
 
 def customer_registration(
     connection: psycopg.Connection, customer_id: str
-) -> Any | None:
+) -> tuple[Any, bool] | None:
+    """The customer's registration date and whether it is anonymized, or None."""
     row = connection.execute(
-        "SELECT registered_on FROM api_customers.customer_ref_v1"
+        "SELECT registered_on, anonymized FROM api_customers.customer_ref_v1"
         " WHERE customer_id = %s",
         (customer_id,),
     ).fetchone()
-    return None if row is None else row[0]
+    return None if row is None else (row[0], row[1])
 
 
 def products(connection: psycopg.Connection, product_ids: list[int]) -> dict[int, bool]:

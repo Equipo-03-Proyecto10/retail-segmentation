@@ -59,6 +59,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Direction | Object | Counterpart |
 |---|---|---|
+| Publishes | [`api_checkins.customer_last_visit_v1`](../../contracts/db/api_checkins.customer_last_visit.v1.md) | customers (each customer's latest visit, for the retention candidates of ADR-0066 section 3, #1061) |
 | Consumes | `api_stores.store_directory_v1` | stores |
 | Consumes | `api_users.store_assignment_v1` | users (narrows customer visits to the caller's stores, ADR-0060) |
 | Consumes | [`api_customers.resolve_loyalty_code_v1`](../../contracts/db/api_customers.resolve_loyalty_code.v1.md) | customers (a function of one code, never the list of codes) |

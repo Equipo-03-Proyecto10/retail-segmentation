@@ -2346,6 +2346,10 @@ GRANT SELECT ON api_customers.customer_ref_v1
        svc_recommendations, svc_engagement;
 GRANT EXECUTE ON FUNCTION api_customers.resolve_loyalty_code_v1(text)
     TO svc_checkins;
+-- The retention candidates (#1061) read each customer's latest sale through the
+-- sales boundary's published lines; its latest visit is granted in check-ins.
+GRANT USAGE ON SCHEMA api_sales TO svc_customers;
+GRANT SELECT ON api_sales.purchase_line_v1 TO svc_customers;
 -- END BOUNDARY customers
 
 -- BEGIN BOUNDARY segments
@@ -4031,6 +4035,23 @@ CREATE INDEX IF NOT EXISTS customer_visit_campaign_occurred
 GRANT USAGE ON SCHEMA checkins TO svc_checkins;
 GRANT SELECT, INSERT ON checkins.store_check_in, checkins.check_in_review,
     checkins.customer_visit TO svc_checkins;
+
+-- contracts/db/api_checkins.customer_last_visit.v1.md: each customer's latest
+-- visit, for customers' retention candidates (ADR-0066 section 3, #1061). A
+-- visit whose customer reference was removed no longer counts. Definer rights,
+-- so the consumer needs no privilege on checkins.customer_visit. The customers
+-- section comes first in this file, so the consumer's grant is made here.
+CREATE SCHEMA IF NOT EXISTS api_checkins;
+REVOKE ALL ON SCHEMA api_checkins FROM PUBLIC;
+CREATE OR REPLACE VIEW api_checkins.customer_last_visit_v1
+WITH (security_invoker = off) AS
+SELECT customer_id, max(occurred_at) AS last_visited_at
+FROM checkins.customer_visit
+WHERE customer_id IS NOT NULL
+GROUP BY customer_id;
+REVOKE ALL ON api_checkins.customer_last_visit_v1 FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_checkins TO svc_customers;
+GRANT SELECT ON api_checkins.customer_last_visit_v1 TO svc_customers;
 -- END BOUNDARY check-ins
 
 -- BEGIN BOUNDARY campaigns

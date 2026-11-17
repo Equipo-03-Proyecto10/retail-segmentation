@@ -404,7 +404,6 @@ paths:
         `customer_id`. An item carries no name, email or phone; the
         administrator reads a candidate with `GET /v1/customers/{customer_id}`.
       x-mosaiq-roles: [ADMIN]
-      x-mosaiq-status: planned
       parameters:
         - $ref: '#/components/parameters/CorrelationId'
         - $ref: '#/components/parameters/Page'

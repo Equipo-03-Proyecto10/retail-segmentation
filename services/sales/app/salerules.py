@@ -160,14 +160,25 @@ def validate_sale_references(
     occurred_at: datetime,
     lines: list[dict[str, Any]],
 ) -> None:
-    registered_on = store.customer_registration(connection, body["customer_id"])
-    if registered_on is None:
+    customer = store.customer_registration(connection, body["customer_id"])
+    if customer is None:
         raise error(
             422,
             "unknown_customer",
             "The customer does not exist.",
             "customer_id",
             "unknown",
+        )
+    registered_on, anonymized = customer
+    if anonymized:
+        # ADR-0066 section 3: the identity is gone, so no new sale may attach to
+        # it. Past sales and their reversals are untouched.
+        raise error(
+            422,
+            "anonymized_customer",
+            "The customer has been anonymized and cannot be named in a new sale.",
+            "customer_id",
+            "anonymized",
         )
     if occurred_at.date() < registered_on:
         raise error(

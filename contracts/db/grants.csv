@@ -495,3 +495,7 @@ svc_models,api_models,USAGE
 svc_models,api_models.published_version_v1,SELECT
 svc_models,api_audit,USAGE
 svc_models,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
+svc_customers,api_sales,USAGE
+svc_customers,api_sales.purchase_line_v1,SELECT
+svc_customers,api_checkins,USAGE
+svc_customers,api_checkins.customer_last_visit_v1,SELECT

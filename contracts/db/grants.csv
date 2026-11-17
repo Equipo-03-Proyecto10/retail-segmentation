@@ -426,6 +426,10 @@ svc_kpis,api_kpis,USAGE
 svc_kpis,api_sales,USAGE
 svc_kpis,api_segments,USAGE
 svc_kpis,api_users,USAGE
+svc_kpis,api_stock,USAGE
+svc_kpis,api_products,USAGE
 svc_kpis,api_sales.net_purchase_line_v1,SELECT
 svc_kpis,api_segments.current_label_v1,SELECT
 svc_kpis,api_users.store_assignment_v1,SELECT
+svc_kpis,api_stock.stock_level_v1,SELECT
+svc_kpis,api_products.product_ref_v1,SELECT

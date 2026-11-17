@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.1.1
+  version: 1.1.2
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -75,8 +75,9 @@ info:
 
 
     **Implemented so far.** The stand-up story (F26-02) serves `getNetSalesReport`
-    and `listKpiDefinitions`. Every other report is marked `x-mosaiq-status: planned`
-    (ADR-0073) until its own story removes the marker.
+    and `listKpiDefinitions`, and F26-05 serves `getDemandCoverageReport`. Every other
+    report is marked `x-mosaiq-status: planned` (ADR-0073) until its own story removes
+    the marker.
 security:
   - bearer: []
 paths:
@@ -547,7 +548,6 @@ paths:
         as on every report. `INVENTORY_PLANNER`, which reads no other report,
         reads this one over every store.
       operationId: getDemandCoverageReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

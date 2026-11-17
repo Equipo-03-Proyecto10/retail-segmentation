@@ -1118,16 +1118,20 @@ pub async fn read_migrations(
     let connection = db.connection().await?;
     let client: &tokio_postgres::Client = &connection;
     validate_migration_filter(client, &query.filter).await?;
+    // `cause` is NULL for now: nothing records why a history row exists on this schema yet
+    // (ADR-0063's cause column arrives with rfm-engine's apply_assignment), and the contract
+    // reports NULL for a row written before causes were recorded. A `VERSION_CHANGE` cause
+    // is already honoured by `build_migration` once a row carries one.
     let rows = connection
         .query(
             "WITH ids AS ( \
                  SELECT customer_id FROM api_customers.customer_ref_v1) \
              SELECT ids.customer_id, \
                     b.run_id, b.label_code, bv.version_id, br.run_at, b.valid_from, \
-                    br.parameters->>'cause', b.recency_last_purchase_at, \
+                    NULL::text, b.recency_last_purchase_at, \
                     b.frequency_count, b.monetary_total::text, b.r_score, b.f_score, b.m_score, \
                     a.run_id, a.label_code, av.version_id, ar.run_at, a.valid_from, \
-                    ar.parameters->>'cause', a.recency_last_purchase_at, \
+                    NULL::text, a.recency_last_purchase_at, \
                     a.frequency_count, a.monetary_total::text, a.r_score, a.f_score, a.m_score \
                FROM ids \
                LEFT JOIN public.customer_segment_history AS b \
@@ -1229,26 +1233,15 @@ fn state_order(state: &MigrationState, ordinals: &HashMap<String, i16>) -> (i16,
     }
 }
 
-pub async fn read_migration_matrix(
-    db: &Database,
-    window: MigrationWindow,
-) -> Result<MigrationMatrix, ApiError> {
-    let query = MigrationQuery {
-        window: window.clone(),
-        filter: MigrationFilter::default(),
-    };
-    let migrations = read_migrations(db, &query).await?;
-    let connection = db.connection().await?;
-    let client: &tokio_postgres::Client = &connection;
-    let ordinals = label_ordinals(client).await?;
-    let from_model_version_id = version_at(client, window.from).await?;
-    let to_model_version_id = version_at(client, window.to).await?;
-    let methodological = from_model_version_id.is_none()
-        || to_model_version_id.is_none()
-        || from_model_version_id != to_model_version_id;
+/// The matrix's totals and cells from the customers' migrations (RN-59: every customer is in
+/// exactly one cell, so the cells and the totals reconcile). Pure, so the web's matrix pins it.
+pub fn tally(
+    migrations: &[Migration],
+    ordinals: &HashMap<String, i16>,
+) -> (Vec<MigrationTotal>, Vec<MigrationCell>) {
     let mut totals: BTreeMap<MigrationState, (i64, i64, i64, i64)> = BTreeMap::new();
     let mut cells: BTreeMap<(MigrationState, MigrationState, String), i64> = BTreeMap::new();
-    for migration in &migrations {
+    for migration in migrations {
         totals
             .entry(migration.previous.state.clone())
             .or_default()
@@ -1281,7 +1274,7 @@ pub async fn read_migration_matrix(
             },
         )
         .collect();
-    totals.sort_by_key(|total| state_order(&total.state, &ordinals));
+    totals.sort_by_key(|total| state_order(&total.state, ordinals));
     let mut cells: Vec<_> = cells
         .into_iter()
         .map(
@@ -1295,10 +1288,31 @@ pub async fn read_migration_matrix(
         .collect();
     cells.sort_by_key(|cell| {
         (
-            state_order(&cell.previous, &ordinals),
-            state_order(&cell.new, &ordinals),
+            state_order(&cell.previous, ordinals),
+            state_order(&cell.new, ordinals),
         )
     });
+    (totals, cells)
+}
+
+pub async fn read_migration_matrix(
+    db: &Database,
+    window: MigrationWindow,
+) -> Result<MigrationMatrix, ApiError> {
+    let query = MigrationQuery {
+        window: window.clone(),
+        filter: MigrationFilter::default(),
+    };
+    let migrations = read_migrations(db, &query).await?;
+    let connection = db.connection().await?;
+    let client: &tokio_postgres::Client = &connection;
+    let ordinals = label_ordinals(client).await?;
+    let from_model_version_id = version_at(client, window.from).await?;
+    let to_model_version_id = version_at(client, window.to).await?;
+    let methodological = from_model_version_id.is_none()
+        || to_model_version_id.is_none()
+        || from_model_version_id != to_model_version_id;
+    let (totals, cells) = tally(&migrations, &ordinals);
     Ok(MigrationMatrix {
         window,
         from_model_version_id,

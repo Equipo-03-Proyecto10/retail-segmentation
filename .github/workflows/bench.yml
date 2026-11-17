@@ -107,11 +107,12 @@ jobs:
             grep -rnE '\.(post|put|patch|delete)\(' bench/products-service-rs/src/ || true
           )
           # ADR-0042's "exactly the six" applies as a subset until all six exist.
+          # ADR-0059 (accepted) adds analytics-kpis, a Rust service from the start.
           for crate in services/*/Cargo.toml; do
             name=$(basename "$(dirname "$crate")")
-            case " audit-trail check-ins customer-preferences segments stock stores " in
+            case " audit-trail check-ins customer-preferences segments stock stores analytics-kpis " in
               *" $name "*) ;;
-              *) out+=$'\n'"FAIL: $name is a Rust production service outside ADR-0034's six" ;;
+              *) out+=$'\n'"FAIL: $name is a Rust production service outside ADR-0034's six and ADR-0059's analytics-kpis" ;;
             esac
           done
           if [ -n "$(printf '%s' "$out" | tr -d '[:space:]')" ]; then printf '%s\n' "$out"; exit 1; fi

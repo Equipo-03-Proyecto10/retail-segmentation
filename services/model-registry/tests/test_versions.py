@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -428,27 +427,65 @@ def test_publication_refusals_match_the_contract(
         assert invalid.get_json()["code"] == "invalid_body"
 
 
+def _lock_waiters(owner_url: str, count: int) -> None:
+    """Wait until `count` sessions wait for the published row's lock."""
+    deadline = time.monotonic() + 15
+    with psycopg.connect(owner_url, autocommit=True) as watcher:
+        while time.monotonic() < deadline:
+            waiting = watcher.execute(
+                "SELECT count(*) FROM pg_stat_activity"
+                " WHERE wait_event_type = 'Lock' AND query LIKE %s",
+                ("%state = 'PUBLISHED' FOR UPDATE%",),
+            ).fetchone()[0]
+            if waiting >= count:
+                return
+            time.sleep(0.05)
+    raise AssertionError(f"{count} publications never waited for the published row")
+
+
 def test_two_concurrent_draft_publications_leave_exactly_one_current(
-    app: Any, token: Any
+    app: Any, token: Any, owner_url: str
 ) -> None:
+    """Two publications that overlap: one wins the slot, the other gets 409.
+
+    The overlap is made, not hoped for. A version is published first, and its
+    row is held with FOR UPDATE until both requests have locked their own
+    draft and wait for it. Without that, a slow runner may finish one request
+    before the other starts, and then the second legitimately supersedes the
+    first: both answer 201, and the invariant still holds.
+    """
     seed_client = app.test_client()
+    first = _create_draft(seed_client, token)
+    published = seed_client.post(
+        f"/v1/model-versions/{first['version_id']}/publications",
+        json={"reason": "The version the two will contend to replace."},
+        headers=token(),
+    )
+    assert published.status_code == 201, published.get_json()
     drafts = [_create_draft(seed_client, token) for _ in range(2)]
-    barrier = threading.Barrier(2)
 
     def publish(version_id: int) -> tuple[int, str | None]:
         with app.test_client() as concurrent_client:
-            headers = token()
-            barrier.wait()
             response = concurrent_client.post(
                 f"/v1/model-versions/{version_id}/publications",
                 json={"reason": "Concurrent publication."},
-                headers=headers,
+                headers=token(),
             )
             body = response.get_json()
             return response.status_code, body.get("code")
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        results = list(pool.map(publish, [d["version_id"] for d in drafts]))
+    with psycopg.connect(owner_url) as holder:
+        holder.execute(
+            "SELECT version_id FROM models.model_version"
+            " WHERE state = 'PUBLISHED' FOR UPDATE"
+        ).fetchall()
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(publish, d["version_id"]) for d in drafts]
+            try:
+                _lock_waiters(owner_url, 2)
+            finally:
+                holder.commit()
+            results = [future.result(timeout=30) for future in futures]
     assert sorted(status for status, _ in results) == [201, 409]
     assert [code for status, code in results if status == 409] == [
         "publication_conflict"

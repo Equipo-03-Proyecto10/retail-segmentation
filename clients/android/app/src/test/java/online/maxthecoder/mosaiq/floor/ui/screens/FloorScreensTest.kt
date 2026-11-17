@@ -205,7 +205,7 @@ class FloorScreensTest {
     @Test
     fun theOutboxIsCalmWhenEmpty() {
         outbox(emptyList())
-        compose.onNodeWithText("Everything is sent").assertExists()
+        compose.onNodeWithText("Everything is synced").assertExists()
     }
 
     @Test

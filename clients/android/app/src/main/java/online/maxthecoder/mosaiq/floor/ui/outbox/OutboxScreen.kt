@@ -17,6 +17,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.Instant
@@ -32,6 +34,7 @@ import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
+import online.maxthecoder.mosaiq.floor.outbox.refusalReason
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
@@ -52,13 +55,14 @@ fun OutboxList(model: FloorViewModel) {
     val userId by model.userId.collectAsStateWithLifecycle()
     val chosen by model.chosen.collectAsStateWithLifecycle()
     val stores by model.stores.collectAsStateWithLifecycle()
+    val sending by model.sending.collectAsStateWithLifecycle()
     // Store names already read: the chosen store and the last page of the picker.
     val names =
         buildMap {
             stores.stores.forEach { put(it.storeId, it.name) }
             chosen?.let { put(it.storeId, it.name) }
         }
-    OutboxContent(rows, userId, names, onDismiss = model::dismiss)
+    OutboxContent(rows, userId, names, onDismiss = model::dismiss, sending = sending, onSendNow = model::sendNow)
 }
 
 /** The outbox: stateless, so previews and tests can drive every state. */
@@ -69,7 +73,9 @@ fun OutboxContent(
     storeNames: Map<Int, String>,
     onDismiss: (OutboxRow) -> Unit,
     now: Instant = Instant.now(),
-    zone: ZoneId = ZoneId.systemDefault()
+    zone: ZoneId = ZoneId.systemDefault(),
+    sending: Set<Long> = emptySet(),
+    onSendNow: (() -> Unit)? = null
 ) {
     if (rows.isEmpty()) {
         MqEmptyState(
@@ -79,9 +85,50 @@ fun OutboxContent(
         )
         return
     }
+    // Waiting rows of another user cannot go out under this session, so "Send now" is not for them.
+    val waiting = rows.count { it.state == RowState.PENDING }
+    val sendable = rows.any { it.state == RowState.PENDING && it.userId == currentUserId }
+    val needAttention = rows.count { it.state == RowState.REFUSED }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
+        item(key = "summary") {
+            OutboxSummary(waiting, needAttention, if (sendable) onSendNow else null)
+        }
         items(rows, key = { it.id }) { row ->
-            OutboxItem(row, row.userId != currentUserId, storeNames, onDismiss, now, zone)
+            OutboxItem(row, row.userId != currentUserId, row.id in sending, storeNames, onDismiss, now, zone)
+        }
+    }
+}
+
+/** How many writes wait and how many need attention, with the way to try sending now. */
+@Composable
+private fun OutboxSummary(waiting: Int, needAttention: Int, onSendNow: (() -> Unit)?) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.Lg, vertical = Spacing.Sm),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
+    ) {
+        val lines =
+            listOfNotNull(
+                if (waiting > 0) pluralStringResource(R.plurals.outbox_summary_waiting, waiting, waiting) else null,
+                if (needAttention > 0) {
+                    pluralStringResource(R.plurals.outbox_summary_attention, needAttention, needAttention)
+                } else {
+                    null
+                }
+            )
+        if (lines.isNotEmpty()) {
+            Text(
+                lines.joinToString(" · "),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.semantics { heading() }
+            )
+        }
+        if (onSendNow != null) {
+            MqButton(
+                stringResource(R.string.outbox_send_now),
+                onSendNow,
+                variant = MqButtonVariant.Secondary,
+                leadingIcon = R.drawable.ic_lucide_refresh_cw
+            )
         }
     }
 }
@@ -90,6 +137,7 @@ fun OutboxContent(
 private fun OutboxItem(
     row: OutboxRow,
     otherUser: Boolean,
+    sending: Boolean,
     storeNames: Map<Int, String>,
     onDismiss: (OutboxRow) -> Unit,
     now: Instant,
@@ -118,14 +166,15 @@ private fun OutboxItem(
                 )
             },
             leadingAlignment = Alignment.Top,
-            belowSupporting = { StateBadge(row.state) }
+            belowSupporting = { StateBadge(outboxStatus(row.state, sending)) }
         )
         if (refused) {
             Column(
                 modifier = Modifier.padding(horizontal = Spacing.Lg, vertical = Spacing.Sm),
                 verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
             ) {
-                MqErrorPanel(row.asError())
+                // The reason in plain words; the code, fields and correlation id sit behind "Details".
+                MqErrorPanel(row.asError(), friendly = refusalReason(row.code))
                 refusalAdvice(row.code)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 MqButton(
                     stringResource(R.string.outbox_dismiss),
@@ -138,8 +187,8 @@ private fun OutboxItem(
 }
 
 @Composable
-private fun StateBadge(state: RowState) {
-    when (outboxStatus(state)) {
+private fun StateBadge(status: OutboxStatus) {
+    when (status) {
         OutboxStatus.WAITING ->
             MqBadge(
                 stringResource(R.string.outbox_state_waiting),
@@ -237,7 +286,7 @@ private fun sample(id: Long, operation: Operation, state: RowState, attempts: In
 private fun OutboxPreview(dark: Boolean, rows: List<OutboxRow>) = MosaiqTheme(darkTheme = dark) {
     Surface {
         Column(Modifier.fillMaxSize().padding(Spacing.Lg)) {
-            OutboxContent(rows, "A", emptyMap(), {}, PreviewNow, ZoneId.of("UTC"))
+            OutboxContent(rows, "A", emptyMap(), {}, PreviewNow, ZoneId.of("UTC"), sending = setOf(3L), onSendNow = {})
         }
     }
 }
@@ -252,6 +301,22 @@ private fun RowsLight() = OutboxPreview(
         sample(3, Operation.QR_SCAN, RowState.PENDING)
     )
 )
+
+@Preview(name = "Outbox rows, dark", widthDp = 375, heightDp = 640, showBackground = true)
+@Composable
+private fun RowsDark() = OutboxPreview(
+    true,
+    listOf(
+        sample(1, Operation.CHECK_IN, RowState.PENDING, attempts = 1),
+        sample(2, Operation.SALE, RowState.REFUSED),
+        sample(3, Operation.QR_SCAN, RowState.PENDING),
+        sample(4, Operation.SALE, RowState.DONE)
+    )
+)
+
+@Preview(name = "Outbox empty, light", widthDp = 375, heightDp = 640, showBackground = true)
+@Composable
+private fun EmptyLight() = OutboxPreview(false, emptyList())
 
 @Preview(name = "Outbox empty, dark", widthDp = 375, heightDp = 640, showBackground = true)
 @Composable

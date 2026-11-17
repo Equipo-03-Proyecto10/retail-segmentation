@@ -28,3 +28,13 @@ fun refusalAdvice(code: String?): String? = when (code) {
     "future_dated" -> AppText.get(R.string.refusal_future_dated)
     else -> null
 }
+
+/**
+ * The reason a write was refused, in plain words, for the refusals whose service message is about
+ * the contract more than the person; `null` keeps the service's own message.
+ */
+fun refusalReason(code: String?): String? = when (code) {
+    "forbidden_role" -> AppText.get(R.string.refusal_forbidden_role)
+    "forbidden_store" -> AppText.get(R.string.refusal_forbidden_store)
+    else -> null
+}

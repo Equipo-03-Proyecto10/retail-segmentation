@@ -86,18 +86,31 @@ pub async fn remove_customer(owner: &Client, id: Uuid) {
         .unwrap();
 }
 
-/// Record a sale at `at` (an RFC 3339 instant) and return its id. The sale's
-/// total must equal its lines at commit, so both go in one transaction.
-pub async fn sale(
-    owner: &Client,
-    tag: &str,
-    customer: Uuid,
-    store: i16,
-    channel: i16,
-    at: &str,
-    origin: &str,
-    lines: &[Line],
-) -> i64 {
+/// Where, when, by whom and from what origin a sale is recorded.
+pub struct Spec<'a> {
+    pub customer: Uuid,
+    pub store: i16,
+    pub channel: i16,
+    /// An RFC 3339 instant.
+    pub at: &'a str,
+    pub origin: &'a str,
+}
+
+impl<'a> Spec<'a> {
+    pub fn new(customer: Uuid, store: i16, channel: i16, at: &'a str, origin: &'a str) -> Self {
+        Self {
+            customer,
+            store,
+            channel,
+            at,
+            origin,
+        }
+    }
+}
+
+/// Record a sale and return its id. The sale's total must equal its lines at
+/// commit, so both go in one transaction.
+pub async fn sale(owner: &Client, tag: &str, spec: Spec<'_>, lines: &[Line]) -> i64 {
     let total: i64 = lines
         .iter()
         .map(|line| i64::from(line.quantity) * line.cents)
@@ -111,12 +124,12 @@ pub async fn sale(
              RETURNING transaction_id",
             &[
                 &format!("{tag}-{}", &Uuid::new_v4().simple().to_string()[..12]),
-                &customer,
-                &store,
-                &channel,
-                &at,
+                &spec.customer,
+                &spec.store,
+                &spec.channel,
+                &spec.at,
                 &decimal_text(total),
-                &origin,
+                &spec.origin,
             ],
         )
         .await

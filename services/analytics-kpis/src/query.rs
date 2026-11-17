@@ -171,7 +171,7 @@ pub fn parse_sales_query(query: &str) -> Result<SalesQuery, ApiError> {
 
     let mut group_by: Vec<Dimension> = Vec::new();
     if let Some(text) = values.get("group_by") {
-        for part in text.split(',').filter(|part| !part.is_empty()) {
+        for part in text.split(',').filter(|_| !text.is_empty()) {
             match Dimension::parse(part) {
                 Some(dimension) if group_by.contains(&dimension) => {
                     details.push(Detail::new("group_by", "invalid_format"));

@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | segments |
 | Producer | segments-service |
-| Consumers | recommendations, campaigns |
+| Consumers | recommendations, campaigns, analytics-kpis |
 
 The view publishes exactly one row for every customer in
 `api_customers.customer_ref_v1`, so a customer is never missing and never

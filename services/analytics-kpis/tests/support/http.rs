@@ -287,9 +287,18 @@ impl Stack {
 
 /// Validate an XML body against the contract's XSD, as Electron does.
 pub fn assert_valid_xml(xml: &str) {
+    assert_valid_against("contracts/analytics-kpis/analytics-kpis.xsd", xml);
+}
+
+/// Validate an error body against the common XSD every service shares.
+pub fn assert_valid_error_xml(xml: &str) {
+    assert_valid_against("contracts/common/v1/common.xsd", xml);
+}
+
+fn assert_valid_against(xsd: &str, xml: &str) {
     use libxml::parser::Parser;
     use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
-    let mut schema = SchemaParserContext::from_file("contracts/analytics-kpis/analytics-kpis.xsd");
+    let mut schema = SchemaParserContext::from_file(xsd);
     let mut context = SchemaValidationContext::from_parser(&mut schema).expect("the XSD compiles");
     let document = Parser::default()
         .parse_string(xml)

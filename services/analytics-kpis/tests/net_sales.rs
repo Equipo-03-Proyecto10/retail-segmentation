@@ -17,8 +17,8 @@ mod support;
 use serde_json::Value;
 use support::http::{send, Stack, NET_SALES_ROLES, ROLES, TURN};
 use support::{
-    connect, customer, purge, remove_customer, remove_sales, reverse, sale, tag, Line, MANAGER,
-    MANAGER_STORES, NO_STORES,
+    connect, customer, purge, remove_customer, remove_sales, reverse, sale, tag, Line, Spec,
+    MANAGER, MANAGER_STORES, NO_STORES,
 };
 use tokio_postgres::Client;
 use uuid::Uuid;
@@ -48,44 +48,28 @@ impl Fixture {
         sale(
             &owner,
             &tag,
-            a,
-            1,
-            1,
-            "2020-03-05T12:00:00Z",
-            "OBSERVED",
+            Spec::new(a, 1, 1, "2020-03-05T12:00:00Z", "OBSERVED"),
             &[line(1, 2, 1000), line(2, 1, 550)],
         )
         .await;
         sale(
             &owner,
             &tag,
-            a,
-            1,
-            2,
-            "2020-03-31T23:30:00Z",
-            "OBSERVED",
+            Spec::new(a, 1, 2, "2020-03-31T23:30:00Z", "OBSERVED"),
             &[line(1, 3, 1000)],
         )
         .await;
         sale(
             &owner,
             &tag,
-            b,
-            2,
-            1,
-            "2020-04-01T00:00:00Z",
-            "OBSERVED",
+            Spec::new(b, 2, 1, "2020-04-01T00:00:00Z", "OBSERVED"),
             &[line(1, 9, 1000)],
         )
         .await;
         let s4 = sale(
             &owner,
             &tag,
-            b,
-            2,
-            1,
-            "2020-03-10T08:00:00Z",
-            "SEEDED",
+            Spec::new(b, 2, 1, "2020-03-10T08:00:00Z", "SEEDED"),
             &[line(1, 4, 250)],
         )
         .await;
@@ -93,11 +77,7 @@ impl Fixture {
         let s5 = sale(
             &owner,
             &tag,
-            b,
-            2,
-            3,
-            "2020-03-12T08:00:00Z",
-            "OBSERVED",
+            Spec::new(b, 2, 3, "2020-03-12T08:00:00Z", "OBSERVED"),
             &[line(1, 1, 10000)],
         )
         .await;
@@ -105,11 +85,7 @@ impl Fixture {
         sale(
             &owner,
             &tag,
-            a,
-            1,
-            1,
-            "2020-02-29T23:59:59Z",
-            "OBSERVED",
+            Spec::new(a, 1, 1, "2020-02-29T23:59:59Z", "OBSERVED"),
             &[line(1, 5, 1000)],
         )
         .await;
@@ -442,11 +418,7 @@ async fn a_customer_without_a_label_is_reported_as_it_is() {
     sale(
         &fixture.owner,
         &fixture.tag,
-        labelled.0,
-        3,
-        1,
-        "2020-03-20T10:00:00Z",
-        "OBSERVED",
+        Spec::new(labelled.0, 3, 1, "2020-03-20T10:00:00Z", "OBSERVED"),
         &[Line {
             product: 1,
             quantity: 1,

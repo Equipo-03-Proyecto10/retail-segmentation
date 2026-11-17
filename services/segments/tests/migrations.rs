@@ -11,37 +11,24 @@ use segments::{
     MigrationState, MigrationWindow,
 };
 use std::collections::HashMap;
-use std::io::Write;
-use std::process::{Command, Stdio};
 use support::{connect, owner_url, service_database};
 use uuid::Uuid;
 
 const NAMESPACE: &str = "https://mosaiq.maxthecoder.online/xml/segments/v1";
 
+/// Validate an XML body against the contract's XSD, as Electron does.
 fn assert_valid_xml(xml: &str) {
-    let mut child = Command::new("xmllint")
-        .args([
-            "--noout",
-            "--schema",
-            "contracts/segments/segments.xsd",
-            "-",
-        ])
-        .stdin(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("xmllint is installed for contract validation");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(xml.as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    assert!(
-        output.status.success(),
-        "{}\n{xml}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    use libxml::parser::Parser;
+    use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
+    let mut schema = SchemaParserContext::from_file("contracts/segments/segments.xsd");
+    let mut context = SchemaValidationContext::from_parser(&mut schema).expect("the XSD compiles");
+    let document = Parser::default()
+        .parse_string(xml)
+        .expect("well-formed XML");
+    if let Err(errors) = context.validate_document(&document) {
+        let messages: Vec<String> = errors.into_iter().filter_map(|e| e.message).collect();
+        panic!("the XML does not validate: {messages:?}\n{xml}");
+    }
 }
 
 async fn run_at(owner: &tokio_postgres::Client, run_id: i64) -> DateTime<Utc> {

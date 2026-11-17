@@ -1561,6 +1561,7 @@ dependencies = [
  "form_urlencoded",
  "http-body-util",
  "jsonwebtoken",
+ "libxml",
  "mosaiq-kit",
  "redis",
  "serde",

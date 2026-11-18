@@ -57,7 +57,8 @@ fun SalesScreen(
     insights: CustomerInsightsViewModel,
     registering: Boolean,
     onRegisteringChange: (Boolean) -> Unit,
-    onOpenProduct: (Int) -> Unit
+    onOpenProduct: (Int) -> Unit,
+    promotions: PromotionsViewModel
 ) {
     val customer by model.selectedCustomer.collectAsStateWithLifecycle()
     val customers by model.customers.collectAsStateWithLifecycle()
@@ -74,6 +75,12 @@ fun SalesScreen(
     LaunchedEffect(Unit) { model.loadChannels() }
     LaunchedEffect(customerId) {
         if (customerId != null && insights.state.value.customerId != customerId) insights.load(customerId)
+    }
+    LaunchedEffect(customerId, store?.storeId) {
+        val shown = promotions.state.value
+        if (customerId != null && (shown.customerId != customerId || shown.storeId != store?.storeId)) {
+            promotions.load(customerId)
+        }
     }
     LaunchedEffect(sale.queuedRowId) {
         if (sale.queuedRowId != null) snackbar.showSnackbar(saved)
@@ -113,6 +120,7 @@ fun SalesScreen(
         )
     SalesContent(ui, actions, snackbar, registering, onRegisteringChange) {
         CustomerInsights(insights, onOpenProduct)
+        CustomerPromotions(promotions)
     }
 }
 

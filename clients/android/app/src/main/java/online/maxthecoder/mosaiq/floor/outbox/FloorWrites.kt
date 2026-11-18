@@ -10,6 +10,7 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import online.maxthecoder.mosaiq.floor.net.CampaignExposureRequest
 import online.maxthecoder.mosaiq.floor.net.CheckInRequest
 import online.maxthecoder.mosaiq.floor.net.EngagementEventRequest
 import online.maxthecoder.mosaiq.floor.net.SaleLineRequest
@@ -126,6 +127,42 @@ class FloorWrites(
                     operation = Operation.RECO_CLICK,
                     path = Services.ENGAGEMENT + "engagement-events",
                     body = json.encodeToString(EngagementEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues one CAMPAIGN_EXPOSURE (F27-07): the seller has shown this campaign's offer to the customer.
+     * Only that tap records one; loading or reading promotions never does. The client event id is
+     * generated here, once, so every resend is the same exposure and engagement records it once.
+     */
+    suspend fun queueCampaignExposure(
+        customerId: String,
+        storeId: Int,
+        campaignId: Int,
+        now: Instant = Instant.now()
+    ): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        val request =
+            CampaignExposureRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = "CAMPAIGN_EXPOSURE",
+                storeId = storeId,
+                campaignId = campaignId,
+                customerId = customerId,
+                occurredAt = now.toString()
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.CAMPAIGN_EXPOSURE,
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
+                    body = json.encodeToString(CampaignExposureRequest.serializer(), request),
                     clientId = request.clientEventId,
                     userId = userId,
                     createdAt = now.toEpochMilli()

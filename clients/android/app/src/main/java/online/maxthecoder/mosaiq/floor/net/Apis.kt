@@ -136,3 +136,27 @@ interface EngagementApi {
         @Query("size") size: Int = 20
     ): Response<EngagementEventPage>
 }
+
+/** campaigns-service's promotions; a floor role reads active ones of its own stores only (contracts/campaigns). */
+interface CampaignsApi {
+    @GET(Services.CAMPAIGNS + "promotions")
+    suspend fun listPromotions(
+        @Query("store_id") storeId: Int,
+        @Query("channel_id") channelId: Int,
+        @Query("active") active: Boolean = true,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = MAX_PAGE_SIZE
+    ): Response<PromotionPage>
+}
+
+/** experimentation-service's arm of one customer in one campaign; reading it records nothing. */
+interface ExperimentationApi {
+    @GET(Services.EXPERIMENTATION + "experiment-assignments/current")
+    suspend fun getCurrentAssignment(
+        @Query("customer_id") customerId: String,
+        @Query("campaign_id") campaignId: Int
+    ): Response<ExperimentAssignment>
+}
+
+/** The largest page a contract's `size` allows. */
+const val MAX_PAGE_SIZE = 100

@@ -69,7 +69,10 @@ object FloorAccess {
                     ServiceOperation("sales", "getSale"),
                     ServiceOperation("segments", "getCurrentAssignment"),
                     ServiceOperation("recommendations", "getRecommendations"),
-                    ServiceOperation("engagement", "createEngagementEvent")
+                    ServiceOperation("engagement", "createEngagementEvent"),
+                    ServiceOperation("campaigns", "listPromotions"),
+                    ServiceOperation("experimentation", "getCurrentAssignment"),
+                    ServiceOperation("engagement", "createEngagementEventV2")
                 ),
             FloorSection.OUTBOX to emptyList()
         )

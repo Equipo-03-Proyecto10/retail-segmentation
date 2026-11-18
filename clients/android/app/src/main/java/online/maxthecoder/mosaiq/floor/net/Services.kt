@@ -1,7 +1,7 @@
 package online.maxthecoder.mosaiq.floor.net
 
 /**
- * The one place a service's path is built. Each prefix is `api/<name>/v1/`,
+ * The one place a service's path is built. Each prefix is `api/<name>/v<n>/`,
  * where `<name>` is the service that `contracts/registry.yaml` registers the
  * resource to (ADR-0041): the app calls a resource only at its owner.
  */
@@ -44,4 +44,13 @@ object Services {
 
     /** recommendations owns `recommendations`. */
     const val RECOMMENDATIONS = "api/recommendations/v1/"
+
+    /** engagement's `/v2`, the version that records a `CAMPAIGN_EXPOSURE`. */
+    const val ENGAGEMENT_V2 = "api/engagement/v2/"
+
+    /** campaigns owns `campaigns` and `promotions`. */
+    const val CAMPAIGNS = "api/campaigns/v1/"
+
+    /** experimentation owns `experiments`, `experiment-assignments`, `experiment-results`, `sale-attributions`. */
+    const val EXPERIMENTATION = "api/experimentation/v1/"
 }

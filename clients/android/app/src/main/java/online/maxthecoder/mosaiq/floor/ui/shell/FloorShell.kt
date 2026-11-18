@@ -79,7 +79,7 @@ fun FloorHome(
     onSignOut: () -> Unit
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
-        TurnedAway(onSignOut)
+        TurnedAway(model::forgetSession, onSignOut)
     } else {
         FloorProfile(signedIn, model, scan, sales, insights, onSignOut)
     }
@@ -87,7 +87,10 @@ fun FloorHome(
 
 /** A role the app holds nothing for: no section, no bar, and a way back to sign-in. */
 @Composable
-private fun TurnedAway(onSignOut: () -> Unit) {
+private fun TurnedAway(forgetSession: () -> Unit, onSignOut: () -> Unit) {
+    // The message says the user was signed out, so it is true by the time it shows: nothing queued goes
+    // out under this session from here on.
+    LaunchedEffect(Unit) { forgetSession() }
     Column(
         modifier = Modifier.fillMaxSize().padding(Spacing.Lg).testTag("turned-away"),
         verticalArrangement = Arrangement.spacedBy(Spacing.Md, Alignment.CenterVertically)

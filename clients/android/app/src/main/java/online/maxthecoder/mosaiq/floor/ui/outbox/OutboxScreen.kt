@@ -86,7 +86,8 @@ fun OutboxContent(
     }
     // Waiting rows of another user cannot go out under this session, so "Send now" is not for them.
     val waiting = rows.count { it.state == RowState.PENDING }
-    val sendable = rows.any { it.state == RowState.PENDING && it.userId == currentUserId }
+    val sendable =
+        rows.any { it.state == RowState.PENDING && it.userId == currentUserId && it.id !in sending }
     val needAttention = rows.count { it.state == RowState.REFUSED }
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         item(key = "summary") {

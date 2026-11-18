@@ -86,17 +86,22 @@ class SessionRepository(
         if (tokens.read() == null || known == null) return SessionResult.Failed(ApiError.unreachable(null))
         // A role this build does not serve, kept from an older build, opens nothing either.
         if (known.role !in FLOOR_ROLES) {
-            signOut()
+            signOutLocally()
             return SessionResult.RoleRefused(known.role)
         }
         return SessionResult.SignedIn(CurrentUser(known.userId, known.name, known.role))
     }
 
+    /** Forgets the session here without asking auth-service: for when the network is known to be down. */
+    fun signOutLocally() {
+        tokens.clear()
+        session.signedOut()
+    }
+
     /** Ends the session at auth-service, then forgets it here whatever the answer. */
     suspend fun signOut() {
         if (tokens.read() != null) call { network.auth.deleteCurrentSession() }
-        tokens.clear()
-        session.signedOut()
+        signOutLocally()
     }
 
     private fun friendly(error: ApiError): ApiError = when {

@@ -66,6 +66,20 @@ interface CustomersApi {
 
     @POST(Services.CUSTOMERS + "customers")
     suspend fun registerCustomer(@Body request: RegisterCustomerRequest): Response<Customer>
+
+    /** A floor role's search: `q` of at least 3 characters, at most 20 per page. */
+    @GET(Services.CUSTOMERS + "customers/floor-search")
+    suspend fun searchFloorCustomers(
+        @Query("q") query: String,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = FLOOR_SEARCH_SIZE
+    ): Response<FloorCustomerPage>
+
+    @GET(Services.CUSTOMERS + "customers/{customer_id}/floor-view")
+    suspend fun getFloorCustomer(@Path("customer_id") customerId: String): Response<FloorCustomer>
+
+    @POST(Services.CUSTOMERS + "loyalty-cards/lookup")
+    suspend fun lookupLoyaltyCard(@Body request: LookupLoyaltyCardRequest): Response<LoyaltyCardLookup>
 }
 
 interface CustomerPreferencesApi {
@@ -107,6 +121,9 @@ interface StockApi {
     @GET(Services.STOCK + "stock-levels/{store_id}/{product_id}")
     suspend fun getStockLevel(@Path("store_id") storeId: Int, @Path("product_id") productId: Int): Response<StockLevel>
 }
+
+/** The largest page `customers/floor-search` serves (contracts/customers). */
+const val FLOOR_SEARCH_SIZE = 20
 
 /** At most this many product ids per `products?ids=` call. */
 const val MAX_IDS = 50

@@ -1,7 +1,7 @@
 package online.maxthecoder.mosaiq.floor.auth
 
-/** The four root sections of the floor shell, whoever may open them. */
-enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX }
+/** The root sections of the floor shell, whoever may open them. */
+enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX, CUSTOMER }
 
 /** One operation of a service contract, as `operationId` in `contracts/<service>/openapi.yaml`. */
 data class ServiceOperation(
@@ -31,9 +31,10 @@ object FloorAccess {
     /** The profile of each role, in the order its bottom bar shows; the first is where it opens. */
     val profiles: Map<String, List<FloorSection>> =
         mapOf(
-            "SALES_ASSOCIATE" to listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.OUTBOX),
+            "SALES_ASSOCIATE" to
+                listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             "STORE_MANAGER" to EVERYTHING,
-            "LOYALTY_OFFICER" to listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX),
+            "LOYALTY_OFFICER" to listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.OUTBOX),
             "COMMERCIAL_SUPERVISOR" to listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX),
             // Not confined to stores, and holds every operation the floor calls (ADR-0060).
             "ADMIN" to EVERYTHING
@@ -71,7 +72,14 @@ object FloorAccess {
                     ServiceOperation("recommendations", "getRecommendations"),
                     ServiceOperation("engagement", "createEngagementEvent")
                 ),
-            FloorSection.OUTBOX to emptyList()
+            FloorSection.OUTBOX to emptyList(),
+            // Identifying a customer by loyalty card or by a floor search (F27-02).
+            FloorSection.CUSTOMER to
+                listOf(
+                    ServiceOperation("customers", "lookupLoyaltyCard"),
+                    ServiceOperation("customers", "searchFloorCustomers"),
+                    ServiceOperation("customers", "getFloorCustomer")
+                )
         )
 
     /** The sections [role] gets; empty for a role the floor app is not for. */

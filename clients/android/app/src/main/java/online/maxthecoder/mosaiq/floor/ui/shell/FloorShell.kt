@@ -52,6 +52,7 @@ import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesScreen
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanScreen
@@ -59,6 +60,7 @@ import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.checkin.StoreAndCheckIn
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
+import online.maxthecoder.mosaiq.floor.ui.identify.IdentifyScreen
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
@@ -76,12 +78,13 @@ fun FloorHome(
     scan: ScanViewModel,
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
+    identify: IdentifyViewModel,
     onSignOut: () -> Unit
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, onSignOut)
+        FloorProfile(signedIn, model, scan, sales, insights, identify, onSignOut)
     }
 }
 
@@ -107,6 +110,7 @@ private fun FloorProfile(
     scan: ScanViewModel,
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
+    identify: IdentifyViewModel,
     onSignOut: () -> Unit
 ) {
     val role = signedIn.role
@@ -180,6 +184,13 @@ private fun FloorProfile(
                             }
                         )
                     FloorLocation.Outbox -> OutboxList(model)
+                    FloorLocation.Customer, is FloorLocation.CustomerProfile ->
+                        IdentifyScreen(
+                            identify,
+                            profileId = (here as? FloorLocation.CustomerProfile)?.customerId,
+                            onOpenProfile = { go(FloorLocation.CustomerProfile(it)) },
+                            onBack = { go(FloorLocation.Customer) }
+                        )
                 }
             }
         }
@@ -276,6 +287,7 @@ private class Section(
 private val SECTIONS =
     listOf(
         Section(FloorSection.CHECK_IN, R.string.nav_check_in, R.drawable.ic_lucide_map_pin, "nav-check-in"),
+        Section(FloorSection.CUSTOMER, R.string.nav_customer, R.drawable.ic_lucide_user_search, "nav-customer"),
         Section(FloorSection.SCAN, R.string.nav_scan, R.drawable.ic_lucide_scan_line, "nav-scan"),
         Section(FloorSection.SALE, R.string.nav_sale, R.drawable.ic_lucide_shopping_cart, "nav-sale"),
         Section(FloorSection.OUTBOX, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")

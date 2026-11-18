@@ -12,6 +12,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.net.SaleRequest
 import online.maxthecoder.mosaiq.floor.net.json
+import online.maxthecoder.mosaiq.floor.outbox.FloorWrites
 import online.maxthecoder.mosaiq.floor.outbox.OutboxWorker
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
@@ -31,11 +32,14 @@ class OutboxWorkerTest {
     private lateinit var app: FloorTestApp
     private lateinit var graph: AppGraph
 
+    /** How many times the backed-off chain was asked to drain. */
+    private var chained = 0
+
     @Before
     fun start() {
         server.start()
         app = ApplicationProvider.getApplicationContext()
-        graph = app.build(server.url("/").toString())
+        graph = app.build(server.url("/").toString(), schedule = { chained++ })
     }
 
     @After
@@ -101,6 +105,24 @@ class OutboxWorkerTest {
         assertEquals(RowState.PENDING, graph.outbox.find(id)!!.state)
         assertEquals(ListenableWorker.Result.success(), work())
         assertEquals(RowState.DONE, graph.outbox.find(id)!!.state)
+    }
+
+    @Test
+    fun aManualSendThatMustResendHandsTheRowToTheChainInsteadOfBackingOff() = runBlocking {
+        signIn("A", "token-A")
+        val id = graph.writes.queueCheckIn(3, null)
+        server.enqueue(error(503, "database_unavailable"))
+        val before = chained
+        val manual =
+            TestListenableWorkerBuilder<OutboxWorker>(app).setTags(listOf(FloorWrites.NOW_WORK_NAME)).build()
+
+        // A backed-off "Send now" would hold its unique work, and KEEP would drop the next tap.
+        assertEquals("the manual send ends", ListenableWorker.Result.success(), manual.doWork())
+        assertEquals("and the chain takes the resend", before + 1, chained)
+        assertEquals(RowState.PENDING, graph.outbox.find(id)!!.state)
+        // The chain's own worker still backs off.
+        server.enqueue(error(503, "database_unavailable"))
+        assertEquals(ListenableWorker.Result.retry(), work())
     }
 
     @Test

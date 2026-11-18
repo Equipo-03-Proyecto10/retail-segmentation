@@ -65,7 +65,7 @@ class OutboxWorker(
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val graph = (applicationContext as GraphProvider).graph
-        return drain(
+        val result = drain(
             graph.outbox,
             graph.session,
             graph.tokens,
@@ -73,6 +73,13 @@ class OutboxWorker(
             graph.network.gateway,
             graph.inFlight
         )
+        // "Send now" is one attempt. Backing off here would hold its unique work, and KEEP would drop
+        // every tap until the backoff ended; the resend belongs to the chain, which backs off for it.
+        if (result == Result.retry() && FloorWrites.NOW_WORK_NAME in tags) {
+            graph.kick()
+            return Result.success()
+        }
+        return result
     }
 
     companion object {

@@ -8,6 +8,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -105,9 +106,19 @@ private fun ProductCard(shown: ScanResult.Shown, onScanAnother: () -> Unit, onAd
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+        val sellable = canBeSold(product.isActive, shown.status)
         Row(horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
-            if (shown.stockError == null) StockBadge(shown.quantity)
-            if (!product.isActive) MqBadge(stringResource(R.string.scan_retired), tone = MqTone.Warning)
+            if (shown.stockError == null) StockBadge(shown.quantity, shown.inStore?.reason)
+            if (!sellable) StatusBadge(shown.status)
+        }
+        if (!sellable) {
+            val discontinued = shown.status == DISCONTINUED
+            val reason = if (discontinued) R.string.scan_discontinued_message else R.string.scan_unsellable_message
+            Text(
+                stringResource(reason),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("not-sellable")
+            )
         }
         if (shown.stockError != null) {
             MqErrorPanel(shown.stockError)
@@ -118,7 +129,7 @@ private fun ProductCard(shown: ScanResult.Shown, onScanAnother: () -> Unit, onAd
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (onAddProduct != null) {
+        if (onAddProduct != null && sellable) {
             MqButton(
                 stringResource(R.string.scan_add_to_sale),
                 { onAddProduct(product) },
@@ -129,7 +140,7 @@ private fun ProductCard(shown: ScanResult.Shown, onScanAnother: () -> Unit, onAd
         MqButton(
             stringResource(R.string.scan_scan_another),
             onScanAnother,
-            variant = if (onAddProduct != null) MqButtonVariant.Secondary else MqButtonVariant.Primary,
+            variant = if (onAddProduct != null && sellable) MqButtonVariant.Secondary else MqButtonVariant.Primary,
             fullWidth = true,
             leadingIcon = R.drawable.ic_lucide_scan_line
         )
@@ -137,13 +148,29 @@ private fun ProductCard(shown: ScanResult.Shown, onScanAnother: () -> Unit, onAd
 }
 
 @Composable
-private fun StockBadge(quantity: Int?) {
-    when (stockStatus(quantity)) {
+private fun StockBadge(quantity: Int?, reason: String?) {
+    when (stockStatus(quantity, reason)) {
         StockStatus.IN_STOCK -> MqBadge(stringResource(R.string.scan_in_stock), tone = MqTone.Success)
         StockStatus.OUT_OF_STOCK -> MqBadge(stringResource(R.string.scan_out_of_stock), tone = MqTone.Danger)
         StockStatus.NOT_STOCKED -> MqBadge(stringResource(R.string.scan_not_stocked), tone = MqTone.Neutral)
+        StockStatus.NOT_SELLABLE -> MqBadge(stringResource(R.string.scan_not_sellable), tone = MqTone.Neutral)
+        StockStatus.CHANNEL_NOT_ENABLED ->
+            MqBadge(stringResource(R.string.scan_channel_not_enabled), tone = MqTone.Neutral)
     }
 }
+
+/** The commercial status of a product that cannot be sold; a product without one says it is no longer sold. */
+@Composable
+private fun StatusBadge(status: String?) {
+    when (status) {
+        DISCONTINUED -> MqBadge(stringResource(R.string.scan_discontinued), tone = MqTone.Danger)
+        PAUSED -> MqBadge(stringResource(R.string.scan_paused), tone = MqTone.Warning)
+        else -> MqBadge(stringResource(R.string.scan_retired), tone = MqTone.Warning)
+    }
+}
+
+private const val DISCONTINUED = "discontinued"
+private const val PAUSED = "paused"
 
 @Composable
 private fun stockLine(quantity: Int?, storeName: String): String = when {

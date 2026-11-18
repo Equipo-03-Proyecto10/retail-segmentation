@@ -109,6 +109,22 @@
     </plurals>
     <string name="scan_none_at_store">None at %1$s</string>
     <string name="scan_not_stocked_message">%1$s does not hold this product.</string>
+    <!-- Catalog search and commercial status (F27-04, #858) -->
+    <string name="scan_discontinued">Discontinued</string>
+    <string name="scan_paused">Paused</string>
+    <string name="scan_discontinued_message">This product is discontinued. It cannot be added to a sale.</string>
+    <string name="scan_unsellable_message">This product is off sale for now. It cannot be added to a sale.</string>
+    <string name="scan_not_sellable">Not for sale</string>
+    <string name="scan_channel_not_enabled">Not sold in store</string>
+    <string name="scan_search_title">Search the catalog</string>
+    <string name="scan_search_label">Product name or SKU</string>
+    <string name="scan_search_help">Opening a product from the search does not count as a scan.</string>
+    <string name="scan_search">Search</string>
+    <string name="scan_searching">Searching the catalog…</string>
+    <string name="scan_search_empty_title">No products found</string>
+    <string name="scan_search_empty_message">Try another name or SKU.</string>
+    <string name="scan_search_row">SKU %1$s · %2$s</string>
+    <string name="scan_search_more">Showing %1$d of %2$d. Type more of the name to narrow it down.</string>
     <!-- Sale: customer -->
     <string name="sale_customer_title">Customer</string>
     <string name="sale_search_label">Name, email or phone</string>

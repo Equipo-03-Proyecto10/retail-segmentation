@@ -47,6 +47,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.scan.CameraPreview
 import online.maxthecoder.mosaiq.floor.ui.scan.CameraViewport
+import online.maxthecoder.mosaiq.floor.ui.scan.CatalogSearchSection
 import online.maxthecoder.mosaiq.floor.ui.scan.ScanAnswer
 import online.maxthecoder.mosaiq.floor.ui.scan.ViewportStart
 import online.maxthecoder.mosaiq.floor.ui.scan.openAppSettings
@@ -156,6 +157,7 @@ fun ScanContent(
 ) {
     var lastCode by rememberSaveable { mutableStateOf("") }
     val result by model.result.collectAsStateWithLifecycle()
+    val search by model.search.collectAsStateWithLifecycle()
     ScanBody(
         store = store,
         permission = permission,
@@ -177,6 +179,7 @@ fun ScanContent(
         onGrantAccess = onGrantAccess,
         cameraError = cameraError,
         onRetryCamera = onRetryCamera,
+        search = { CatalogSearchSection(search, model::searchCatalog, model::showProduct) },
         camera = {
             camera { raw ->
                 lastCode = raw
@@ -203,10 +206,16 @@ fun ScanBody(
     onGrantAccess: () -> Unit,
     cameraError: Boolean,
     onRetryCamera: () -> Unit,
+    search: @Composable () -> Unit = {},
     camera: @Composable () -> Unit
 ) {
+    val scroll = rememberScrollState()
+    // A product opened from the search below shows at the top: bring it into view.
+    LaunchedEffect(result) {
+        if (result == ScanResult.Looking) scroll.scrollTo(0)
+    }
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll),
         verticalArrangement = Arrangement.spacedBy(Spacing.Lg)
     ) {
         if (store == null) {
@@ -233,6 +242,7 @@ fun ScanBody(
         }
         ScanAnswer(result, onScanAnother, onRetryLookup, onPickStore, onAddProduct)
         ManualEntry(onLookUp)
+        search()
     }
 }
 

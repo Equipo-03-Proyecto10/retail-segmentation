@@ -21,14 +21,17 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import okhttp3.mockwebserver.MockWebServer
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.net.ApiError
+import online.maxthecoder.mosaiq.floor.net.Availability
 import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CameraPermission
+import online.maxthecoder.mosaiq.floor.ui.CatalogSearch
 import online.maxthecoder.mosaiq.floor.ui.ScanBody
 import online.maxthecoder.mosaiq.floor.ui.ScanResult
 import online.maxthecoder.mosaiq.floor.ui.ScanScreen
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
+import online.maxthecoder.mosaiq.floor.ui.scan.CatalogSearchSection
 import online.maxthecoder.mosaiq.floor.ui.scan.DecodeOnce
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import org.junit.After
@@ -108,6 +111,63 @@ class ScanStatesTest {
         assertEquals(shirt, added)
         compose.onNodeWithText("Scan another").performScrollTo().performClick()
         assertEquals(1, scanAnother)
+    }
+
+    @Test
+    fun aDiscontinuedProductSaysSoAndCannotBeAddedToASale() {
+        val retired = shirt.copy(isActive = false)
+        show(ScanResult.Shown(retired, "Coyoacan", 2, null, 1L, "discontinued", inStore("NOT_SELLABLE", 2)))
+        compose.onNodeWithText("Discontinued").assertExists()
+        compose.onNodeWithText("Not for sale").assertExists()
+        compose.onNodeWithText("This product is discontinued. It cannot be added to a sale.").assertExists()
+        compose.onNodeWithText("Add to sale").assertDoesNotExist()
+        compose.onNodeWithText("Scan another").assertExists()
+    }
+
+    @Test
+    fun aPausedProductIsOffSaleAndCannotBeAdded() {
+        show(ScanResult.Shown(shirt.copy(isActive = false), "Coyoacan", 0, null, 1L, "paused", null))
+        compose.onNodeWithText("Paused").assertExists()
+        compose.onNodeWithText("Add to sale").assertDoesNotExist()
+    }
+
+    @Test
+    fun aStoreThatDoesNotSellInStoreSaysSoEvenWithStock() {
+        show(ScanResult.Shown(shirt, "Coyoacan", 41, null, 1L, "active", inStore("CHANNEL_NOT_ENABLED", 41)))
+        compose.onNodeWithText("Not sold in store").assertExists()
+        compose.onNodeWithText("41 units at Coyoacan").assertExists()
+        compose.onNodeWithText("Add to sale").assertExists()
+    }
+
+    private fun inStore(reason: String, quantity: Int?) = Availability(3, reason == "AVAILABLE", reason, quantity)
+
+    private fun showSearch(state: CatalogSearch, opened: MutableList<Int> = mutableListOf()) = compose.setContent {
+        MosaiqTheme { CatalogSearchSection(state, onSearch = {}, onOpen = { opened += it }) }
+    }
+
+    @Test
+    fun searchResultsListEachProductAndOpenOneByItsId() {
+        val opened = mutableListOf<Int>()
+        val found = CatalogSearch.Found("shirt", listOf(shirt, shirt.copy(productId = 121, isActive = false)), 45)
+        showSearch(found, opened)
+        compose.onNodeWithText("SKU SKU-120 · $12.50").assertExists()
+        compose.onNodeWithText("No longer sold").assertExists()
+        compose.onNodeWithText("Showing 2 of 45. Type more of the name to narrow it down.").assertExists()
+        compose.onNodeWithTag("catalog-product-120").performClick()
+        assertEquals(listOf(120), opened)
+    }
+
+    @Test
+    fun aSearchWithNoMatchesSaysSo() {
+        showSearch(CatalogSearch.Found("zzz", emptyList(), 0))
+        compose.onNodeWithTag("catalog-empty").assertExists()
+        compose.onNodeWithText("Try another name or SKU.").assertExists()
+    }
+
+    @Test
+    fun aSearchInFlightShowsALoadingLine() {
+        showSearch(CatalogSearch.Searching)
+        compose.onNodeWithText("Searching the catalog…").assertExists()
     }
 
     @Test

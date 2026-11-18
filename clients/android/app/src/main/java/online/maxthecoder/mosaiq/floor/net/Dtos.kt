@@ -205,6 +205,38 @@ data class StockLevel(
 )
 
 /**
+ * The fields of `ProductDetails` (contracts/products) the floor shows: the product
+ * plus its commercial status, `active`, `paused` or `discontinued` (F21-09).
+ */
+@Serializable
+data class ProductDetails(
+    @SerialName("product_id") val productId: Int,
+    val sku: String,
+    val name: String,
+    @SerialName("category_id") val categoryId: Int,
+    @SerialName("list_price") val listPrice: String,
+    @SerialName("is_active") val isActive: Boolean,
+    @SerialName("commercial_status") val commercialStatus: String
+) {
+    val product: Product get() = Product(productId, sku, name, categoryId, listPrice, isActive)
+}
+
+/**
+ * One `Availability` row of contracts/stock: a product in a store, in one channel.
+ * `quantityOnHand` is null when the store holds no stock record for it.
+ */
+@Serializable
+data class Availability(
+    @SerialName("channel_id") val channelId: Int,
+    @SerialName("is_available") val isAvailable: Boolean,
+    val reason: String,
+    @SerialName("quantity_on_hand") val quantityOnHand: Int? = null
+)
+
+@Serializable
+data class AvailabilityPage(val availabilities: List<Availability>, @SerialName("page_info") val pageInfo: PageInfo)
+
+/**
  * One engagement event (contracts/engagement/openapi.yaml). `clientEventId`
  * is fixed when the code is decoded, so every resend is the same event.
  */

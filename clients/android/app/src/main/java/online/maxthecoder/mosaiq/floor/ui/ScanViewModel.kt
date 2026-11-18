@@ -8,12 +8,14 @@ import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
 import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
+import online.maxthecoder.mosaiq.floor.net.Availability
 import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.net.call
 import online.maxthecoder.mosaiq.floor.scan.Payload
 import online.maxthecoder.mosaiq.floor.scan.Scan
 import online.maxthecoder.mosaiq.floor.scan.ScanSession
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
+import online.maxthecoder.mosaiq.floor.ui.sale.PHYSICAL_STORE
 
 /** What the scan screen shows for the last code. */
 sealed interface ScanResult {
@@ -32,17 +34,33 @@ sealed interface ScanResult {
      * The product, and its stock at the store: `quantity` null means the store
      * holds no inventory row for it. `stockError` is a refusal of the stock read
      * itself. A scanned product's QR_SCAN is queued as `rowId`; a product opened
-     * from a recommendation queues none here (its RECO_CLICK is its own row).
+     * from a recommendation or a search queues none here (a RECO_CLICK is its own
+     * row). `status` is the commercial status, and `inStore` the availability row
+     * of the physical-store channel, the one a floor sale is recorded under (F27-04).
      */
     data class Shown(
         val product: Product,
         val storeName: String,
         val quantity: Int?,
         val stockError: ApiError?,
-        val rowId: Long?
+        val rowId: Long?,
+        val status: String? = null,
+        val inStore: Availability? = null
     ) : ScanResult
 
     data class Failed(val error: ApiError) : ScanResult
+}
+
+/** The catalog search under the scanner (F27-04): `listProducts?q=`, first page only. */
+sealed interface CatalogSearch {
+    data object Idle : CatalogSearch
+
+    data object Searching : CatalogSearch
+
+    /** `total` counts every match; `products` is the first page of them. */
+    data class Found(val query: String, val products: List<Product>, val total: Int) : CatalogSearch
+
+    data class Failed(val error: ApiError) : CatalogSearch
 }
 
 /**
@@ -55,8 +73,13 @@ class ScanViewModel(
     private val session: ScanSession = ScanSession()
 ) : ViewModel() {
     val result = MutableStateFlow<ScanResult>(ScanResult.Idle)
+    val search = MutableStateFlow<CatalogSearch>(CatalogSearch.Idle)
     private var currentUser = graph.session.userId.value
     private var latestScan: String? = null
+    private var latestSearch: String? = null
+
+    /** sales' id of the physical-store channel, read once per view model. */
+    private var inStoreChannelId: Int? = null
 
     init {
         viewModelScope.launch {
@@ -69,6 +92,8 @@ class ScanViewModel(
         if (user != currentUser) {
             currentUser = user
             scanAgain()
+            latestSearch = null
+            search.value = CatalogSearch.Idle
         }
     }
 
@@ -120,8 +145,31 @@ class ScanViewModel(
     }
 
     /**
-     * Opens a product without scanning it (F17-05): the same detail, product and
-     * stock at the checked-in store, but no QR_SCAN, since nothing was scanned.
+     * Searches the catalog by name or SKU. A newer search, or another user, wins
+     * over an answer still on its way.
+     */
+    fun searchCatalog(raw: String) {
+        synchronizeSession()
+        val query = raw.trim().take(MAX_QUERY)
+        val user = graph.session.userId.value ?: return
+        if (query.isEmpty()) return
+        val token = UUID.randomUUID().toString()
+        latestSearch = token
+        search.value = CatalogSearch.Searching
+        viewModelScope.launch {
+            val next =
+                when (val answer = call { graph.network.products.listProducts(query) }) {
+                    is Answer.Body -> CatalogSearch.Found(query, answer.value.products, answer.value.pageInfo.total)
+                    is Answer.Refused -> CatalogSearch.Failed(answer.error)
+                }
+            if (stillSignedIn(user) && latestSearch == token) search.value = next
+        }
+    }
+
+    /**
+     * Opens a product without scanning it, from a recommendation (F17-05) or a
+     * search (F27-04): the same detail, product and stock at the checked-in store,
+     * but no QR_SCAN, since nothing was scanned.
      */
     fun showProduct(productId: Int) {
         synchronizeSession()
@@ -137,7 +185,11 @@ class ScanViewModel(
         lookUp(token, user, store, productId) { null }
     }
 
-    /** Reads the product, then its stock at `store`; `count` queues what the look-up counts as. */
+    /**
+     * Reads the product with its commercial status, then its availability at `store`;
+     * `count` queues what the look-up counts as. The store holds one quantity, the
+     * same on every channel row (ADR-0061); no rows at all means no stock record.
+     */
     private fun lookUp(
         token: String,
         user: String,
@@ -147,8 +199,8 @@ class ScanViewModel(
     ) {
         result.value = ScanResult.Looking
         viewModelScope.launch {
-            val product =
-                when (val answer = call { graph.network.products.getProduct(productId) }) {
+            val details =
+                when (val answer = call { graph.network.products.getProductDetails(productId) }) {
                     is Answer.Body -> answer.value
                     is Answer.Refused ->
                         return@launch run {
@@ -164,23 +216,45 @@ class ScanViewModel(
                         }
                 }
             if (!stillSignedIn(user)) return@launch
+            val product = details.product
             var stockError: ApiError? = null
-            val quantity =
-                when (val answer = call { graph.network.stock.getStockLevel(store.storeId, product.productId) }) {
-                    is Answer.Body -> answer.value.quantityOnHand
-                    is Answer.Refused -> {
-                        if (answer.error.code != STOCK_NOT_FOUND) stockError = answer.error
-                        null
-                    }
-                }
+            var rows: List<Availability> = emptyList()
+            when (val answer = call { graph.network.stock.getAvailability(store.storeId, product.productId) }) {
+                is Answer.Body -> rows = answer.value.availabilities
+                is Answer.Refused -> stockError = answer.error
+            }
+            var channelId: Int? = null
+            if (stockError == null) {
+                val (id, refusal) = inStoreChannel()
+                channelId = id
+                stockError = refusal
+            }
             if (!stillSignedIn(user)) return@launch
             val rowId = count(product)
-            show(token, user, ScanResult.Shown(product, store.name, quantity, stockError, rowId))
+            val quantity = rows.firstNotNullOfOrNull { it.quantityOnHand }
+            val inStore = rows.firstOrNull { it.channelId == channelId }
+            show(
+                token,
+                user,
+                ScanResult.Shown(product, store.name, quantity, stockError, rowId, details.commercialStatus, inStore)
+            )
+        }
+    }
+
+    /** The physical-store channel's id, or the refusal of the channel list. */
+    private suspend fun inStoreChannel(): Pair<Int?, ApiError?> {
+        inStoreChannelId?.let { return it to null }
+        return when (val answer = call { graph.network.sales.listChannels() }) {
+            is Answer.Body -> {
+                inStoreChannelId = answer.value.channels.firstOrNull { it.name == PHYSICAL_STORE }?.channelId
+                inStoreChannelId to null
+            }
+            is Answer.Refused -> null to answer.error
         }
     }
 
     private companion object {
         const val NOT_FOUND = 404
-        const val STOCK_NOT_FOUND = "stock_level_not_found"
+        const val MAX_QUERY = 150
     }
 }

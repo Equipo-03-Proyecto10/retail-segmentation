@@ -20,10 +20,11 @@ data class ServiceOperation(
  * [profiles] gets nothing, and nothing is the answer for a code this build does not know
  * (ADR-0076).
  *
- * Today the seller does not hold Sale: customers-service, segments-service and
- * recommendations-service do not yet list `SALES_ASSOCIATE` for the customer reads that
- * flow needs (F21-13). When they do, the contract test fails and Sale moves into the
- * seller's row here.
+ * Today the seller does not hold Sale: that flow reads the full customer directory, the
+ * full current assignment with its R, F and M scores and the preference profile with its
+ * preferred channels, none of which ADR-0060 gives a seller. The seller's and the loyalty
+ * officer's view of a customer is Customer: the floor view of the customer, of their segment
+ * (`getFloorCurrentAssignment`, F21-26) and of their interests and restrictions (F27-03).
  */
 object FloorAccess {
     private val EVERYTHING = listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.OUTBOX)
@@ -73,12 +74,18 @@ object FloorAccess {
                     ServiceOperation("engagement", "createEngagementEvent")
                 ),
             FloorSection.OUTBOX to emptyList(),
-            // Identifying a customer by loyalty card or by a floor search (F27-02).
+            // Identifying a customer by loyalty card or by a floor search (F27-02), and their
+            // permitted commercial profile: segment, interests and restrictions (F27-03).
             FloorSection.CUSTOMER to
                 listOf(
                     ServiceOperation("customers", "lookupLoyaltyCard"),
                     ServiceOperation("customers", "searchFloorCustomers"),
-                    ServiceOperation("customers", "getFloorCustomer")
+                    ServiceOperation("customers", "getFloorCustomer"),
+                    ServiceOperation("segments", "getFloorCurrentAssignment"),
+                    ServiceOperation("customer-preferences", "getInterestProfile"),
+                    ServiceOperation("customer-preferences", "getRestrictionProfile"),
+                    ServiceOperation("categories", "listCategories"),
+                    ServiceOperation("sales", "listChannels")
                 )
         )
 

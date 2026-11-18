@@ -86,6 +86,12 @@ interface CustomerPreferencesApi {
     @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}")
     suspend fun getProfile(@Path("customer_id") customerId: String): Response<PreferenceProfile>
 
+    @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/interests")
+    suspend fun getInterestProfile(@Path("customer_id") customerId: String): Response<InterestProfile>
+
+    @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/restrictions")
+    suspend fun getRestrictionProfile(@Path("customer_id") customerId: String): Response<RestrictionProfile>
+
     @PUT(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/interest-categories")
     suspend fun replaceInterests(
         @Path("customer_id") customerId: String,
@@ -132,6 +138,10 @@ const val MAX_IDS = 50
 interface SegmentsApi {
     @GET(Services.SEGMENTS + "segment-assignments/current")
     suspend fun getCurrentAssignment(@Query("customer_id") customerId: String): Response<CurrentAssignment>
+
+    /** The floor roles' read: the label and `since`, never the scores (ADR-0060, F21-26). */
+    @GET(Services.SEGMENTS + "segment-assignments/floor-view")
+    suspend fun getFloorCurrentAssignment(@Query("customer_id") customerId: String): Response<FloorCurrentAssignment>
 }
 
 /** recommendations-service's RN-40 answer (contracts/recommendations/openapi.yaml). */

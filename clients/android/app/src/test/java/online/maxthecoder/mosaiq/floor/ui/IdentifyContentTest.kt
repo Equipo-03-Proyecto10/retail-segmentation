@@ -15,7 +15,11 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import online.maxthecoder.mosaiq.floor.FloorTestApp
+import online.maxthecoder.mosaiq.floor.net.FloorCurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.FloorCustomer
+import online.maxthecoder.mosaiq.floor.net.InferredInterest
+import online.maxthecoder.mosaiq.floor.net.InterestProfile
+import online.maxthecoder.mosaiq.floor.net.RestrictionProfile
 import online.maxthecoder.mosaiq.floor.ui.identify.IdentifyBody
 import online.maxthecoder.mosaiq.floor.ui.identify.ProfileBody
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
@@ -109,5 +113,69 @@ class IdentifyContentTest {
         compose.onAllNodesWithText("Email").assertCountEquals(0)
         compose.onAllNodesWithText("Phone").assertCountEquals(0)
         compose.onAllNodesWithTag("floor-profile").assertCountEquals(1)
+    }
+
+    private val id = "7b3ad781-c5de-4f40-ae50-1fa825ce2b25"
+
+    private fun profile(
+        segment: FloorCurrentAssignment = FloorCurrentAssignment(id, "assigned", "LOYAL", "2026-10-12T03:00:00Z"),
+        personalization: Boolean = true
+    ) = show {
+        ProfileBody(
+            FloorProfileState(
+                id,
+                FloorCustomer(id, "Jordan Lee"),
+                commercial =
+                CommercialProfile(
+                    segment = segment,
+                    interests = InterestProfile(id, listOf(11), listOf(InferredInterest(12, 42))),
+                    restrictions = RestrictionProfile(id, personalization, listOf(5), listOf(9)),
+                    categoryNames = mapOf(9 to "Wine", 11 to "Cheese", 12 to "Yogurt"),
+                    channelNames = mapOf(5 to "call_center")
+                )
+            ),
+            onRetry = {},
+            onBack = {}
+        )
+    }
+
+    @Test
+    fun theProfileShowsTheSegmentInterestsAndRestrictionsAndNoScore() {
+        profile()
+        compose.onNodeWithTag("segment", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Loyal").assertExists()
+        compose.onNodeWithText("Cheese").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Yogurt (42%)").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Wine").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Call center").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Personalization allowed").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("Scores", substring = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Email").assertCountEquals(0)
+        compose.onAllNodesWithText("Phone").assertCountEquals(0)
+    }
+
+    @Test
+    fun anObjectionIsVisibleAndNothingIsOfferedAsPersonalized() {
+        profile(personalization = false)
+        compose.onNodeWithTag("personalization-objected", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Objected to personalization").assertExists()
+        compose.onNodeWithTag("no-personalized").performScrollTo().assertIsDisplayed()
+        // An inferred interest exists only to tailor an offer: it is not shown to a seller here.
+        compose.onAllNodesWithTag("interests-inferred").assertCountEquals(0)
+        compose.onAllNodesWithText("Personalization allowed").assertCountEquals(0)
+    }
+
+    @Test
+    fun anUnassignedCustomerIsShownAsItIs() {
+        profile(FloorCurrentAssignment(id, "unassigned_result", null, "2026-10-12T03:00:00Z"))
+        compose.onNodeWithTag("segment-unassigned").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag("segment", useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun aCustomerWithNoOpenAssignmentIsShownAsItIs() {
+        profile(FloorCurrentAssignment(id, "no_open_assignment", null, null))
+        compose.onNodeWithTag("segment-none").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag("segment", useUnmergedTree = true).assertCountEquals(0)
     }
 }

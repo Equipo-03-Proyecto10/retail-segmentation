@@ -3,13 +3,18 @@ package online.maxthecoder.mosaiq.floor.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import online.maxthecoder.mosaiq.floor.AppGraph
 import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
+import online.maxthecoder.mosaiq.floor.net.FloorCurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.FloorCustomer
+import online.maxthecoder.mosaiq.floor.net.InterestProfile
 import online.maxthecoder.mosaiq.floor.net.LookupLoyaltyCardRequest
+import online.maxthecoder.mosaiq.floor.net.RestrictionProfile
 import online.maxthecoder.mosaiq.floor.net.call
 import online.maxthecoder.mosaiq.floor.net.totalPages
 
@@ -39,13 +44,38 @@ data class FloorSearchState(
     val error: ApiError? = null
 )
 
+/**
+ * The customer's permitted commercial profile (F27-03): their segment, interests and
+ * restrictions, each read from the service that owns it in the representation it gives this
+ * role (ADR-0060), and each with its own error. Every model here declares only the elements
+ * a floor role may read, so an excluded one is never kept, and nothing is filled in.
+ */
+data class CommercialProfile(
+    val segment: FloorCurrentAssignment? = null,
+    val segmentError: ApiError? = null,
+    val interests: InterestProfile? = null,
+    val interestsError: ApiError? = null,
+    val restrictions: RestrictionProfile? = null,
+    val restrictionsError: ApiError? = null,
+    val categoryNames: Map<Int, String> = emptyMap(),
+    val channelNames: Map<Int, String> = emptyMap()
+) {
+    /**
+     * Whether anything may be offered as tailored to this customer: only when their
+     * restrictions were read and say personalization is allowed. An objection, or
+     * restrictions that could not be read, means nothing is personalized.
+     */
+    val personalized: Boolean get() = restrictions?.personalizationAllowed == true
+}
+
 /** The customer in the caller's floor view; [byCard] when a loyalty card identified them. */
 data class FloorProfileState(
     val customerId: String? = null,
     val customer: FloorCustomer? = null,
     val byCard: Boolean = false,
     val loading: Boolean = false,
-    val error: ApiError? = null
+    val error: ApiError? = null,
+    val commercial: CommercialProfile = CommercialProfile()
 )
 
 /** A loyalty code as `CardCode` in contracts/customers: 26 Crockford base32 characters. */
@@ -71,6 +101,8 @@ class IdentifyViewModel(
     private var owner = graph.session.userId.value
     private var searchJob: Job? = null
     private var profileJob: Job? = null
+    private var categoryNames: Map<Int, String>? = null
+    private var channelNames: Map<Int, String>? = null
 
     init {
         viewModelScope.launch {
@@ -158,12 +190,61 @@ class IdentifyViewModel(
             viewModelScope.launch {
                 val answer = call { graph.network.customers.getFloorCustomer(customerId) }
                 if (!stillOwner(user)) return@launch
+                if (answer is Answer.Refused) {
+                    profile.value = profile.value.copy(loading = false, error = answer.error)
+                    return@launch
+                }
+                val commercial = commercialProfile(customerId)
+                if (!stillOwner(user)) return@launch
                 profile.value =
-                    when (answer) {
-                        is Answer.Body -> profile.value.copy(loading = false, customer = answer.value)
-                        is Answer.Refused -> profile.value.copy(loading = false, error = answer.error)
-                    }
+                    profile.value.copy(
+                        loading = false,
+                        customer = (answer as Answer.Body).value,
+                        commercial = commercial
+                    )
             }
+    }
+
+    /** The three owners' reads, side by side, then the names of the ids they returned. */
+    private suspend fun commercialProfile(customerId: String): CommercialProfile {
+        val (segment, interests, restrictions) =
+            coroutineScope {
+                val segment = async { call { graph.network.segments.getFloorCurrentAssignment(customerId) } }
+                val interests = async { call { graph.network.preferences.getInterestProfile(customerId) } }
+                val restrictions = async { call { graph.network.preferences.getRestrictionProfile(customerId) } }
+                Triple(segment.await(), interests.await(), restrictions.await())
+            }
+        val interestBody = (interests as? Answer.Body)?.value
+        val restrictionBody = (restrictions as? Answer.Body)?.value
+        val categoryIds =
+            interestBody?.declaredCategoryIds.orEmpty() +
+                interestBody?.inferredInterests.orEmpty().map { it.categoryId } +
+                restrictionBody?.restrictedCategoryIds.orEmpty()
+        return CommercialProfile(
+            segment = (segment as? Answer.Body)?.value,
+            segmentError = (segment as? Answer.Refused)?.error,
+            interests = interestBody,
+            interestsError = (interests as? Answer.Refused)?.error,
+            restrictions = restrictionBody,
+            restrictionsError = (restrictions as? Answer.Refused)?.error,
+            categoryNames = if (categoryIds.isEmpty()) emptyMap() else categoryNames(),
+            channelNames = if (restrictionBody?.restrictedChannelIds.isNullOrEmpty()) emptyMap() else channelNames()
+        )
+    }
+
+    /** Category names for the ids above; a refusal leaves them unnamed, never hides them. */
+    private suspend fun categoryNames(): Map<Int, String> {
+        categoryNames?.let { return it }
+        val answer = call { graph.network.categories.listCategories() }
+        return (answer as? Answer.Body)?.value?.categories.orEmpty().associate { it.categoryId to it.name }
+            .also { if (answer is Answer.Body) categoryNames = it }
+    }
+
+    private suspend fun channelNames(): Map<Int, String> {
+        channelNames?.let { return it }
+        val answer = call { graph.network.sales.listChannels() }
+        return (answer as? Answer.Body)?.value?.channels.orEmpty().associate { it.channelId to it.name }
+            .also { if (answer is Answer.Body) channelNames = it }
     }
 
     /** Opens the profile again after a refusal. */

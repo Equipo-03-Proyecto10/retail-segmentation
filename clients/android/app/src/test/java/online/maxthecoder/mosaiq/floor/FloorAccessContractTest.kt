@@ -93,6 +93,12 @@ class FloorAccessContractTest {
     }
 
     @Test
+    fun onlyTheStoreManagerAndTheAdministratorReadTheStoreIndicators() {
+        val holders = SessionRepository.FLOOR_ROLES.filter { FloorAccess.holds(it, FloorSection.INDICATORS) }
+        assertEquals(setOf("STORE_MANAGER", "ADMIN"), holders.toSet())
+    }
+
+    @Test
     fun everyOtherRoleTheContractsNameGetsNothing() {
         val everyRole = rolesByOperation.values.flatten().toSet()
         assertTrue("the contracts name the ten roles", everyRole.size >= 10)

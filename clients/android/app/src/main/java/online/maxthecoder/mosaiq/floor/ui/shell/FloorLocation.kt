@@ -5,7 +5,7 @@ import online.maxthecoder.mosaiq.floor.auth.FloorAccess
 import online.maxthecoder.mosaiq.floor.auth.FloorSection
 
 /**
- * Where the signed-in user is (ADR-0058): four root sections and the sub-states
+ * Where the signed-in user is (ADR-0058): the root sections and the sub-states
  * that hang off them. Plain data, so it is saved with `rememberSaveable` and the
  * explicit [FloorLocationSaver]; there is no navigation library.
  *
@@ -29,6 +29,8 @@ sealed interface FloorLocation {
     data object Scan : Root
 
     data object Sale : Root
+
+    data object Indicators : Root
 
     data object Outbox : Root
 
@@ -58,6 +60,7 @@ val FloorLocation.section: FloorSection
             FloorLocation.CheckIn -> FloorSection.CHECK_IN
             FloorLocation.Scan -> FloorSection.SCAN
             FloorLocation.Sale -> FloorSection.SALE
+            FloorLocation.Indicators -> FloorSection.INDICATORS
             FloorLocation.Outbox -> FloorSection.OUTBOX
         }
 
@@ -67,6 +70,7 @@ val FloorSection.root: FloorLocation.Root
             FloorSection.CHECK_IN -> FloorLocation.CheckIn
             FloorSection.SCAN -> FloorLocation.Scan
             FloorSection.SALE -> FloorLocation.Sale
+            FloorSection.INDICATORS -> FloorLocation.Indicators
             FloorSection.OUTBOX -> FloorLocation.Outbox
         }
 
@@ -92,6 +96,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 FloorLocation.CheckIn -> "check_in"
                 FloorLocation.Scan -> "scan"
                 FloorLocation.Sale -> "sale"
+                FloorLocation.Indicators -> "indicators"
                 FloorLocation.Outbox -> "outbox"
                 FloorLocation.StorePicker -> "store_picker"
                 FloorLocation.RegisterCustomer -> "register_customer"
@@ -102,6 +107,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
             when {
                 saved == "scan" -> FloorLocation.Scan
                 saved == "sale" -> FloorLocation.Sale
+                saved == "indicators" -> FloorLocation.Indicators
                 saved == "outbox" -> FloorLocation.Outbox
                 saved == "store_picker" -> FloorLocation.StorePicker
                 saved == "register_customer" -> FloorLocation.RegisterCustomer

@@ -13,6 +13,7 @@ class FloorLocationTest {
             FloorLocation.CheckIn,
             FloorLocation.Scan,
             FloorLocation.Sale,
+            FloorLocation.Indicators,
             FloorLocation.Outbox,
             FloorLocation.StorePicker,
             FloorLocation.RegisterCustomer,
@@ -43,7 +44,7 @@ class FloorLocationTest {
 
     @Test
     fun aRootOtherThanCheckInBacksOutToCheckIn() {
-        listOf(FloorLocation.Scan, FloorLocation.Sale, FloorLocation.Outbox).forEach {
+        listOf(FloorLocation.Scan, FloorLocation.Sale, FloorLocation.Indicators, FloorLocation.Outbox).forEach {
             assertEquals(FloorLocation.CheckIn, it.back)
         }
     }

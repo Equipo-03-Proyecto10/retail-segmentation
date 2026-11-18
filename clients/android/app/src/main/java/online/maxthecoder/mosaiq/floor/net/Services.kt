@@ -44,4 +44,10 @@ object Services {
 
     /** recommendations owns `recommendations`. */
     const val RECOMMENDATIONS = "api/recommendations/v1/"
+
+    /** analytics-kpis owns `kpi-reports`. */
+    const val ANALYTICS_KPIS = "api/analytics-kpis/v1/"
+
+    /** campaigns owns `campaigns` and `promotions`. */
+    const val CAMPAIGNS = "api/campaigns/v1/"
 }

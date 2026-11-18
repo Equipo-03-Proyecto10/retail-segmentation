@@ -1,7 +1,7 @@
 package online.maxthecoder.mosaiq.floor.auth
 
-/** The four root sections of the floor shell, whoever may open them. */
-enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX }
+/** The root sections of the floor shell, whoever may open them. */
+enum class FloorSection { CHECK_IN, SCAN, SALE, INDICATORS, OUTBOX }
 
 /** One operation of a service contract, as `operationId` in `contracts/<service>/openapi.yaml`. */
 data class ServiceOperation(
@@ -26,7 +26,7 @@ data class ServiceOperation(
  * seller's row here.
  */
 object FloorAccess {
-    private val EVERYTHING = listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.OUTBOX)
+    private val EVERYTHING = FloorSection.entries
 
     /** The profile of each role, in the order its bottom bar shows; the first is where it opens. */
     val profiles: Map<String, List<FloorSection>> =
@@ -70,6 +70,17 @@ object FloorAccess {
                     ServiceOperation("segments", "getCurrentAssignment"),
                     ServiceOperation("recommendations", "getRecommendations"),
                     ServiceOperation("engagement", "createEngagementEvent")
+                ),
+            // The store's own figures (F27-08): aggregate reports, its active promotions, and category names.
+            FloorSection.INDICATORS to
+                listOf(
+                    ServiceOperation("analytics-kpis", "getNetSalesReport"),
+                    ServiceOperation("analytics-kpis", "getConversionReport"),
+                    ServiceOperation("analytics-kpis", "getSpendReport"),
+                    ServiceOperation("analytics-kpis", "getDemandCoverageReport"),
+                    ServiceOperation("analytics-kpis", "listKpiDefinitions"),
+                    ServiceOperation("campaigns", "listPromotions"),
+                    ServiceOperation("categories", "listCategories")
                 ),
             FloorSection.OUTBOX to emptyList()
         )

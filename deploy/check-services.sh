@@ -99,7 +99,9 @@ problems=$(
                  AND cardinality(user_name) = 1")
   roles=$(sql "SELECT rolname FROM pg_roles
                WHERE rolname LIKE 'svc\_%' AND rolname <> 'svc_products_bench' ORDER BY rolname")
-  [[ $(grep -c . <<<"$roles") -eq 15 ]] || echo "pg_roles: expected 15 service roles, found $(grep -c . <<<"$roles")"
+  # The nineteen roles sql/00_create_database.sql creates, the bench's aside: the
+  # fifteen of ADR-0034 and the four of ADR-0059 (deploy/postgresql/README.md).
+  [[ $(grep -c . <<<"$roles") -eq 19 ]] || echo "pg_roles: expected 19 service roles, found $(grep -c . <<<"$roles")"
   for role in $roles; do
     matches=$(grep -c "^$role|" <<<"$scram" || true)
     line=$(grep "^$role|" <<<"$scram" | head -1 | cut -d'|' -f2)

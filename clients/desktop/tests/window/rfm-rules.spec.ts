@@ -56,9 +56,10 @@ test.beforeAll(async () => {
       if (path === '/api/rfm-engine/v1/rfm-rule-sets' && req.method === 'GET')
         return reply(200, name(example('rule-sets-page')));
       if (path === '/api/rfm-engine/v1/rfm-rule-sets' && req.method === 'POST')
-        return reply(201, example('rule-set-created'));
-      if (path === '/api/rfm-engine/v1/rfm-rule-sets/3') return reply(200, name(example('rule-set')));
-      if (path === '/api/rfm-engine/v1/rfm-rule-sets/4') return reply(200, name(example('rule-set-created')));
+        return reply(201, example('rule-set-draft'));
+      if (path === '/api/rfm-engine/v1/rfm-rule-sets/3')
+        return reply(200, name(example('rule-set-published')));
+      if (path === '/api/rfm-engine/v1/rfm-rule-sets/4') return reply(200, name(example('rule-set-draft')));
       if (path === '/api/rfm-engine/v1/rfm-profiles') return reply(200, profilesPage);
       reply(404);
     });

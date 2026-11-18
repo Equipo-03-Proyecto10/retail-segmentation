@@ -56,6 +56,10 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      # Two at a time. Release #1079 deployed nineteen at once: each one adds the
+      # same service account's key through OS Login and opens SSH to the one VM,
+      # and fourteen failed with "Multiple concurrent mutations" or ssh exit 255.
+      max-parallel: 2
       matrix:
         service: ${{ fromJSON(needs.changes.outputs.matrix) }}
     # One deploy of a service at a time, queued rather than cancelled: a

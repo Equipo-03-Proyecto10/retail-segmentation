@@ -10,8 +10,10 @@ import {
   validateDraft,
 } from '../../src/shared/rfm-rules';
 
-// The rules of a rule set (F28-04, #873) as rfm-engine's contract states them. The recorded example
-// (contracts/rfm-engine/examples/rule-set.request.json) is the draft that must be accepted.
+// The rules of a rule set (F28-04, #873) as rfm-engine's contract states them. GOOD is the recorded
+// example (contracts/rfm-engine/examples/rule-set.request.json) as it stood before #1060: its LOYAL band
+// still spans R 4 to 5, so CHAMPION lies inside it and the overlap rule has a case to find. With R 4 to
+// 4, as the example now has it, the draft is accepted.
 
 const GOOD: RfmRuleSetDraft = {
   name: 'Quarterly bands 2026-Q4',
@@ -30,9 +32,9 @@ const GOOD: RfmRuleSetDraft = {
 const copy = (): RfmRuleSetDraft => structuredClone(GOOD);
 
 describe('validating a draft', () => {
-  it('finds that the contract’s recorded example overlaps in its first two bands', () => {
+  it('finds the overlap when one band lies inside another', () => {
     // CHAMPION (R 5, F 5, M 4 to 5) lies inside LOYAL (R 4 to 5, F 4 to 5, M 3 to 5). The contract says
-    // no two bands overlap, so the service will refuse its own example; the draft says where.
+    // no two bands overlap, so the service would refuse this draft; the draft says where.
     const found = validateDraft(GOOD);
     expect(found.map((i) => i.code)).toEqual(['bands_overlap']);
     expect(found[0]?.message).toBe(

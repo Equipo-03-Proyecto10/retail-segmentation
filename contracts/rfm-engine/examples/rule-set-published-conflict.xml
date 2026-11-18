@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>rule_set_published</code>
+  <message>A published rule set is never edited: create a new version with POST /v1/rfm-rule-sets/{rule_set_id}/versions.</message>
+  <correlation_id>corr-rule-set-published</correlation_id>
+</Error>

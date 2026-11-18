@@ -1,0 +1,6 @@
+{
+  "code": "rule_set_published",
+  "message": "A published rule set is never edited: create a new version with POST /v1/rfm-rule-sets/{rule_set_id}/versions.",
+  "correlation_id": "corr-rule-set-published",
+  "details": []
+}

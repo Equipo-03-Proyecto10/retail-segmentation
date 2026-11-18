@@ -1,6 +1,6 @@
 # rfm-engine
 
-> **Status:** Incremental update implemented (phase 22, third; F22-05, #779) on the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` recomputes the one customer it names, and `GET /v1/rfm-rule-sets` serves the seeded rule set. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Rule-set governance implemented (phase 22, F22-09, #804) on the incremental update (F22-05, #779) and the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` recomputes the one customer it names, and an administrator creates, edits, publishes and versions rule sets under `/v1/rfm-rule-sets`. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
 > **One rule:** A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)
 
 ## Summary
@@ -24,7 +24,7 @@
 - A profile is computed from the customer's net purchases (accepted, less reversals) in the rule set's window ending at the instant it is processed. R is whole days since the latest net purchase, F the number of net purchases, M the sum of net amounts. Each is scored 1 to 5 against the boundaries frozen in the rule set, never against the population, and the scores select a label from the rule set's non-overlapping bands, or its fallback label when none matches (RN-46). A customer with no net purchase in the window is unassigned (RN-21).
 - An event is a trigger and not a delta: the customer is recomputed from net purchases, so a replay or a reordering cannot change a result. Only the customer an event touched, or whose `next_change_at` has passed, is recomputed.
 - A verification recomputes everyone at one instant and writes no profile. It reports every customer whose raw R, F and M or label differ from the profile held incrementally. Only the administrator starts one on demand (RN-05).
-- A rule set is immutable from creation. Publishing and rolling back belong to model-registry (ADR-0064); `published` here only mirrors that.
+- A rule set is a `DRAFT` until it is published and immutable after, for every role and in the table itself. A change to a published one is refused and made as a new version: a row of its own that names its parent, so no profile is ever re-explained by a later edit (ADR-0064). Which published rule set is in force, and rolling back, stay model-registry's (F22-13). Cancelled and returned sales count as the rule set says (`DEDUCT`, the net purchases of ADR-0062, or `KEEP`); the two must agree until the sales contract tells a cancellation from a return. See [The rule sets](#the-rule-sets).
 
 ## Endpoints
 
@@ -33,8 +33,11 @@
 | GET | `/v1/rfm-profiles` | Stored profiles (`state`, `label_code`, `rule_set_id`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/rfm-profiles/{customer_id}` | One customer's profile: `scored`, `unassigned` or `pending` | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/rfm-rule-sets` | Rule sets (`published`, `page`, `size`) | ADMIN, ANALYST, MARKETING, AUDITOR |
-| POST | `/v1/rfm-rule-sets` | Create an immutable rule set; 201 | ADMIN |
-| GET | `/v1/rfm-rule-sets/{rule_set_id}` | One rule set with its frozen boundaries and bands | ADMIN, ANALYST, MARKETING, AUDITOR |
+| POST | `/v1/rfm-rule-sets` | Create a rule set as a validated draft; 201 | ADMIN |
+| GET | `/v1/rfm-rule-sets/{rule_set_id}` | One rule set with its state, version, lineage, boundaries and bands | ADMIN, ANALYST, MARKETING, AUDITOR |
+| PUT | `/v1/rfm-rule-sets/{rule_set_id}` | Edit a draft; a published rule set is refused (409) | ADMIN |
+| POST | `/v1/rfm-rule-sets/{rule_set_id}/versions` | The next version of a published rule set, as a draft; 201 | ADMIN |
+| POST | `/v1/rfm-rule-sets/{rule_set_id}/publication` | Freeze a draft | ADMIN |
 | GET | `/v1/rfm-recalculations` | Verification recalculations (`state`, `trigger`, `rule_set_id`, `page`, `size`) | ADMIN, ANALYST, AUDITOR |
 | POST | `/v1/rfm-recalculations` | Start a verification, on the named or the published rule set; 201 `RUNNING` | ADMIN |
 | GET | `/v1/rfm-recalculations/{recalculation_id}` | One recalculation and its outcome | ADMIN, ANALYST, AUDITOR |
@@ -49,7 +52,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `rfm.customer_profile` | Table (`rfm`) | S | One row per processed customer; `scored` or `unassigned` (a customer with no row is `pending` in the view). Seed-exempt: the first event, or the daily pass, creates a row. Indexed on `next_change_at` for the pass (F22-06) |
-| `rfm.rule_set`, `rfm.rule_set_band` | Tables (`rfm`) | SELECT; the seed inserts the one rule set | The window, the frozen boundaries and the bands. The seed holds the scoring of the web's published rule version (`web-rfm-rules-180d`) with the 30 segment boxes as bands; F22-09 creates the others. `rule_set` is seed-exempt, `rule_set_band` has 30 rows |
+| `rfm.rule_set`, `rfm.rule_set_band` | Tables (`rfm`) | S (SELECT, INSERT, UPDATE of a draft's columns and of `state`, never DELETE) | The window, the boundaries, the bands, how a cancelled and a returned sale count, and the state and lineage that govern them. The seed holds the scoring of the web's published rule version (`web-rfm-rules-180d`, `PUBLISHED`) with the 30 segment boxes as bands, and a `DRAFT` version 2 of it over 90 days; `rule_set` is seed-exempt, `rule_set_band` has 60 rows |
 | `rfm.recalculation`, `rfm.recalculation_difference` | Tables (`rfm`) | S | Named by the verification story (F22-08) |
 | `rfm_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_rfm` through `trg_capture_profile_inserted` and `trg_capture_profile_changed`; seed-exempt runtime state |
 
@@ -63,6 +66,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_sales.net_purchase_line_v1` | sales (net purchases, ADR-0062) |
 | Consumes | model-registry's published-version view (F22-13) | model-registry (which rule set is published). Until it exists the rule set in force is `RFM_RULE_SET_ID` (default 1, the seeded one) |
 | Calls | `api_segments.apply_assignment_v1` (ADR-0063) | segments (applies the label, in the same transaction as the profile) |
+| Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `CRITICAL_ACTION` with `action` `RULE_SET_CREATED`, `RULE_SET_EDITED`, `RULE_SET_VERSIONED` or `RULE_SET_PUBLISHED` for every change, in its transaction. The subject is the `rule_set` and its id, `rule_set_version` is its version number, and the actor is the administrator who made the change. A change that cannot be recorded is not made (503) |
 
 ## Events
 
@@ -82,6 +86,15 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | state | `stream:sales.v1.recorded` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
 | state | `stream:rfm.v1.profile_changed` | the stream's `MAXLEN` | `XADD` by the outbox relay |
 
+## The rule sets
+
+- **Draft, then published.** `POST` stores a rule set as a `DRAFT`, version 1, after it is validated: the boundaries ordered, each band's minimum within its maximum, and the bands a **partition** of the 125 triples of scores, so every triple sits in exactly one band (RN-46; `rfm.rule_set_partition` counts the triples in none and in more than one, and a violation stores nothing). A draft is edited with `PUT`, with the same validation, and published once, one way.
+- **A published rule set is never edited.** `PUT` on one is 409 `rule_set_published`, and the table says the same to every role, the owner included (`trg_rule_set_guard`, `trg_rule_set_band_guard`): no update, no delete, no change to its bands. The database also refuses to publish bands that do not partition.
+- **A change is a new version.** `POST .../versions` on a published rule set stores version n + 1 as a draft, with its own name, naming its parent; a rule set has at most one successor, and the published one is left exactly as it was. A profile keeps the `rule_set_id` it was scored under, so an old profile still says what it was scored against (ADR-0064).
+- **Audited.** Every create, edit, version and publication is a domain event naming its author, recorded in the transaction of the change; a refused change records nothing.
+- **Who.** Only `ADMIN` writes; the roles that read are as the table says. `segment.write` stays the web's permission and the web adds no route to it: the governance of the RFM rule catalog is here ([`roadmap.md`](../roadmap.md)).
+- **Not here.** Which published rule set is in force, and the rollback, are model-registry's (F22-13); a model version that names a draft is that service's to refuse. The label vocabulary is closed, and a band's label is not checked against it here: rfm-engine does not read it.
+
 ## Service-specific errors
 
 The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md).
@@ -91,12 +104,15 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 404 | `customer_not_found` | The customer is absent from `api_customers.customer_ref_v1`. A customer with no profile is a 200 answer, `pending` |
 | 404 | `rule_set_not_found` | The rule set does not exist |
 | 404 | `recalculation_not_found` | The recalculation does not exist |
-| 409 | `rule_set_name_taken` | `POST /v1/rfm-rule-sets` names an existing rule set |
+| 409 | `rule_set_name_taken` | A create, an edit or a version names an existing rule set |
+| 409 | `rule_set_published` | An edit or a second publication of a published rule set |
+| 409 | `rule_set_not_published` | A version of a rule set that is still a draft: edit it |
+| 409 | `rule_set_version_exists` | The rule set already has a newer version: edit that draft |
 | 409 | `recalculation_in_progress` | A recalculation is already running |
 | 409 | `no_published_rule_set` | `POST /v1/rfm-recalculations` names no rule set and none is published |
 | 409 | `recalculation_not_finished` | The differences of a recalculation that is `RUNNING` or `FAILED` |
 | 422 | `invalid_query` | A filter is malformed |
-| 422 | `invalid_body` | A rule set breaks its rules: `not_monotonic`, `band_range`, `bands_overlap` |
+| 422 | `invalid_body` | A rule set breaks its rules: `not_monotonic`, `band_range`, `bands_overlap`, `bands_gap` (RN-46), `treatment_unsupported` |
 
 ## Accepted exceptions
 

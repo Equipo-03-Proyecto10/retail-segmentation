@@ -969,14 +969,29 @@ decision that matters is how a product's many-valued facts are split:
   them. A customer with no row is `pending`, which the view derives and nothing
   stores.
 - **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
-  Its boundaries are four-element arrays: each is written once, frozen, and read
-  whole (a customer is scored against all four of a measure's boundaries, in order),
-  and no query selects or updates a part of one, so rows per boundary would store the
-  same facts without a dependency to remove; the CHECKs keep them ordered.
+  Its boundaries are four-element arrays: each is written once, read whole (a
+  customer is scored against all four of a measure's boundaries, in order), and no
+  query selects or updates a part of one, so rows per boundary would store the same
+  facts without a dependency to remove; the CHECKs keep them ordered. F22-09 adds
+  what governs it: `state` and `published_at` (a draft until published, frozen
+  after; `rule_set_state_shape` ties them), `version_no` and `parent_rule_set_id`
+  (the version it changes; `rule_set_lineage`, and the unique index
+  `rule_set_one_successor`, make a lineage a line), and `cancelled_sales` and
+  `returned_sales`, the treatment of a reversed sale. Each is one value of this
+  rule set, so none is a multivalued fact for a table of its own and the relation
+  stays in BCNF; a lineage is a column and not a link table because a version has
+  one parent and, by the index, one successor. `trg_rule_set_guard` makes a
+  published rule set immutable, for every role, and refuses to publish bands that
+  do not partition the 125 triples of scores (RN-46). The seed holds the web's
+  published rule set (`PUBLISHED`, version 1) and a `DRAFT` version 2 of it.
 - **`rfm.rule_set_band`** is the repeated group "this rule set maps this box of
   scores to this label": one row per box, keyed `(rule_set_id, band_no)`, not a
   document inside `rule_set`. `band_no` is the order the first box that holds a
   customer's scores wins in; every column depends on the key and nothing else.
+  The boxes of a rule set partition the 125 triples (RN-46), which
+  `rfm.rule_set_partition` counts, and `trg_rule_set_band_guard` freezes the boxes
+  of a published rule set. The seed holds the 30 boxes of version 1 and the same 30
+  under the draft.
 
 - **`models.model_version`** (model-registry, F22-11, ADR-0064) is one relation
   keyed by `version_id`, with `name` a second candidate key, so every other

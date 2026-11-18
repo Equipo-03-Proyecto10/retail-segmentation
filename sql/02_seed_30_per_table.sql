@@ -1304,9 +1304,11 @@ $seed_models$;
 -- web's last rule-based run froze (the quintile boundaries above), and the bands of
 -- the segments valid today, one per segment in segment_id order, with the label of
 -- the segment as the box's label. The fallback is the worst-ranked label, as the
--- web's. A customer is scored under it exactly as the web scored the seed, and
--- F22-09 adds the others. rfm.customer_profile starts empty: the first sale event,
--- or the daily pass, creates a customer's row, and a customer with none is pending.
+-- web's. A customer is scored under it exactly as the web scored the seed, and it is
+-- PUBLISHED, so it is immutable (F22-09): the second row is a DRAFT version 2 of it,
+-- over the last 90 days, which an analyst edits and publishes. rfm.customer_profile
+-- starts empty: the first sale event, or the daily pass, creates a customer's row,
+-- and a customer with none is pending.
 INSERT INTO rfm.rule_set
     (name, window_days, recency_boundaries, frequency_boundaries, monetary_boundaries,
      fallback_label_code)
@@ -1329,6 +1331,27 @@ SELECT (SELECT min(rule_set_id) FROM rfm.rule_set),
 FROM segment AS g
 JOIN segment_rule AS sr ON sr.rule_id = g.rule_id
 WHERE g.valid_from <= CURRENT_DATE AND (g.valid_to IS NULL OR g.valid_to >= CURRENT_DATE);
+
+-- The bands are in, so the first rule set can be frozen: the guard checks they
+-- partition the 125 triples (RN-46) and refuses any later edit.
+UPDATE rfm.rule_set SET state = 'PUBLISHED', published_at = now()
+WHERE rule_set_id = (SELECT min(rule_set_id) FROM rfm.rule_set);
+
+-- Version 2, a draft: the same boundaries and bands over a shorter window, to be
+-- refitted before anyone publishes it.
+INSERT INTO rfm.rule_set
+    (name, window_days, recency_boundaries, frequency_boundaries, monetary_boundaries,
+     fallback_label_code, version_no, parent_rule_set_id)
+SELECT 'web-rfm-rules-90d', 90, recency_boundaries, frequency_boundaries,
+       monetary_boundaries, fallback_label_code, 2, rule_set_id
+FROM rfm.rule_set WHERE version_no = 1;
+
+INSERT INTO rfm.rule_set_band
+    (rule_set_id, band_no, label_code, r_min, r_max, f_min, f_max, m_min, m_max)
+SELECT (SELECT rule_set_id FROM rfm.rule_set WHERE version_no = 2),
+       band_no, label_code, r_min, r_max, f_min, f_max, m_min, m_max
+FROM rfm.rule_set_band
+WHERE rule_set_id = (SELECT rule_set_id FROM rfm.rule_set WHERE version_no = 1);
 
 -- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
 -- Runtime history, seeded like app_session rather than exempted (ADR-0051).

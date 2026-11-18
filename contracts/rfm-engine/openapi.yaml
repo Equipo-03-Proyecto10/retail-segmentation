@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rfm-engine-service
-  version: 1.0.2
+  version: 1.1.0
   description: >-
     Keeps each customer's R, F and M current. A customer's profile is a function
     of their accepted, unreversed purchases under one rule-set version; it changes
@@ -207,22 +207,21 @@ paths:
           $ref: '#/components/responses/OperationUnavailable'
     post:
       tags: [RuleSets]
-      summary: Create a rule set
+      summary: Create a rule set as a draft
       description: >-
-        Creates an immutable rule set: its window, the four cut-points of each
-        measure's quintile boundary, its bands and its fallback label. A rule set
-        is never edited or deleted, and a change is a new rule set. Creating one
-        publishes nothing: publication and rollback belong to model-registry
-        (ADR-0064), and `published` stays false here. The boundaries are frozen
-        values that scoring uses without reading the population (ADR-0063).
+        Creates a rule set as a `DRAFT`, version 1: its window, the four
+        cut-points of each measure's quintile boundary, its bands, its fallback
+        label and how a cancelled and a returned sale count. It is validated
+        before it is stored and edited until it is published. The bands partition
+        the 125 triples of scores (RN-46): each triple sits in exactly one band.
         Recency boundaries are non-decreasing days and frequency and monetary
         boundaries are non-increasing, listed in the order of the scores 5, 4, 3
-        and 2. A violation, a band whose minimum exceeds its maximum, or two bands
-        that overlap is 422 `invalid_body` with a detail code `not_monotonic`,
-        `band_range` or `bands_overlap`. A name already used is 409
-        `rule_set_name_taken`.
+        and 2. A violation is 422 `invalid_body` with a detail code
+        `not_monotonic`, `band_range`, `bands_overlap`, `bands_gap` or
+        `treatment_unsupported`. A name already used is 409 `rule_set_name_taken`.
+        The change is a domain event naming its author (ADR-0072). Creating one
+        publishes nothing.
       operationId: createRfmRuleSet
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -251,16 +250,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RfmRuleSet'
+                $ref: '#/components/schemas/RfmRuleSetDetail'
               examples:
                 created:
-                  externalValue: ./examples/rule-set-created.json
+                  externalValue: ./examples/rule-set-draft.json
             application/xml:
               schema:
-                $ref: '#/components/schemas/RfmRuleSet'
+                $ref: '#/components/schemas/RfmRuleSetDetail'
               examples:
                 created:
-                  externalValue: ./examples/rule-set-created.xml
+                  externalValue: ./examples/rule-set-draft.xml
         '400':
           $ref: '#/components/responses/MalformedBody'
         '401':
@@ -286,9 +285,9 @@ paths:
       tags: [RuleSets]
       summary: Get one rule set
       description: >-
-        Returns one rule set with its frozen boundaries and bands.
+        Returns one rule set with its boundaries and bands: frozen once its
+        `state` is `PUBLISHED`.
       operationId: getRfmRuleSet
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -306,16 +305,16 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RfmRuleSet'
+                $ref: '#/components/schemas/RfmRuleSetDetail'
               examples:
                 published:
-                  externalValue: ./examples/rule-set.json
+                  externalValue: ./examples/rule-set-published.json
             application/xml:
               schema:
-                $ref: '#/components/schemas/RfmRuleSet'
+                $ref: '#/components/schemas/RfmRuleSetDetail'
               examples:
                 published:
-                  externalValue: ./examples/rule-set.xml
+                  externalValue: ./examples/rule-set-published.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -324,6 +323,208 @@ paths:
           $ref: '#/components/responses/RuleSetNotFound'
         '406':
           $ref: '#/components/responses/NotAcceptable'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+    put:
+      tags: [RuleSets]
+      summary: Edit a draft rule set
+      description: >-
+        Replaces the definition of a `DRAFT` rule set and its bands, with the
+        validation of its creation. A `PUBLISHED` rule set is never edited: the
+        request is refused with 409 `rule_set_published` and the change is made
+        as a new version, `POST /v1/rfm-rule-sets/{rule_set_id}/versions`. The
+        edit is a domain event naming its author (ADR-0072).
+      operationId: updateRfmRuleSet
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RuleSetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RfmRuleSetRequest'
+            examples:
+              rule_set:
+                externalValue: ./examples/rule-set.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RfmRuleSetRequest'
+            examples:
+              rule_set:
+                externalValue: ./examples/rule-set.request.xml
+      responses:
+        '200':
+          description: The edited draft.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetDetail'
+              examples:
+                rule_set:
+                  externalValue: ./examples/rule-set-edited.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetDetail'
+              examples:
+                rule_set:
+                  externalValue: ./examples/rule-set-edited.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleSetNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RuleSetConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-rule-sets/{rule_set_id}/versions:
+    post:
+      tags: [RuleSets]
+      summary: Create the next version of a published rule set
+      description: >-
+        Creates version n + 1 of a `PUBLISHED` rule set as a `DRAFT`, with the
+        definition in the body, and leaves the published one as it was: the
+        past is never rewritten (ADR-0064). The new version names its parent.
+        Only a published rule set has versions (409 `rule_set_not_published`),
+        and one has at most one successor (409 `rule_set_version_exists`): edit
+        that draft instead. The body is validated as at creation, and the name
+        must be new. The change is a domain event naming its author
+        (ADR-0072).
+      operationId: createRfmRuleSetVersion
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RuleSetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RfmRuleSetRequest'
+            examples:
+              rule_set:
+                externalValue: ./examples/rule-set.request.json
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RfmRuleSetRequest'
+            examples:
+              rule_set:
+                externalValue: ./examples/rule-set.request.xml
+      responses:
+        '201':
+          description: The new draft version.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+            Location:
+              description: The new rule set.
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetDetail'
+              examples:
+                rule_set:
+                  externalValue: ./examples/rule-set-version.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetDetail'
+              examples:
+                rule_set:
+                  externalValue: ./examples/rule-set-version.xml
+        '400':
+          $ref: '#/components/responses/MalformedBody'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleSetNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RuleSetConflict'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/rfm-rule-sets/{rule_set_id}/publication:
+    post:
+      tags: [RuleSets]
+      summary: Publish a draft rule set
+      description: >-
+        Freezes a `DRAFT` rule set: from here it is immutable for every role,
+        and a change is a new version. The bands must partition the score space
+        (422 `invalid_body`, `bands_overlap` or `bands_gap`). Publishing is
+        one way: nothing in rfm-engine moves a rule set back. Which published
+        rule set is in force is model-registry's decision (ADR-0064). The
+        change is a domain event naming its author (ADR-0072).
+      operationId: publishRfmRuleSet
+      x-mosaiq-roles:
+        - ADMIN
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/RuleSetId'
+      responses:
+        '200':
+          description: The published rule set.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetDetail'
+              examples:
+                rule_set:
+                  externalValue: ./examples/rule-set-published.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RfmRuleSetDetail'
+              examples:
+                rule_set:
+                  externalValue: ./examples/rule-set-published.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/RuleSetNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/RuleSetConflict'
+        '422':
+          $ref: '#/components/responses/InvalidBody'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -974,16 +1175,28 @@ components:
           type: array
           minItems: 1
           description: >-
-            Boxes of scores that map to a label. No two overlap, so a scored
-            customer matches at most one.
+            Boxes of scores that map to a label. They partition the 125 triples
+            of scores (RN-46): each triple sits in exactly one box.
           items:
             $ref: '#/components/schemas/Band'
         fallback_label_code:
           type: string
           description: The label taken when no band matches (RN-46).
+        cancelled_sales:
+          $ref: '#/components/schemas/SaleTreatment'
+        returned_sales:
+          $ref: '#/components/schemas/SaleTreatment'
       xml:
         name: RfmRuleSetRequest
         namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    SaleTreatment:
+      type: string
+      enum: [DEDUCT, KEEP]
+      default: DEDUCT
+      description: >-
+        `DEDUCT` leaves a sale that was cancelled, or returned, out of the net
+        purchases (ADR-0062); `KEEP` counts it as sold. The two are the same
+        value until the sales contract tells a cancellation from a return.
     RfmRuleSet:
       type: object
       additionalProperties: false
@@ -1039,8 +1252,8 @@ components:
         published:
           type: boolean
           description: >-
-            True while model-registry's published version points at this rule
-            set. rfm-engine never sets it.
+            True when the rule set is published, and so frozen (F22-09). Which
+            published rule set is in force is model-registry's decision.
         created_at:
           type: string
           format: date-time
@@ -1052,6 +1265,105 @@ components:
           description: The user who created it; null for a seeded rule set.
       xml:
         name: RfmRuleSet
+        namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
+    RfmRuleSetDetail:
+      type: object
+      description: >-
+        The governed form of a rule set (F22-09): the fields of `RfmRuleSet`
+        and its state, version, lineage and how a cancelled and a returned sale
+        count.
+      additionalProperties: false
+      required:
+        - rule_set_id
+        - name
+        - window_days
+        - recency_boundaries
+        - frequency_boundaries
+        - monetary_boundaries
+        - bands
+        - fallback_label_code
+        - cancelled_sales
+        - returned_sales
+        - state
+        - version_no
+        - published
+        - created_at
+        - created_by
+      properties:
+        rule_set_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        window_days:
+          type: integer
+          minimum: 1
+          maximum: 3650
+        recency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 0
+        frequency_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 1
+        monetary_boundaries:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/Money'
+        bands:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/Band'
+        fallback_label_code:
+          type: string
+        cancelled_sales:
+          $ref: '#/components/schemas/SaleTreatment'
+        returned_sales:
+          $ref: '#/components/schemas/SaleTreatment'
+        state:
+          type: string
+          enum: [DRAFT, PUBLISHED]
+          description: >-
+            A `DRAFT` is edited; a `PUBLISHED` rule set is frozen, and a change
+            to it is a new version.
+        version_no:
+          type: integer
+          minimum: 1
+        parent_rule_set_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+          description: The version this one changes; null for version 1.
+        published:
+          type: boolean
+          description: True when `state` is `PUBLISHED`. Which published rule set is in force is model-registry's.
+        published_at:
+          type:
+            - string
+            - 'null'
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type:
+            - string
+            - 'null'
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          description: The user who created it; null for a seeded rule set.
+      xml:
+        name: RfmRuleSetDetail
         namespace: https://mosaiq.maxthecoder.online/xml/rfm-engine/v1
     RfmRuleSetPage:
       type: object
@@ -1598,6 +1910,26 @@ components:
           examples:
             recalculation_not_found:
               externalValue: ./examples/recalculation-not-found.xml
+    RuleSetConflict:
+      description: >-
+        `rule_set_name_taken`, `rule_set_published`, `rule_set_not_published`
+        or `rule_set_version_exists`.
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rule_set_published:
+              externalValue: ./examples/rule-set-published-conflict.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            rule_set_published:
+              externalValue: ./examples/rule-set-published-conflict.xml
     RuleSetNameTaken:
       description: '`rule_set_name_taken`.'
       headers:

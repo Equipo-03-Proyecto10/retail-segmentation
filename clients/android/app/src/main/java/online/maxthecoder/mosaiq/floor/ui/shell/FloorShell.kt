@@ -51,6 +51,7 @@ import online.maxthecoder.mosaiq.floor.auth.FloorSection
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
+import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesScreen
@@ -60,8 +61,11 @@ import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.checkin.StoreAndCheckIn
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
+import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
 import online.maxthecoder.mosaiq.floor.ui.identify.IdentifyScreen
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
+import online.maxthecoder.mosaiq.floor.ui.record.CustomerRecordScreen
+import online.maxthecoder.mosaiq.floor.ui.record.NewCustomerScreen
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 private val WORDMARK_TRACKING = 0.14.em
@@ -79,12 +83,13 @@ fun FloorHome(
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
     identify: IdentifyViewModel,
+    record: CustomerRecordViewModel,
     onSignOut: () -> Unit
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, identify, onSignOut)
+        FloorProfile(signedIn, model, scan, sales, insights, identify, record, onSignOut)
     }
 }
 
@@ -111,6 +116,7 @@ private fun FloorProfile(
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
     identify: IdentifyViewModel,
+    record: CustomerRecordViewModel,
     onSignOut: () -> Unit
 ) {
     val role = signedIn.role
@@ -185,11 +191,47 @@ private fun FloorProfile(
                         )
                     FloorLocation.Outbox -> OutboxList(model)
                     FloorLocation.Customer, is FloorLocation.CustomerProfile ->
-                        IdentifyScreen(
-                            identify,
-                            profileId = (here as? FloorLocation.CustomerProfile)?.customerId,
-                            onOpenProfile = { go(FloorLocation.CustomerProfile(it)) },
-                            onBack = { go(FloorLocation.Customer) }
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
+                            // The loyalty officer's way into registration and the record (F27-09).
+                            if (FloorAccess.holds(role, FloorSection.CUSTOMER_RECORD)) {
+                                val profileId = (here as? FloorLocation.CustomerProfile)?.customerId
+                                MqButton(
+                                    stringResource(
+                                        if (profileId == null) {
+                                            R.string.record_register_entry
+                                        } else {
+                                            R.string.record_open_entry
+                                        }
+                                    ),
+                                    {
+                                        if (profileId == null) {
+                                            record.startEnrolment()
+                                            go(FloorLocation.NewCustomer)
+                                        } else {
+                                            go(FloorLocation.CustomerRecord(profileId))
+                                        }
+                                    },
+                                    variant = MqButtonVariant.Secondary,
+                                    fullWidth = true,
+                                    modifier = Modifier.testTag("record-entry")
+                                )
+                            }
+                            Box(Modifier.weight(1f)) {
+                                IdentifyScreen(
+                                    identify,
+                                    profileId = (here as? FloorLocation.CustomerProfile)?.customerId,
+                                    onOpenProfile = { go(FloorLocation.CustomerProfile(it)) },
+                                    onBack = { go(FloorLocation.Customer) }
+                                )
+                            }
+                        }
+                    FloorLocation.NewCustomer ->
+                        NewCustomerScreen(record, onRegistered = { go(FloorLocation.CustomerRecord(it)) })
+                    is FloorLocation.CustomerRecord ->
+                        CustomerRecordScreen(
+                            record,
+                            here.customerId,
+                            onBack = { go(FloorLocation.CustomerProfile(here.customerId)) }
                         )
                 }
             }

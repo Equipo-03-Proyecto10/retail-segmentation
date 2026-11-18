@@ -28,6 +28,7 @@ import online.maxthecoder.mosaiq.floor.net.RecommendationResult
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
+import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.InsightsState
@@ -59,6 +60,7 @@ class FloorShellTest {
     private lateinit var sales: SalesViewModel
     private lateinit var insights: CustomerInsightsViewModel
     private val identify by lazy { IdentifyViewModel(app.graph) }
+    private val record by lazy { CustomerRecordViewModel(app.graph) }
     private var signedOut = false
 
     @Before
@@ -93,6 +95,7 @@ class FloorShellTest {
             sales = sales,
             insights = insights,
             identify = identify,
+            record = record,
             onSignOut = { signedOut = true }
         )
     }

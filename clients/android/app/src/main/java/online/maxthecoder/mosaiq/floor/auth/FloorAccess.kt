@@ -1,7 +1,10 @@
 package online.maxthecoder.mosaiq.floor.auth
 
-/** The root sections of the floor shell, whoever may open them. */
-enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX, CUSTOMER }
+/**
+ * The sections of the floor shell, whoever may open them. Each is a root of the bottom bar except
+ * [CUSTOMER_RECORD], which lives inside Customer: it has no bar entry and is reached from there.
+ */
+enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX, CUSTOMER, CUSTOMER_RECORD }
 
 /** One operation of a service contract, as `operationId` in `contracts/<service>/openapi.yaml`. */
 data class ServiceOperation(
@@ -34,7 +37,8 @@ object FloorAccess {
             "SALES_ASSOCIATE" to
                 listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             "STORE_MANAGER" to EVERYTHING,
-            "LOYALTY_OFFICER" to listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.OUTBOX),
+            "LOYALTY_OFFICER" to
+                listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.CUSTOMER_RECORD, FloorSection.OUTBOX),
             "COMMERCIAL_SUPERVISOR" to listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX),
             // Not confined to stores, and holds every operation the floor calls (ADR-0060).
             "ADMIN" to EVERYTHING
@@ -79,6 +83,25 @@ object FloorAccess {
                     ServiceOperation("customers", "lookupLoyaltyCard"),
                     ServiceOperation("customers", "searchFloorCustomers"),
                     ServiceOperation("customers", "getFloorCustomer")
+                ),
+            // Registering a customer with their consent, and their record: consent, preferences and
+            // history (F27-09). It opens from the Customer section, so it calls that section's
+            // operations too, and only a role that can reach a customer there holds it.
+            FloorSection.CUSTOMER_RECORD to
+                listOf(
+                    ServiceOperation("customers", "lookupLoyaltyCard"),
+                    ServiceOperation("customers", "searchFloorCustomers"),
+                    ServiceOperation("customers", "getFloorCustomer"),
+                    ServiceOperation("customers", "registerCustomer"),
+                    ServiceOperation("sales", "listChannels"),
+                    ServiceOperation("categories", "listCategories"),
+                    ServiceOperation("customer-preferences", "getConsentState"),
+                    ServiceOperation("customer-preferences", "recordConsentDecisions"),
+                    ServiceOperation("customer-preferences", "listConsentDecisions"),
+                    ServiceOperation("customer-preferences", "getPreferenceProfile"),
+                    ServiceOperation("customer-preferences", "replacePreferredChannels"),
+                    ServiceOperation("customer-preferences", "replaceInterestCategories"),
+                    ServiceOperation("customer-preferences", "listPreferenceChanges")
                 )
         )
 

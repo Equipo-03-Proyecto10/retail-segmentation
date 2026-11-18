@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.4.0
+  version: 1.5.0
   description: >-
     Serves what the segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history, the assignments of each model
@@ -176,6 +176,75 @@ paths:
                   externalValue: ./examples/current-unassigned-result.xml
                 no_open_assignment:
                   externalValue: ./examples/current-no-open-assignment.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CurrentInvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-assignments/floor-view:
+    get:
+      tags: [Assignments]
+      summary: Get a customer's current segment as a floor role
+      description: >-
+        Returns the customer's current state in the floor view (ADR-0060):
+        `customer_id`, `state`, `label_code` and `since`, and nothing more. The
+        R, F and M scores and `run_id` are not elements of this representation,
+        so a floor role never receives them, not even as null; `STORE_MANAGER`
+        and the other readers of the scores use `getCurrentAssignment`. The
+        three states are those of `getCurrentAssignment`: `assigned` carries the
+        label and `since` (the open row's `valid_from`); `unassigned_result`
+        means the latest run left the customer without a label and carries
+        `since` only; `no_open_assignment` means the customer has no open row
+        and carries nothing more. The last two are answers, not errors, and they
+        are never filled in from another source. A customer absent from
+        `api_customers.customer_ref_v1` is 404 `customer_not_found`; a missing
+        or malformed `customer_id` is 422 `invalid_query`. This is a separate
+        read from `getCurrentAssignment`, whose response type is closed to
+        removals within v1.
+      operationId: getFloorCurrentAssignment
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+        - SALES_ASSOCIATE
+        - LOYALTY_OFFICER
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CurrentCustomerId'
+      responses:
+        '200':
+          description: The customer's current state in the floor view.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FloorCurrentAssignment'
+              examples:
+                assigned:
+                  externalValue: ./examples/floor-view-assigned.json
+                unassigned_result:
+                  externalValue: ./examples/floor-view-unassigned-result.json
+                no_open_assignment:
+                  externalValue: ./examples/floor-view-no-open-assignment.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/FloorCurrentAssignment'
+              examples:
+                assigned:
+                  externalValue: ./examples/floor-view-assigned.xml
+                unassigned_result:
+                  externalValue: ./examples/floor-view-unassigned-result.xml
+                no_open_assignment:
+                  externalValue: ./examples/floor-view-no-open-assignment.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -921,6 +990,41 @@ components:
           format: int64
       xml:
         name: CurrentAssignment
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    FloorCurrentAssignment:
+      type: object
+      additionalProperties: false
+      description: >-
+        A customer's current state as a floor role reads it (ADR-0060): the
+        label and `since`, never the R, F and M scores or `run_id`.
+      required:
+        - customer_id
+        - state
+        - label_code
+        - since
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        state:
+          type: string
+          enum:
+            - assigned
+            - unassigned_result
+            - no_open_assignment
+        label_code:
+          type:
+            - string
+            - 'null'
+          description: Set only when `state` is `assigned`.
+        since:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: The open row's `valid_from`; null for `no_open_assignment`.
+      xml:
+        name: FloorCurrentAssignment
         namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
     SegmentAssignment:
       type: object

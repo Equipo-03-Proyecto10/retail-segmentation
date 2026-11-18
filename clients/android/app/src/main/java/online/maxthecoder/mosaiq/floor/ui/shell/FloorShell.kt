@@ -1,6 +1,11 @@
 package online.maxthecoder.mosaiq.floor.ui.shell
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -44,6 +50,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.em
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.auth.FloorAccess
@@ -60,6 +67,9 @@ import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.checkin.StoreAndCheckIn
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
+import online.maxthecoder.mosaiq.floor.ui.inbox.InboxScreen
+import online.maxthecoder.mosaiq.floor.ui.inbox.InboxViewModel
+import online.maxthecoder.mosaiq.floor.ui.inbox.focusOf
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
@@ -78,12 +88,13 @@ fun FloorHome(
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
     promotions: PromotionsViewModel,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    inbox: InboxViewModel? = null
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, promotions, onSignOut)
+        FloorProfile(signedIn, model, scan, sales, insights, promotions, onSignOut, inbox)
     }
 }
 
@@ -110,7 +121,8 @@ private fun FloorProfile(
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
     promotions: PromotionsViewModel,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    inbox: InboxViewModel?
 ) {
     val role = signedIn.role
     var saved: FloorLocation by rememberSaveable(stateSaver = FloorLocationSaver) {
@@ -125,6 +137,16 @@ private fun FloorProfile(
     val rows by model.open.collectAsStateWithLifecycle()
     val pendingWrites = rows.count { it.state == RowState.PENDING }
     val canSell = FloorAccess.holds(role, FloorSection.SALE)
+    val unread = inbox?.unread?.collectAsStateWithLifecycle()?.value ?: 0
+    val opened = inbox?.opened?.collectAsStateWithLifecycle()?.value
+    // A tapped notification opens the updates screen at what it was about (ADR-0071).
+    LaunchedEffect(opened) {
+        if (opened != null && inbox != null) {
+            go(FloorLocation.Inbox(focusOf(opened.kind, opened.subjectId)))
+            inbox.consumeOpened()
+        }
+    }
+    if (inbox != null) NotificationPermission(due = unread > 0)
 
     // Back steps one state (ADR-0058); on the first section it is off, so the system leaves the app.
     val back = location.backFor(role)
@@ -138,7 +160,9 @@ private fun FloorProfile(
                     signedIn = signedIn,
                     store = chosen,
                     onStoreClick = { go(FloorLocation.StorePicker) },
-                    onSignOut = requestSignOut
+                    onSignOut = requestSignOut,
+                    unread = unread,
+                    onInbox = inbox?.let { { go(FloorLocation.Inbox()) } }
                 )
             },
             bottomBar = {
@@ -184,6 +208,12 @@ private fun FloorProfile(
                             promotions = promotions
                         )
                     FloorLocation.Outbox -> OutboxList(model)
+                    is FloorLocation.Inbox ->
+                        if (inbox != null) {
+                            InboxScreen(inbox, here.focus, onOpenOutbox = { go(FloorLocation.Outbox) })
+                        } else {
+                            OutboxList(model)
+                        }
                 }
             }
         }
@@ -196,7 +226,9 @@ internal fun FloorTopBar(
     signedIn: SessionState.SignedIn,
     store: ChosenStore?,
     onStoreClick: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    unread: Int = 0,
+    onInbox: (() -> Unit)? = null
 ) {
     TopAppBar(
         title = {
@@ -232,8 +264,52 @@ internal fun FloorTopBar(
                 )
             }
         },
-        actions = { AccountMenu(signedIn, onSignOut) }
+        actions = {
+            onInbox?.let { InboxButton(unread, it) }
+            AccountMenu(signedIn, onSignOut)
+        }
     )
+}
+
+/** The updates screen's way in, with how many alerts are unread (ADR-0071). */
+@Composable
+private fun InboxButton(unread: Int, onClick: () -> Unit) {
+    val label =
+        if (unread > 0) {
+            pluralStringResource(R.plurals.a11y_inbox_unread, unread, unread)
+        } else {
+            stringResource(R.string.inbox_open)
+        }
+    IconButton(onClick = onClick, modifier = Modifier.testTag("inbox-button")) {
+        BadgedBox(
+            badge = {
+                if (unread > 0) Badge(modifier = Modifier.testTag("inbox-badge")) { Text(unread.toString()) }
+            }
+        ) {
+            Icon(painterResource(R.drawable.ic_lucide_bell), contentDescription = label)
+        }
+    }
+}
+
+/**
+ * Android 13 and later ask for the notification permission at the first moment one is due, never at launch
+ * (ADR-0071), and once per screen state. Declined, the updates screen and its badge still show everything.
+ */
+@Composable
+private fun NotificationPermission(due: Boolean) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val context = LocalContext.current
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked = true }
+    LaunchedEffect(due, asked) {
+        val granted =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        if (due && !asked && !granted) {
+            asked = true
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 }
 
 @Composable

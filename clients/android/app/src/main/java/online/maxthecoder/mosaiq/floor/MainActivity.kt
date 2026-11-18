@@ -1,5 +1,6 @@
 package online.maxthecoder.mosaiq.floor
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,6 +10,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import online.maxthecoder.mosaiq.floor.alerts.AlertKind
+import online.maxthecoder.mosaiq.floor.alerts.AlertTarget
+import online.maxthecoder.mosaiq.floor.alerts.NotificationFactory
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorApp
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
@@ -17,6 +21,7 @@ import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.SessionViewModel
+import online.maxthecoder.mosaiq.floor.ui.inbox.InboxViewModel
 import online.maxthecoder.mosaiq.floor.ui.shell.FloorHome
 import online.maxthecoder.mosaiq.floor.ui.shell.SignOutButton
 
@@ -25,6 +30,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val graph = (application as FloorApplication).graph
+        // A notification's tap; a restored activity has already handled the one that started it.
+        if (savedInstanceState == null) openFrom(intent)
         setContent {
             val model: SessionViewModel =
                 viewModel(
@@ -43,19 +50,51 @@ class MainActivity : ComponentActivity() {
                 viewModel(factory = viewModelFactory { initializer { CustomerInsightsViewModel(graph) } })
             val promotions: PromotionsViewModel =
                 viewModel(factory = viewModelFactory { initializer { PromotionsViewModel(graph) } })
+            val inbox: InboxViewModel =
+                viewModel(factory = viewModelFactory { initializer { InboxViewModel(graph) } })
             val state = model.state.collectAsStateWithLifecycle()
-            // Signing in again lets this user's queued writes go out.
+            // Signing in again lets this user's queued writes go out, and starts the notification poll with a
+            // pull at once (ADR-0071).
             LaunchedEffect(state.value is SessionState.SignedIn) {
-                if (state.value is SessionState.SignedIn) graph.kick()
+                if (state.value is SessionState.SignedIn) {
+                    graph.kick()
+                    graph.alerts.start()
+                }
             }
             FloorApp(
                 state = state.value,
                 onSignIn = model::signIn,
                 onRetry = model::refreshProfile,
                 onSignOut = model::signOut,
-                floor = { signedIn -> FloorHome(signedIn, floor, scan, sales, insights, promotions, model::signOut) },
+                floor = { signedIn ->
+                    FloorHome(
+                        signedIn,
+                        floor,
+                        scan,
+                        sales,
+                        insights,
+                        promotions,
+                        model::signOut,
+                        inbox
+                    )
+                },
                 signOut = { SignOutButton(floor, model::signOut) }
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        openFrom(intent)
+    }
+
+    /** Hands a tapped notification's kind and opaque id to the shell, which opens the updates screen. */
+    private fun openFrom(intent: Intent?) {
+        val kind =
+            intent?.getStringExtra(NotificationFactory.EXTRA_KIND)?.let { name ->
+                AlertKind.entries.firstOrNull { it.name == name }
+            } ?: return
+        (application as FloorApplication).graph.alerts.opened.value =
+            AlertTarget(kind, intent.getStringExtra(NotificationFactory.EXTRA_SUBJECT))
     }
 }

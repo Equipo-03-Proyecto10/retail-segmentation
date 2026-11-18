@@ -68,6 +68,21 @@ class FloorAccessContractTest {
     }
 
     @Test
+    fun theNotificationPollAndTheIncidentReportRunForExactlyTheRolesTheirContractsList() {
+        FloorAccess.background.forEach { (operation, roles) ->
+            assertEquals(
+                "${operation.service}/${operation.operationId}",
+                SessionRepository.FLOOR_ROLES.intersect(rolesOf(operation.service, operation.operationId)),
+                roles
+            )
+        }
+        assertEquals(
+            setOf("COMMERCIAL_SUPERVISOR", "ADMIN"),
+            SessionRepository.FLOOR_ROLES.filter { FloorAccess.runs(it, FloorAccess.INCIDENTS_POLL) }.toSet()
+        )
+    }
+
+    @Test
     fun everyOperationASectionCallsExistsInItsContract() {
         FloorAccess.operations.values.flatten().forEach { rolesOf(it.service, it.operationId) }
     }

@@ -319,3 +319,43 @@ data class CampaignExposureRequest(
     @SerialName("customer_id") val customerId: String,
     @SerialName("occurred_at") val occurredAt: String
 )
+
+/**
+ * `CaptureIncidentRequest` of contracts/engagement (ADR-0071): a queued write that was finally refused,
+ * reported once. No customer field and no free text, by contract.
+ */
+@Serializable
+data class CaptureIncidentRequest(
+    @SerialName("client_incident_id") val clientIncidentId: String,
+    @SerialName("source_type") val sourceType: String,
+    @SerialName("source_operation_id") val sourceOperationId: String,
+    @SerialName("source_correlation_id") val sourceCorrelationId: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("refused_status") val refusedStatus: Int,
+    @SerialName("refused_code") val refusedCode: String,
+    val attempts: Int,
+    @SerialName("occurred_at") val occurredAt: String,
+    @SerialName("line_count") val lineCount: Int? = null
+)
+
+/**
+ * The fields of `CaptureIncidentItem` the updates screen reads. `reported_by` and `history` are left out on
+ * purpose: nothing about a person reaches the phone's alerts.
+ */
+@Serializable
+data class CaptureIncident(
+    @SerialName("incident_id") val incidentId: String,
+    @SerialName("source_type") val sourceType: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("refused_status") val refusedStatus: Int,
+    @SerialName("refused_code") val refusedCode: String,
+    @SerialName("occurred_at") val occurredAt: String,
+    @SerialName("recorded_at") val recordedAt: String,
+    val status: String
+)
+
+@Serializable
+data class CaptureIncidentPage(
+    @SerialName("capture_incidents") val captureIncidents: List<CaptureIncident>,
+    @SerialName("page_info") val pageInfo: PageInfo
+)

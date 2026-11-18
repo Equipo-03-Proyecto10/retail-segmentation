@@ -31,6 +31,15 @@ grep -rhoE "api/[a-z][a-z0-9-]*/v[0-9]+" "$main" --include='*.kt' | cut -d/ -f2 
 grep -rln "UUID.randomUUID" clients/android/ --include='*Worker*.kt' \
   | sed 's/^/retry id generated per attempt: /'
 
+# ADR-0071: no Firebase, no push SDK, no Play Services messaging in the client.
+grep -rliE "firebase|FirebaseMessaging|google-services|com.google.android.gms:play-services-gcm" \
+  clients/android/ --include='*.kt' --include='*.kts' --include='*.toml' --include='*.json' \
+  | sed 's/^/push dependency found: /'
+
+# ADR-0071: one notification builder; nothing else touches NotificationCompat.Builder.
+grep -rln "NotificationCompat.Builder" "$main" --include='*.kt' | grep -v "/NotificationFactory.kt$" \
+  | sed 's/^/notification built outside the factory: /'
+
 # ADR-0057: color, type size, shape and spacing values live in ui/theme/ and nowhere else.
 grep -rnE "Color\(0x|[0-9]\.?[0-9]*\.(sp|dp)\b|RoundedCornerShape\(" "$main" --include='*.kt' \
   | grep -v '/ui/theme/' | sed 's/^/outside ui\/theme: /'

@@ -37,7 +37,9 @@ class SessionRepository(
     private val network: Network,
     private val tokens: TokenStore,
     private val deviceLabel: String,
-    private val session: SessionStore = InMemorySessionStore()
+    private val session: SessionStore = InMemorySessionStore(),
+    /** Told which user signed out, so their notifications and poll end with them (ADR-0071). */
+    private val onSignedOut: (String?) -> Unit = {}
 ) {
     val isSignedIn: Boolean get() = tokens.read() != null
 
@@ -61,10 +63,7 @@ class SessionRepository(
             val error = ApiError.from(response)
             // A 401 after a refresh that could not run is the refresh's story.
             val shown = if (error.status == 401) network.authenticator.lastFailure ?: error else error
-            if (tokens.read() == null || shown.code in SIGNED_OUT) {
-                tokens.clear()
-                session.signedOut()
-            }
+            if (tokens.read() == null || shown.code in SIGNED_OUT) signOutLocally()
             return SessionResult.Failed(friendly(shown))
         }
         if (user.roleCode !in FLOOR_ROLES) {
@@ -94,8 +93,10 @@ class SessionRepository(
 
     /** Forgets the session here without asking auth-service: for when the network is known to be down. */
     fun signOutLocally() {
+        val userId = session.userId.value
         tokens.clear()
         session.signedOut()
+        onSignedOut(userId)
     }
 
     /** Ends the session at auth-service, then forgets it here whatever the answer. */

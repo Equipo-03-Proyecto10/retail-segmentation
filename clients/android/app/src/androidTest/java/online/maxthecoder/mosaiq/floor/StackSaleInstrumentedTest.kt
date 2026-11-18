@@ -66,7 +66,8 @@ class StackSaleInstrumentedTest {
                 database.outbox(),
                 { null },
                 {},
-                "instrumented stack test"
+                "instrumented stack test",
+                notified = database.notified()
             )
         app.graph = graph
     }

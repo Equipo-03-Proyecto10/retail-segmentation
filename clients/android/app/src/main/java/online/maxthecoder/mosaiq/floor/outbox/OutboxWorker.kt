@@ -71,7 +71,8 @@ class OutboxWorker(
             graph.tokens,
             graph.network.client,
             graph.network.gateway,
-            graph.inFlight
+            graph.inFlight,
+            graph.alerts::refused
         )
         // "Send now" is one attempt. Backing off here would hold its unique work, and KEEP would drop
         // every tap until the backoff ended; the resend belongs to the chain, which backs off for it.
@@ -95,9 +96,10 @@ class OutboxWorker(
             tokens: TokenStore,
             client: OkHttpClient,
             gateway: okhttp3.HttpUrl,
-            inFlight: InFlight = InFlight()
+            inFlight: InFlight = InFlight(),
+            refused: suspend (OutboxRow) -> Unit = {}
         ): Result = withContext(Dispatchers.IO) {
-            drainLock.withLock { sendAll(outbox, session, tokens, client, gateway, inFlight) }
+            drainLock.withLock { sendAll(outbox, session, tokens, client, gateway, inFlight, refused) }
         }
 
         private suspend fun sendAll(
@@ -106,7 +108,8 @@ class OutboxWorker(
             tokens: TokenStore,
             client: OkHttpClient,
             gateway: okhttp3.HttpUrl,
-            inFlight: InFlight
+            inFlight: InFlight,
+            refused: suspend (OutboxRow) -> Unit
         ): Result {
             val userId = session.userId.value
             if (userId == null || tokens.read() == null) return Result.success()
@@ -116,6 +119,7 @@ class OutboxWorker(
                 if (url == null) {
                     // A path that is no URL never becomes one: refuse the row rather than retry it forever.
                     outbox.markRefused(row.id, 0, "invalid_path", AppText.get(R.string.outbox_invalid_path), null)
+                    outbox.find(row.id)?.let { refused(it) }
                     continue
                 }
                 val request =
@@ -125,6 +129,10 @@ class OutboxWorker(
                         .post(row.body.toRequestBody(JSON))
                         .apply {
                             if (row.operation == Operation.SALE) header("Idempotency-Key", row.clientId)
+                            // A report repeats its refused write's correlation id (ADR-0071).
+                            if (row.operation == Operation.CAPTURE_INCIDENT) {
+                                row.correlationId?.let { header(ApiError.CORRELATION_HEADER, it) }
+                            }
                         }
                         .build()
                 // Marked until the row's new state is written, so the badge never falls back to "Waiting".
@@ -158,7 +166,7 @@ class OutboxWorker(
                             attempt.correlationId,
                             if (attempt.replayed) "idempotent_replayed" else null
                         )
-                        is Attempt.Refused ->
+                        is Attempt.Refused -> {
                             outbox.markRefused(
                                 row.id,
                                 attempt.error.status,
@@ -166,6 +174,9 @@ class OutboxWorker(
                                 attempt.error.message,
                                 attempt.error.correlationId
                             )
+                            // A final refusal is raised at once, from Room, and reported once (ADR-0071).
+                            outbox.find(row.id)?.let { refused(it) }
+                        }
                         Attempt.Retry -> return Result.retry()
                         // Kept; sent again once the session is good (see FloorApplication).
                         Attempt.WaitForSession -> return Result.success()

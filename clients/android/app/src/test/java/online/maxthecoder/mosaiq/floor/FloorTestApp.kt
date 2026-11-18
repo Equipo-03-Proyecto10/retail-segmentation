@@ -16,7 +16,7 @@ class FloorTestApp :
 
     lateinit var database: FloorDatabase
 
-    fun build(baseUrl: String, timeoutSeconds: Long = 20): AppGraph {
+    fun build(baseUrl: String, timeoutSeconds: Long = 20, schedule: () -> Unit = {}): AppGraph {
         database =
             Room.inMemoryDatabaseBuilder(this, FloorDatabase::class.java).allowMainThreadQueries().build()
         val tokens = InMemoryTokenStore()
@@ -29,7 +29,7 @@ class FloorTestApp :
                 network = Network(baseUrl, tokens, events, timeoutSeconds),
                 outbox = database.outbox(),
                 location = { null },
-                schedule = {},
+                schedule = schedule,
                 deviceLabel = "Robolectric"
             )
         return graph

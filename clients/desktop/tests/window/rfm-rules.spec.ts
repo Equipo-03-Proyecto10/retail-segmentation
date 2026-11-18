@@ -128,7 +128,12 @@ test('validation names the band or the window that is wrong, as the draft is edi
   await expect(page.getByTestId('rfm-preview-run')).toBeDisabled();
 
   await deriveFromPublished(page);
-  // The recorded rule set's first two bands overlap: the draft says which, and where.
+  // The recorded rule set's bands do not overlap (#1060), so the derived draft is valid as it stands.
+  await expect(page.getByTestId('rfm-valid')).toBeVisible();
+  await expect(page.getByTestId('rfm-preview-run')).toBeEnabled();
+
+  // Widening LOYAL to R 4 to 5 puts CHAMPION inside it: the draft says which bands, and where.
+  await field(page, 'bands[1].r_max').fill('5');
   await expect(issues(page)).toHaveText([
     'Band 1 (CHAMPION) and Band 2 (LOYAL) overlap: both match R 5, F 5, M 4 to 5.',
   ]);
@@ -167,7 +172,6 @@ test('validation names the band or the window that is wrong, as the draft is edi
 test('the distribution per label is shown before storing, and goes stale when the draft changes', async () => {
   const { page } = await launch('ANALYST');
   await deriveFromPublished(page);
-  await field(page, 'bands[1].r_max').fill('4');
   await page.getByTestId('rfm-preview-run').click();
   await expect(page.getByTestId('rfm-preview-table')).toBeVisible();
   await expect(page.getByTestId('rfm-preview-basis')).toContainText(
@@ -194,7 +198,6 @@ test('the distribution per label is shown before storing, and goes stale when th
 test('a different window is said not to change the figures already held', async () => {
   const { page } = await launch('ANALYST');
   await deriveFromPublished(page);
-  await field(page, 'bands[1].r_max').fill('4');
   await page.locator('#rfm-window').fill('90');
   await page.getByTestId('rfm-preview-run').click();
   await expect(page.getByTestId('rfm-preview-note')).toContainText("The draft's window is 90 days, not 180.");
@@ -203,7 +206,6 @@ test('a different window is said not to change the figures already held', async 
 test('an administrator stores the previewed draft as a new, unpublished rule set', async () => {
   const { page } = await launch('ADMIN');
   await deriveFromPublished(page);
-  await field(page, 'bands[1].r_max').fill('4');
   await page.locator('#rfm-name').fill('Quarterly bands 2026-Q4');
   // Storing waits for a preview of this very draft.
   await expect(page.getByTestId('rfm-save')).toBeDisabled();

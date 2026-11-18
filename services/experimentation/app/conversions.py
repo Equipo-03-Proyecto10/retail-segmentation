@@ -148,6 +148,7 @@ def money(value: Decimal) -> str:
 
 
 def instant(value: datetime) -> str:
+    """An instant in UTC, whatever offset the session's TimeZone read it with."""
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 

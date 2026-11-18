@@ -180,6 +180,25 @@ class FloorWrites(
             )
         }
 
+        const val NOW_WORK_NAME = "floor-writes-now"
+
+        /**
+         * "Send now": its own unique work, so it neither waits behind the chain's backoff nor cancels a
+         * worker mid-send (REPLACE would). KEEP means repeated taps do not queue extra drains; the drain
+         * lock serialises it with the chain. Tagged so the worker knows it: a row that must be resent is
+         * handed to the chain instead of backing this work off (see [OutboxWorker.doWork]).
+         */
+        fun immediate(workManager: WorkManager): () -> Unit = {
+            workManager.enqueueUniqueWork(
+                NOW_WORK_NAME,
+                ExistingWorkPolicy.KEEP,
+                OneTimeWorkRequestBuilder<OutboxWorker>()
+                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                    .addTag(NOW_WORK_NAME)
+                    .build()
+            )
+        }
+
         private const val BACKOFF_SECONDS = 10L
     }
 }

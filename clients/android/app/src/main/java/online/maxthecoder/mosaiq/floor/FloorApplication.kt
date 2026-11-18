@@ -26,7 +26,8 @@ class AppGraph(
     val outbox: OutboxDao,
     val location: LocationSource,
     schedule: () -> Unit,
-    deviceLabel: String
+    deviceLabel: String,
+    sendNow: () -> Unit = schedule
 ) {
     val writes = FloorWrites(outbox, session, schedule)
 
@@ -36,6 +37,9 @@ class AppGraph(
 
     /** Resends whatever the signed-in user left queued. */
     val kick: () -> Unit = schedule
+
+    /** The outbox's manual send: starts a drain now, outside the chain's backoff. */
+    val sendNow: () -> Unit = sendNow
 }
 
 /** Where the floor-write queue's worker finds the graph; tests provide their own. */
@@ -63,6 +67,7 @@ class FloorApplication :
                 outbox = FloorDatabase.open(this).outbox(),
                 location = FusedLocationSource(this),
                 schedule = FloorWrites.scheduler(WorkManager.getInstance(this)),
+                sendNow = FloorWrites.immediate(WorkManager.getInstance(this)),
                 deviceLabel = "Android ${Build.MANUFACTURER} ${Build.MODEL}".take(DEVICE_LABEL_MAX)
             )
         // Rows left from before a restart go out once the network is back.

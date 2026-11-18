@@ -5,6 +5,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -63,7 +65,7 @@ class OutboxWorker(
 ) : CoroutineWorker(context, parameters) {
     override suspend fun doWork(): Result {
         val graph = (applicationContext as GraphProvider).graph
-        return drain(
+        val result = drain(
             graph.outbox,
             graph.session,
             graph.tokens,
@@ -71,10 +73,20 @@ class OutboxWorker(
             graph.network.gateway,
             graph.inFlight
         )
+        // "Send now" is one attempt. Backing off here would hold its unique work, and KEEP would drop
+        // every tap until the backoff ended; the resend belongs to the chain, which backs off for it.
+        if (result == Result.retry() && FloorWrites.NOW_WORK_NAME in tags) {
+            graph.kick()
+            return Result.success()
+        }
+        return result
     }
 
     companion object {
         private val JSON = "application/json".toMediaType()
+
+        /** One drain at a time, so a manual send and the chained worker never send the same row twice. */
+        private val drainLock = Mutex()
 
         /** The worker's whole job, outside WorkManager so tests can drive it. */
         suspend fun drain(
@@ -85,8 +97,19 @@ class OutboxWorker(
             gateway: okhttp3.HttpUrl,
             inFlight: InFlight = InFlight()
         ): Result = withContext(Dispatchers.IO) {
+            drainLock.withLock { sendAll(outbox, session, tokens, client, gateway, inFlight) }
+        }
+
+        private suspend fun sendAll(
+            outbox: OutboxDao,
+            session: SessionStore,
+            tokens: TokenStore,
+            client: OkHttpClient,
+            gateway: okhttp3.HttpUrl,
+            inFlight: InFlight
+        ): Result {
             val userId = session.userId.value
-            if (userId == null || tokens.read() == null) return@withContext Result.success()
+            if (userId == null || tokens.read() == null) return Result.success()
             for (row in outbox.pendingFor(userId)) {
                 outbox.countAttempt(row.id)
                 val url = gateway.resolve(row.path)
@@ -104,48 +127,54 @@ class OutboxWorker(
                             if (row.operation == Operation.SALE) header("Idempotency-Key", row.clientId)
                         }
                         .build()
-                val attempt =
-                    inFlight.during(row.id) {
-                        try {
-                            client.newCall(request).execute().use {
-                                val verdict = Attempt.of(
-                                    it.code,
-                                    it.body?.string(),
-                                    it.header(ApiError.CORRELATION_HEADER),
-                                    it.header("Retry-After")
-                                )
-                                if (verdict is Attempt.Done) {
-                                    verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
-                                } else {
-                                    verdict
+                // Marked until the row's new state is written, so the badge never falls back to "Waiting".
+                inFlight.begin(row.id)
+                try {
+                    val attempt =
+                        run {
+                            try {
+                                client.newCall(request).execute().use {
+                                    val verdict = Attempt.of(
+                                        it.code,
+                                        it.body?.string(),
+                                        it.header(ApiError.CORRELATION_HEADER),
+                                        it.header("Retry-After")
+                                    )
+                                    if (verdict is Attempt.Done) {
+                                        verdict.copy(replayed = it.header("Idempotent-Replayed") == "true")
+                                    } else {
+                                        verdict
+                                    }
                                 }
+                            } catch (unreachable: IOException) {
+                                Attempt.Retry
                             }
-                        } catch (unreachable: IOException) {
-                            Attempt.Retry
                         }
-                    }
-                when (attempt) {
-                    is Attempt.Done -> outbox.markDone(
-                        row.id,
-                        attempt.status,
-                        attempt.body,
-                        attempt.correlationId,
-                        if (attempt.replayed) "idempotent_replayed" else null
-                    )
-                    is Attempt.Refused ->
-                        outbox.markRefused(
+                    when (attempt) {
+                        is Attempt.Done -> outbox.markDone(
                             row.id,
-                            attempt.error.status,
-                            attempt.error.code,
-                            attempt.error.message,
-                            attempt.error.correlationId
+                            attempt.status,
+                            attempt.body,
+                            attempt.correlationId,
+                            if (attempt.replayed) "idempotent_replayed" else null
                         )
-                    Attempt.Retry -> return@withContext Result.retry()
-                    // Kept; sent again once the session is good (see FloorApplication).
-                    Attempt.WaitForSession -> return@withContext Result.success()
+                        is Attempt.Refused ->
+                            outbox.markRefused(
+                                row.id,
+                                attempt.error.status,
+                                attempt.error.code,
+                                attempt.error.message,
+                                attempt.error.correlationId
+                            )
+                        Attempt.Retry -> return Result.retry()
+                        // Kept; sent again once the session is good (see FloorApplication).
+                        Attempt.WaitForSession -> return Result.success()
+                    }
+                } finally {
+                    inFlight.end(row.id)
                 }
             }
-            Result.success()
+            return Result.success()
         }
     }
 }

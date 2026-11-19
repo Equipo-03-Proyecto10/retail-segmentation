@@ -132,6 +132,10 @@ models.model_publication
 # fill it as the service writes profiles.
 rfm_events.outbox
 
+# rfm.pass_run: one row per daily pass, written as the service runs. A seeded history
+# of passes would claim runs that never happened (F22-07).
+rfm.pass_run
+
 # model-registry's publication outbox is runtime relay state under ADR-0044;
 # committed publications create it and relayed rows are purged after seven days.
 models_events.outbox

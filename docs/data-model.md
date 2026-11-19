@@ -968,6 +968,14 @@ decision that matters is how a product's many-valued facts are split:
   every measure, score, label and flag, `unassigned` has a count of zero and none of
   them. A customer with no row is `pending`, which the view derives and nothing
   stores.
+- **`rfm.pass_run`** (rfm-engine, F22-07, ADR-0063) is keyed by `pass_run_id`: each row
+  is one scheduled pass, and its other columns are facts of that pass alone (the rule
+  set and instant it measures from, when it started and finished, how many customers
+  it examined and how many of them changed), so the relation is in BCNF. It is the
+  record of the pass, not a copy of anything else: `as_of` is fixed at the start so a
+  pass that stops and resumes writes what one uninterrupted pass would, and the unique
+  index `pass_run_one_running` allows one RUNNING row. `pass_run_finish_shape` ties
+  `finished_at` to the status.
 - **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
   Its boundaries are four-element arrays: each is written once, frozen, and read
   whole (a customer is scored against all four of a measure's boundaries, in order),

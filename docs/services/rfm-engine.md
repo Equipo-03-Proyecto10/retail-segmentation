@@ -1,6 +1,6 @@
 # rfm-engine
 
-> **Status:** Incremental update implemented (phase 22, third; F22-05, #779, and F22-06, #780) on the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` and a reversal on `stream:sales.v1.reversed` each recompute the one customer they name, and `GET /v1/rfm-rule-sets` serves the seeded rule set. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Scheduled pass implemented (phase 22, F22-07, #781) on the incremental update (F22-05, #779, and F22-06, #780) and the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` and a reversal on `stream:sales.v1.reversed` each recompute the one customer they name, a daily pass at 02:00 UTC recomputes the customers whose window or recency changed with no event, and `GET /v1/rfm-rule-sets` serves the seeded rule set. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
 > **One rule:** A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)
 
 ## Summary
@@ -50,6 +50,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Object | Kind | Access | Notes |
 |---|---|---|---|
 | `rfm.customer_profile` | Table (`rfm`) | S | One row per processed customer; `scored` or `unassigned` (a customer with no row is `pending` in the view). Seed-exempt: the first event, or the daily pass, creates a row. Indexed on `next_change_at` for the pass (F22-07) |
+| `rfm.pass_run` | Table (`rfm`) | S (SELECT, INSERT, UPDATE of status, finish and counts; never DELETE) | One row per scheduled pass: the rule set, `as_of` (fixed at the start), start and finish, customers examined and changed. One row may be `RUNNING`. Seed-exempt: runtime history (F22-07) |
 | `rfm.rule_set`, `rfm.rule_set_band` | Tables (`rfm`) | SELECT; the seed inserts the one rule set | The window, the frozen boundaries and the bands. The seed holds the scoring of the web's published rule version (`web-rfm-rules-180d`) with the 30 segment boxes as bands; F22-09 creates the others. `rule_set` is seed-exempt, `rule_set_band` has 30 rows |
 | `rfm.recalculation`, `rfm.recalculation_difference` | Tables (`rfm`) | S | Named by the verification story (F22-08) |
 | `rfm_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_rfm` through `trg_capture_profile_inserted` and `trg_capture_profile_changed`; seed-exempt runtime state |
@@ -118,6 +119,18 @@ The call to `api_segments.apply_assignment_v1` (ADR-0063) is a synchronous cross
 - `computed_at` is the instant of the recomputation, `r_days` is measured to it, and `next_change_at` is the earlier of the oldest purchase leaving the window and the recency passing the largest value its score allows. Neither the outbox trigger nor the equality of two profiles looks at them (`rfm.profile_changed.v1.md`).
 - The scoring is `app/profile.py`: recency scores 5 up to the first boundary, 4 up to the second and so on, frequency and monetary the other way, a box of scores picks the label (the lowest band first) or the fallback label with `via_fallback` true. The seed derives its boundaries from the web's own scoring of the last rule-based run, so the service scores a seeded customer as the web did at that instant.
 
+## The scheduled pass
+
+A profile moves with the clock alone when its oldest purchase leaves the window or its recency passes a boundary, and no event names such a customer (ADR-0063). `app/ageing.py` runs a pass every day at 02:00 UTC (`DAILY_PASS_AT_UTC`, off with `DAILY_PASS_ENABLED=false`):
+
+- It reads only the customers whose `next_change_at` has passed, through `customer_profile_due`, in key order and in batches, and recomputes each in a transaction of its own under the same per-customer lock as an event. A customer nobody names and whose instant has not come is not read.
+- Every customer is measured from the pass's `as_of`, written to `rfm.pass_run` when the pass starts. A recomputed customer is no longer due, so a pass that stops and starts again finds only those left and writes what one uninterrupted pass would. The counts of customers examined and changed grow in the transaction of each customer. A customer whose captured values did not move is examined and not changed, and puts nothing in the outbox.
+- A pass left `RUNNING` by an instance that stopped is resumed, with its original start and `as_of`, at the next start of the service. When a resumed pass ends, a fresh one starts at once, because the resumed one measures from an instant that may be hours old.
+- A customer is recomputed by the pass only while the profile, read again under the customer's lock, is still due at the pass's `as_of`: an event that recomputed the customer after the batch was read is never written over, so `computed_at` does not go backwards and no spurious change reaches the outbox.
+- A customer that fails is logged and skipped, and stays due for the next pass. Five failures in a row stop the pass, which stays `RUNNING`, and it is retried with a backoff (60 s, doubling to 30 min) until it ends, not at the next day's time.
+- The lock is held on a connection of its own, outside the kit's pool of three, so a pass takes one pool connection at a time and leaves the rest to the stream consumers and the requests.
+- Two instances never run the pass at once: it holds `pg_try_advisory_lock(297001)` on a session of its own, and the instance that does not get it stands down. The unique index `pass_run_one_running` backs this in the data.
+
 ## Failure behaviour
 
 | Dependency down | Effect |
@@ -136,4 +149,4 @@ The call to `api_segments.apply_assignment_v1` (ADR-0063) is a synchronous cross
 
 ## Backlog
 
-F22-03 contract (#777), F22-04 stand-up (#778), F22-05 incremental update on a sale (#779), F22-06 reversals, late sales and duplicates (#780), F22-07 to F22-08 and F22-09 implementation; consumed by F28-03, F28-04. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F22-03 contract (#777), F22-04 stand-up (#778), F22-05 incremental update on a sale (#779), F22-06 reversals, late sales and duplicates (#780), F22-07 scheduled pass (#781), F22-08 and F22-09 implementation; consumed by F28-03, F28-04. Issue numbers live in [`docs/backlog.md`](../backlog.md).

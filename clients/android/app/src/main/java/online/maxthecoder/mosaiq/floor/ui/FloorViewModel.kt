@@ -64,9 +64,12 @@ class FloorViewModel(
                 if (state is CheckInState.Queued) graph.outbox.observe(state.rowId) else emptyFlow()
             }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** Refused rows and rows still waiting, for the outbox screen. */
-    val open: StateFlow<List<OutboxRow>> =
-        graph.outbox.observeOpen().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /**
+     * Refused rows and rows still waiting, for the outbox screen; null until Room first answers, so the
+     * outbox shows a loading state rather than claiming everything is synced.
+     */
+    val open: StateFlow<List<OutboxRow>?> =
+        graph.outbox.observeOpen().stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** The rows whose request is on the wire right now. */
     val sending: StateFlow<Set<Long>> = graph.inFlight.ids

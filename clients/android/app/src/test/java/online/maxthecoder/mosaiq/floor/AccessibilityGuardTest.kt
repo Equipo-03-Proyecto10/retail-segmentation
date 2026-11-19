@@ -362,6 +362,8 @@ class AccessibilityGuardTest {
 
     @Test fun outboxEmpty() = audit { OutboxContent(emptyList(), "A", emptyMap(), {}, now, ZoneId.of("UTC")) }
 
+    @Test fun outboxLoading() = audit { OutboxContent(null, "A", emptyMap(), {}, now, ZoneId.of("UTC")) }
+
     // Shell --------------------------------------------------------------------------------------
 
     @Composable

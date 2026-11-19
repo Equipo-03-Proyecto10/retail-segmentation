@@ -67,7 +67,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 | [E-14](#e-14--campaigns-shares-the-webs-id-allocation-lock) | campaigns shares the web's id-allocation lock | [campaigns](./campaigns.md) |
 | [E-15](#e-15--the-credential-view-carries-the-password-hash) | the credential view carries the password hash | [auth](./auth.md), [users](./users.md) |
 | [E-16](#e-16--phone-sales-share-the-transaction-id-namespace-with-csv) | phone sales share the transaction id namespace with CSV | [sales](./sales.md) |
-| [E-17](#e-17--rules-ported-from-the-web-exist-twice) | rules ported from the web exist twice | [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md) |
+| [E-17](#e-17--rules-ported-from-the-web-exist-twice) | rules ported from the web exist twice | [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md), [model-registry](./model-registry.md) |
 | [E-18](#e-18--never-deleted-is-enforced-in-service-code-not-in-mongodb) | "never deleted" is enforced in service code, not in MongoDB | [engagement](./engagement.md) |
 | [E-19](#e-19--one-postgresql-one-ddl-file-one-redis-state-one-mongodb) | one PostgreSQL, one DDL file, one redis-state, one MongoDB | all 15 |
 | [E-20](#e-20--the-liveness-key-and-the-jwks-file-are-read-by-every-service) | the liveness key and the JWKS file are read by every service | all 15 |
@@ -205,10 +205,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-17 — rules ported from the web exist twice
 
-- **What:** Four rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes and campaign transitions. For RN-40, parity holds on the default path only (ADR-0067): no store and no channel named, every product active and sellable. A given store or channel, `not_sellable`, `store_not_selling`, alternatives, the recorded explanation and consent are not in the web and are outside the parity claim.
+- **What:** Five rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes, campaign transitions and the K-means fit with its cluster labels (RN-58, RN-38). For RN-40, parity holds on the default path only (ADR-0067): no store and no channel named, every product active and sellable. A given store or channel, `not_sellable`, `store_not_selling`, alternatives, the recorded explanation and consent are not in the web and are outside the parity claim.
 - **Why it is acceptable:** A service may not import `web/`, which is frozen, loads Flask and has no version to pin. Carrying a rule twice is the price of independence. The web cannot read the stock-channel, commercial-status and consent contracts, so it does not adopt the new behaviours.
 - **Guard:** The database carries what it can (CHECKs, indexes, triggers). The rest is a port pinned by golden fixtures captured once from the web on the seed database, with a drift job. A web bug fix opens an issue to regenerate them. Each deliberate difference of RN-40 is a recorded fixture with its reason (ADR-0045).
-- **Services:** [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md)
+- **Services:** [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md), [model-registry](./model-registry.md)
 - **Decided in:** [ADR-0045](../adr/0045-services-never-import-the-web-system.md) (Decision); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (Context)
 
 ### E-18 — "never deleted" is enforced in service code, not in MongoDB

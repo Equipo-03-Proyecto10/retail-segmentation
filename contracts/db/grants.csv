@@ -434,6 +434,12 @@ svc_models,models.model_version_feature,INSERT
 svc_models,models.model_publication,SELECT
 svc_models,models.model_publication,INSERT
 svc_models,models.run_version,SELECT
+svc_models,models.model_training,SELECT
+svc_models,models.model_training,INSERT
+svc_models,models.model_training_feature,SELECT
+svc_models,models.model_training_feature,INSERT
+svc_models,models.model_training_cluster,SELECT
+svc_models,models.model_training_cluster,INSERT
 svc_kpis,kpis,USAGE
 svc_kpis,api_kpis,USAGE
 svc_kpis,api_sales,USAGE
@@ -485,6 +491,21 @@ definer_customers,customers_events.outbox,INSERT
 svc_models,models.model_version(state),UPDATE
 svc_models,models.model_version(published_at),UPDATE
 svc_models,models.model_version(retired_at),UPDATE
+svc_models,models.model_training(state),UPDATE
+svc_models,models.model_training(finished_at),UPDATE
+svc_models,models.model_training(failure_code),UPDATE
+svc_models,models.model_training(dataset_fingerprint),UPDATE
+svc_models,models.model_training(dataset_origin),UPDATE
+svc_models,models.model_training(dataset_row_count),UPDATE
+svc_models,models.model_training(inertia),UPDATE
+svc_models,models.model_training(silhouette),UPDATE
+svc_models,models.model_training(iterations),UPDATE
+svc_models,models.model_training(converged),UPDATE
+svc_models,models.model_training(stopped_on),UPDATE
+svc_models,models.model_training(final_shift),UPDATE
+svc_models,models.model_training(empty_cluster_events),UPDATE
+svc_models,models.model_training(silhouette_sample_size),UPDATE
+svc_models,models.model_training(version_id),UPDATE
 svc_models,models_events,USAGE
 svc_models,models_events.outbox,SELECT
 svc_models,models_events.outbox,DELETE
@@ -493,6 +514,10 @@ definer_models,models_events,USAGE
 definer_models,models_events.outbox,INSERT
 svc_models,api_models,USAGE
 svc_models,api_models.published_version_v1,SELECT
+svc_models,api_sales,USAGE
+svc_models,api_sales.net_purchase_line_v1,SELECT
+svc_models,api_segments,USAGE
+svc_models,api_segments.label_v1,SELECT
 svc_models,api_audit,USAGE
 svc_models,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_customers,api_sales,USAGE

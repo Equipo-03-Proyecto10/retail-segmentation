@@ -1382,7 +1382,7 @@ window, the threshold and the version; a window that crosses a change of version
 not compared, and "concept drift" is said only of an outcome-test result
 ([ADR-0065](adr/0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md)).
 
-**Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
+**Enforced:** model-registry, ADR-0059 and ADR-0064 —
 `models.model_version` is insert-only for `svc_models` apart from its state, a
 partial unique index allows one `PUBLISHED` row, and `models.model_publication`
 is append-only. The contract of F22-10 (#805) specifies versions, training runs,

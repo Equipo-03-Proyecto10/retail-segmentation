@@ -1005,6 +1005,24 @@ decision that matters is how a product's many-valued facts are split:
   determines every column, and `previous_version_id` is a second reference to
   `model_version`, not a copy of it. It is append-only, so a rollback is a new
   row and history is never rewritten.
+- **`models.model_training`** (model-registry, F22-12) is one relation keyed by
+  `training_id`: one row is one request to train, with the parameters asked for
+  (`window_days`, `seed`, `k`, `max_iterations`, `tolerance`, `normalization`), who
+  asked and when, and, once it ends, what came of it. Every column depends on the
+  key and nothing else, so it is in BCNF. The outcome columns are null while the
+  training is `RUNNING`, and a CHECK ties the null pattern to `state`, so a row
+  cannot claim a result it does not have. `version_id` is the version the training
+  registered, unique, so a version has at most one training. A trigger lets only
+  the move from `RUNNING` to `COMPLETED` or `FAILED` change the outcome columns,
+  and refuses every DELETE; a unique partial index allows one `RUNNING` row.
+- **`models.model_training_feature`** is the multivalued fact "this training fitted
+  these variables" (R, F, M), keyed `(training_id, feature)`, independent of
+  every other fact, so it is in 4NF; the same shape as `model_version_feature`.
+- **`models.model_training_cluster`** is the multivalued fact "the cluster at this
+  rank of this training held this many customers", keyed `(training_id,
+  cluster_index)`. The count depends on the whole key, and it is not derivable
+  from the version's `reference_distribution` (which holds shares of labels, not
+  of clusters), so it is a stored fact; it is in 4NF. Both are insert-only.
 - **`models.run_version`** is the 1:N fact "this segmentation run was scored
   under this version" (ADR-0064). `run_id → version_id`, and the run is the
   web's, named by value with no foreign key (the record outlives any maintenance

@@ -2396,6 +2396,16 @@ LEFT JOIN public.customer_segment_history AS h
        ON h.customer_id = c.customer_id AND h.valid_to IS NULL;
 REVOKE ALL ON api_segments.current_label_v1 FROM PUBLIC;
 
+-- contracts/db/api_segments.label.v1.md: the stable label vocabulary in its declared
+-- best-to-worst order, which ADR-0030 pairs with K-means clusters by proportional
+-- rank. The vocabulary is segments' (ADR-0018), so a consumer reads it here and
+-- keeps no copy of it. Definer rights, so a consumer needs no privilege on the table.
+CREATE OR REPLACE VIEW api_segments.label_v1
+WITH (security_invoker = off) AS
+SELECT label_code, ordinal_position
+FROM public.segment_label;
+REVOKE ALL ON api_segments.label_v1 FROM PUBLIC;
+
 -- One event per run the web records, so the service and recommendations move
 -- their caches to the new run's keys.
 CREATE OR REPLACE FUNCTION segments_events.capture_run_recorded() RETURNS trigger
@@ -5109,7 +5119,8 @@ GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
 -- lets any role edit its definition or delete a row, and the publication
 -- history is append-only. Publication and rollback (F22-13) own the outbox
 -- for stream:models.v1.publication_recorded and the current-version view.
--- Training (F22-12) and the drift tables (F23-09) are their own stories.
+-- Training (F22-12) is the model_training tables below; the drift tables (F23-09) are
+-- their own story.
 --
 -- The web has no privilege here (ADR-0046): retail_app gets no USAGE on
 -- `models`, so it cannot even name these tables.
@@ -5290,6 +5301,101 @@ SELECT run_id, version_id, linked_at
   FROM models.run_version;
 REVOKE ALL ON api_models.run_version_v1 FROM PUBLIC;
 
+-- A K-means training (F22-12, ADR-0021, RN-58): the request that started the
+-- fit and, once it ends, what the fit produced. A POST answers at once with the
+-- row RUNNING and the fit runs after the answer, so the row is the thing a
+-- client polls. It is the only mutable row of the boundary besides a version's
+-- projection: it moves once, from RUNNING to COMPLETED or FAILED, and trg_model_training_guard
+-- refuses every other change and every DELETE, for every role including the
+-- owner. A COMPLETED training names the DRAFT version it registered, so the
+-- version stays immutable and the link lives here.
+--
+-- The seed is NOT NULL: a run that did not record it could not be repeated
+-- (RN-58), and the service chooses one when the caller gives none. The partial
+-- unique index is the schema's half of "two trainings never run at once": the
+-- service checks it first and maps the index's refusal to a 409.
+CREATE TABLE IF NOT EXISTS models.model_training (
+    training_id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    method                 VARCHAR(20) NOT NULL CHECK (method = 'KMEANS'),
+    state                  VARCHAR(20) NOT NULL DEFAULT 'RUNNING'
+                           CHECK (state IN ('RUNNING', 'COMPLETED', 'FAILED')),
+    version_name           VARCHAR(80) NOT NULL CHECK (length(version_name) >= 1),
+    window_days            INTEGER NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+    seed                   BIGINT NOT NULL,
+    k                      INTEGER NOT NULL CHECK (k BETWEEN 2 AND 20),
+    max_iterations         INTEGER NOT NULL CHECK (max_iterations BETWEEN 1 AND 1000),
+    tolerance              DOUBLE PRECISION NOT NULL CHECK (tolerance > 0),
+    normalization          VARCHAR(20) NOT NULL CHECK (normalization = 'MIN_MAX'),
+    started_by             UUID NOT NULL REFERENCES public.app_user(user_id)
+                           ON DELETE RESTRICT,
+    started_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at            TIMESTAMPTZ,
+    failure_code           VARCHAR(40),
+    -- What a COMPLETED fit leaves, each a single value of the training.
+    dataset_fingerprint    CHAR(64) CHECK (dataset_fingerprint ~ '^[0-9a-f]{64}$'),
+    dataset_origin         VARCHAR(20) CHECK (dataset_origin IN ('OBSERVED', 'SEEDED')),
+    dataset_row_count      INTEGER CHECK (dataset_row_count >= 0),
+    inertia                DOUBLE PRECISION CHECK (inertia >= 0),
+    silhouette             DOUBLE PRECISION CHECK (silhouette BETWEEN -1 AND 1),
+    iterations             INTEGER CHECK (iterations >= 1),
+    converged              BOOLEAN,
+    stopped_on             VARCHAR(20) CHECK (stopped_on IN ('tolerance', 'iteration_limit')),
+    final_shift            DOUBLE PRECISION CHECK (final_shift >= 0),
+    empty_cluster_events   INTEGER CHECK (empty_cluster_events >= 0),
+    -- Set only when the silhouette is the mean over a sample (RN-58).
+    silhouette_sample_size INTEGER CHECK (silhouette_sample_size >= 1),
+    version_id             BIGINT UNIQUE REFERENCES models.model_version(version_id)
+                           ON DELETE RESTRICT,
+    CONSTRAINT model_training_state_shape CHECK (
+        (state = 'RUNNING'
+            AND finished_at IS NULL AND failure_code IS NULL AND version_id IS NULL
+            AND dataset_fingerprint IS NULL AND dataset_origin IS NULL
+            AND dataset_row_count IS NULL AND inertia IS NULL AND silhouette IS NULL
+            AND iterations IS NULL AND converged IS NULL AND stopped_on IS NULL
+            AND final_shift IS NULL AND empty_cluster_events IS NULL
+            AND silhouette_sample_size IS NULL)
+        OR
+        (state = 'COMPLETED'
+            AND finished_at IS NOT NULL AND failure_code IS NULL AND version_id IS NOT NULL
+            AND dataset_fingerprint IS NOT NULL AND dataset_origin IS NOT NULL
+            AND dataset_row_count IS NOT NULL AND inertia IS NOT NULL
+            AND iterations IS NOT NULL AND converged IS NOT NULL AND stopped_on IS NOT NULL
+            AND final_shift IS NOT NULL AND empty_cluster_events IS NOT NULL
+            AND (converged = (stopped_on = 'tolerance')))
+        OR
+        (state = 'FAILED'
+            AND finished_at IS NOT NULL AND failure_code IS NOT NULL AND version_id IS NULL
+            AND dataset_fingerprint IS NULL AND dataset_origin IS NULL
+            AND dataset_row_count IS NULL AND inertia IS NULL AND silhouette IS NULL
+            AND iterations IS NULL AND converged IS NULL AND stopped_on IS NULL
+            AND final_shift IS NULL AND empty_cluster_events IS NULL
+            AND silhouette_sample_size IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS model_training_one_running
+    ON models.model_training (state) WHERE state = 'RUNNING';
+CREATE INDEX IF NOT EXISTS model_training_newest ON models.model_training (training_id DESC);
+
+-- The variables a training fits: a multivalued fact, so rows and not an array
+-- (4NF), as model_version_feature is for a version.
+CREATE TABLE IF NOT EXISTS models.model_training_feature (
+    training_id BIGINT NOT NULL REFERENCES models.model_training(training_id)
+                ON DELETE RESTRICT,
+    feature     CHAR(1) NOT NULL CHECK (feature IN ('R', 'F', 'M')),
+    PRIMARY KEY (training_id, feature)
+);
+
+-- How many customers each cluster of a COMPLETED fit holds. `cluster_index` is the
+-- cluster's position in best-to-worst order (RN-38), the same index the version's
+-- centroids carry, and never the raw number one fit gave it (ADR-0018). Written
+-- with the version in one transaction, and never changed.
+CREATE TABLE IF NOT EXISTS models.model_training_cluster (
+    training_id    BIGINT NOT NULL REFERENCES models.model_training(training_id)
+                   ON DELETE RESTRICT,
+    cluster_index  INTEGER NOT NULL CHECK (cluster_index BETWEEN 0 AND 19),
+    customer_count INTEGER NOT NULL CHECK (customer_count >= 1),
+    PRIMARY KEY (training_id, cluster_index)
+);
+
 -- Immutability, for every role. Only state, published_at and retired_at of a
 -- version may change; nothing is ever deleted, in any of the four tables.
 CREATE OR REPLACE FUNCTION models.refuse_change() RETURNS trigger
@@ -5320,6 +5426,39 @@ FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
 CREATE OR REPLACE TRIGGER trg_run_version_immutable
 BEFORE UPDATE OR DELETE ON models.run_version
 FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_training_feature_immutable
+BEFORE UPDATE OR DELETE ON models.model_training_feature
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_training_cluster_immutable
+BEFORE UPDATE OR DELETE ON models.model_training_cluster
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
+-- A training moves once, from RUNNING to COMPLETED or FAILED, and only the
+-- columns of its outcome change; what was asked (the request) never does, and
+-- a finished training never changes again. Nothing is deleted.
+CREATE OR REPLACE FUNCTION models.guard_training() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    outcome text[] := ARRAY['state', 'finished_at', 'failure_code', 'dataset_fingerprint',
+        'dataset_origin', 'dataset_row_count', 'inertia', 'silhouette', 'iterations',
+        'converged', 'stopped_on', 'final_shift', 'empty_cluster_events',
+        'silhouette_sample_size', 'version_id'];
+BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.state = 'RUNNING' AND NEW.state IN ('COMPLETED', 'FAILED')
+       AND (to_jsonb(NEW) - outcome) = (to_jsonb(OLD) - outcome) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'models.model_training is immutable once finished: % refused (ADR-0064)', TG_OP
+        USING ERRCODE = '23000', CONSTRAINT = 'model_training_immutable';
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_model_training_guard
+BEFORE UPDATE OR DELETE ON models.model_training
+FOR EACH ROW EXECUTE FUNCTION models.guard_training();
 
 -- Each is a row of contracts/db/grants.csv. svc_models registers versions and
 -- publishes by changing only state/times and appending a publication fact. It
@@ -5329,6 +5468,14 @@ GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO sv
 GRANT UPDATE (state, published_at, retired_at) ON models.model_version TO svc_models;
 GRANT SELECT, INSERT ON models.model_publication TO svc_models;
 GRANT SELECT ON models.run_version TO svc_models;
+-- A training is written by the registry alone: it inserts the RUNNING row and its
+-- variables, and then moves the row once, changing only the columns of its outcome.
+GRANT SELECT, INSERT ON models.model_training, models.model_training_feature,
+    models.model_training_cluster TO svc_models;
+GRANT UPDATE (state, finished_at, failure_code, dataset_fingerprint, dataset_origin,
+    dataset_row_count, inertia, silhouette, iterations, converged, stopped_on,
+    final_shift, empty_cluster_events, silhouette_sample_size, version_id)
+    ON models.model_training TO svc_models;
 
 GRANT USAGE ON SCHEMA models_events TO svc_models, definer_models;
 GRANT INSERT ON models_events.outbox TO definer_models;
@@ -5337,6 +5484,13 @@ GRANT SELECT, DELETE, UPDATE (relayed_at) ON models_events.outbox TO svc_models;
 -- Consumer grants arrive with their stories; the producer can verify its view.
 GRANT USAGE ON SCHEMA api_models TO svc_models;
 GRANT SELECT ON api_models.published_version_v1 TO svc_models;
+
+-- What a training fits and how it names its clusters (F22-12): the net purchases
+-- of the window (ADR-0062) and the label vocabulary in its declared order
+-- (ADR-0030), each through its owner's view and never the owner's table.
+GRANT USAGE ON SCHEMA api_sales, api_segments TO svc_models;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_models;
+GRANT SELECT ON api_segments.label_v1 TO svc_models;
 GRANT USAGE ON SCHEMA api_models TO svc_segments;
 GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
 

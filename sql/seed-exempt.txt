@@ -127,6 +127,15 @@ models.model_version_feature
 # version. The history grows only by an administrator's publication (F22-13).
 models.model_publication
 
+# models.model_training, its variables and its cluster sizes: a training is a run an
+# administrator started and what that fit produced (F22-12). Seeding trainings would
+# invent a history of runs nobody started, and each COMPLETED one would have to be
+# explained by a version, so the seed's two versions stay registered ones. The three
+# tables fill only when a training runs.
+models.model_training
+models.model_training_feature
+models.model_training_cluster
+
 # rfm_events.outbox: relayed rows are purged after seven days, so it is runtime
 # state and never seed data (F22-05). The capture triggers on rfm.customer_profile
 # fill it as the service writes profiles.

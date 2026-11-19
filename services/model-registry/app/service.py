@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -19,13 +20,16 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, rules, store
+from . import audit, rules, store, training
 from .config import Settings
 
 METHODS = ("RFM_RULES", "KMEANS")
 STATES = ("DRAFT", "PUBLISHED", "RETIRED")
 NAME_CONSTRAINT = "model_version_name_key"
 PUBLISHED_CONSTRAINT = "model_version_one_published"
+RUNNING_CONSTRAINT = "model_training_one_running"
+TRAINING_STATES = ("RUNNING", "COMPLETED", "FAILED")
+LOGGER = logging.getLogger(__name__)
 STREAM = "stream:models.v1.publication_recorded"
 
 
@@ -144,10 +148,56 @@ def version_view(row: dict[str, Any]) -> dict[str, Any]:
         },
         "owner_id": row["owner_id"],
         "source_run_id": row["source_run_id"],
-        "training_id": None,
+        "training_id": row["training_id"],
         "created_at": row["created_at"],
         "published_at": row["published_at"],
         "retired_at": row["retired_at"],
+    }
+
+
+def training_view(row: dict[str, Any]) -> dict[str, Any]:
+    """One training as `model-trainings` serves it, in the contract's member order."""
+    finished = row["state"] == "COMPLETED"
+    return {
+        "training_id": row["training_id"],
+        "method": row["method"],
+        "state": row["state"],
+        "version_name": row["version_name"],
+        "window_days": row["window_days"],
+        "seed": row["seed"],
+        "parameters": {
+            "rule_set_id": None,
+            "k": row["k"],
+            "max_iterations": row["max_iterations"],
+            "tolerance": row["tolerance"],
+            "features": row["features"],
+            "normalization": row["normalization"],
+        },
+        "dataset": (
+            {
+                "fingerprint": row["fingerprint"],
+                "origin": row["origin"],
+                "row_count": row["row_count"],
+            }
+            if finished
+            else None
+        ),
+        "metrics": (
+            {
+                "inertia": row["inertia"],
+                "silhouette": row["silhouette"],
+                "stability": None,
+            }
+            if finished
+            else None
+        ),
+        "iterations": row["iterations"],
+        "converged": row["converged"],
+        "version_id": row["version_id"],
+        "started_at": row["started_at"],
+        "finished_at": row["finished_at"],
+        "started_by": row["started_by"],
+        "failure_code": row["failure_code"],
     }
 
 
@@ -291,8 +341,85 @@ def create_app(*, start_relay: bool = True) -> Flask:
     def rollback_to_model_version(version_id: int) -> Representation:
         return change_publication(version_id, "ROLLBACK")
 
+    @kit.operation("listModelTrainings")
+    def list_model_trainings() -> Page:
+        method = _filter(request.args, "method", METHODS)
+        state = _filter(request.args, "state", TRAINING_STATES)
+        with kit.db.connection() as connection:
+            rows, total = store.list_trainings(
+                connection, method, state, kit.size, (kit.page - 1) * kit.size
+            )
+        return Page(
+            "ModelTrainings",
+            "ModelTraining",
+            "trainings",
+            [training_view(row) for row in rows],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getModelTraining")
+    def get_model_training(training_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = store.get_training(connection, training_id)
+        if row is None:
+            raise ApiError(
+                404, "model_training_not_found", "The model training does not exist."
+            )
+        return Representation("ModelTraining", training_view(row))
+
+    threads: list[Any] = []
+    app.extensions["training_threads"] = threads
+
+    @kit.operation("createModelTraining")
+    def create_model_training() -> Representation:
+        body = kit.body
+        details = rules.training_details(body)
+        if details:
+            raise ApiError(
+                422, "invalid_body", "The training breaks its rules.", details
+            )
+        seed = training.choose_seed(body.get("seed"))
+        try:
+            with kit.db.transaction() as connection:
+                store.fail_stale_trainings(
+                    connection, settings.training_timeout_seconds
+                )
+                if store.name_taken(connection, body["version_name"]):
+                    raise _name_taken(body["version_name"])
+                training_id = store.insert_training(
+                    connection, body, seed, str(kit.principal["sub"])
+                )
+                row = store.get_training(connection, training_id)
+        except psycopg.errors.UniqueViolation as error:
+            if error.diag.constraint_name == RUNNING_CONSTRAINT:
+                raise ApiError(
+                    409, "training_in_progress", "A training is already running."
+                ) from None
+            raise
+        # The answer does not wait for the fit: the row is what the caller polls.
+        threads.append(
+            training.start(kit.db, training_id, settings.training_timeout_seconds)
+        )
+        return Representation(
+            "ModelTraining",
+            training_view(row),
+            status=201,
+            headers={"Location": f"/v1/model-trainings/{training_id}"},
+        )
+
     dsn = os.environ.get("DATABASE_URL")
     if start_relay and dsn:
+        # Fits run inside this process, so a training still RUNNING when it starts
+        # belongs to
+        # one that died: close it, or it would hold the one running slot until its
+        # deadline.
+        try:
+            with kit.db.transaction() as connection:
+                store.fail_running_trainings(connection, "interrupted")
+        except (psycopg.Error, ApiError):
+            LOGGER.exception("could not close the trainings a restart interrupted")
         relay = OutboxRelay(
             dsn,
             "models",

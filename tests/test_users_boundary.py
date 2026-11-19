@@ -73,6 +73,7 @@ def test_assignment_view_consumers_match_the_published_contract() -> None:
         "svc_checkins",
         "svc_engagement",
         "svc_kpis",
+        "svc_recommendations",
     }
 
 

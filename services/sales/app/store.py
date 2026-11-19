@@ -145,19 +145,21 @@ def channel_exists(connection: psycopg.Connection, channel_id: int) -> bool:
     )
 
 
-def active_promotions(
+def promotion_windows(
     connection: psycopg.Connection,
     promotion_ids: list[int],
     store_id: int,
     channel_id: int,
 ) -> dict[int, tuple[Decimal, Any, Any]]:
-    """The named promotions active today for this store and channel, with their
-    percentage and validity. A promotion that is not there is not usable."""
+    """The named promotions that ran for this store and channel, with their
+    percentage and validity. The caller judges the sale's own day against the
+    validity: the view has no date test, so a sale queued offline on a
+    promotion's last day still finds it. A promotion not there is not usable."""
     if not promotion_ids:
         return {}
     rows = connection.execute(
         "SELECT promotion_id, discount_percent, starts_on, ends_on"
-        " FROM api_campaigns.active_promotion_v1"
+        " FROM api_campaigns.promotion_window_v1"
         " WHERE promotion_id = ANY(%s) AND store_id = %s AND channel_id = %s",
         (promotion_ids, store_id, channel_id),
     ).fetchall()

@@ -725,6 +725,8 @@ WHERE l.transaction_id = t.transaction_id;
 -- product's list price of that day. They avoid the sales sql/verify_integrity.sql
 -- moves lines between (1 and 2), whose probes must meet their own refusal first.
 -- The seeded promotions belong to campaigns of early 2026, so no line names one.
+-- The rows are illustrative: these sales have no sales.sale_capture row, which is
+-- runtime state and seed-exempt.
 INSERT INTO sales.sale_line_price (transaction_id, product_id, list_price, promotion_id)
 SELECT l.transaction_id, l.product_id, p.list_price, NULL
 FROM transaction_line AS l

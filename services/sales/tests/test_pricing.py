@@ -3,7 +3,7 @@
 Each acceptance criterion of #836 has its own section below, run against the real
 PostgreSQL and Redis of the suite. The product, the store's commercial rule and
 the promotions are written as their owners would write them, through the owner
-connection, and `api_campaigns.active_promotion_v1`,
+connection, and `api_campaigns.promotion_window_v1`,
 `api_stores.store_directory_v2` and `api_products.product_ref_v1` are read by
 the service as `svc_sales`, as in production.
 """
@@ -14,6 +14,7 @@ import copy
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
@@ -300,8 +301,8 @@ def test_a_promotion_that_does_not_apply_is_refused_and_nothing_is_recorded(
     assert on_hand(owner, shop) == before
 
 
-@pytest.mark.parametrize("status", ["DRAFT", "FINISHED", "CANCELLED"])
-def test_a_promotion_of_a_campaign_that_is_not_active_is_refused(
+@pytest.mark.parametrize("status", ["DRAFT", "CANCELLED"])
+def test_a_promotion_of_a_campaign_that_never_ran_is_refused(
     client, token, owner, shop, status
 ):
     promotion_id = promotion(owner, shop)
@@ -315,6 +316,88 @@ def test_a_promotion_of_a_campaign_that_is_not_active_is_refused(
 
     assert response.get_json()["code"] == "promotion_not_applicable"
     assert recorded(owner, key) == {"sales": 0, "prices": []}
+
+
+def test_a_promotion_of_a_finished_campaign_still_prices_a_sale_within_its_dates(
+    client, token, owner, shop
+):
+    promotion_id = promotion(owner, shop)
+    owner.execute(
+        "UPDATE public.campaign SET status = 'FINISHED' WHERE campaign_id = %s",
+        (CAMPAIGN,),
+    )
+    key = str(uuid.uuid4())
+
+    response = post(client, token, body(shop, "80.00", promotion_id), key)
+
+    assert response.status_code == 201, response.get_json()
+    assert recorded(owner, key)["prices"] == [
+        (shop["product"], "80.00", LIST_PRICE, promotion_id)
+    ]
+
+
+@pytest.mark.parametrize("status", ["ACTIVE", "FINISHED"])
+def test_a_sale_queued_on_a_promotions_last_day_is_accepted_when_it_syncs(
+    client, token, owner, shop, status
+):
+    """#1108 review, finding 1: the sale happened yesterday, on the promotion's
+    last day, and reaches the service today, after the campaign may have ended."""
+    today = shop["today"]
+    yesterday = today - timedelta(days=1)
+    promotion_id = promotion(
+        owner, shop, starts=today - timedelta(days=5), ends=yesterday
+    )
+    owner.execute(
+        "UPDATE public.campaign SET status = %s WHERE campaign_id = %s",
+        (status, CAMPAIGN),
+    )
+    occurred = datetime.combine(yesterday, time(12), tzinfo=UTC).isoformat()
+    key = str(uuid.uuid4())
+
+    response = post(
+        client, token, body(shop, "80.00", promotion_id, occurred_at=occurred), key
+    )
+
+    assert response.status_code == 201, response.get_json()
+    assert recorded(owner, key)["prices"] == [
+        (shop["product"], "80.00", LIST_PRICE, promotion_id)
+    ]
+    # The same promotion does not price a sale made today, the day after it ended.
+    late = post(client, token, body(shop, "80.00", promotion_id), str(uuid.uuid4()))
+    assert late.get_json()["code"] == "promotion_not_applicable"
+
+
+@pytest.mark.parametrize("zone", ["Etc/GMT+12", "Etc/GMT-14"])
+def test_the_sales_day_is_read_in_the_business_time_zone_not_the_databases(
+    client, token, owner, shop, monkeypatch, zone
+):
+    """#1108 review, finding 2: with SALES_TIMEZONE far from the database's
+    zone, a promotion valid only on the business's today prices a sale made now,
+    and one valid only on the database's today, when that differs, does not."""
+    monkeypatch.setenv("SALES_TIMEZONE", zone)
+    now = datetime.now(UTC) - timedelta(minutes=5)
+    local_today = now.astimezone(ZoneInfo(zone)).date()
+    promotion_id = promotion(owner, shop, starts=local_today, ends=local_today)
+    occurred = now.isoformat()
+
+    response = post(
+        client,
+        token,
+        body(shop, "80.00", promotion_id, occurred_at=occurred),
+        str(uuid.uuid4()),
+    )
+
+    assert response.status_code == 201, response.get_json()
+    database_today = shop["today"]
+    if database_today != local_today:
+        other = promotion(owner, shop, starts=database_today, ends=database_today)
+        refused = post(
+            client,
+            token,
+            body(shop, "80.00", other, occurred_at=occurred),
+            str(uuid.uuid4()),
+        )
+        assert refused.get_json()["code"] == "promotion_not_applicable"
 
 
 def test_a_sale_dated_outside_the_promotions_validity_is_refused(
@@ -353,6 +436,32 @@ def test_a_discount_without_a_promotion_is_refused_and_nothing_is_recorded(
     ]
     assert recorded(owner, key) == {"sales": 0, "prices": []}
     assert on_hand(owner, shop) == before
+
+
+def test_a_line_at_list_price_keeps_no_promotion_it_did_not_use(
+    client, token, owner, shop
+):
+    """#1108 review, finding 3: a promotion report counts only discounted lines."""
+    promotion_id = promotion(owner, shop, "20.00")
+    key = str(uuid.uuid4())
+
+    response = post(client, token, body(shop, LIST_PRICE, promotion_id), key)
+
+    assert response.status_code == 201, response.get_json()
+    assert recorded(owner, key)["prices"] == [
+        (shop["product"], LIST_PRICE, LIST_PRICE, None)
+    ]
+
+
+def test_a_named_promotion_is_validated_even_on_a_line_at_list_price(
+    client, token, owner, shop
+):
+    key = str(uuid.uuid4())
+
+    response = post(client, token, body(shop, LIST_PRICE, 987_654_321), key)
+
+    assert response.get_json()["code"] == "promotion_not_applicable"
+    assert recorded(owner, key) == {"sales": 0, "prices": []}
 
 
 def test_a_discount_above_the_promotion_is_refused_and_nothing_is_recorded(

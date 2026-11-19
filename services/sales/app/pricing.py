@@ -4,15 +4,18 @@
 is read in the sale's own transaction: the product's `list_price` from
 `api_products.product_ref_v1`, the store's `max_discount_percent` from
 `api_stores.store_directory_v2`, and the promotions of
-`api_campaigns.active_promotion_v1`. Only `POST /v1/sales` applies this rule; a
+`api_campaigns.promotion_window_v1`. Only `POST /v1/sales` applies this rule; a
 sale import keeps the rules it states, so an imported history is judged as the
 web judges it.
 
 - A line charged below its list price names the promotion it relies on, or it is
   `discount_without_promotion`.
-- A named promotion is a row of the view for the sale's store and channel, and
-  the sale's day (`occurred_at` in `SALES_TIMEZONE`) lies within its validity, or
-  it is `promotion_not_applicable`.
+- A named promotion is always validated: it is a row of the view (a campaign
+  that is `ACTIVE` or `FINISHED`) for the sale's store and channel, and the
+  sale's own day (`occurred_at` in `SALES_TIMEZONE`) lies within its validity, or
+  it is `promotion_not_applicable`. The day is the sale's, never the database's
+  `CURRENT_DATE`, so a sale queued offline on a promotion's last day is judged
+  on that day when it syncs, in the service's time zone.
 - The discount allowed is the smaller of the promotion's percentage and the
   store's cap. The lowest accepted price is the list price times
   (1 - percent / 100), rounded half up to the cent; below it the line is
@@ -22,7 +25,8 @@ web judges it.
   promotion.
 
 Each line gets its `list_price`, which `store.insert_sale` keeps in
-`sales.sale_line_price` with the promotion.
+`sales.sale_line_price`. The promotion is kept only on a line it discounted, so
+a report of a promotion counts only the lines it priced.
 """
 
 from __future__ import annotations
@@ -68,7 +72,7 @@ def apply_prices(
             line["list_price"] = prices[line["product_id"]]
         return
     cap = directory[0]
-    promotions = store.active_promotions(
+    promotions = store.promotion_windows(
         connection, named, body["store_id"], body["channel_id"]
     )
     day = occurred_at.astimezone(business_zone()).date()
@@ -90,6 +94,8 @@ def apply_prices(
                 )
         charged = line["unit_price"]
         if charged >= list_price:
+            # No discount was granted, so the line keeps no promotion.
+            line["promotion_id"] = None
             continue
         if promotion is None:
             raise line_error(

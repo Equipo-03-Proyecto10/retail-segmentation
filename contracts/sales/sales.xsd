@@ -14,12 +14,15 @@
   </xs:simpleType>
 
   <!-- A request price is any decimal: the service, not the schema, refuses a
-       non-positive price or one with more than two places (invalid_price). -->
+       non-positive price or one with more than two places (invalid_price).
+       promotion_id is optional; the service decides whether the line needs one
+       and whether it applies (F25-05). -->
   <xs:complexType name="SaleLineInput">
     <xs:sequence>
       <xs:element name="product_id" type="xs:integer"/>
       <xs:element name="quantity" type="xs:integer"/>
       <xs:element name="unit_price" type="xs:decimal"/>
+      <xs:element name="promotion_id" type="xs:integer" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 

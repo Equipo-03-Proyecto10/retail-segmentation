@@ -206,7 +206,8 @@ data class StockLevel(
 
 /**
  * The fields of `ProductDetails` (contracts/products) the floor shows: the product
- * plus its commercial status, `active`, `paused` or `discontinued` (F21-09).
+ * plus its commercial status, `active`, `paused` or `discontinued` (F21-09), and
+ * its barcode, null when it has none, which confirms a barcode look-up (F27-04).
  */
 @Serializable
 data class ProductDetails(
@@ -216,7 +217,8 @@ data class ProductDetails(
     @SerialName("category_id") val categoryId: Int,
     @SerialName("list_price") val listPrice: String,
     @SerialName("is_active") val isActive: Boolean,
-    @SerialName("commercial_status") val commercialStatus: String
+    @SerialName("commercial_status") val commercialStatus: String,
+    val barcode: String? = null
 ) {
     val product: Product get() = Product(productId, sku, name, categoryId, listPrice, isActive)
 }

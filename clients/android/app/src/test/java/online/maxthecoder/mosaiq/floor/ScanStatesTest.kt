@@ -18,11 +18,14 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.mlkit.vision.barcode.common.Barcode
 import okhttp3.mockwebserver.MockWebServer
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Availability
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CameraPermission
@@ -33,6 +36,8 @@ import online.maxthecoder.mosaiq.floor.ui.ScanScreen
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.scan.CatalogSearchSection
 import online.maxthecoder.mosaiq.floor.ui.scan.DecodeOnce
+import online.maxthecoder.mosaiq.floor.ui.scan.PRODUCT_BARCODE_FORMATS
+import online.maxthecoder.mosaiq.floor.ui.scan.codeKind
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -122,6 +127,42 @@ class ScanStatesTest {
         compose.onNodeWithText("This product is discontinued. It cannot be added to a sale.").assertExists()
         compose.onNodeWithText("Add to sale").assertDoesNotExist()
         compose.onNodeWithText("Scan another").assertExists()
+    }
+
+    @Test
+    fun aBarcodeNoProductCarriesSaysSoInPlainWords() {
+        show(ScanResult.BarcodeNotFound("7501031311309"))
+        compose.onNodeWithText("No product has this barcode").assertExists()
+        compose.onNodeWithText(
+            "Barcode 7501031311309 is not in the catalog. Search for the product by name below, or scan another code."
+        ).assertExists()
+        compose.onNodeWithText("Scan another").performScrollTo().performClick()
+        assertEquals(1, scanAnother)
+    }
+
+    @Test
+    fun aRefusedBarcodeShowsAHumanMessageNotAnErrorCode() {
+        show(ScanResult.InvalidBarcode)
+        compose.onNodeWithText("That barcode could not be read").assertExists()
+        compose.onNodeWithText(
+            "Its digits are not a product barcode. Scan it again, or search for the product by name below."
+        ).assertExists()
+        compose.onNodeWithText("invalid_query", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theCameraReportsAQrCodeAsAProductIdAndAnyOtherFormatAsABarcode() {
+        assertEquals(CodeKind.QR, codeKind(Barcode.FORMAT_QR_CODE))
+        for (format in PRODUCT_BARCODE_FORMATS) assertEquals(CodeKind.PRODUCT_BARCODE, codeKind(format))
+        assertEquals(
+            listOf(Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_EAN_13, Barcode.FORMAT_ITF),
+            PRODUCT_BARCODE_FORMATS.toList()
+        )
+        val decoded = mutableListOf<Decoded>()
+        val gate = DecodeOnce()
+        gate.offer(Decoded("4006381333931", CodeKind.PRODUCT_BARCODE), decoded::add)
+        gate.offer(Decoded("120"), decoded::add)
+        assertEquals(listOf(Decoded("4006381333931", CodeKind.PRODUCT_BARCODE)), decoded)
     }
 
     @Test
@@ -222,8 +263,10 @@ class ScanStatesTest {
     @Test
     fun theCameraViewportIsDescribedForTalkBackAndTheHintShows() {
         show(scanning = true)
-        compose.onNode(hasContentDescription("Camera viewport for scanning a product QR code")).assertExists()
-        compose.onNodeWithText("Point at a product QR code").assertExists()
+        compose.onNode(
+            hasContentDescription("Camera viewport for scanning a product QR code or barcode")
+        ).assertExists()
+        compose.onNodeWithText("Point at a product QR code or barcode").assertExists()
         compose.onNodeWithText("camera").assertExists()
     }
 

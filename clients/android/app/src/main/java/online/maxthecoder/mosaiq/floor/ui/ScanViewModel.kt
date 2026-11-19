@@ -11,6 +11,7 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Availability
 import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.net.call
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.scan.Payload
 import online.maxthecoder.mosaiq.floor.scan.Scan
 import online.maxthecoder.mosaiq.floor.scan.ScanSession
@@ -27,6 +28,12 @@ sealed interface ScanResult {
     data object NotAProduct : ScanResult
 
     data object ProductNotFound : ScanResult
+
+    /** A product barcode no product carries (F27-04). Nothing is queued. */
+    data class BarcodeNotFound(val barcode: String) : ScanResult
+
+    /** products-service refused the barcode as malformed: 422 `invalid_query` (F27-04). */
+    data object InvalidBarcode : ScanResult
 
     data object Looking : ScanResult
 
@@ -67,6 +74,8 @@ sealed interface CatalogSearch {
  * Scans a product (F17-02): each new code is looked up at products-service and
  * stock-service, and a found product is counted once as a QR_SCAN through the
  * floor-write queue, with the client event id fixed when the code was decoded.
+ * A product barcode is first turned into its product by `listProducts?barcode=`
+ * (F27-04); from there it is the same look-up and the same one QR_SCAN (ADR-0041).
  */
 class ScanViewModel(
     private val graph: AppGraph,
@@ -107,16 +116,22 @@ class ScanViewModel(
         if (stillSignedIn(user) && latestScan == token) result.value = answer
     }
 
-    /** A frame's decoded code. Repeats of the same code are ignored. */
-    fun onDecoded(raw: String) {
+    /** A frame's decoded product QR code. Repeats of the same code are ignored. */
+    fun onDecoded(raw: String) = onDecoded(Decoded(raw))
+
+    /** A frame's decoded code, with the kind the camera read it as. */
+    fun onDecoded(decoded: Decoded) {
         synchronizeSession()
-        session.onDecoded(raw)?.let(::handle)
+        session.onDecoded(decoded)?.let(::handle)
     }
 
     /** A product id typed by hand counts as a fresh scan, even when repeated. */
-    fun onManualEntry(raw: String) {
+    fun onManualEntry(raw: String) = onManualEntry(Decoded(raw))
+
+    /** A code looked up again by hand, as what it was first read as. */
+    fun onManualEntry(decoded: Decoded) {
         session.scanAgain()
-        onDecoded(raw)
+        onDecoded(decoded)
     }
 
     /** "Scan again": the same code may count once more. */
@@ -134,13 +149,13 @@ class ScanViewModel(
             result.value = ScanResult.NoStore
             return
         }
-        val payload = scan.payload
-        if (payload !is Payload.ProductId) {
-            result.value = ScanResult.NotAProduct
-            return
-        }
-        lookUp(scan.clientEventId, user, store, payload.value) { product ->
+        val count: suspend (Product) -> Long? = { product ->
             graph.writes.queueQrScan(scan, product.productId, store.storeId)
+        }
+        when (val payload = scan.payload) {
+            is Payload.ProductId -> lookUp(scan.clientEventId, user, store, payload.value, count)
+            is Payload.Barcode -> lookUpBarcode(scan.clientEventId, user, store, payload.value, count)
+            Payload.NotAProduct -> result.value = ScanResult.NotAProduct
         }
     }
 
@@ -185,11 +200,6 @@ class ScanViewModel(
         lookUp(token, user, store, productId) { null }
     }
 
-    /**
-     * Reads the product with its commercial status, then its availability at `store`;
-     * `count` queues what the look-up counts as. The store holds one quantity, the
-     * same on every channel row (ADR-0061); no rows at all means no stock record.
-     */
     private fun lookUp(
         token: String,
         user: String,
@@ -198,47 +208,98 @@ class ScanViewModel(
         count: suspend (Product) -> Long?
     ) {
         result.value = ScanResult.Looking
+        viewModelScope.launch { showLookUp(token, user, store, productId, null, count) }
+    }
+
+    /**
+     * Finds the product that carries `barcode` through `listProducts?barcode=`,
+     * then looks it up as a scanned product. Barcodes are unique, so an empty page
+     * is a barcode no product carries. The list alone is not trusted: the details
+     * must carry the same barcode, so a products-service that ignored the filter
+     * cannot open the wrong product.
+     */
+    private fun lookUpBarcode(
+        token: String,
+        user: String,
+        store: ChosenStore,
+        barcode: String,
+        count: suspend (Product) -> Long?
+    ) {
+        result.value = ScanResult.Looking
         viewModelScope.launch {
-            val details =
-                when (val answer = call { graph.network.products.getProductDetails(productId) }) {
-                    is Answer.Body -> answer.value
+            val found =
+                when (val answer = call { graph.network.products.listProductsByBarcode(barcode) }) {
+                    is Answer.Body -> answer.value.products
                     is Answer.Refused ->
-                        return@launch run {
-                            show(
-                                token,
-                                user,
-                                if (answer.error.status == NOT_FOUND) {
-                                    ScanResult.ProductNotFound
-                                } else {
-                                    ScanResult.Failed(answer.error)
-                                }
-                            )
-                        }
+                        return@launch show(
+                            token,
+                            user,
+                            if (answer.error.status == UNPROCESSABLE) {
+                                ScanResult.InvalidBarcode
+                            } else {
+                                ScanResult.Failed(answer.error)
+                            }
+                        )
                 }
             if (!stillSignedIn(user)) return@launch
-            val product = details.product
-            var stockError: ApiError? = null
-            var rows: List<Availability> = emptyList()
-            when (val answer = call { graph.network.stock.getAvailability(store.storeId, product.productId) }) {
-                is Answer.Body -> rows = answer.value.availabilities
-                is Answer.Refused -> stockError = answer.error
+            val product = found.singleOrNull()
+            if (product == null) {
+                show(token, user, ScanResult.BarcodeNotFound(barcode))
+                return@launch
             }
-            var channelId: Int? = null
-            if (stockError == null) {
-                val (id, refusal) = inStoreChannel()
-                channelId = id
-                stockError = refusal
-            }
-            if (!stillSignedIn(user)) return@launch
-            val rowId = count(product)
-            val quantity = rows.firstNotNullOfOrNull { it.quantityOnHand }
-            val inStore = rows.firstOrNull { it.channelId == channelId }
-            show(
-                token,
-                user,
-                ScanResult.Shown(product, store.name, quantity, stockError, rowId, details.commercialStatus, inStore)
-            )
+            showLookUp(token, user, store, product.productId, barcode, count)
         }
+    }
+
+    /**
+     * Reads the product with its commercial status, then its availability at `store`;
+     * `count` queues what the look-up counts as. The store holds one quantity, the
+     * same on every channel row (ADR-0061); no rows at all means no stock record.
+     * A product found by `barcode` must carry that barcode in its details.
+     */
+    private suspend fun showLookUp(
+        token: String,
+        user: String,
+        store: ChosenStore,
+        productId: Int,
+        barcode: String?,
+        count: suspend (Product) -> Long?
+    ) {
+        val notFound = if (barcode == null) ScanResult.ProductNotFound else ScanResult.BarcodeNotFound(barcode)
+        val details =
+            when (val answer = call { graph.network.products.getProductDetails(productId) }) {
+                is Answer.Body -> answer.value
+                is Answer.Refused ->
+                    return show(
+                        token,
+                        user,
+                        if (answer.error.status == NOT_FOUND) notFound else ScanResult.Failed(answer.error)
+                    )
+            }
+        if (!stillSignedIn(user)) return
+        if (barcode != null && details.barcode != barcode) return show(token, user, notFound)
+        val product = details.product
+        var stockError: ApiError? = null
+        var rows: List<Availability> = emptyList()
+        when (val answer = call { graph.network.stock.getAvailability(store.storeId, product.productId) }) {
+            is Answer.Body -> rows = answer.value.availabilities
+            is Answer.Refused -> stockError = answer.error
+        }
+        var channelId: Int? = null
+        if (stockError == null) {
+            val (id, refusal) = inStoreChannel()
+            channelId = id
+            stockError = refusal
+        }
+        if (!stillSignedIn(user)) return
+        val rowId = count(product)
+        val quantity = rows.firstNotNullOfOrNull { it.quantityOnHand }
+        val inStore = rows.firstOrNull { it.channelId == channelId }
+        show(
+            token,
+            user,
+            ScanResult.Shown(product, store.name, quantity, stockError, rowId, details.commercialStatus, inStore)
+        )
     }
 
     /** The physical-store channel's id, or the refusal of the channel list. */
@@ -255,6 +316,7 @@ class ScanViewModel(
 
     private companion object {
         const val NOT_FOUND = 404
+        const val UNPROCESSABLE = 422
         const val MAX_QUERY = 150
     }
 }

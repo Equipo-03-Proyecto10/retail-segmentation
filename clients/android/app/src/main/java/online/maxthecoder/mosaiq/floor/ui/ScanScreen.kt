@@ -38,6 +38,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
@@ -153,9 +155,11 @@ fun ScanContent(
     onGrantAccess: () -> Unit = {},
     cameraError: Boolean = false,
     onRetryCamera: () -> Unit = {},
-    camera: @Composable (onDecoded: (String) -> Unit) -> Unit
+    camera: @Composable (onDecoded: (Decoded) -> Unit) -> Unit
 ) {
     var lastCode by rememberSaveable { mutableStateOf("") }
+    // A retry looks the code up as what it was read as: a barcode stays a barcode.
+    var lastKind by rememberSaveable { mutableStateOf(CodeKind.QR) }
     val result by model.result.collectAsStateWithLifecycle()
     val search by model.search.collectAsStateWithLifecycle()
     ScanBody(
@@ -169,9 +173,12 @@ fun ScanContent(
             model.scanAgain()
             onScan()
         },
-        onRetryLookup = { if (lastCode.isEmpty()) model.scanAgain() else model.onManualEntry(lastCode) },
+        onRetryLookup = {
+            if (lastCode.isEmpty()) model.scanAgain() else model.onManualEntry(Decoded(lastCode, lastKind))
+        },
         onLookUp = {
             lastCode = it
+            lastKind = CodeKind.QR
             model.onManualEntry(it)
         },
         onAddProduct = onAddProduct,
@@ -181,9 +188,10 @@ fun ScanContent(
         onRetryCamera = onRetryCamera,
         search = { CatalogSearchSection(search, model::searchCatalog, model::showProduct) },
         camera = {
-            camera { raw ->
-                lastCode = raw
-                model.onDecoded(raw)
+            camera { decoded ->
+                lastCode = decoded.raw
+                lastKind = decoded.kind
+                model.onDecoded(decoded)
             }
         }
     )

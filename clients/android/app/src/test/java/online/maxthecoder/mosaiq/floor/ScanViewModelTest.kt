@@ -10,6 +10,8 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.outbox.Operation
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CatalogSearch
@@ -25,10 +27,15 @@ import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-fun product(id: Int, status: String = "active"): String =
+fun product(id: Int, status: String = "active", barcode: String? = null): String =
     """{"product_id":$id,"sku":"MOS-$id","name":"Item $id","category_id":12,""" +
         """"list_price":"129.90","is_active":${status == "active"},"commercial_status":"$status",""" +
-        """"attributes":[],"photo_url":null,"barcode":null}"""
+        """"attributes":[],"photo_url":null,"barcode":${barcode?.let { "\"$it\"" } ?: "null"}}"""
+
+/** Valid GTINs: an EAN-13 on product 120, an EAN-8 on 311, and one no product carries. */
+const val EAN_13 = "4006381333931"
+const val EAN_8 = "96385074"
+const val UNKNOWN_EAN_13 = "7501031311309"
 
 /**
  * The products, stock and sales services, as far as a scan or a catalog search
@@ -37,8 +44,8 @@ fun product(id: Int, status: String = "active"): String =
 class FloorServices : Dispatcher() {
     val products =
         mutableMapOf(
-            120 to product(120),
-            311 to product(311, status = "discontinued"),
+            120 to product(120, barcode = EAN_13),
+            311 to product(311, status = "discontinued", barcode = EAN_8),
             312 to product(312, status = "paused"),
             245 to product(245)
         )
@@ -46,11 +53,22 @@ class FloorServices : Dispatcher() {
     val stores = setOf(3)
     var channelsStatus = 200
 
+    /** What `listProducts?barcode=` answers: 422 refuses it; `ignoresBarcode` is a service before 1.4.0. */
+    var barcodeStatus = 200
+    var ignoresBarcode = false
+
     override fun dispatch(request: RecordedRequest): MockResponse {
         val path = request.path ?: ""
         Regex("^/api/products/v1/products/(\\d+)/details$").find(path)?.let { match ->
             val body = products[match.groupValues[1].toInt()] ?: return error(404, "product_not_found")
             return ok(200, body)
+        }
+        if (path.startsWith("/api/products/v1/products?barcode=")) {
+            if (barcodeStatus != 200) return error(barcodeStatus, "invalid_query")
+            val barcode = request.requestUrl!!.queryParameter("barcode")!!
+            val found = products.values.filter { ignoresBarcode || it.contains("\"barcode\":\"$barcode\"") }
+            val rows = found.joinToString(",")
+            return ok(200, """{"products":[$rows],"page_info":{"page":1,"size":20,"total":${found.size}}}""")
         }
         Regex("^/api/products/v1/products\\?q=([^&]*)").find(path)?.let { match ->
             val query = request.requestUrl!!.queryParameter("q")!!.lowercase()
@@ -264,6 +282,87 @@ class ScanViewModelTest {
         graph.session.signedIn(Profile("B", "Demo B", "STORE_MANAGER"))
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(CatalogSearch.Idle, model.search.value)
+    }
+
+    private fun barcode(raw: String) = Decoded(raw, CodeKind.PRODUCT_BARCODE)
+
+    private fun paths() = (1..server.requestCount).map { server.takeRequest().path ?: "" }
+
+    @Test
+    fun aScannedBarcodeOpensItsProductAndCountsOneScan() {
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode(EAN_13))
+        val shown = settle(model) as ScanResult.Shown
+        repeat(10) { model.onDecoded(barcode(EAN_13)) }
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(120, shown.product.productId)
+        assertEquals(14, shown.quantity)
+        assertEquals("AVAILABLE", shown.inStore?.reason)
+        val rows = queued()
+        assertEquals(listOf(Operation.QR_SCAN), rows.map { it.operation })
+        assertTrue(rows.single().body.contains("\"store_id\":3,\"product_id\":120"))
+        val paths = paths()
+        assertEquals("/api/products/v1/products?barcode=$EAN_13", paths.first())
+        assertTrue(paths.none { it.startsWith("/api/sales/v1/sales") })
+    }
+
+    @Test
+    fun anEightDigitBarcodeIsLookedUpAsABarcodeNotAProductId() {
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode(EAN_8))
+        val shown = settle(model) as ScanResult.Shown
+        assertEquals(311, shown.product.productId)
+        assertEquals("discontinued", shown.status)
+        assertEquals("/api/products/v1/products?barcode=$EAN_8", paths().first())
+    }
+
+    @Test
+    fun aBarcodeNoProductCarriesSaysSoAndQueuesNothing() {
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode(UNKNOWN_EAN_13))
+        assertEquals(ScanResult.BarcodeNotFound(UNKNOWN_EAN_13), settle(model))
+        assertTrue(queued().isEmpty())
+    }
+
+    @Test
+    fun aBarcodeTheServiceRefusesIsSaidPlainlyAndQueuesNothing() {
+        services.barcodeStatus = 422
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode(EAN_13))
+        assertEquals(ScanResult.InvalidBarcode, settle(model))
+        assertTrue(queued().isEmpty())
+    }
+
+    @Test
+    fun aFailedBarcodeLookUpCanBeRetried() {
+        services.barcodeStatus = 503
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode(EAN_13))
+        assertEquals(503, (settle(model) as ScanResult.Failed).error.status)
+        services.barcodeStatus = 200
+        model.onManualEntry(barcode(EAN_13))
+        assertEquals(120, (settle(model) as ScanResult.Shown).product.productId)
+        assertEquals(1, queued().size)
+    }
+
+    @Test
+    fun aServiceThatIgnoresTheFilterCannotOpenTheWrongProduct() {
+        services.ignoresBarcode = true
+        services.products.keys.retainAll(setOf(245))
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode(EAN_13))
+        // One product came back, but its details carry no such barcode.
+        assertEquals(ScanResult.BarcodeNotFound(EAN_13), settle(model))
+        assertTrue(queued().isEmpty())
+    }
+
+    @Test
+    fun aBarcodeOutsideTheContractPatternIsNotAProductAndSendsNothing() {
+        val model = ScanViewModel(graph)
+        model.onDecoded(barcode("1234567890"))
+        assertEquals(ScanResult.NotAProduct, model.result.value)
+        assertEquals(0, server.requestCount)
     }
 
     @Test

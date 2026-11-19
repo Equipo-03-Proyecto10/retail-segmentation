@@ -67,6 +67,22 @@ fun ScanAnswer(
                 actionLabel = stringResource(R.string.scan_scan_another),
                 onAction = onScanAnother
             )
+        is ScanResult.BarcodeNotFound ->
+            MqEmptyState(
+                icon = R.drawable.ic_lucide_package,
+                title = stringResource(R.string.scan_barcode_not_found_title),
+                message = stringResource(R.string.scan_barcode_not_found_message, result.barcode),
+                actionLabel = stringResource(R.string.scan_scan_another),
+                onAction = onScanAnother
+            )
+        ScanResult.InvalidBarcode ->
+            MqEmptyState(
+                icon = R.drawable.ic_lucide_scan_line,
+                title = stringResource(R.string.scan_barcode_invalid_title),
+                message = stringResource(R.string.scan_barcode_invalid_message),
+                actionLabel = stringResource(R.string.scan_scan_another),
+                onAction = onScanAnother
+            )
         is ScanResult.Failed -> FailedLookup(result.error, onRetry, onScanAnother)
         is ScanResult.Shown -> ProductCard(result, onScanAnother, onAddProduct)
     }

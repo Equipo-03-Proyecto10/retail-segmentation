@@ -29,8 +29,11 @@ sealed interface Attempt {
         val replayed: Boolean = false
     ) : Attempt
 
-    /** 409, 422 or any other final 4xx: kept and shown, never resent. */
-    data class Refused(val error: ApiError) : Attempt
+    /**
+     * 409, 422 or any other final 4xx: kept and shown, never resent. [body] is the error envelope as
+     * it came, kept so a screen can name the line a refusal points at.
+     */
+    data class Refused(val error: ApiError, val body: String? = null) : Attempt
 
     /**
      * A network error, a timeout or a 503, and their gateway forms: a 504 (the
@@ -49,7 +52,7 @@ sealed interface Attempt {
             status in 200..299 -> Done(status, body, correlationId)
             status == 401 -> WaitForSession
             status in RESEND -> Retry
-            else -> Refused(ApiError.from(status, body, correlationId, retryAfter))
+            else -> Refused(ApiError.from(status, body, correlationId, retryAfter), body)
         }
     }
 }
@@ -164,7 +167,8 @@ class OutboxWorker(
                                 attempt.error.status,
                                 attempt.error.code,
                                 attempt.error.message,
-                                attempt.error.correlationId
+                                attempt.error.correlationId,
+                                attempt.body
                             )
                         Attempt.Retry -> return Result.retry()
                         // Kept; sent again once the session is good (see FloorApplication).

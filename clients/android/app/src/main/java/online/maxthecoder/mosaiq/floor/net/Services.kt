@@ -39,6 +39,12 @@ object Services {
     /** engagement owns `engagement-events` and `engagement-summaries`. */
     const val ENGAGEMENT = "api/engagement/v1/"
 
+    /** engagement's v2, whose events include `CART_ADD` and `CART_REMOVE` (contracts/engagement). */
+    const val ENGAGEMENT_V2 = "api/engagement/v2/"
+
+    /** campaigns owns `campaigns` and `promotions`. */
+    const val CAMPAIGNS = "api/campaigns/v1/"
+
     /** segments owns `segments` and `segment-assignments`. */
     const val SEGMENTS = "api/segments/v1/"
 

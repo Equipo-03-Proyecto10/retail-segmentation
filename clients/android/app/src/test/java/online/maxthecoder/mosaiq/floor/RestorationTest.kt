@@ -59,7 +59,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -372,17 +371,19 @@ class RestorationTest {
         assertEquals(5, FloorViewModel(graph).chosen.value?.storeId)
     }
 
-    @Ignore(
-        "FINDING (not fixed here): the selected customer and the cart live in SalesViewModel's " +
-            "MutableStateFlows with no SavedStateHandle, so process death empties the sale. Rotation is fine."
-    )
     @Test
     fun theSelectedCustomerAndTheCartSurviveProcessDeath() {
+        graph.session.choose(ChosenStore(1, "Centro"))
         sales.selectCustomer(ana)
         sales.addProduct(Product(1, "SKU1", "Trail socks", 3, "12.5", true))
+        // A new process builds a new view model over the same persisted draft (F27-05).
         val afterRestart = SalesViewModel(graph)
-        assertNotNull(afterRestart.selectedCustomer.value)
-        assertEquals(1, afterRestart.sale.value.lines.size)
+        try {
+            assertNotNull(afterRestart.selectedCustomer.value)
+            assertEquals(1, afterRestart.sale.value.lines.size)
+        } finally {
+            afterRestart.viewModelScope.cancel()
+        }
     }
 
     @Test

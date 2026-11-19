@@ -166,11 +166,16 @@ data class PreferenceProfile(
 @Serializable
 data class ReplaceInterestCategoriesRequest(@SerialName("category_ids") val categoryIds: List<Int>)
 
+/**
+ * `SaleLineInput` of contracts/sales 1.9.0: `unitPrice` is the price actually charged, and
+ * `promotionId` names the one promotion a discounted line relies on. A null is left out of the body.
+ */
 @Serializable
 data class SaleLineRequest(
     @SerialName("product_id") val productId: Int,
     val quantity: Int,
-    @SerialName("unit_price") val unitPrice: String
+    @SerialName("unit_price") val unitPrice: String,
+    @SerialName("promotion_id") val promotionId: Int? = null
 )
 
 @Serializable
@@ -195,6 +200,45 @@ data class Sale(
 
 @Serializable
 data class SalePage(val sales: List<Sale>, @SerialName("page_info") val pageInfo: PageInfo)
+
+/** `Promotion` of contracts/campaigns: `discountPercent` is a two-decimal string such as "15.00". */
+@Serializable
+data class Promotion(
+    @SerialName("promotion_id") val promotionId: Int,
+    @SerialName("campaign_id") val campaignId: Int,
+    val name: String,
+    @SerialName("discount_percent") val discountPercent: String,
+    @SerialName("starts_on") val startsOn: String,
+    @SerialName("ends_on") val endsOn: String,
+    @SerialName("store_ids") val storeIds: List<Int>,
+    @SerialName("channel_ids") val channelIds: List<Int>,
+    @SerialName("is_active") val isActive: Boolean
+)
+
+@Serializable
+data class PromotionPage(val promotions: List<Promotion>, @SerialName("page_info") val pageInfo: PageInfo)
+
+/** `StoreCommercialRules` of contracts/stores: a null cap means the store imposes none of its own. */
+@Serializable
+data class StoreCommercialRules(
+    @SerialName("max_discount_percent") val maxDiscountPercent: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
+/**
+ * A `CART_ADD` or `CART_REMOVE` of engagement v2 (`CartAddRequestV2`, `CartRemoveRequestV2`): intent,
+ * never a sale. The client event id is fixed at the tap, so every resend is the same event.
+ */
+@Serializable
+data class CartEventRequest(
+    @SerialName("client_event_id") val clientEventId: String,
+    val type: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("product_id") val productId: Int,
+    val quantity: Int,
+    @SerialName("occurred_at") val occurredAt: String,
+    @SerialName("customer_id") val customerId: String? = null
+)
 
 @Serializable
 data class StockLevel(

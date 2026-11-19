@@ -12,7 +12,7 @@ import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** What a queued write is; the sales story adds its own. */
-enum class Operation { CHECK_IN, QR_SCAN, SALE, RECO_CLICK }
+enum class Operation { CHECK_IN, QR_SCAN, SALE, RECO_CLICK, CART_ADD, CART_REMOVE }
 
 /** Where a write stands. A refused one is kept until the user dismisses it. */
 enum class RowState { PENDING, DONE, REFUSED }
@@ -57,6 +57,10 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE id = :id")
     fun observe(id: Long): Flow<OutboxRow?>
 
+    /** The row a client id was stored with; null means no request with that id was ever queued. */
+    @Query("SELECT * FROM outbox WHERE clientId = :clientId LIMIT 1")
+    suspend fun findByClientId(clientId: String): OutboxRow?
+
     /** What the outbox screen lists: refused rows, and rows still waiting. */
     @Query("SELECT * FROM outbox WHERE state != 'DONE' ORDER BY id")
     fun observeOpen(): Flow<List<OutboxRow>>
@@ -76,11 +80,19 @@ interface OutboxDao {
     )
     suspend fun markDone(id: Long, status: Int, body: String?, correlationId: String?, code: String? = null)
 
+    /** [body] is the refusal's envelope as it came, so its `details` can still name a line. */
     @Query(
         "UPDATE outbox SET state = 'REFUSED', status = :status, code = :code, message = :message, " +
-            "correlationId = :correlationId WHERE id = :id AND state = 'PENDING'"
+            "correlationId = :correlationId, responseBody = :body WHERE id = :id AND state = 'PENDING'"
     )
-    suspend fun markRefused(id: Long, status: Int, code: String, message: String, correlationId: String?)
+    suspend fun markRefused(
+        id: Long,
+        status: Int,
+        code: String,
+        message: String,
+        correlationId: String?,
+        body: String? = null
+    )
 
     /** Only a refused row can be dismissed: a pending one is never dropped. */
     @Query("DELETE FROM outbox WHERE id = :id AND state = 'REFUSED'")

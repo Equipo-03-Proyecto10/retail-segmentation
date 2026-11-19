@@ -36,6 +36,25 @@ interface StoresApi {
         @Query("page") page: Int = 1,
         @Query("size") size: Int = 20
     ): Response<StorePage>
+
+    /** The store's `max_discount_percent`, null when it sets no cap (contracts/stores). */
+    @GET(Services.STORES + "stores/{store_id}/commercial-rules")
+    suspend fun getCommercialRules(@Path("store_id") storeId: Int): Response<StoreCommercialRules>
+}
+
+/**
+ * campaigns-service's promotions (contracts/campaigns). A floor role reads only the active
+ * promotions of its assigned stores.
+ */
+interface CampaignsApi {
+    @GET(Services.CAMPAIGNS + "promotions")
+    suspend fun listPromotions(
+        @Query("store_id") storeId: Int,
+        @Query("channel_id") channelId: Int,
+        @Query("active") active: Boolean = true,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 100
+    ): Response<PromotionPage>
 }
 
 /** products-service's catalog read (contracts/products/openapi.yaml). */

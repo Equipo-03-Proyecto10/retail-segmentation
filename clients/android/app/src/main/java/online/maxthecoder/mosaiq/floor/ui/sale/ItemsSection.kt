@@ -4,12 +4,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,10 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.net.Promotion
+import online.maxthecoder.mosaiq.floor.ui.DiscountState
 import online.maxthecoder.mosaiq.floor.ui.SaleLine
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
@@ -44,7 +51,7 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
     val sale = ui.sale
     var query by rememberSaveable { mutableStateOf(sale.query) }
     var searched by rememberSaveable { mutableStateOf(sale.products.isNotEmpty()) }
-    val locked = sale.confirming || sale.queuedRowId != null
+    val locked = sale.confirming || sale.queuedRowId != null || sale.reviewing
     val search = {
         if (query.isNotBlank()) {
             searched = true
@@ -93,7 +100,7 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
                         stringResource(R.string.sale_product_inactive)
                     },
                     onClick = { actions.onAddProduct(product) },
-                    enabled = product.isActive && !locked,
+                    enabled = product.isActive && !locked && ui.store != null,
                     divider = true,
                     trailing = {
                         MqIcon(
@@ -118,18 +125,34 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
                 modifier = Modifier.testTag("cart-empty")
             )
         }
-        sale.lines.forEach { line -> CartLine(line, locked, actions) }
+        if (sale.lines.isNotEmpty()) {
+            when {
+                sale.discounts.loading -> MqLoading(stringResource(R.string.sale_promotions_loading))
+                sale.discounts.error != null -> MqErrorPanel(sale.discounts.error, onRetry = actions.onLoadPromotions)
+            }
+        }
+        sale.lines.forEach { line -> CartLine(line, locked, sale.discounts, actions) }
     }
 }
 
 @Composable
-private fun CartLine(line: SaleLine, locked: Boolean, actions: SaleActions) {
+private fun CartLine(line: SaleLine, locked: Boolean, discounts: DiscountState, actions: SaleActions) {
     val id = line.product.productId
+    val cap = discounts.maxDiscountPercent
+    val options = if (discounts.loaded) applicablePromotions(discounts) else emptyList()
     Column(Modifier.fillMaxWidth().testTag("cart-line-$id"), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
         Column(Modifier.semantics(mergeDescendants = true) {}) {
             Text(line.product.name, style = MaterialTheme.typography.bodyLarge)
             Text(
-                stringResource(R.string.sale_unit_price, formatMoney(line.product.listPrice)),
+                if (line.promotion == null) {
+                    stringResource(R.string.sale_unit_price, formatMoney(line.product.listPrice))
+                } else {
+                    stringResource(
+                        R.string.sale_unit_price_discounted,
+                        formatMoney(chargedPrice(line, cap)),
+                        formatMoney(line.product.listPrice)
+                    )
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -142,9 +165,9 @@ private fun CartLine(line: SaleLine, locked: Boolean, actions: SaleActions) {
                 modifier = Modifier.testTag("stepper-$id")
             )
             Text(
-                formatMoney(lineTotal(line)),
+                formatMoney(lineTotal(line, cap)),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f).testTag("line-total-$id")
             )
             IconButton(
                 onClick = { actions.onSetQuantity(id, 0) },
@@ -157,6 +180,76 @@ private fun CartLine(line: SaleLine, locked: Boolean, actions: SaleActions) {
                 )
             }
         }
+        if (options.isNotEmpty() || line.promotion != null) {
+            PromotionChoice(line, options, cap, locked, actions)
+        }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+/** One promotion per line, named by the seller from what campaigns lists here, or none. */
+@Composable
+private fun PromotionChoice(
+    line: SaleLine,
+    options: List<Promotion>,
+    cap: String?,
+    locked: Boolean,
+    actions: SaleActions
+) {
+    val id = line.product.productId
+    Column(Modifier.selectableGroup().testTag("promotions-$id")) {
+        Text(
+            stringResource(R.string.sale_promotion_title),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() }
+        )
+        PromotionRow(
+            title = stringResource(R.string.sale_promotion_none),
+            detail = null,
+            selected = line.promotion == null,
+            enabled = !locked,
+            onClick = { actions.onChoosePromotion(id, null) }
+        )
+        // A promotion no longer listed stays visible while it is chosen, so the seller can take it off.
+        (options + listOfNotNull(line.promotion?.takeIf { chosen -> options.none { it == chosen } })).forEach {
+            val percent = allowedPercent(it, cap).stripTrailingZeros().toPlainString()
+            PromotionRow(
+                title = it.name,
+                detail = if (cappedByStore(it, cap)) {
+                    stringResource(R.string.sale_percent_off_capped, percent)
+                } else {
+                    stringResource(R.string.sale_percent_off, percent)
+                },
+                selected = line.promotion?.promotionId == it.promotionId,
+                enabled = !locked && it in options,
+                onClick = { actions.onChoosePromotion(id, it.promotionId) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun PromotionRow(title: String, detail: String?, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Spacing.X5l).selectable(
+            selected = selected,
+            enabled = enabled,
+            role = Role.RadioButton,
+            onClick = onClick
+        ),
+        horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null, enabled = enabled)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            detail?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }

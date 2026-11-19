@@ -36,10 +36,13 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqSnackbarHost
 import online.maxthecoder.mosaiq.floor.ui.sale.CustomerSection
 import online.maxthecoder.mosaiq.floor.ui.sale.HistorySection
 import online.maxthecoder.mosaiq.floor.ui.sale.ItemsSection
+import online.maxthecoder.mosaiq.floor.ui.sale.PHYSICAL_STORE
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationFields
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationSheet
+import online.maxthecoder.mosaiq.floor.ui.sale.ReviewSheet
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleActions
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleBar
+import online.maxthecoder.mosaiq.floor.ui.sale.SaleOutcome
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleUi
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
@@ -67,11 +70,14 @@ fun SalesScreen(
     val history by model.history.collectAsStateWithLifecycle()
     val status by model.statusMessage.collectAsStateWithLifecycle()
     val statusError by model.statusError.collectAsStateWithLifecycle()
+    val queued by model.queuedSale.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val saved = stringResource(R.string.sale_saved)
     val customerId = customer?.customerId
+    val inStore = registration.channels.firstOrNull { it.name == PHYSICAL_STORE }?.channelId
 
     LaunchedEffect(Unit) { model.loadChannels() }
+    LaunchedEffect(store?.storeId, inStore) { model.loadPromotions() }
     LaunchedEffect(customerId) {
         if (customerId != null && insights.state.value.customerId != customerId) insights.load(customerId)
     }
@@ -89,7 +95,8 @@ fun SalesScreen(
             history = history,
             store = store,
             statusMessage = status,
-            statusError = statusError
+            statusError = statusError,
+            queued = queued?.takeIf { it.id == sale.queuedRowId }
         )
     val actions =
         SaleActions(
@@ -103,9 +110,14 @@ fun SalesScreen(
             onSaveInterests = model::saveInterests,
             onLoadInterests = model::loadInterests,
             onSearchProducts = model::searchProducts,
-            onAddProduct = model::addProduct,
-            onSetQuantity = model::setQuantity,
+            onAddProduct = { model.addProduct(it) },
+            onSetQuantity = { id, quantity -> model.setQuantity(id, quantity) },
+            onChoosePromotion = model::choosePromotion,
+            onLoadPromotions = { model.loadPromotions(force = true) },
+            onReview = model::review,
+            onCancelReview = model::cancelReview,
             onConfirm = { model.confirm() },
+            onBackToCart = model::backToCart,
             onNewSale = model::newSale,
             onRefreshStatus = model::refreshStatus,
             onPickStore = onPickStore,
@@ -152,6 +164,7 @@ fun SalesContent(
             verticalArrangement = Arrangement.spacedBy(Spacing.Xxl)
         ) {
             StoreLine(ui.store, actions.onPickStore)
+            SaleOutcome(ui)
             CustomerSection(ui, actions, onNewCustomer = { onRegisteringChange(true) })
             if (ui.customer != null) insights()
             ItemsSection(ui, actions)
@@ -160,6 +173,7 @@ fun SalesContent(
         MqSnackbarHost(snackbar)
         SaleBar(ui, actions)
     }
+    if (ui.sale.reviewing && ui.sale.queuedRowId == null) ReviewSheet(ui, actions)
     if (registering) {
         RegistrationSheet(
             fields = RegistrationFields(name, email, phone),

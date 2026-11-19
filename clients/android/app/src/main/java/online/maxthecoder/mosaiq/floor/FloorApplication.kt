@@ -14,7 +14,10 @@ import online.maxthecoder.mosaiq.floor.outbox.FloorDatabase
 import online.maxthecoder.mosaiq.floor.outbox.FloorWrites
 import online.maxthecoder.mosaiq.floor.outbox.InFlight
 import online.maxthecoder.mosaiq.floor.outbox.OutboxDao
+import online.maxthecoder.mosaiq.floor.session.InMemorySaleDraftStore
+import online.maxthecoder.mosaiq.floor.session.PrefsSaleDraftStore
 import online.maxthecoder.mosaiq.floor.session.PrefsSessionStore
+import online.maxthecoder.mosaiq.floor.session.SaleDraftStore
 import online.maxthecoder.mosaiq.floor.session.SessionStore
 
 /** Everything the screens and the floor-write queue share, built once. */
@@ -27,7 +30,9 @@ class AppGraph(
     val location: LocationSource,
     schedule: () -> Unit,
     deviceLabel: String,
-    sendNow: () -> Unit = schedule
+    sendNow: () -> Unit = schedule,
+    /** The sale being built, kept across process death (F27-05). */
+    val drafts: SaleDraftStore = InMemorySaleDraftStore()
 ) {
     val writes = FloorWrites(outbox, session, schedule)
 
@@ -68,7 +73,8 @@ class FloorApplication :
                 location = FusedLocationSource(this),
                 schedule = FloorWrites.scheduler(WorkManager.getInstance(this)),
                 sendNow = FloorWrites.immediate(WorkManager.getInstance(this)),
-                deviceLabel = "Android ${Build.MANUFACTURER} ${Build.MODEL}".take(DEVICE_LABEL_MAX)
+                deviceLabel = "Android ${Build.MANUFACTURER} ${Build.MODEL}".take(DEVICE_LABEL_MAX),
+                drafts = PrefsSaleDraftStore(this)
             )
         // Rows left from before a restart go out once the network is back.
         graph.kick()

@@ -22,6 +22,7 @@ import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.asError
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
+import online.maxthecoder.mosaiq.floor.ui.SaleBuilderState
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
@@ -138,25 +139,39 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
         Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(Modifier.padding(vertical = Spacing.Md), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(R.string.sale_total),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        formatMoney(saleTotal(sale)),
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.testTag("sale-total")
-                    )
-                }
+                SaleTotals(sale)
                 if (sale.queuedRowId != null) {
-                    Text(
-                        stringResource(R.string.sale_saved),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.testTag("sale-saved").semantics { liveRegion = LiveRegionMode.Polite }
-                    )
-                    MqButton(stringResource(R.string.sale_another), actions.onNewSale, fullWidth = true)
+                    when (ui.queued?.state) {
+                        RowState.REFUSED -> {
+                            Text(
+                                stringResource(R.string.sale_refused_title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
+                            )
+                            MqButton(
+                                stringResource(R.string.sale_back_to_cart),
+                                actions.onBackToCart,
+                                fullWidth = true,
+                                modifier = Modifier.testTag("back-to-cart")
+                            )
+                            MqButton(
+                                stringResource(R.string.sale_another),
+                                actions.onNewSale,
+                                fullWidth = true,
+                                variant = MqButtonVariant.Quiet
+                            )
+                        }
+                        else -> {
+                            Text(
+                                ui.queued?.let(actions.rowStatus) ?: stringResource(R.string.sale_saved),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.testTag("sale-saved").semantics {
+                                    liveRegion = LiveRegionMode.Polite
+                                }
+                            )
+                            MqButton(stringResource(R.string.sale_another), actions.onNewSale, fullWidth = true)
+                        }
+                    }
                 } else {
                     if (blocker != null) {
                         if (ui.registration.loading && ui.registration.channels.isEmpty()) {
@@ -179,7 +194,7 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
                     }
                     MqButton(
                         stringResource(R.string.sale_record),
-                        actions.onConfirm,
+                        actions.onReview,
                         enabled = blocker == null,
                         loading = sale.confirming,
                         fullWidth = true,
@@ -188,5 +203,39 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+/** The total, and above it the subtotal and the discount when a promotion takes something off. */
+@Composable
+internal fun SaleTotals(sale: SaleBuilderState) {
+    val discount = saleDiscount(sale)
+    if (discount.signum() > 0) {
+        AmountRow(stringResource(R.string.sale_subtotal), formatMoney(saleSubtotal(sale)), "sale-subtotal")
+        AmountRow(
+            stringResource(R.string.sale_discount),
+            stringResource(R.string.sale_discount_amount, formatMoney(discount)),
+            "sale-discount"
+        )
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.sale_total),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            formatMoney(saleTotal(sale)),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.testTag("sale-total")
+        )
+    }
+}
+
+@Composable
+internal fun AmountRow(label: String, amount: String, tag: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(amount, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag(tag))
     }
 }

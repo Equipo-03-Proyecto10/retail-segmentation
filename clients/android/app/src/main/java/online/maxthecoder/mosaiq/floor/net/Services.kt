@@ -44,4 +44,10 @@ object Services {
 
     /** recommendations owns `recommendations`. */
     const val RECOMMENDATIONS = "api/recommendations/v1/"
+
+    /** recommendations' `/v2`: judged at a reference store, with alternatives and a decision id. */
+    const val RECOMMENDATIONS_V2 = "api/recommendations/v2/"
+
+    /** engagement's v2, whose events include `RECO_IMPRESSION`. */
+    const val ENGAGEMENT_V2 = "api/engagement/v2/"
 }

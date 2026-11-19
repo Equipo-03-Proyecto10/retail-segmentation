@@ -70,6 +70,25 @@ class FloorAccessContractTest {
     @Test
     fun everyOperationASectionCallsExistsInItsContract() {
         FloorAccess.operations.values.flatten().forEach { rolesOf(it.service, it.operationId) }
+        FloorAccess.recordings.values.flatten().forEach { rolesOf(it.service, it.operationId) }
+    }
+
+    @Test
+    fun aSectionIsRecordedExactlyWhenItIsHeldAndItsRecordingsAllListTheRole() {
+        SessionRepository.FLOOR_ROLES.forEach { role ->
+            FloorSection.entries.forEach { section ->
+                val recordings = FloorAccess.recordings[section].orEmpty()
+                val allowed = recordings.isNotEmpty() && recordings.all { role in rolesOf(it.service, it.operationId) }
+                assertEquals(
+                    "$role records $section",
+                    FloorAccess.holds(role, section) && allowed,
+                    FloorAccess.records(role, section)
+                )
+            }
+        }
+        // F27-06: the seller records what was shown and tapped; the loyalty officer only reads.
+        assertTrue(FloorAccess.records("SALES_ASSOCIATE", FloorSection.CUSTOMER))
+        assertTrue(!FloorAccess.records("LOYALTY_OFFICER", FloorSection.CUSTOMER))
     }
 
     @Test

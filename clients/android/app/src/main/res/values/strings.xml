@@ -48,6 +48,7 @@
     <string name="outbox_kind_sale">Sale</string>
     <string name="outbox_kind_scan">Product scan</string>
     <string name="outbox_kind_reco">Recommendation click</string>
+    <string name="outbox_kind_reco_impression">Recommendation shown</string>
     <string name="outbox_state_waiting">Waiting to send</string>
     <string name="outbox_state_sending">Sending</string>
     <string name="outbox_state_sent">Sent</string>
@@ -320,6 +321,29 @@
     <string name="insights_line_unassigned">Unassigned result (run %1$s): the latest run found no purchase to score.</string>
     <string name="insights_line_none">No open assignment: no segmentation run has assigned this customer yet.</string>
     <string name="insights_line_other">Segment state: %1$s</string>
+    <string name="reco_title">Recommended at this store</string>
+    <string name="reco_loading">Loading what can be offered here…</string>
+    <string name="reco_no_store">Check in at your store to see what can be offered to this customer there.</string>
+    <string name="reco_kind_alternative">Alternative</string>
+    <string name="reco_kind_elsewhere">At another store</string>
+    <plurals name="reco_on_hand_here">
+        <item quantity="one">Available here: %1$d unit on hand</item>
+        <item quantity="other">Available here: %1$d units on hand</item>
+    </plurals>
+    <plurals name="reco_on_hand_at">
+        <item quantity="one">Not available here. %1$d unit on hand at %2$s</item>
+        <item quantity="other">Not available here. %1$d units on hand at %2$s</item>
+    </plurals>
+    <string name="reco_alternative_for">Offered instead of %1$s, which is %2$s here.</string>
+    <string name="reco_elsewhere_why">This store: %1$s. Point the customer to the other store.</string>
+    <string name="reco_unavailable_out_of_stock">out of stock</string>
+    <string name="reco_unavailable_not_sellable">no longer sold</string>
+    <string name="reco_unavailable_channel_not_enabled">not sold on this channel</string>
+    <string name="reco_reason_substitute">A declared substitute for %1$s</string>
+    <string name="reco_store_fallback">Store %1$d</string>
+    <string name="reco_none_match">Nothing that matches this customer can be sold at this store right now.</string>
+    <string name="reco_none_withdrawn">No recommendations: the customer objected to personalization.</string>
+    <string name="reco_tap_recorded">Interest in %1$s recorded.</string>
     <string name="sale_error_check_in_required">Check in at the selected store first.</string>
     <string name="sale_error_queue_failed">Could not save the sale on this phone. Try confirming again.</string>
     <string name="sale_status_total">Sale %1$s recorded · total %2$s</string>

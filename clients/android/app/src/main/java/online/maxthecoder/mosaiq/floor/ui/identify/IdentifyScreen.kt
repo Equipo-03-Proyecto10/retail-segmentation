@@ -39,6 +39,8 @@ import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.CameraPermission
 import online.maxthecoder.mosaiq.floor.ui.CardRead
 import online.maxthecoder.mosaiq.floor.ui.CommercialProfile
+import online.maxthecoder.mosaiq.floor.ui.ExplainedItem
+import online.maxthecoder.mosaiq.floor.ui.ExplainedState
 import online.maxthecoder.mosaiq.floor.ui.FLOOR_SEARCH_MIN
 import online.maxthecoder.mosaiq.floor.ui.FloorProfileState
 import online.maxthecoder.mosaiq.floor.ui.FloorSearchState
@@ -75,7 +77,17 @@ fun IdentifyScreen(model: IdentifyViewModel, profileId: String?, onOpenProfile: 
     if (profileId != null) {
         LaunchedEffect(profileId) { model.open(profileId) }
         val profile by model.profile.collectAsStateWithLifecycle()
-        ProfileBody(profile, onRetry = model::retryProfile, onBack = onBack)
+        val shelf = model.recommendations
+        val recommendations by shelf.state.collectAsStateWithLifecycle()
+        ProfileBody(
+            profile,
+            onRetry = model::retryProfile,
+            onBack = onBack,
+            recommendations = recommendations,
+            onRetryRecommendations = { profile.customerId?.let(shelf::load) },
+            onShown = { shelf.shown(it) },
+            onTap = if (shelf.records()) ({ shelf.tapped(it) }) else null
+        )
         return
     }
     val context = LocalContext.current
@@ -273,7 +285,15 @@ private fun FloorSearch(state: FloorSearchState, onSearch: (String, Int) -> Unit
 
 /** The customer in this role's floor view: exactly the elements the service returned. */
 @Composable
-fun ProfileBody(state: FloorProfileState, onRetry: () -> Unit, onBack: () -> Unit) {
+fun ProfileBody(
+    state: FloorProfileState,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    recommendations: ExplainedState? = null,
+    onRetryRecommendations: () -> Unit = {},
+    onShown: (ExplainedItem) -> Unit = {},
+    onTap: ((ExplainedItem) -> Unit)? = null
+) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(Spacing.Lg)
@@ -299,6 +319,7 @@ fun ProfileBody(state: FloorProfileState, onRetry: () -> Unit, onBack: () -> Uni
             SegmentPart(state.commercial, onRetry)
             InterestsPart(state.commercial, onRetry)
             RestrictionsPart(state.commercial, onRetry)
+            recommendations?.let { RecommendationsPart(it, onRetryRecommendations, onShown, onTap) }
         }
         MqButton(stringResource(R.string.identify_another), onBack, variant = MqButtonVariant.Quiet)
     }

@@ -514,12 +514,12 @@ A product is recommended to a customer only when all of these hold:
   recommendations-service may name the reference store, which then takes precedence over
   the usual store, and a reference channel, which is never defaulted from the customer's
   habits. A product is available when its commercial status allows the sale, the store's
-  status permits sales, the store enables the channel when one is given, and on-hand is
-  above zero; hours are not part of it. A product that matches a signal and fails is
-  excluded for exactly one reason, taken in this order: `already_bought`, `inactive`,
-  `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`,
-  `PERSONALIZATION_WITHDRAWN`. A customer who objected to personalization is not
-  recommended to and nothing about them is read. When the reason is `not_sellable`,
+  status permits sales, the store enables the channel when one is given (and some
+  channel when none is, ADR-0084), and on-hand is above zero; hours are not part of it.
+  A product that matches a signal and fails is excluded for exactly one reason, taken in
+  this order: `already_bought`, `inactive`, `not_sellable`, `store_not_selling`,
+  `channel_not_enabled`, `out_of_stock`, `PERSONALIZATION_WITHDRAWN`. A customer who
+  objected to personalization is not recommended to and nothing about them is read. When the reason is `not_sellable`,
   `channel_not_enabled` or `out_of_stock`, one substitute (a declared substitute relation,
   itself available and not bought) may be offered in its place, marked as an alternative
   and naming the product it replaces; another store holding the product is reported only

@@ -1,6 +1,6 @@
 # ADR-0084 — A paused or discontinued product is not sellable, the elsewhere store is the nearest by great-circle distance, and a floor role's store is refused before it is looked up
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-18)
 **Owner:** Maximiliano
 **Issue:** #827
 **Supersedes:** in part [ADR-0067](0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md) (the `inactive` row of the exclusion-reason table, "the product's `active` flag is false")

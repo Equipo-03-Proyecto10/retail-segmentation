@@ -65,7 +65,7 @@ abstract class RecoClickScenario {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.requestUrl!!.encodedPath
-                if (request.method == "POST" && path == "/api/engagement/v1/engagement-events") {
+                if (request.method == "POST" && path == "/api/engagement/v2/engagement-events") {
                     posts += request
                     val failure = plan.removeFirstOrNull()
                     if (failure == Failure.UNAVAILABLE) {

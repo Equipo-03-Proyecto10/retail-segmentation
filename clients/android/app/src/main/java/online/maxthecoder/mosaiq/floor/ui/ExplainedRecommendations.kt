@@ -48,8 +48,7 @@ data class ExplainedState(
     val noStore: Boolean = false,
     val result: RecommendationV2? = null,
     val items: List<ExplainedItem> = emptyList(),
-    val error: ApiError? = null,
-    val tapNote: String? = null
+    val error: ApiError? = null
 ) {
     /** The service's reason when nothing is offered, in plain words. */
     val whyNone: String?
@@ -61,7 +60,7 @@ data class ExplainedState(
  * really shown of them. An item counts as shown when the screen says it is on screen
  * ([shown]); each is queued as one `RECO_IMPRESSION` per decision and position, however
  * often it is composed, scrolled back to or the screen rotated, because the record of what
- * was queued lives here and not in the composition. A tap is a separate `RECO_CLICK`. Only a
+ * was queued lives here and not in the composition. A tap is a separate `RECO_CLICK`, and opens the product. Only a
  * role that records the Customer section's engagement queues either (FloorAccess.records).
  */
 class ExplainedRecommendations(
@@ -127,8 +126,11 @@ class ExplainedRecommendations(
         return true
     }
 
-    /** A tap: one `RECO_CLICK` per tap, separate from the item's impression. */
-    fun tapped(shown: ExplainedItem, now: Instant = Instant.now()): Boolean {
+    /**
+     * A tap: one `RECO_CLICK` per tap, separate from the item's impression, then the product
+     * opens. Returns false, opening nothing, when the tap cannot be counted.
+     */
+    fun tapped(shown: ExplainedItem, now: Instant = Instant.now(), openProduct: (Int) -> Unit): Boolean {
         val context = recording() ?: return false
         scope.launch {
             graph.writes.queueRecoClick(
@@ -140,7 +142,7 @@ class ExplainedRecommendations(
                 now
             )
         }
-        state.value = state.value.copy(tapNote = AppText.get(R.string.reco_tap_recorded, shown.name))
+        openProduct(shown.item.productId)
         return true
     }
 

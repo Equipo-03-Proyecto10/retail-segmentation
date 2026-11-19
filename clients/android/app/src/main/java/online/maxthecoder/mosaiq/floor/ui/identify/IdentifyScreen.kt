@@ -73,7 +73,13 @@ import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
  * customer the location names, so a restored location reads the profile again.
  */
 @Composable
-fun IdentifyScreen(model: IdentifyViewModel, profileId: String?, onOpenProfile: (String) -> Unit, onBack: () -> Unit) {
+fun IdentifyScreen(
+    model: IdentifyViewModel,
+    profileId: String?,
+    onOpenProfile: (String) -> Unit,
+    onBack: () -> Unit,
+    onOpenProduct: (Int) -> Unit
+) {
     if (profileId != null) {
         LaunchedEffect(profileId) { model.open(profileId) }
         val profile by model.profile.collectAsStateWithLifecycle()
@@ -86,7 +92,7 @@ fun IdentifyScreen(model: IdentifyViewModel, profileId: String?, onOpenProfile: 
             recommendations = recommendations,
             onRetryRecommendations = { profile.customerId?.let(shelf::load) },
             onShown = { shelf.shown(it) },
-            onTap = if (shelf.records()) ({ shelf.tapped(it) }) else null
+            onTap = if (shelf.records()) ({ shelf.tapped(it, openProduct = onOpenProduct) }) else null
         )
         return
     }

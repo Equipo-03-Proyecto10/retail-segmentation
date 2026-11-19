@@ -173,6 +173,9 @@ class ExplainedRecommendationsTest {
         return model.recommendations.state.value
     }
 
+    /** The products a tap opened, in order. */
+    private val opened = mutableListOf<Int>()
+
     private fun rows(operation: Operation): List<OutboxRow> =
         runBlocking { graph.outbox.pendingFor("A") }.filter { it.operation == operation }
 
@@ -191,7 +194,7 @@ class ExplainedRecommendationsTest {
                         state,
                         onRetry = {},
                         onShown = { model.recommendations.shown(it) },
-                        onTap = if (records) ({ model.recommendations.tapped(it) }) else null
+                        onTap = if (records) ({ model.recommendations.tapped(it, openProduct = opened::add) }) else null
                     )
                 }
             }
@@ -329,7 +332,9 @@ class ExplainedRecommendationsTest {
         assertEquals(listOf(1, 1), ranks(Operation.RECO_CLICK))
         assertEquals(2, clicks.map { it.clientId }.distinct().size)
         assertEquals(impressions, rows(Operation.RECO_IMPRESSION).size)
-        compose.onNodeWithText("Interest in Item 120 recorded.").assertExists()
+        assertTrue(clicks.all { it.path == "api/engagement/v2/engagement-events" })
+        val first = model.recommendations.state.value.items.first().item.productId
+        assertEquals("each tap opens the product it names", listOf(first, first), opened)
     }
 
     @Test
@@ -341,7 +346,8 @@ class ExplainedRecommendationsTest {
         shelf(model)
         compose.onNodeWithTag("reco-1").onChildAt(0).assertHasNoClickAction()
         assertFalse(model.recommendations.shown(items.first()))
-        assertFalse(model.recommendations.tapped(items.first()))
+        assertFalse(model.recommendations.tapped(items.first(), openProduct = opened::add))
+        assertTrue("a tap that records nothing opens nothing", opened.isEmpty())
         settle { true }
         assertTrue(runBlocking { graph.outbox.pendingFor("A") }.isEmpty())
     }

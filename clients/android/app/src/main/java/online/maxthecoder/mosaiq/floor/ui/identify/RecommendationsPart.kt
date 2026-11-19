@@ -12,9 +12,6 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.ExplainedItem
 import online.maxthecoder.mosaiq.floor.ui.ExplainedState
@@ -67,13 +64,6 @@ fun RecommendationsPart(
             state.items.forEachIndexed { index, shown ->
                 RecommendationRow(shown, divider = index < state.items.lastIndex, onShown, onTap)
             }
-        }
-        state.tapNote?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-            )
         }
         if (state.result != null || error != null) {
             MqButton(

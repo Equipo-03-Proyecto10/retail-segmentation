@@ -71,7 +71,7 @@ object FloorAccess {
                     ServiceOperation("sales", "getSale"),
                     ServiceOperation("segments", "getCurrentAssignment"),
                     ServiceOperation("recommendations", "getRecommendations"),
-                    ServiceOperation("engagement", "createEngagementEvent")
+                    ServiceOperation("engagement", "createEngagementEventV2")
                 ),
             FloorSection.OUTBOX to emptyList(),
             // Identifying a customer by loyalty card or by a floor search (F27-02), their
@@ -104,8 +104,7 @@ object FloorAccess {
         mapOf(
             FloorSection.CUSTOMER to
                 listOf(
-                    ServiceOperation("engagement", "createEngagementEventV2"),
-                    ServiceOperation("engagement", "createEngagementEvent")
+                    ServiceOperation("engagement", "createEngagementEventV2")
                 )
         )
 

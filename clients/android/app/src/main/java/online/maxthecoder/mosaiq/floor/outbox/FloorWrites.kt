@@ -95,9 +95,10 @@ class FloorWrites(
     }
 
     /**
-     * Queues one RECO_CLICK for a tapped recommendation (F17-05). The client
-     * event id is generated here, once, at the tap: a retry resends it, and a
-     * second tap on the same item is a second click with a new id.
+     * Queues one RECO_CLICK for a tapped recommendation (F17-05) through engagement v2,
+     * beside the RECO_IMPRESSION it follows: v2 keeps RECO_CLICK's fields and meaning, and
+     * `/v1` is frozen. The client event id is generated here, once, at the tap: a retry
+     * resends it, and a second tap on the same item is a second click with a new id.
      */
     suspend fun queueRecoClick(
         customerId: String,
@@ -124,7 +125,7 @@ class FloorWrites(
             outbox.insert(
                 OutboxRow(
                     operation = Operation.RECO_CLICK,
-                    path = Services.ENGAGEMENT + "engagement-events",
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
                     body = json.encodeToString(EngagementEventRequest.serializer(), request),
                     clientId = request.clientEventId,
                     userId = userId,

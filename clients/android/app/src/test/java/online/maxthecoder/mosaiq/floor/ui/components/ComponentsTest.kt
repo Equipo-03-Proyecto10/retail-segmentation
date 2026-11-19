@@ -11,6 +11,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -332,5 +336,20 @@ class ComponentsTest {
         show { MqQuantityStepper(value = 1, onDecrease = {}, onIncrease = {}, min = 1, max = 1) }
         compose.onNodeWithContentDescription("Decrease quantity").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Increase quantity").assertIsNotEnabled()
+    }
+
+    @Test
+    fun aNamedStepperSaysWhichItemItChanges() {
+        show { MqQuantityStepper(value = 2, onDecrease = {}, onIncrease = {}, itemName = "Trail socks") }
+        compose.onNodeWithContentDescription("Decrease quantity of Trail socks").assertIsEnabled()
+        compose.onNodeWithContentDescription("Increase quantity of Trail socks").assertIsEnabled()
+        compose.onNodeWithContentDescription("Decrease quantity").assertDoesNotExist()
+    }
+
+    @Test
+    fun anInlineErrorIsOneAnnouncedNodeWithItsText() {
+        show { MqInlineError("Choose a registration channel.") }
+        compose.onNodeWithText("Choose a registration channel.")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
     }
 }

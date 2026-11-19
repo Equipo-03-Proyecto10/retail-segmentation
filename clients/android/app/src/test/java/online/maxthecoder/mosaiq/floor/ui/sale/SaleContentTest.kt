@@ -98,7 +98,8 @@ class SaleContentTest {
         compose.onNodeWithText("Change").assertExists()
         compose.onNodeWithText("$12.50 each").assertExists()
         compose.onNodeWithTag("sale-total").assertTextEquals("$25.00")
-        compose.onNodeWithContentDescription("Increase quantity").performScrollTo().performClick()
+        // Each line's stepper names its product, so TalkBack says which line it changes.
+        compose.onNodeWithContentDescription("Increase quantity of Trail socks").performScrollTo().performClick()
         assertEquals(1 to 3, quantity)
         compose.onNodeWithContentDescription("Remove Trail socks").performScrollTo().performClick()
         assertEquals(1 to 0, quantity)

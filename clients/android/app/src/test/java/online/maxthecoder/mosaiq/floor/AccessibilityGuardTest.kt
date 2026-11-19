@@ -1,7 +1,10 @@
 package online.maxthecoder.mosaiq.floor
 
 import android.content.Context
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
@@ -9,16 +12,22 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -66,21 +75,33 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
- * Walks the merged semantics tree of every major screen state (#731) and fails on a clickable
- * node without a name, or a button under the 44dp touch target. A new screen state is covered by
- * adding one `audit { ... }` test. This does not replace TalkBack or Accessibility Scanner on a phone.
+ * Walks the semantics tree of every major screen state (#731, UX-13), once at the default font size
+ * and once at 200%, and fails on any of:
+ * - a node with a click action and no label (text, description or merged child text);
+ * - a node with a click action and no role (text fields, announced as edit boxes, are exempt);
+ * - a node with a click action whose touch target is under 44dp;
+ * - a control clipped, wholly or in part, with no scrolling ancestor to bring it into view;
+ * - a text whose layout overflows its bounds or is cut with an ellipsis.
+ * A new screen state is covered by adding one `audit { ... }` test. This does not replace TalkBack or
+ * Accessibility Scanner on a phone.
  */
 @RunWith(AndroidJUnit4::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], application = FloorTestApp::class, qualifiers = "w360dp-h800dp-xxhdpi")
 class AccessibilityGuardTest {
     @get:Rule val compose = createComposeRule()
 
     private val noop: () -> Unit = {}
 
-    /** Renders [content] at [fontScale] and returns every problem the walk found (empty is clean). */
-    private fun audit(fontScale: Float = 1f, content: @Composable () -> Unit) {
+    /**
+     * Renders [content] at the default font size and then at 200%, runs [before] once (to open a
+     * menu, say), and fails with every problem the walk found at either size.
+     */
+    private fun audit(before: () -> Unit = {}, content: @Composable () -> Unit) {
+        var fontScale by mutableFloatStateOf(1f)
         compose.setContent {
             val base = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(base.density, fontScale)) {
@@ -90,26 +111,57 @@ class AccessibilityGuardTest {
             }
         }
         compose.waitForIdle()
-        val density = compose.density.density
-        val problems = mutableListOf<String>()
-        val clickable = compose.onAllNodes(hasClickAction()).fetchSemanticsNodes()
-        assertTrue("no clickable node rendered: the state under audit is empty", clickable.isNotEmpty())
-        clickable.forEach { node ->
-            val name = describe(node)
-            if (name.isBlank()) problems += "clickable node ${node.id} has no label"
-            if (node.config.getOrNull(SemanticsProperties.Role) == Role.Button) {
-                // The larger of the node and its touch bounds: a chip padded out by the 48dp minimum
-                // counts, and a node scrolled out of view (its clipped bounds are empty) keeps its size.
-                val touch = node.touchBoundsInRoot
-                val w = maxOf(node.size.width.toFloat(), touch.width) / density
-                val h = maxOf(node.size.height.toFloat(), touch.height) / density
-                if (h < MIN_TARGET_DP || w < MIN_TARGET_DP) {
-                    problems += "button '$name' is ${w}x${h}dp, under ${MIN_TARGET_DP}dp"
-                }
-            }
-        }
+        before()
+        compose.waitForIdle()
+        val problems = walk("1.0x")
+        fontScale = LARGE_FONT
+        compose.waitForIdle()
+        problems += walk("2.0x")
         assertTrue(problems.joinToString("\n"), problems.isEmpty())
     }
+
+    /** Every problem in the current tree, each prefixed with [scale]. */
+    private fun walk(scale: String): MutableList<String> {
+        val density = compose.density.density
+        val problems = mutableListOf<String>()
+        compose.onAllNodes(hasClickAction()).fetchSemanticsNodes().forEach { node ->
+            val name = describe(node)
+            if (name.isBlank()) problems += "$scale: clickable node ${node.id} has no label"
+            val role = node.config.getOrNull(SemanticsProperties.Role)
+            // A text field, even a locked one with no SetText, is announced as an edit box.
+            if (role == null && SemanticsProperties.EditableText !in node.config) {
+                problems += "$scale: clickable '$name' has no role"
+            }
+            // The larger of the node and its touch bounds: a chip padded out by the 48dp minimum
+            // counts, and a node scrolled out of view (its clipped bounds are empty) keeps its size.
+            val touch = node.touchBoundsInRoot
+            val w = maxOf(node.size.width.toFloat(), touch.width) / density
+            val h = maxOf(node.size.height.toFloat(), touch.height) / density
+            if (h < MIN_TARGET_DP || w < MIN_TARGET_DP) {
+                problems += "$scale: '$name' is ${w}x${h}dp, under ${MIN_TARGET_DP}dp"
+            }
+            // A control cut by its container is lost unless something scrolls it back into view.
+            val shown = node.boundsInRoot
+            val clipped =
+                shown.width < node.size.width - CLIP_SLACK_PX || shown.height < node.size.height - CLIP_SLACK_PX
+            if (clipped && !scrolls(node)) problems += "$scale: '$name' is clipped and cannot be scrolled to"
+        }
+        val texts = SemanticsMatcher.keyIsDefined(SemanticsActions.GetTextLayoutResult)
+        compose.onAllNodes(texts, useUnmergedTree = true).fetchSemanticsNodes().forEach { node ->
+            val layouts = mutableListOf<TextLayoutResult>()
+            node.config[SemanticsActions.GetTextLayoutResult].action?.invoke(layouts)
+            val layout = layouts.firstOrNull() ?: return@forEach
+            // Height and ellipsis only: the semantics re-layout reports a short line's intrinsic width,
+            // so its width overflow is noise; a wrapped text that is cut shows in its height.
+            val cut = layout.didOverflowHeight || (0 until layout.lineCount).any(layout::isLineEllipsized)
+            if (cut) problems += "$scale: text '${layout.layoutInput.text}' is cut off"
+        }
+        return problems
+    }
+
+    /** Whether [node] or an ancestor can scroll, so a part out of view can be brought back. */
+    private fun scrolls(node: SemanticsNode): Boolean =
+        generateSequence(node) { it.parent }.any { SemanticsActions.ScrollBy in it.config }
 
     /** The node's own text or description, else any text merged in from below it. */
     private fun describe(node: SemanticsNode): String {
@@ -139,13 +191,9 @@ class AccessibilityGuardTest {
 
     @Test fun signInBusy() = audit { SignInContent("ana@mosaiq-demo.com", "secret", {}, {}, null, null, true, noop) }
 
-    @Test fun signInLargeFont() = audit(2f) {
-        SignInContent("ana@mosaiq-demo.com", "secret", {}, {}, null, ApiError(401, "x", "raw", "c"), false, noop)
-    }
-
     // Check-in -----------------------------------------------------------------------------------
 
-    private fun checkIn(status: CheckInStatus, denied: Boolean = false, scale: Float = 1f) = audit(scale) {
+    private fun checkIn(status: CheckInStatus, denied: Boolean = false) = audit {
         CheckInContent("Centro", "Monterrey, NL", status, null, "Note", denied, noop, noop, noop)
     }
 
@@ -157,16 +205,16 @@ class AccessibilityGuardTest {
 
     @Test fun checkInDone() = checkIn(CheckInStatus.Done("14:32"))
 
+    @Test fun checkInDoneDenied() = checkIn(CheckInStatus.Done("14:32"), denied = true)
+
     @Test fun checkInNeedsAttention() =
         checkIn(CheckInStatus.NeedsAttention(ApiError(422, "too_far", "Too far away.", "c-9")))
-
-    @Test fun checkInLargeFont() = checkIn(CheckInStatus.Done("14:32"), denied = true, scale = 2f)
 
     // Store picker -------------------------------------------------------------------------------
 
     private val stores = listOf(Store(1, "Centro", "Monterrey", "NL", true), Store(2, "Valle", "Monterrey", "NL", true))
 
-    private fun picker(state: StoresState, scale: Float = 1f) = audit(scale) {
+    private fun picker(state: StoresState) = audit {
         StorePickerContent(state, state.city, {}, noop, noop, {}, {})
     }
 
@@ -178,8 +226,6 @@ class AccessibilityGuardTest {
 
     @Test fun pickerLoading() = picker(StoresState(loading = true))
 
-    @Test fun pickerLargeFont() = picker(StoresState(stores = stores, totalPages = 2), 2f)
-
     // Scan ---------------------------------------------------------------------------------------
 
     private val shirt = Product(120, "SKU-120", "Cotton shirt", 4, "12.5", true)
@@ -189,9 +235,8 @@ class AccessibilityGuardTest {
         result: ScanResult = ScanResult.Idle,
         permission: CameraPermission = CameraPermission.GRANTED,
         scanning: Boolean = false,
-        store: ChosenStore? = coyoacan,
-        scale: Float = 1f
-    ) = audit(scale) {
+        store: ChosenStore? = coyoacan
+    ) = audit {
         ScanBody(store, permission, scanning, result, noop, noop, noop, noop, {}, {}, noop, noop, false, noop) {
             Text("camera")
         }
@@ -217,8 +262,6 @@ class AccessibilityGuardTest {
 
     @Test fun scanFailed() = scan(ScanResult.Failed(ApiError.unreachable(null)))
 
-    @Test fun scanLargeFont() = scan(ScanResult.Shown(shirt, "Coyoacan", 14, null, 1L), scale = 2f)
-
     // Sale ---------------------------------------------------------------------------------------
 
     private val ana = Customer("c1", "Ana Torres", "ana@example.com", null, 1, "2025-01-01")
@@ -232,7 +275,7 @@ class AccessibilityGuardTest {
         sale = SaleBuilderState(lines = listOf(SaleLine(socks, 2), SaleLine(shirt, 1)), products = listOf(socks))
     )
 
-    private fun sale(ui: SaleUi, scale: Float = 1f) = audit(scale) {
+    private fun sale(ui: SaleUi) = audit {
         SalesContent(ui, SaleActions(), SnackbarHostState()) { CustomerInsightsContent(insights(), {}, {}) }
     }
 
@@ -240,7 +283,15 @@ class AccessibilityGuardTest {
 
     @Test fun saleFull() = sale(full)
 
-    @Test fun saleLargeFont() = sale(full, 2f)
+    @Test fun saleNoStore() = sale(SaleUi(registration = ready))
+
+    @Test fun saleSearchError() = sale(
+        SaleUi(
+            store = ChosenStore(1, "Centro"),
+            registration = ready,
+            sale = SaleBuilderState(error = ApiError.unreachable(null))
+        )
+    )
 
     @Test fun saleRegistration() = audit {
         RegistrationForm(RegistrationFields("Ben Ruiz", "not-an-email", ""), {}, ready, {}, {}, noop)
@@ -253,10 +304,26 @@ class AccessibilityGuardTest {
         assignment = CurrentAssignment("c1", "assigned", "loyal_regulars", 4, 3, 5, "2026-03-12T09:00:00Z"),
         items = listOf(
             ShownRecommendation(1, RecommendationItem(9, 2, 6, emptyList()), "Trail socks", listOf("Bought together"))
-        )
+        ),
+        clickNote = "That click was not recorded."
     )
 
-    @Test fun insightsFull() = audit { CustomerInsightsContent(insights(), {}, {}) }
+    /** The card as the sale screen hosts it: inside its scrolling column. */
+    private fun insightsCard(state: InsightsState) = audit {
+        Column(Modifier.verticalScroll(rememberScrollState())) { CustomerInsightsContent(state, {}, {}) }
+    }
+
+    @Test fun insightsFull() = insightsCard(insights())
+
+    @Test fun insightsLoading() = insightsCard(InsightsState(customerId = "c1", loading = true))
+
+    @Test fun insightsError() = insightsCard(
+        InsightsState(
+            customerId = "c1",
+            assignmentError = ApiError.unreachable(null),
+            recommendationsError = ApiError.unreachable(null)
+        )
+    )
 
     // Outbox -------------------------------------------------------------------------------------
 
@@ -288,17 +355,17 @@ class AccessibilityGuardTest {
             emptyMap(),
             {},
             now,
-            ZoneId.of("UTC")
+            ZoneId.of("UTC"),
+            onSendNow = noop
         )
     }
 
-    @Test fun outboxLargeFont() = audit(2f) {
-        OutboxContent(listOf(row(3, Operation.SALE, RowState.REFUSED)), "A", emptyMap(), {}, now, ZoneId.of("UTC"))
-    }
+    @Test fun outboxEmpty() = audit { OutboxContent(emptyList(), "A", emptyMap(), {}, now, ZoneId.of("UTC")) }
 
     // Shell --------------------------------------------------------------------------------------
 
-    @Test fun shellBars() = audit {
+    @Composable
+    private fun Bars() {
         Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
@@ -313,18 +380,17 @@ class AccessibilityGuardTest {
         ) { padding -> Text("Section", Modifier.padding(padding)) }
     }
 
-    @Test fun shellBarsLargeFont() {
-        audit(2f) {
-            Scaffold(
-                topBar = { FloorTopBar(SessionState.SignedIn("Ana", "MANAGER"), ChosenStore(1, "Centro"), noop, noop) },
-                bottomBar = { FloorBottomBar(FloorLocation.Scan, 3) {} }
-            ) { padding -> Text("Section", Modifier.padding(padding)) }
-        }
-        // Each tab is named once, whether or not its label is drawn.
+    @Test fun shellBars() {
+        audit { Bars() }
+        // At 200% each tab is named once, whether or not its label is drawn.
         listOf("nav-check-in" to "Check-in", "nav-scan" to "Scan", "nav-sale" to "Sale").forEach { (tag, name) ->
             val node = compose.onNodeWithTag(tag).fetchSemanticsNode()
             assertEquals(tag, listOf(name), spoken(node))
         }
+    }
+
+    @Test fun shellAccountMenuOpen() = audit(before = { compose.onNodeWithTag("account-menu").performClick() }) {
+        Bars()
     }
 
     /** Every text and description reached from [node], in order. */
@@ -335,5 +401,9 @@ class AccessibilityGuardTest {
 
     private companion object {
         const val MIN_TARGET_DP = 44f
+        const val LARGE_FONT = 2f
+
+        /** Rounding between a node's measured size and its laid-out bounds. */
+        const val CLIP_SLACK_PX = 1f
     }
 }

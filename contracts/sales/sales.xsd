@@ -22,7 +22,7 @@
       <xs:element name="product_id" type="xs:integer"/>
       <xs:element name="quantity" type="xs:integer"/>
       <xs:element name="unit_price" type="xs:decimal"/>
-      <xs:element name="promotion_id" type="xs:integer" minOccurs="0"/>
+      <xs:element name="promotion_id" type="xs:positiveInteger" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
 

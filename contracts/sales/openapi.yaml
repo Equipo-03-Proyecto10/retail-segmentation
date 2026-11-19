@@ -51,11 +51,15 @@ paths:
         `list_price` read in the sale's transaction, and the service keeps it with
         the line, so a discount can be reported later. A line charged below that
         list price must name the promotion it relies on in `promotion_id`; one that
-        names none is 422 `discount_without_promotion`. A named promotion must be a
-        row of `api_campaigns.active_promotion_v1` for the sale's store and
-        channel, and the sale's date, `occurred_at` in the service's business time
-        zone, must lie within its `starts_on` and `ends_on`; otherwise 422
-        `promotion_not_applicable`. A line names at most one promotion, and a
+        names none is 422 `discount_without_promotion`. A named promotion is always
+        validated, whatever the line's price: it must be a promotion of an
+        `ACTIVE` or `FINISHED` campaign for the sale's store and channel
+        (`api_campaigns.promotion_window_v1`), and the sale's own day,
+        `occurred_at` in the service's business time zone, must lie within its
+        `starts_on` and `ends_on`, both inclusive; otherwise 422
+        `promotion_not_applicable`. The day that counts is the sale's, not the day
+        the request arrives, so a sale queued offline on a promotion's last day
+        is still accepted when it syncs later. A line names at most one promotion, and a
         promotion does not combine with any other discount. The discount allowed is
         the smaller of the promotion's `discount_percent` and the store's
         `max_discount_percent` (no cap of the store's own when it has none): the
@@ -64,8 +68,8 @@ paths:
         `discount_above_promotion` when the promotion is the tighter limit, and
         `discount_above_store_cap` when the store's rule is. Each of these names
         the line in `details` (`lines[1].promotion_id` or `lines[1].unit_price`),
-        and nothing is recorded. A line charged at or above its list price is
-        accepted as before, with or without a promotion. Only this operation
+        and nothing is recorded. A line charged at or above its list price
+        needs no promotion and is accepted as before. Only this operation
         applies the rule: a sale import keeps the rules it states.
 
         Who may record where. `STORE_MANAGER` and `SALES_ASSOCIATE` work only in
@@ -1649,11 +1653,13 @@ components:
         promotion_id:
           type: integer
           format: int32
+          minimum: 1
           description: >-
             The promotion this line's discount relies on, as `promotion_id` of the
             campaigns contract. Optional; required when `unit_price` is below the
-            product's list price (`discount_without_promotion`). It must be active
-            for the sale's store, channel and date (`promotion_not_applicable`),
+            product's list price (`discount_without_promotion`). When given, it
+            must apply to the sale's store and channel on the sale's own day
+            (`promotion_not_applicable`),
             and the charged price must stay within the smaller of its discount and
             the store's maximum discount (`discount_above_promotion`,
             `discount_above_store_cap`).

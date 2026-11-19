@@ -209,7 +209,7 @@ svc_campaigns,api_stores.store_directory_v2,SELECT
 svc_sales,api_stores,USAGE
 svc_sales,api_stores.store_directory_v2,SELECT
 svc_sales,api_campaigns,USAGE
-svc_sales,api_campaigns.active_promotion_v1,SELECT
+svc_sales,api_campaigns.promotion_window_v1,SELECT
 svc_checkins,api_stores,USAGE
 svc_checkins,api_stores.store_directory_v1,SELECT
 svc_checkins,checkins,USAGE
@@ -373,6 +373,7 @@ svc_campaigns,campaigns.promotion_channel,SELECT
 svc_campaigns,campaigns.promotion_channel,INSERT
 svc_campaigns,campaigns.promotion_channel,DELETE
 svc_campaigns,api_campaigns.active_promotion_v1,SELECT
+svc_campaigns,api_campaigns.promotion_window_v1,SELECT
 svc_campaigns,api_segments,USAGE
 svc_campaigns,api_segments.current_label_v1,SELECT
 svc_campaigns,api_customers,USAGE

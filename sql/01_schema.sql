@@ -4361,8 +4361,31 @@ JOIN campaigns.promotion_channel AS pc ON pc.promotion_id = p.promotion_id
 WHERE c.status = 'ACTIVE'
   AND CURRENT_DATE BETWEEN p.starts_on AND p.ends_on;
 REVOKE ALL ON api_campaigns.active_promotion_v1 FROM PUBLIC;
+
+-- What a sale may have relied on, on its own day
+-- (contracts/db/api_campaigns.promotion_window.v1.md): one row per store and
+-- channel of each promotion whose campaign is ACTIVE or FINISHED, with no date
+-- test. A sale can reach the service after the day it happened (an offline
+-- queue), and sales reads the sale's day in SALES_TIMEZONE, not the database
+-- session's CURRENT_DATE, so the consumer applies the validity itself.
+CREATE OR REPLACE VIEW api_campaigns.promotion_window_v1
+WITH (security_invoker = off) AS
+SELECT p.promotion_id,
+       p.campaign_id,
+       ps.store_id,
+       pc.channel_id,
+       p.discount_percent,
+       p.starts_on,
+       p.ends_on
+FROM campaigns.promotion AS p
+JOIN public.campaign AS c ON c.campaign_id = p.campaign_id
+JOIN campaigns.promotion_store AS ps ON ps.promotion_id = p.promotion_id
+JOIN campaigns.promotion_channel AS pc ON pc.promotion_id = p.promotion_id
+WHERE c.status IN ('ACTIVE', 'FINISHED');
+REVOKE ALL ON api_campaigns.promotion_window_v1 FROM PUBLIC;
 GRANT USAGE ON SCHEMA api_campaigns TO svc_campaigns, svc_sales;
-GRANT SELECT ON api_campaigns.active_promotion_v1 TO svc_campaigns, svc_sales;
+GRANT SELECT ON api_campaigns.active_promotion_v1 TO svc_campaigns;
+GRANT SELECT ON api_campaigns.promotion_window_v1 TO svc_campaigns, svc_sales;
 -- END F25-05 promotions
 -- END BOUNDARY campaigns
 

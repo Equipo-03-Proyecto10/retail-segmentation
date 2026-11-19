@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-# The streams that name a customer to recompute (ADR-0063). The reversal stream is
-# F22-07's, with its producer's contract (F21-02).
-SALE_STREAMS = ("stream:sales.v1.recorded",)
+# The streams that name a customer to recompute (ADR-0063). A recorded sale's
+# `entity_id` is the sale; a reversal's is `sale_id:reversal_id` (ADR-0062, F21-02).
+RECORDED_STREAM = "stream:sales.v1.recorded"
+REVERSED_STREAM = "stream:sales.v1.reversed"
 
 
 def _flag(name: str, default: bool = True) -> bool:

@@ -149,6 +149,35 @@ class Shop:
                     (transaction_id,),
                 )
 
+    def return_units(self, transaction_id: int, units: int) -> None:
+        """Return `units` of the sale's one line, as svc_sales does (ADR-0062): the
+        reversal, its line and the line's running total commit together."""
+        user = self.owner.execute(
+            "SELECT user_id FROM public.app_user WHERE is_active LIMIT 1"
+        ).fetchone()
+        assert user is not None
+        with psycopg.connect(self.sales_url) as sales:
+            with sales.transaction():
+                reversal = sales.execute(
+                    "INSERT INTO sales.sale_reversal (transaction_id, kind, reason,"
+                    " idempotency_key, request_sha256, recorded_by)"
+                    " VALUES (%s, 'RETURN', NULL, %s, %s, %s) RETURNING reversal_id",
+                    (transaction_id, uuid.uuid4(), uuid.uuid4().bytes * 2, user[0]),
+                ).fetchone()
+                assert reversal is not None
+                sales.execute(
+                    "INSERT INTO sales.sale_reversal_line (reversal_id,"
+                    " transaction_id, product_id, quantity, reason)"
+                    " SELECT %s, transaction_id, product_id, %s, 'rfm-engine test'"
+                    " FROM public.transaction_line WHERE transaction_id = %s",
+                    (reversal[0], units, transaction_id),
+                )
+                sales.execute(
+                    "UPDATE public.transaction_line SET returned_quantity ="
+                    " returned_quantity + %s WHERE transaction_id = %s",
+                    (units, transaction_id),
+                )
+
     def profile(self, customer_id: uuid.UUID) -> tuple[object, ...] | None:
         return self.owner.execute(
             "SELECT state, rule_set_id, r_days, f_count, m_total, r_score, f_score,"

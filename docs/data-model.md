@@ -679,6 +679,21 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
     the same fact twice, free to disagree (ADR-0039).
   - `request_sha256` is a fact of the request as accepted, not a function of
     current data, so it is not derived state.
+- **`sales.sale_line_price`** (F25-05) is keyed by `(transaction_id,
+  product_id)`, the key of the line it describes, which determines `list_price`
+  and `promotion_id`. A line names at most one promotion, so both are
+  single-valued facts of the line and there is no multivalued dependency to
+  split. It is a 1:1 split of `transaction_line` for phone sales only, for the
+  same reason `sale_capture` splits `transaction`: a CSV or imported line has no
+  list price of its day to keep, and the web, which writes those lines, must not
+  see the columns.
+  - `list_price` is not derived state: it is the product's price on the day of
+    the sale, which `product.list_price` no longer says once the catalog
+    changes. That is the fact RN-13 says the line does not otherwise keep.
+  - `promotion_id` is `NULL` when the line relied on no promotion, the one
+    meaning of its absence. It has no foreign key: promotions are campaigns'
+    (ADR-0044), checked through `api_campaigns.active_promotion_v1` when the
+    line is written, and a promotion of an active campaign is never rewritten.
 
 The stores boundary (RN-53, ADR-0046, F21-12) adds six relations beside
 `stores.store_location`, all in 4NF. Each fact of a store is its own relation,
@@ -1447,6 +1462,20 @@ has no privilege on `sales`. A CSV header has no row here.
 | `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
 | `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
 | `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
+
+#### `sales.sale_line_price`
+
+One row per line of a sale recorded through `POST /v1/sales`, written with the
+line in the sale's transaction (F25-05, #836). Append-only: `svc_sales` holds
+SELECT and INSERT only, and the web has no privilege on `sales`. A CSV or
+imported line has no row here.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `transaction_id` | `BIGINT` | NN | PK with `product_id`; FK `(transaction_id, product_id)` → `public.transaction_line`, `ON DELETE CASCADE` (`sale_line_price_line_fkey`) | The sale |
+| `product_id` | `INTEGER` | NN | PK with `transaction_id` | The line's product |
+| `list_price` | `NUMERIC(10,2)` | NN | `CHECK >= 0` (`sale_line_price_list_price_check`) | The product's list price read in the sale's transaction; `unit_price` on the line is what was charged |
+| `promotion_id` | `INTEGER` | yes | `CHECK > 0`; no FK (campaigns' identifier) | The promotion the line's discount relied on, or `NULL` |
 
 #### `sales.sale_reversal`
 

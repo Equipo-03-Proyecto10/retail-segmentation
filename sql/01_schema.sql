@@ -1794,6 +1794,33 @@ FOR EACH ROW EXECUTE FUNCTION sales.refuse_case_rewrite();
 GRANT SELECT, INSERT ON sales.reconciliation_case TO svc_sales;
 GRANT UPDATE (resolution, resolved_by, resolved_at, note)
     ON sales.reconciliation_case TO svc_sales;
+
+-- BEGIN F25-05 sale line price (#836)
+-- RN-13 keeps on a line the price actually charged, never the list price. A sale
+-- recorded through POST /v1/sales also keeps, here, the product's list price read
+-- in the sale's own transaction and the promotion its discount relied on, so a
+-- discount can be reported against the price of that day rather than today's.
+-- One row per line of a phone sale, keyed by the line itself and written with
+-- it; a CSV or imported line has none. promotion_id is campaigns' identifier,
+-- checked against api_campaigns.active_promotion_v1 when the line is written,
+-- with no foreign key into the campaigns boundary (ADR-0044). Append-only, like
+-- the line. docs/data-model.md holds the normal-form note.
+CREATE TABLE IF NOT EXISTS sales.sale_line_price (
+    transaction_id bigint NOT NULL,
+    product_id     integer NOT NULL,
+    list_price     numeric(10,2) NOT NULL
+        CONSTRAINT sale_line_price_list_price_check CHECK (list_price >= 0),
+    promotion_id   integer
+        CONSTRAINT sale_line_price_promotion_id_check CHECK (promotion_id > 0),
+    PRIMARY KEY (transaction_id, product_id),
+    CONSTRAINT sale_line_price_line_fkey FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id)
+        ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS sale_line_price_promotion
+    ON sales.sale_line_price (promotion_id) WHERE promotion_id IS NOT NULL;
+GRANT SELECT, INSERT ON sales.sale_line_price TO svc_sales;
+-- END F25-05 sale line price
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products

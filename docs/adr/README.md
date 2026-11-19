@@ -221,6 +221,7 @@ Later runtime events must be preserved.
 | [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Accepted |
 | [0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) | The domain-event table is owned by the schema owner, and a subject is named once, in the common fields | Accepted |
 | [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) | Audited entity names grow inside v1 by the same accepted-record rule as role codes | Accepted |
+| [0084](0084-a-paused-or-discontinued-product-is-not-sellable-and-the-elsewhere-store-is-the-nearest-by-great-circle-distance.md) | A paused or discontinued product is not sellable, the elsewhere store is the nearest by great-circle distance, and a floor role's store is refused before it is looked up | Proposed |
 
 ## Writing one
 

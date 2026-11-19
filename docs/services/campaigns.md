@@ -62,12 +62,15 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | `campaigns.campaign_eligibility` | Table | S: SELECT, INSERT, DELETE | The registration cutoff and the purchase rule |
 | `campaigns.campaign_excluded_customer` | Table | S: SELECT, INSERT, DELETE | One row per customer a campaign excludes |
 | `campaigns.campaign_excluded_label` | Table | S: SELECT, INSERT, DELETE | One row per segment label a campaign excludes |
+| `campaigns.promotion` | Table | S: SELECT, INSERT, UPDATE, DELETE | A promotion's campaign, name, percentage and validity (RN-71, #1104); updated in place while its campaign is DRAFT |
+| `campaigns.promotion_store` | Table | S: SELECT, INSERT, DELETE | One row per store where a promotion applies |
+| `campaigns.promotion_channel` | Table | S: SELECT, INSERT, DELETE | One row per channel on which a promotion applies |
 
-The five `campaigns.*` tables are separate from `campaign` on purpose (E-09): the web still writes `campaign`, and a web write can never lose a limit it does not know. A `PUT` replaces a resource by deleting its rows and inserting the new ones in one transaction.
+The five `campaigns.campaign_*` tables are separate from `campaign` on purpose (E-09): the web still writes `campaign`, and a web write can never lose a limit it does not know. A `PUT` replaces a resource by deleting its rows and inserting the new ones in one transaction.
 
 ## Database contracts
 
-Published: [`api_campaigns.active_promotion_v1`](../../contracts/db/api_campaigns.active_promotion.v1.md), read by sales to validate a discount.
+Published: [`api_campaigns.promotion_window_v1`](../../contracts/db/api_campaigns.promotion_window.v1.md), read by sales to validate a discount on the sale's own day, and [`api_campaigns.active_promotion_v1`](../../contracts/db/api_campaigns.active_promotion.v1.md), the promotions valid on the database's `CURRENT_DATE` (no consumer yet).
 
 Published for experimentation's frame (ADR-0068 section 1, #1051): [`api_campaigns.campaign_target_v1`](../../contracts/db/api_campaigns.campaign_target.v1.md) (target label, status and eligibility rules, one row per campaign), [`api_campaigns.campaign_excluded_customer_v1`](../../contracts/db/api_campaigns.campaign_excluded_customer.v1.md) and [`api_campaigns.campaign_excluded_label_v1`](../../contracts/db/api_campaigns.campaign_excluded_label.v1.md) (one row per exclusion). None carries a budget, a cap, a promotion or a channel.
 

@@ -357,6 +357,17 @@ The two minimum-purchase columns are present together or not at all, and a
 per-customer amount never exceeds the total, both as `CHECK` constraints. They
 are separate from `campaign` because the frozen web still writes that table.
 
+A promotion (RN-71, #1104) is kept in three tables of the same schema. Its
+campaign, name, percentage and validity are single-valued and depend on
+`promotion_id` alone, so they are one relation. The stores where it applies and
+the channels on which it applies are two independent multivalued facts of one
+promotion: any of its stores goes with any of its channels. Holding both in one
+relation keyed by `(promotion_id, store_id, channel_id)` would be the textbook
+4NF violation, a promotion for three stores and two channels stored as six rows
+that must be kept a full product by hand. So `promotion_store` and
+`promotion_channel` each hold one row per member, and the product is formed only
+when `api_campaigns.active_promotion_v1` is read. No array column holds either list.
+
 `notification` and `notification_recipient` (AN-04, ADR-0047) split an event from
 the people it was written for, for the same reason `segmentation_run` and
 `customer_segment_history` do. One relation holding the event beside each

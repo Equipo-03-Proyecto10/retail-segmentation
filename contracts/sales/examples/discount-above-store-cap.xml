@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>discount_above_store_cap</code>
+  <message>A line is charged below what the store's commercial rule allows.</message>
+  <correlation_id>corr-discount-above-store-cap</correlation_id>
+  <details>
+    <field>lines[0].unit_price</field>
+    <code>below_store_cap</code>
+  </details>
+</Error>

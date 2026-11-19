@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.8.0
+  version: 1.9.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -46,6 +46,28 @@ paths:
         `anonymized`), and nothing is stored. Its past sales stay as they are,
         and their reversals are still recorded.
 
+        Promotions and discounts (F25-05, RN-13). A line's `unit_price` stays the
+        price actually charged; the list price it is compared with is the product's
+        `list_price` read in the sale's transaction, and the service keeps it with
+        the line, so a discount can be reported later. A line charged below that
+        list price must name the promotion it relies on in `promotion_id`; one that
+        names none is 422 `discount_without_promotion`. A named promotion must be a
+        row of `api_campaigns.active_promotion_v1` for the sale's store and
+        channel, and the sale's date, `occurred_at` in the service's business time
+        zone, must lie within its `starts_on` and `ends_on`; otherwise 422
+        `promotion_not_applicable`. A line names at most one promotion, and a
+        promotion does not combine with any other discount. The discount allowed is
+        the smaller of the promotion's `discount_percent` and the store's
+        `max_discount_percent` (no cap of the store's own when it has none): the
+        lowest price accepted is the list price times (1 - percent / 100), rounded
+        half up to the cent. A line charged below it is 422
+        `discount_above_promotion` when the promotion is the tighter limit, and
+        `discount_above_store_cap` when the store's rule is. Each of these names
+        the line in `details` (`lines[1].promotion_id` or `lines[1].unit_price`),
+        and nothing is recorded. A line charged at or above its list price is
+        accepted as before, with or without a promotion. Only this operation
+        applies the rule: a sale import keeps the rules it states.
+
         Who may record where. `STORE_MANAGER` and `SALES_ASSOCIATE` work only in
         their assigned stores: a sale for another store is 403 `forbidden_store`
         (detail `store_id`, `other_store`), decided before the store is looked up,
@@ -55,7 +77,7 @@ paths:
         Idempotency. The `Idempotency-Key` becomes `source_transaction_id =
         'svc-sales:' || lowercase(key)`. The service hashes the caller's `sub`, the
         ids, `occurred_at` in UTC and the lines sorted by `product_id` with
-        two-decimal prices, so a JSON retry and an XML retry hash the same. The same
+        two-decimal prices and each line's `promotion_id`, so a JSON retry and an XML retry hash the same. The same
         key with the same hash is a replay: 200 with the original sale and
         `Idempotent-Replayed: true`. The same key with a different hash is 409
         `idempotency_key_reused`. Only accepted sales are remembered, so a refused
@@ -83,6 +105,8 @@ paths:
                 externalValue: ./examples/record-sale.request.json
               no_lines:
                 externalValue: ./examples/empty-sale.request.json
+              promotion:
+                externalValue: ./examples/record-sale-promotion.request.json
           application/xml:
             schema:
               $ref: '#/components/schemas/SaleRequest'
@@ -91,6 +115,8 @@ paths:
                 externalValue: ./examples/record-sale.request.xml
               no_lines:
                 externalValue: ./examples/empty-sale.request.xml
+              promotion:
+                externalValue: ./examples/record-sale-promotion.request.xml
       responses:
         '200':
           description: The key was already used by an identical request; the original sale is returned.
@@ -1620,6 +1646,17 @@ components:
             The price actually charged, a decimal string. The service requires
             it positive with two decimals and answers `invalid_price`
             otherwise.
+        promotion_id:
+          type: integer
+          format: int32
+          description: >-
+            The promotion this line's discount relies on, as `promotion_id` of the
+            campaigns contract. Optional; required when `unit_price` is below the
+            product's list price (`discount_without_promotion`). It must be active
+            for the sale's store, channel and date (`promotion_not_applicable`),
+            and the charged price must stay within the smaller of its discount and
+            the store's maximum discount (`discount_above_promotion`,
+            `discount_above_store_cap`).
     SaleRequest:
       type: object
       additionalProperties: false
@@ -2695,7 +2732,7 @@ components:
             duplicate_product_line:
               externalValue: ./examples/duplicate-product-line.xml
     SaleRefused:
-      description: '`no_lines`, `no_stock_record`, `unknown_customer`, `anonymized_customer`, `unknown_store`, `unknown_channel`, `unknown_product`, `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity` or `invalid_body`.'
+      description: '`no_lines`, `no_stock_record`, `unknown_customer`, `anonymized_customer`, `unknown_store`, `unknown_channel`, `unknown_product`, `inactive_product`, `before_registration`, `future_dated`, `invalid_price`, `invalid_quantity`, `discount_without_promotion`, `promotion_not_applicable`, `discount_above_promotion`, `discount_above_store_cap` or `invalid_body`.'
       headers:
         X-Correlation-ID:
           $ref: '#/components/headers/CorrelationId'
@@ -2728,6 +2765,14 @@ components:
               externalValue: ./examples/invalid-price.json
             invalid_quantity:
               externalValue: ./examples/invalid-quantity.json
+            discount_without_promotion:
+              externalValue: ./examples/discount-without-promotion.json
+            promotion_not_applicable:
+              externalValue: ./examples/promotion-not-applicable.json
+            discount_above_promotion:
+              externalValue: ./examples/discount-above-promotion.json
+            discount_above_store_cap:
+              externalValue: ./examples/discount-above-store-cap.json
             invalid_body:
               externalValue: ./examples/invalid-body.json
         application/xml:
@@ -2758,6 +2803,14 @@ components:
               externalValue: ./examples/invalid-price.xml
             invalid_quantity:
               externalValue: ./examples/invalid-quantity.xml
+            discount_without_promotion:
+              externalValue: ./examples/discount-without-promotion.xml
+            promotion_not_applicable:
+              externalValue: ./examples/promotion-not-applicable.xml
+            discount_above_promotion:
+              externalValue: ./examples/discount-above-promotion.xml
+            discount_above_store_cap:
+              externalValue: ./examples/discount-above-store-cap.xml
             invalid_body:
               externalValue: ./examples/invalid-body.xml
     SaleNotFound:

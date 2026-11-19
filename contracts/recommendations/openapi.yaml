@@ -159,7 +159,9 @@ paths:
         the commercial status; products publishes no such flag today, so no
         product is excluded as `inactive`. The store permits sales when it is
         active and `OPEN`; with no `channel_id`, a store that enables no channel
-        does not permit sales either, and its products are `store_not_selling`.
+        does not permit sales either, and its products are `store_not_selling`
+        (ADR-0084). Like every `store_not_selling`, this lies outside the default
+        path's parity with the web (ADR-0067).
 
         A product that matches a stated signal and fails is excluded for exactly one
         reason, the first that applies in this order: `already_bought`, `inactive`,
@@ -220,9 +222,10 @@ paths:
         A floor role (`SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER`) that
         names a `store_id` it is not assigned to (ADR-0060) gets 403
         `forbidden_store`; with no `store_id` it is not narrowed. A role that is
-        not a floor role, and `ADMIN`, may name any store. A `store_id` that does not
-        exist answers 422 `unknown_store`, and a `channel_id` that does not exist
-        answers 422 `unknown_channel`.
+        not a floor role, and `ADMIN`, may name any store, and gets 422
+        `unknown_store` for a `store_id` that does not exist; a floor role gets 403
+        `forbidden_store` for one instead (see the order below). A `channel_id` that
+        does not exist answers 422 `unknown_channel`.
 
         The refusals are checked in this order, and the first that applies is the
         answer: 422 `invalid_query` for a malformed parameter, then 403
@@ -579,10 +582,12 @@ components:
       description: >-
         The reference store the products are judged at, the seller's declared
         position. It takes precedence over the customer's usual store. A value that
-        is not a positive integer answers 422 `invalid_query`, a store that does
-        not exist answers 422 `unknown_store`, and a floor role naming a store it is
-        not assigned to answers 403 `forbidden_store` (ADR-0060, ADR-0067). A foreign
-        id, so it is a query field and never a path segment (ADR-0035).
+        is not a positive integer answers 422 `invalid_query`. A floor role naming a
+        store it is not assigned to answers 403 `forbidden_store` (ADR-0060,
+        ADR-0067), and so does a floor role naming a store that does not exist
+        (ADR-0084); for any other role, a store that does not exist answers 422
+        `unknown_store`. A foreign id, so it is a query field and never a path
+        segment (ADR-0035).
       schema:
         type: integer
         format: int32
@@ -851,11 +856,12 @@ components:
         `inactive` (an `active` flag that differs from the commercial status; none
         is published today, ADR-0084), `not_sellable` (its commercial status does
         not allow the sale: paused or discontinued), `store_not_selling` (the
-        reference store''s status does not permit sales), `channel_not_enabled` (a reference channel is given
-        and the store does not enable it), `out_of_stock` (no unit on hand at the
-        reference store, a missing stock record included) and
-        `PERSONALIZATION_WITHDRAWN` (the customer''s consent or restrictions forbid
-        it).'
+        reference store is not active and `OPEN`, or, with no reference channel,
+        it enables no channel; ADR-0084), `channel_not_enabled` (a reference
+        channel is given and the store does not enable it), `out_of_stock` (no
+        unit on hand at the reference store, a missing stock record included) and
+        `PERSONALIZATION_WITHDRAWN` (the customer''s consent or restrictions
+        forbid it).'
       enum:
       - already_bought
       - inactive

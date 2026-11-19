@@ -53,12 +53,13 @@ quantity it used. It is not stock-service's `availabilities` resource, which
 stays with stock and is read from it by id. `exclusions` counts the products
 that matched a signal and were excluded, per reason, and never lists them.
 
-Three readings are fixed by ADR-0084 (2.0.2): a paused or discontinued product
+Four readings are fixed by ADR-0084 (2.0.2): a paused or discontinued product
 is `not_sellable` and may get an alternative, and nothing is `inactive` while
 products publishes no separate `active` flag; the `elsewhere` store is the
 nearest by great-circle distance, ties to the lowest `store_id`, and a store
-without coordinates is skipped; and a floor role naming a store it is not
-assigned to gets 403 `forbidden_store` before any 422 `unknown_store`.
+without coordinates is skipped; a floor role naming a store it is not
+assigned to gets 403 `forbidden_store` before any 422 `unknown_store`; and with
+no `channel_id`, a store that enables no channel is `store_not_selling`.
 
 Every `/v2` answer carries the `decision_id` of the decision recorded for it.
 `recommendation-decisions` is a top-level resource of this service. A decision

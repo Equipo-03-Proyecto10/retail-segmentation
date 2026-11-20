@@ -26,6 +26,16 @@ START = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 WINDOW = 7
 SETTLE = 7
 TABLES = ("", "_arm", "_comparison", "_balance")
+# Literal statements, one per relation: guards.sh forbids interpolated SQL.
+COUNT_STORED = {
+    "": "SELECT count(*) FROM experiments.experiment_result WHERE experiment_id = %s",
+    "_arm": "SELECT count(*) FROM experiments.experiment_result_arm"
+    " WHERE experiment_id = %s",
+    "_comparison": "SELECT count(*) FROM experiments.experiment_result_comparison"
+    " WHERE experiment_id = %s",
+    "_balance": "SELECT count(*) FROM experiments.experiment_result_balance"
+    " WHERE experiment_id = %s",
+}
 
 
 def _code(reply: Any) -> tuple[int, str | None]:
@@ -188,11 +198,7 @@ class Scenario:
         return api("GET", f"/v1/experiment-results/{self.experiment}{query}", **kwargs)
 
     def stored(self, table: str = "") -> int:
-        return self.owner.execute(
-            f"SELECT count(*) FROM experiments.experiment_result{table}"  # noqa: S608
-            " WHERE experiment_id = %s",
-            (self.experiment,),
-        ).fetchone()[0]
+        return self.owner.execute(COUNT_STORED[table], (self.experiment,)).fetchone()[0]
 
 
 @pytest.fixture
@@ -378,23 +384,33 @@ def test_the_primary_result_is_stored_once_and_never_rewritten(
 def test_a_stored_result_cannot_be_edited_or_deleted(api: Any, scene: Scenario) -> None:
     _dealt(scene)
     scene.get(api)
-    for table, change in (
-        ("experiment_result", "SET synthetic = NOT synthetic"),
-        ("experiment_result_arm", "SET converted = converted + 1"),
-        ("experiment_result_comparison", "SET difference = 0"),
-        ("experiment_result_balance", "SET standardized_mean_difference = 0"),
+    for update, delete in (
+        (
+            "UPDATE experiments.experiment_result SET synthetic = NOT synthetic"
+            " WHERE experiment_id = %s",
+            "DELETE FROM experiments.experiment_result WHERE experiment_id = %s",
+        ),
+        (
+            "UPDATE experiments.experiment_result_arm SET converted = converted + 1"
+            " WHERE experiment_id = %s",
+            "DELETE FROM experiments.experiment_result_arm WHERE experiment_id = %s",
+        ),
+        (
+            "UPDATE experiments.experiment_result_comparison SET difference = 0"
+            " WHERE experiment_id = %s",
+            "DELETE FROM experiments.experiment_result_comparison"
+            " WHERE experiment_id = %s",
+        ),
+        (
+            "UPDATE experiments.experiment_result_balance"
+            " SET standardized_mean_difference = 0 WHERE experiment_id = %s",
+            "DELETE FROM experiments.experiment_result_balance"
+            " WHERE experiment_id = %s",
+        ),
     ):
-        with pytest.raises(psycopg.errors.CheckViolation):
-            scene.owner.execute(
-                f"UPDATE experiments.{table} {change}"  # noqa: S608
-                " WHERE experiment_id = %s",
-                (scene.experiment,),
-            )
-        with pytest.raises(psycopg.errors.CheckViolation):
-            scene.owner.execute(
-                f"DELETE FROM experiments.{table} WHERE experiment_id = %s",  # noqa: S608
-                (scene.experiment,),
-            )
+        for statement in (update, delete):
+            with pytest.raises(psycopg.errors.CheckViolation):
+                scene.owner.execute(statement, (scene.experiment,))
 
 
 def test_two_reads_at_once_store_one_result(api: Any, scene: Scenario) -> None:

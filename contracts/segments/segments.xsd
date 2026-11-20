@@ -65,6 +65,17 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- The floor view of the current assignment (ADR-0060): the label and
+       since only. The scores and run_id are not elements of this type. -->
+  <xs:complexType name="FloorCurrentAssignment">
+    <xs:sequence>
+      <xs:element name="customer_id" type="segments:Uuid"/>
+      <xs:element name="state" type="segments:AssignmentState"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="since" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="SegmentAssignment">
     <xs:sequence>
       <xs:element name="customer_id" type="segments:Uuid"/>
@@ -287,6 +298,8 @@
   <xs:element name="Segment" type="segments:Segment"/>
   <xs:element name="Segments" type="segments:Segments"/>
   <xs:element name="CurrentAssignment" type="segments:CurrentAssignment"/>
+  <xs:element name="FloorCurrentAssignment"
+              type="segments:FloorCurrentAssignment"/>
   <xs:element name="SegmentAssignments" type="segments:SegmentAssignments"/>
   <xs:element name="VersionedSegmentAssignments"
               type="segments:VersionedSegmentAssignments"/>

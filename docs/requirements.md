@@ -195,6 +195,7 @@ The web's matrix does not change.
 | Reads of recommendation decisions (`GET /v2/recommendation-decisions` and `/{decision_id}`) | `ADMIN`, `ANALYST`, `AUDITOR`, and `STORE_MANAGER` narrowed to decisions made at its assigned stores | A decision names a customer and a store, so it follows `segment.read` and ADR-0060's narrowing. `MARKETING` and the other floor roles read none. ADR-0067 left the exact roles to F24-03 |
 | Reads of customers and preference profiles | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `LOYALTY_OFFICER` | Customers follow `segment.read` (ADR-0010, ADR-0023). `SALES_ASSOCIATE` reads a customer only through the floor view below |
 | Reads of segment assignments and segment migrations (assignments carry R, F and M scores) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR` | Segments and rules: read. ADR-0060 gives the scores to `STORE_MANAGER` alone among the floor roles |
+| `GET /v1/segment-assignments/floor-view` (a customer's current label and `since`, no scores and no `run_id`) | `SALES_ASSOCIATE`, `LOYALTY_OFFICER` | Segments and rules: read, in ADR-0060's floor representation. A separate read because `getCurrentAssignment` cannot drop its scores within v1 (F21-26) |
 | Reads of sales, sale reversals and engagement events (each row names a customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `AUDITOR`, `SALES_ASSOCIATE`, `COMMERCIAL_SUPERVISOR` | Reports: read, narrowed to `segment.read` holders, which keeps `INVENTORY_PLANNER` out of customer data. A floor role reads only its assigned stores (F19-07) |
 | Engagement summaries (aggregates, no customer) | `ADMIN`, `ANALYST`, `STORE_MANAGER`, `MARKETING`, `INVENTORY_PLANNER`, `AUDITOR` | Reports: read. `STORE_MANAGER` summarizes only its assigned stores (F19-07) |
 | `POST /v1/capture-incidents` | `ADMIN`, `STORE_MANAGER`, `SALES_ASSOCIATE`, `LOYALTY_OFFICER`, `COMMERCIAL_SUPERVISOR`; a floor role only at its assigned stores, `ADMIN` at any | ADR-0071: the roles that queue a write report its final refusal. The reporter does not read incidents back |
@@ -273,8 +274,8 @@ The web's matrix does not change.
   `SALES_ASSOCIATE` reads a customer only through the floor view
   (F21-13, F21-14), never the full representation, which carries email,
   phone and preferred channels; the two floor
-  roles read segment assignments once their R, F and M scores can be left
-  out. Engagement summaries and reads of check-ins keep their roles: ADR-0060
+  roles read a customer's segment only through the floor view of the
+  current assignment (F21-26), which carries no R, F or M score. Engagement summaries and reads of check-ins keep their roles: ADR-0060
   adds no floor role to them, so `STORE_MANAGER` is the one floor role they
   narrow. Sale reversals, loyalty cards, active promotions, KPI
   reports and store assignments list them already; customer visits and

@@ -618,6 +618,35 @@ experiment planned through the service:
 A plan is frozen: `svc_experiments` holds SELECT and INSERT only, and a trigger refuses an UPDATE
 or DELETE of a plan, a member or an exclusion from anyone.
 
+The primary result (ADR-0084, F25-13) adds four more, also in 4NF, written together once by the
+first primary read at or after the analysis instant. A look cannot be recomputed later (the net
+view keeps no history of its reversals), so each stored value is a fact of the look and not a
+function of current data:
+- **`experiments.experiment_result`** is keyed by `experiment_id`, which determines when the look
+  was computed, the sample ratio's p-value and whether the figures are synthetic. The status is
+  not a column: it is `INVALID` exactly when that p-value is below 0.001.
+- **`experiments.experiment_result_arm`** is keyed by `(experiment_id, group_id)`, which determines
+  the arm's counts (analysed, exposed, exposed who converted, converted, pending, not converted),
+  its net revenue and the standard deviation of its revenue per customer. The rates and revenue
+  per customer are not columns: they are counts over `analysed` and revenue over `analysed`. A
+  check keeps `converted + pending + not_converted = analysed`.
+- **`experiments.experiment_result_comparison`** is keyed by `(experiment_id, group_id,
+  against_group_id, metric)`, which determines the difference, its interval, the p-value, the
+  degrees of freedom and, for revenue only, the bootstrap interval. Not columns, because each
+  follows from the key, the stored values and the plan: the label (whether the other arm is a
+  control), the role (whether the metric is the plan's primary), the test (a function of the
+  metric), the confidence level (`1 - comparison_alpha`), the conclusion (the p-value against the
+  level, and the `UNDERPOWERED` flag), the incremental revenue (the difference and the interval
+  times the arm's `analysed`) and whether the bootstrap agrees.
+- **`experiments.experiment_result_balance`** is keyed by `(experiment_id, group_id, measure)`,
+  which determines the reference arm and the standardized mean difference. Whether it is flagged
+  is not a column: it is its absolute value against 0.25.
+
+They are one relation per kind of fact, never an array and never a document, so that a constraint
+can keep each fact consistent. The two flags a look can raise go to `experiment_flag`. Frozen like
+the plan: `svc_experiments` holds SELECT and INSERT only, and the same trigger refuses any UPDATE
+or DELETE.
+
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
 - **`recommendations.recommendation_decision`** is keyed by `decision_id`, which
@@ -1372,6 +1401,54 @@ window.
 |---|---|---|---|---|
 | `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
 | `flag` | `VARCHAR(30)` | NN | PK part; CHECK one of the four flags of the contract | A flag that applies to the experiment |
+
+#### `experiments.experiment_result`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment whose primary look this is |
+| `computed_at` | `TIMESTAMPTZ` | NN | — | When the look was computed: the result's `as_of` |
+| `sample_ratio_p_value` | `DOUBLE PRECISION` | NN | CHECK in [0, 1] | The chi-square goodness-of-fit p-value of the arm counts against the planned allocation |
+| `synthetic` | `BOOLEAN` | NN | — | The experiment is not observed, or a counted sale is seeded (RN-26) |
+
+#### `experiments.experiment_result_arm`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result`, `ON DELETE RESTRICT` | The look |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
+| `analysed` | `INTEGER` | NN | CHECK `>= 0` | Assigned customers that reached the analysis |
+| `exposed` | `INTEGER` | NN | CHECK `>= 0` | Customers with a non-voided exposure; 0 for a control |
+| `exposed_converted` | `INTEGER` | yes | CHECK in [0, `exposed`] | Of the exposed, those who bought inside the window from their first exposure (RN-48); null for a control |
+| `converted` | `INTEGER` | NN | CHECK `>= 0` | Customers with a conversion that still counts |
+| `pending` | `INTEGER` | NN | CHECK `>= 0` | No conversion, and the customer's window was open |
+| `not_converted` | `INTEGER` | NN | CHECK `>= 0` | No conversion, and the window had closed |
+| `net_revenue` | `NUMERIC(14,2)` | NN | CHECK `>= 0` | The arm's net sales in the window |
+| `revenue_std_dev` | `DOUBLE PRECISION` | NN | CHECK `>= 0` | The sample standard deviation of revenue per customer, zeros included |
+
+#### `experiments.experiment_result_comparison`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result` | The look |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm compared |
+| `against_group_id` | `INTEGER` | NN | PK part; FK likewise; CHECK `<> group_id` | The control, or the first offer when there is none |
+| `metric` | `VARCHAR(20)` | NN | PK part; CHECK `CONVERSION` or `REVENUE_PER_CUSTOMER` | The metric compared |
+| `difference` | `DOUBLE PRECISION` | NN | — | `group_id` minus `against_group_id`, in the metric's unit |
+| `lower`, `upper` | `DOUBLE PRECISION` | NN | CHECK `lower <= upper` | The interval at `1 - comparison_alpha` |
+| `p_value` | `DOUBLE PRECISION` | NN | CHECK in [0, 1] | Two-sided |
+| `degrees_of_freedom` | `DOUBLE PRECISION` | yes | CHECK `> 0` | Satterthwaite, for revenue only |
+| `bootstrap_lower`, `bootstrap_upper` | `DOUBLE PRECISION` | yes | both null exactly for `CONVERSION` | The seeded percentile bootstrap's interval |
+
+#### `experiments.experiment_result_balance`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result` | The look |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
+| `reference_group_id` | `INTEGER` | NN | FK likewise | The control, or the first offer when there is none |
+| `measure` | `VARCHAR(20)` | NN | PK part; CHECK one of `PRE_RECENCY_DAYS`, `PRE_PURCHASE_COUNT`, `PRE_NET_SPEND` | A measure over the window before the frame instant |
+| `standardized_mean_difference` | `DOUBLE PRECISION` | NN | — | The arm minus the reference over the pooled standard deviation |
 
 #### `recommendations.recommendation_decision`
 

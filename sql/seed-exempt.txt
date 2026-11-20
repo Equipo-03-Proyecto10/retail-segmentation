@@ -159,6 +159,15 @@ experiments.experiment_frame_member
 experiments.experiment_frame_exclusion
 experiments.experiment_flag
 
+# The primary result (F25-13, ADR-0068, ADR-0084) is the one look at an experiment's analysis
+# instant, stored when that look is first read. It exists only for an experiment planned through
+# the service and read after its analysis instant, and the seeded experiments are assignment
+# rule V0, which has no analysis instant. Runtime facts, like a plan.
+experiments.experiment_result
+experiments.experiment_result_arm
+experiments.experiment_result_comparison
+experiments.experiment_result_balance
+
 # experiments.exposure_notice is runtime projection state. Rows exist only as
 # experimentation consumes RECORDED and VOIDED notices from engagement's
 # stream; seeding them would invent floor observations that never occurred.

@@ -5099,6 +5099,113 @@ GRANT SELECT ON api_preferences.consent_state_v1, api_preferences.restriction_v1
     TO svc_experiments;
 GRANT SELECT ON api_customers.customer_ref_v1 TO svc_experiments;
 GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
+
+-- The primary result (F25-13, ADR-0068, ADR-0084): the one look at the analysis instant, computed
+-- once and stored so that no later read, and no later sale or reversal, can change it. Four
+-- relations, written together in one transaction, then frozen like the plan. Derived, so not
+-- stored: the status (INVALID when the sample ratio p-value is below 0.001), each rate (counts over
+-- analysed), revenue per customer (revenue over analysed), whether a balance difference is flagged,
+-- a comparison's label, role, test, confidence level, conclusion, incremental revenue and whether
+-- its bootstrap agrees. docs/data-model.md holds the normal-form note.
+CREATE TABLE IF NOT EXISTS experiments.experiment_result (
+    experiment_id        integer PRIMARY KEY
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    computed_at          timestamptz NOT NULL,
+    sample_ratio_p_value double precision NOT NULL
+        CONSTRAINT experiment_result_sample_ratio_check
+        CHECK (sample_ratio_p_value >= 0 AND sample_ratio_p_value <= 1),
+    synthetic            boolean NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_result_arm (
+    experiment_id     integer NOT NULL
+        REFERENCES experiments.experiment_result (experiment_id) ON DELETE RESTRICT,
+    group_id          integer NOT NULL,
+    analysed          integer NOT NULL
+        CONSTRAINT experiment_result_arm_analysed_check CHECK (analysed >= 0),
+    exposed           integer NOT NULL
+        CONSTRAINT experiment_result_arm_exposed_check CHECK (exposed >= 0),
+    exposed_converted integer
+        CONSTRAINT experiment_result_arm_exposed_converted_check
+        CHECK (exposed_converted >= 0 AND exposed_converted <= exposed),
+    converted         integer NOT NULL
+        CONSTRAINT experiment_result_arm_converted_check CHECK (converted >= 0),
+    pending           integer NOT NULL
+        CONSTRAINT experiment_result_arm_pending_check CHECK (pending >= 0),
+    not_converted     integer NOT NULL
+        CONSTRAINT experiment_result_arm_not_converted_check CHECK (not_converted >= 0),
+    net_revenue       numeric(14,2) NOT NULL
+        CONSTRAINT experiment_result_arm_revenue_check CHECK (net_revenue >= 0),
+    revenue_std_dev   double precision NOT NULL
+        CONSTRAINT experiment_result_arm_std_dev_check CHECK (revenue_std_dev >= 0),
+    PRIMARY KEY (experiment_id, group_id),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    CONSTRAINT experiment_result_arm_outcomes_check
+        CHECK (converted + pending + not_converted = analysed)
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_result_comparison (
+    experiment_id     integer NOT NULL
+        REFERENCES experiments.experiment_result (experiment_id) ON DELETE RESTRICT,
+    group_id          integer NOT NULL,
+    against_group_id  integer NOT NULL,
+    metric            varchar(20) NOT NULL
+        CONSTRAINT experiment_result_comparison_metric_check
+        CHECK (metric IN ('CONVERSION', 'REVENUE_PER_CUSTOMER')),
+    difference        double precision NOT NULL,
+    lower             double precision NOT NULL,
+    upper             double precision NOT NULL,
+    p_value           double precision NOT NULL
+        CONSTRAINT experiment_result_comparison_p_check CHECK (p_value >= 0 AND p_value <= 1),
+    degrees_of_freedom double precision
+        CONSTRAINT experiment_result_comparison_df_check CHECK (degrees_of_freedom > 0),
+    bootstrap_lower   double precision,
+    bootstrap_upper   double precision,
+    PRIMARY KEY (experiment_id, group_id, against_group_id, metric),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (against_group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    CONSTRAINT experiment_result_comparison_order_check CHECK (lower <= upper),
+    CONSTRAINT experiment_result_comparison_arms_check CHECK (group_id <> against_group_id),
+    CONSTRAINT experiment_result_comparison_bootstrap_check
+        CHECK ((bootstrap_lower IS NULL) = (bootstrap_upper IS NULL)
+               AND (bootstrap_lower IS NULL) = (metric = 'CONVERSION'))
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_result_balance (
+    experiment_id        integer NOT NULL
+        REFERENCES experiments.experiment_result (experiment_id) ON DELETE RESTRICT,
+    group_id             integer NOT NULL,
+    reference_group_id   integer NOT NULL,
+    measure              varchar(20) NOT NULL
+        CONSTRAINT experiment_result_balance_measure_check
+        CHECK (measure IN ('PRE_RECENCY_DAYS', 'PRE_PURCHASE_COUNT', 'PRE_NET_SPEND')),
+    standardized_mean_difference double precision NOT NULL,
+    PRIMARY KEY (experiment_id, group_id, measure),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (reference_group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT
+);
+
+CREATE OR REPLACE TRIGGER trg_experiment_result_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_result_arm_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result_arm
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_result_comparison_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result_comparison
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_result_balance_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result_balance
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.experiment_result, experiments.experiment_result_arm,
+    experiments.experiment_result_comparison, experiments.experiment_result_balance
+    TO svc_experiments;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry

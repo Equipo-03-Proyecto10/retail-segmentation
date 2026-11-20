@@ -221,6 +221,7 @@ Later runtime events must be preserved.
 | [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Accepted |
 | [0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) | The domain-event table is owned by the schema owner, and a subject is named once, in the common fields | Accepted |
 | [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) | Audited entity names grow inside v1 by the same accepted-record rule as role codes | Accepted |
+| [0084](0084-the-primary-result-of-an-experiment-is-stored-once-as-four-frozen-relations-and-read-from-them.md) | The primary result of an experiment is stored once, as four frozen relations, and read from them | Proposed |
 
 ## Writing one
 

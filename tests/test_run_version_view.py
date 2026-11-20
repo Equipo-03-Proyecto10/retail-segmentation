@@ -22,7 +22,7 @@ pytestmark = pytest.mark.postgres
 def test_the_contract_names_its_object_producer_consumer_and_columns() -> None:
     assert "| Object | `api_models.run_version_v1` |" in CONTRACT
     assert "| Producer | model-registry |" in CONTRACT
-    assert "| Consumers | segments |" in CONTRACT
+    assert "| Consumers | segments, analytics-kpis |" in CONTRACT
     table = CONTRACT.split("## Columns", 1)[1].split("## Compatibility", 1)[0]
     assert re.findall(r"^\| `(\w+)` \|", table, re.M) == [
         "run_id",

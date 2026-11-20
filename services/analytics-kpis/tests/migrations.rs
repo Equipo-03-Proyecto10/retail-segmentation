@@ -272,9 +272,12 @@ async fn a_change_across_two_versions_is_methodological_and_the_report_marks_it(
     assert_eq!(total(&kept, "methodological_changes"), 19);
     assert_eq!(kept["data_origin"]["spans_model_versions"], true);
 
-    // Run 31's day alone holds its 19, and a window before any run holds none.
+    // Run 31's day alone holds its 19, plus run 30's when both runs fall on one
+    // UTC day (the seed dates them from the clock), and a window before any run
+    // holds none.
     let (_, quiet) = json(&stack, &format!("{MIGRATIONS}?from={to}&to={to}")).await;
-    assert_eq!(total(&quiet, "methodological_changes"), 19);
+    let same_day = if from == to { 38 } else { 19 };
+    assert_eq!(total(&quiet, "methodological_changes"), same_day);
     let (_, after) = json(
         &stack,
         &format!("{MIGRATIONS}?from=2019-01-01&to=2019-01-31"),

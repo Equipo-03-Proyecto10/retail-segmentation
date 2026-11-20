@@ -421,9 +421,6 @@ async fn an_operation_that_is_planned_is_not_served() {
     };
     let admin = stack.token("ADMIN");
     for path in [
-        "spend",
-        "retention",
-        "migrations",
         "conversion",
         "recommendation-performance",
         "campaign-performance",

@@ -64,7 +64,8 @@ const CATALOG: &str = r#"[
   "window": "A sale falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC). Reversals recorded at any time up to generated_at are subtracted from it.",
   "origin_views": [
    "api_sales.net_purchase_line_v1",
-   "api_segments.current_label_v1"
+   "api_segments.current_label_v1",
+   "api_models.run_version_v1"
   ],
   "dimensions": [
    "segment",
@@ -112,7 +113,8 @@ const CATALOG: &str = r#"[
   "window": "from and to select cohorts by the bucket of the first purchase. The next bucket is read in full; when it has not ended at generated_at, retained_customers and retention_rate are absent for that cohort.",
   "origin_views": [
    "api_sales.net_purchase_line_v1",
-   "api_segments.current_label_v1"
+   "api_segments.current_label_v1",
+   "api_models.run_version_v1"
   ],
   "dimensions": [
    "segment",

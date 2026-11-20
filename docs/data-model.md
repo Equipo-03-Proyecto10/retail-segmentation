@@ -2254,8 +2254,15 @@ which returns identifiers only for an active code. It publishes no stream, so
 it has no `customers_events`.
 
 The analytics-kpis boundary (F26-02) owns no table, so it has no 4NF decision to
-record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v1`
-and `api_users.store_assignment_v1` and nothing else. ADR-0059 gives it the
+record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v1`,
+`api_users.store_assignment_v1`, the two views F26-05 adds (`api_stock.stock_level_v1`
+and `api_products.product_ref_v1`) and the two F26-03 adds
+(`api_segments.assignment_change_v1`, `api_models.run_version_v1`) and nothing
+else. `api_segments.assignment_change_v1` is segments' view, a derived one (the
+later of two consecutive assignments whose labels differ, with each side's model
+version), created in this boundary's section because it joins
+`api_models.run_version_v1`, which the later model-registry section creates; it
+adds no table, so no normal-form decision. ADR-0059 gives it the
 schemas `kpis` and `api_kpis`; they are created empty, and the role may not
 create an object in either, so a table of its own would need its own story and
 its own entry here.

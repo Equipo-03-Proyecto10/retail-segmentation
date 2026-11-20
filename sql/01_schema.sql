@@ -5655,6 +5655,15 @@ GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_rec
 -- request, ADR-0060). F26-05 adds the two views the demand-coverage report reads:
 -- api_stock.stock_level_v1 (the units held per store and product) and
 -- api_products.product_ref_v1 (the product's current category and is_active).
+-- F26-03 adds the three reports that were planned: spend and retention read the same
+-- two sales views, and the migration report reads api_segments.assignment_change_v1,
+-- the changes of a customer's label with the model version of each side
+-- (contracts/db/api_segments.assignment_change.v1.md). Its producer is segments, but
+-- it is created here: it joins api_models.run_version_v1, which the model-registry
+-- section creates after segments', so this is the first section that can hold it, and
+-- the section an operator applies before the release that reads it. Spend and
+-- retention also read api_models.run_version_v1 through the label's run, to name the
+-- model versions of the labels a figure groups by (ADR-0064).
 -- The stories that add a report add the grants it needs here.
 -- Each is a row of contracts/db/grants.csv. Idempotent: an operator re-applies it.
 CREATE SCHEMA IF NOT EXISTS kpis;
@@ -5668,6 +5677,50 @@ GRANT SELECT ON api_segments.current_label_v1 TO svc_kpis;
 GRANT SELECT ON api_users.store_assignment_v1 TO svc_kpis;
 GRANT SELECT ON api_stock.stock_level_v1 TO svc_kpis;
 GRANT SELECT ON api_products.product_ref_v1 TO svc_kpis;
+
+-- contracts/db/api_segments.assignment_change.v1.md: one row per change of a
+-- customer's label between two consecutive assignments, never the first assignment
+-- (a customer with one row has changed nothing), and never a new run that left the
+-- label as it was. A label of NULL is the run's result of no label (RN-21). Each side
+-- carries the model version of its run, NULL while model-registry has not linked the
+-- run (ADR-0064): the consumer treats a missing side as methodological, as the matrix
+-- of segments-service does. A change is SEEDED when either run is (ADR-0052).
+-- Definer rights, so a consumer needs no privilege on either table.
+CREATE OR REPLACE VIEW api_segments.assignment_change_v1
+WITH (security_invoker = off) AS
+WITH ordered AS (
+    SELECT h.customer_id,
+           h.run_id,
+           h.label_code,
+           h.valid_from,
+           r.data_origin,
+           v.version_id,
+           row_number() OVER w AS position,
+           lag(h.label_code) OVER w AS previous_label_code,
+           lag(v.version_id) OVER w AS previous_version_id,
+           lag(r.data_origin) OVER w AS previous_data_origin
+    FROM public.customer_segment_history AS h
+    JOIN public.segmentation_run AS r ON r.run_id = h.run_id
+    JOIN api_customers.customer_ref_v1 AS c ON c.customer_id = h.customer_id
+    LEFT JOIN api_models.run_version_v1 AS v ON v.run_id = h.run_id
+    WINDOW w AS (PARTITION BY h.customer_id ORDER BY h.valid_from, h.history_id)
+)
+SELECT customer_id,
+       previous_label_code,
+       label_code AS new_label_code,
+       previous_version_id,
+       version_id AS new_version_id,
+       valid_from AS changed_at,
+       run_id,
+       CASE WHEN data_origin = 'SEEDED' OR previous_data_origin = 'SEEDED'
+            THEN 'SEEDED' ELSE 'OBSERVED' END::text AS data_origin
+FROM ordered
+WHERE position > 1
+  AND label_code IS DISTINCT FROM previous_label_code;
+REVOKE ALL ON api_segments.assignment_change_v1 FROM PUBLIC;
+GRANT SELECT ON api_segments.assignment_change_v1 TO svc_kpis;
+GRANT USAGE ON SCHEMA api_models TO svc_kpis;
+GRANT SELECT ON api_models.run_version_v1 TO svc_kpis;
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

@@ -4960,7 +4960,7 @@ BEGIN
 
     CASE p_kind
         WHEN 'CALCULATION_RUN' THEN
-            RETURN audit_events.str_in(d, 'calculation', ARRAY['RFM', 'SEGMENTATION', 'KPI'])
+            RETURN audit_events.str_in(d, 'calculation', ARRAY['RFM', 'SEGMENTATION', 'KPI', 'DRIFT'])
                AND audit_events.str_in(d, 'status', ARRAY['COMPLETED', 'FAILED'])
                AND audit_events.count_ok(d, 'input_count')
                AND audit_events.count_ok(d, 'output_count')
@@ -5063,7 +5063,7 @@ DECLARE
 BEGIN
     -- 1. The kind is in the closed list and mapped to the recording role.
     writers := CASE p_kind
-        WHEN 'CALCULATION_RUN' THEN ARRAY['svc_rfm', 'svc_segments', 'svc_kpis']
+        WHEN 'CALCULATION_RUN' THEN ARRAY['svc_rfm', 'svc_segments', 'svc_kpis', 'svc_models']
         WHEN 'MODEL_PUBLISHED' THEN ARRAY['svc_models']
         WHEN 'MODEL_ROLLED_BACK' THEN ARRAY['svc_models']
         WHEN 'PERMISSION_CHANGED' THEN ARRAY['svc_users']
@@ -6350,6 +6350,117 @@ CREATE OR REPLACE TRIGGER trg_model_training_guard
 BEFORE UPDATE OR DELETE ON models.model_training
 FOR EACH ROW EXECUTE FUNCTION models.guard_training();
 
+-- Data-drift monitoring (F23-09, ADR-0065, ADR-0088). A report is one comparison
+-- of one version with its own reference over one window; its variables, their
+-- statistics and bins, and the alerts it raised hang from it. Everything a
+-- reader can derive is not stored: the reference (sample size, capture time)
+-- is the version's own frozen column, the thresholds are fixed by ADR-0065 and
+-- a bin's contribution is a function of its two shares. Rows are written once
+-- and never change, so a report read later says what it said when it ran.
+CREATE TABLE IF NOT EXISTS models.drift_report (
+    report_id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    version_id           BIGINT NOT NULL REFERENCES models.model_version(version_id)
+                         ON DELETE RESTRICT,
+    kind                 VARCHAR(20) NOT NULL
+                         CHECK (kind IN ('DATA_DRIFT', 'OUTCOME_TEST')),
+    comparison           VARCHAR(20) NOT NULL
+                         CHECK (comparison IN ('COMPARED', 'INSUFFICIENT_DATA', 'NOT_COMPARED')),
+    not_compared_reason  VARCHAR(20) CHECK (not_compared_reason = 'VERSION_CHANGE'),
+    window_start         TIMESTAMPTZ NOT NULL,
+    window_end           TIMESTAMPTZ NOT NULL,
+    customer_count       INTEGER NOT NULL CHECK (customer_count >= 0),
+    previous_report_id   BIGINT REFERENCES models.drift_report(report_id)
+                         ON DELETE RESTRICT,
+    computed_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT drift_report_window_key UNIQUE (version_id, kind, window_end),
+    CHECK (window_end > window_start),
+    CHECK ((comparison = 'NOT_COMPARED') = (not_compared_reason IS NOT NULL)),
+    -- No number is compared on fewer than 200 customers (ADR-0065).
+    CHECK (kind <> 'DATA_DRIFT' OR comparison <> 'COMPARED' OR customer_count >= 200),
+    CHECK (comparison <> 'INSUFFICIENT_DATA' OR customer_count < 200)
+);
+
+CREATE TABLE IF NOT EXISTS models.drift_variable (
+    report_id  BIGINT NOT NULL REFERENCES models.drift_report(report_id)
+               ON DELETE RESTRICT,
+    variable   VARCHAR(20) NOT NULL
+               CHECK (variable IN ('SEGMENT_SHARES', 'R', 'F', 'M')),
+    state      VARCHAR(20) NOT NULL
+               CHECK (state IN ('NORMAL', 'WATCH', 'ALARM_PENDING', 'ALARM')),
+    PRIMARY KEY (report_id, variable)
+);
+
+CREATE TABLE IF NOT EXISTS models.drift_statistic (
+    report_id           BIGINT NOT NULL,
+    variable            VARCHAR(20) NOT NULL,
+    statistic           VARCHAR(20) NOT NULL CHECK (statistic IN ('PSI', 'CHI_SQUARE')),
+    value               DOUBLE PRECISION NOT NULL CHECK (value >= 0),
+    p_value             DOUBLE PRECISION CHECK (p_value BETWEEN 0 AND 1),
+    degrees_of_freedom  INTEGER CHECK (degrees_of_freedom >= 1),
+    level               VARCHAR(10) NOT NULL CHECK (level IN ('NORMAL', 'WATCH', 'ALARM')),
+    PRIMARY KEY (report_id, variable, statistic),
+    FOREIGN KEY (report_id, variable) REFERENCES models.drift_variable(report_id, variable)
+        ON DELETE RESTRICT,
+    CHECK ((statistic = 'CHI_SQUARE') = (p_value IS NOT NULL)),
+    CHECK ((statistic = 'CHI_SQUARE') = (degrees_of_freedom IS NOT NULL)),
+    CHECK (statistic = 'PSI' OR variable = 'SEGMENT_SHARES')
+);
+
+CREATE TABLE IF NOT EXISTS models.drift_bin (
+    report_id        BIGINT NOT NULL,
+    variable         VARCHAR(20) NOT NULL,
+    position         SMALLINT NOT NULL CHECK (position >= 1),
+    label            VARCHAR(40) NOT NULL CHECK (length(label) >= 1),
+    lower_bound      DOUBLE PRECISION,
+    upper_bound      DOUBLE PRECISION,
+    reference_share  DOUBLE PRECISION NOT NULL CHECK (reference_share BETWEEN 0 AND 1),
+    current_share    DOUBLE PRECISION NOT NULL CHECK (current_share BETWEEN 0 AND 1),
+    PRIMARY KEY (report_id, variable, position),
+    FOREIGN KEY (report_id, variable) REFERENCES models.drift_variable(report_id, variable)
+        ON DELETE RESTRICT,
+    UNIQUE (report_id, variable, label)
+);
+
+-- An alert is the persistence rule met: the variable was past its alarm
+-- thresholds in this report and in the report before it. Its statistics and
+-- bins are the variable's own rows in the report that raised it, and its claim
+-- is the one ADR-0065 allows a data-drift report to make.
+CREATE TABLE IF NOT EXISTS models.drift_alert (
+    alert_id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    report_id           BIGINT NOT NULL,
+    variable            VARCHAR(20) NOT NULL,
+    previous_report_id  BIGINT NOT NULL REFERENCES models.drift_report(report_id)
+                        ON DELETE RESTRICT,
+    claim               VARCHAR(30) NOT NULL DEFAULT 'DISTRIBUTION_CHANGE'
+                        CHECK (claim = 'DISTRIBUTION_CHANGE'),
+    review_code         VARCHAR(40) NOT NULL
+                        CHECK (review_code IN ('REVIEW_SEGMENT_MIX', 'REVIEW_FEATURE_DISTRIBUTION')),
+    raised_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT drift_alert_variable_key UNIQUE (report_id, variable),
+    FOREIGN KEY (report_id, variable) REFERENCES models.drift_variable(report_id, variable)
+        ON DELETE RESTRICT,
+    CHECK (previous_report_id <> report_id),
+    CHECK ((variable = 'SEGMENT_SHARES') = (review_code = 'REVIEW_SEGMENT_MIX'))
+);
+CREATE INDEX IF NOT EXISTS drift_report_version
+    ON models.drift_report (version_id, kind, window_end DESC);
+
+CREATE OR REPLACE TRIGGER trg_drift_report_immutable
+BEFORE UPDATE OR DELETE ON models.drift_report
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_drift_variable_immutable
+BEFORE UPDATE OR DELETE ON models.drift_variable
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_drift_statistic_immutable
+BEFORE UPDATE OR DELETE ON models.drift_statistic
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_drift_bin_immutable
+BEFORE UPDATE OR DELETE ON models.drift_bin
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_drift_alert_immutable
+BEFORE UPDATE OR DELETE ON models.drift_alert
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
 -- Each is a row of contracts/db/grants.csv. svc_models registers versions and
 -- publishes by changing only state/times and appending a publication fact. It
 -- holds no DELETE and cannot rewrite any definition or publication history.
@@ -6358,6 +6469,9 @@ GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO sv
 GRANT UPDATE (state, published_at, retired_at) ON models.model_version TO svc_models;
 GRANT SELECT, INSERT ON models.model_publication TO svc_models;
 GRANT SELECT ON models.run_version TO svc_models;
+-- Drift reports are appended by the monitor and never change (F23-09).
+GRANT SELECT, INSERT ON models.drift_report, models.drift_variable,
+    models.drift_statistic, models.drift_bin, models.drift_alert TO svc_models;
 -- A training is written by the registry alone: it inserts the RUNNING row and its
 -- variables, and then moves the row once, changing only the columns of its outcome.
 GRANT SELECT, INSERT ON models.model_training, models.model_training_feature,

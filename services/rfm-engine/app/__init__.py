@@ -1,10 +1,13 @@
-"""rfm-engine (F22-04, F22-05, RN-65): keeps each customer's R, F and M current.
+"""rfm-engine (F22-04, F22-05, F22-06, RN-65): keeps each customer's R, F and M current.
 
-A sale recorded on `stream:sales.v1.recorded` names a transaction. The service finds
-the customer of that sale and recomputes that one customer's profile from their net
-purchases under the rule set in force, so a duplicate or reordered delivery gives the
-profile one in-order delivery would. A change to the captured values puts one
-profile-changed event in the outbox, in the same transaction (ADR-0063). The other
+A sale recorded on `stream:sales.v1.recorded`, and a reversal of one on
+`stream:sales.v1.reversed`, each name a transaction. The service finds the customer
+of that sale and recomputes that one customer's profile from their net purchases
+under the rule set in force, so a duplicate, a late or a reordered delivery gives the
+profile one in-order delivery would. A cancelled or returned sale leaves the profile
+as if it had never counted, because the net view no longer lists it (ADR-0062). A
+change to the captured values puts one profile-changed event in the outbox, in the
+same transaction (ADR-0063). The other
 operations of contracts/rfm-engine/openapi.yaml are marked planned (ADR-0073) until
 the stories after this one register them. It is ready when PostgreSQL answers and its
 own schema is there.
@@ -24,7 +27,7 @@ from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
 from . import recompute
-from .config import SALE_STREAMS, Settings
+from .config import RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
 SUFFIX = "rfm"
@@ -126,25 +129,43 @@ def create_app() -> Flask:
             info_key="page_info",
         )
 
+    def recompute_sale(sale: str, fields: dict[str, str]) -> None:
+        if not sale.isdigit():
+            LOGGER.warning("Entry without a transaction id: %r", fields)
+            return
+        with kit.db.transaction() as connection:
+            recompute.from_sale(connection, int(sale), settings.rule_set_id)
+
     def handle_sale(fields: dict[str, str]) -> None:
         """One entry of `stream:sales.v1.recorded`: recompute the sale's customer.
 
         `entity_id` names the sale, never the customer. A failure raises, so the
         kit redelivers, up to five times.
         """
-        entity = fields.get("entity_id", "")
-        if not entity.isdigit():
-            LOGGER.warning("Sale entry without a transaction id: %r", fields)
+        recompute_sale(fields.get("entity_id", ""), fields)
+
+    def handle_reversal(fields: dict[str, str]) -> None:
+        """One entry of `stream:sales.v1.reversed`: recompute the reversed sale's
+        customer. `entity_id` is `sale_id:reversal_id`, and the sale is the part
+        before the colon. The customer comes from the gross view, which still lists
+        a sale that was cancelled in full; the net view no longer does, so the sale
+        stops counting and the customer is recomputed without it."""
+        sale, _, reversal = fields.get("entity_id", "").partition(":")
+        if not reversal.isdigit():
+            LOGGER.warning("Reversal entry without a reversal id: %r", fields)
             return
-        with kit.db.transaction() as connection:
-            recompute.from_sale(connection, int(entity), settings.rule_set_id)
+        recompute_sale(sale, fields)
 
     app.extensions["rfm_handle_sale"] = handle_sale
+    app.extensions["rfm_handle_reversal"] = handle_reversal
     if settings.stream_consumer_enabled:
         consumers = []
-        for stream in SALE_STREAMS:
+        for stream, handler in (
+            (RECORDED_STREAM, handle_sale),
+            (REVERSED_STREAM, handle_reversal),
+        ):
             consumer = StreamConsumer(
-                _client(settings.redis_state_url, 10), stream, handle_sale
+                _client(settings.redis_state_url, 10), stream, handler
             )
             consumer.start()
             consumers.append(consumer)

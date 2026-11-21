@@ -1,0 +1,26 @@
+{
+  "campaign_id": 12,
+  "computed_at": "2026-11-21T15:04:05Z",
+  "total_budget": "500.00",
+  "total_spent": "500.00",
+  "total_reached": true,
+  "per_customer_cap": "250.00",
+  "customers_at_cap": 1,
+  "customers": [
+    {
+      "customer_id": "11111111-1111-1111-1111-000000000001",
+      "spent_amount": "300.00",
+      "cap_reached": true
+    },
+    {
+      "customer_id": "11111111-1111-1111-1111-000000000002",
+      "spent_amount": "200.00",
+      "cap_reached": false
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 2
+  }
+}

@@ -299,6 +299,23 @@ class ComponentsTest {
     }
 
     @Test
+    fun aConnectionErrorReadsInPlainWordsAndSaysWhatHappensNext() {
+        show { MqErrorPanel(ApiError.unreachable(null), onRetry = {}) }
+        compose.onNodeWithText("No connection.", substring = true).assertExists()
+        compose.onNodeWithText("kept on this phone and sent when you are back online", substring = true).assertExists()
+        compose.onNodeWithText("could not be reached", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Retry").assertExists()
+    }
+
+    @Test
+    fun aGatewayFaultIsNotAStatusLineEither() {
+        show { MqErrorPanel(ApiError.from(503, """{"code":"bad_gateway","message":"upstream reset"}""", "c-1", null)) }
+        compose.onNodeWithText("The service is not answering right now.", substring = true).assertExists()
+        compose.onNodeWithText("upstream reset").assertDoesNotExist()
+        compose.onNodeWithText("The service answered", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun errorPanelWithoutRetryHasNoRetryButton() {
         show { MqErrorPanel(ApiError.unexpected()) }
         compose.onNodeWithText("Something went wrong. Try again.").assertExists()

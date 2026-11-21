@@ -119,7 +119,13 @@ class FloorAccessContractTest {
     @Test
     fun eachStoreProfileGetsItsOwnNavigation() {
         val everything =
-            listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.INDICATORS, FloorSection.OUTBOX)
+            listOf(
+                FloorSection.CHECK_IN,
+                FloorSection.SCAN,
+                FloorSection.SALE,
+                FloorSection.INDICATORS,
+                FloorSection.OUTBOX
+            )
         assertEquals(
             listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             FloorAccess.sections("SALES_ASSOCIATE")

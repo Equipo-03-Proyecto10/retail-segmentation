@@ -31,7 +31,13 @@ data class ServiceOperation(
  */
 object FloorAccess {
     private val EVERYTHING =
-        listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.INDICATORS, FloorSection.OUTBOX)
+        listOf(
+            FloorSection.CHECK_IN,
+            FloorSection.SCAN,
+            FloorSection.SALE,
+            FloorSection.INDICATORS,
+            FloorSection.OUTBOX
+        )
 
     /** The profile of each role, in the order its bottom bar shows; the first is where it opens. */
     val profiles: Map<String, List<FloorSection>> =

@@ -129,7 +129,7 @@ fun IdentifyScreen(model: IdentifyViewModel, profileId: String?, onOpenProfile: 
         onSearch = { query, page -> model.search(query, page) },
         onOpenProfile = onOpenProfile,
         camera = {
-            CameraPreview(onDecoded = { model.onDecoded(it, onOpenProfile) }, onError = { cameraError = true })
+            CameraPreview(onDecoded = { model.onDecoded(it.raw, onOpenProfile) }, onError = { cameraError = true })
         }
     )
 }

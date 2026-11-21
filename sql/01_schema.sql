@@ -4941,9 +4941,12 @@ AS $band_guard$
 DECLARE
     owner_state varchar(9);
 BEGIN
+    -- FOR SHARE: a publication, which updates the row, waits for a band edit that is
+    -- still open, and an edit that starts after the publication sees PUBLISHED.
     SELECT state INTO owner_state FROM rfm.rule_set
      WHERE rule_set_id = CASE WHEN TG_OP = 'DELETE' THEN OLD.rule_set_id
-                              ELSE NEW.rule_set_id END;
+                              ELSE NEW.rule_set_id END
+       FOR SHARE;
     IF owner_state = 'PUBLISHED' THEN
         RAISE EXCEPTION 'the bands of a published rule set are never edited'
             USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';

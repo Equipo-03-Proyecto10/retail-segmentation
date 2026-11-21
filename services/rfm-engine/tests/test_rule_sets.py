@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import threading
+import time
 import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime
@@ -735,3 +737,101 @@ def test_the_scheduled_pass_is_refused_under_a_draft_and_records_nothing(
         db.close()
     found = owner.execute("SELECT count(*) FROM rfm.pass_run").fetchone()
     assert found == (0,), "a refused pass leaves no run RUNNING"
+
+
+# --- A band edit and a publication that race (direct SQL) --------------------
+
+
+def _waits_on_a_lock(owner: psycopg.Connection, pid: int) -> bool:
+    for _ in range(100):
+        row = owner.execute(
+            "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s", (pid,)
+        ).fetchone()
+        if row is not None and row[0] == "Lock":
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_a_band_edit_and_a_publication_cannot_both_commit(
+    analyst: Analyst, owner: psycopg.Connection, owner_url: str
+) -> None:
+    """Through raw SQL, a transaction that deletes a draft's band and one that
+    publishes the draft run side by side. The publication must wait for the edit and
+    then judge the bands the edit left, or refuse; the two never both commit."""
+    created = analyst.create()
+    assert created.status_code == 201
+    rule_set_id = int(created.get_json()["rule_set_id"])
+    editor = psycopg.connect(owner_url)
+    publisher = psycopg.connect(owner_url, autocommit=True)
+    outcome: list[str] = []
+
+    def publish() -> None:
+        try:
+            publisher.execute(
+                "UPDATE rfm.rule_set SET state = 'PUBLISHED', published_at = now()"
+                " WHERE rule_set_id = %s",
+                (rule_set_id,),
+            )
+            outcome.append("published")
+        except psycopg.errors.CheckViolation as refused:
+            outcome.append(str(refused.diag.constraint_name))
+
+    try:
+        editor.execute(
+            "DELETE FROM rfm.rule_set_band WHERE rule_set_id = %s AND band_no = 1",
+            (rule_set_id,),
+        )
+        worker = threading.Thread(target=publish)
+        worker.start()
+        assert _waits_on_a_lock(
+            owner, publisher.info.backend_pid
+        ), "the publication does not wait for a band edit that is still open"
+        editor.commit()
+        worker.join(10)
+    finally:
+        editor.close()
+        publisher.close()
+    assert outcome == ["rule_set_bands_partition"], outcome
+    state = analyst.row(rule_set_id)[2]
+    assert state == "DRAFT"
+
+
+def test_a_band_edit_that_starts_during_a_publication_is_refused_once_it_commits(
+    analyst: Analyst, owner: psycopg.Connection, owner_url: str
+) -> None:
+    created = analyst.create()
+    assert created.status_code == 201
+    rule_set_id = int(created.get_json()["rule_set_id"])
+    publisher = psycopg.connect(owner_url)
+    editor = psycopg.connect(owner_url, autocommit=True)
+    outcome: list[str] = []
+
+    def edit() -> None:
+        try:
+            editor.execute(
+                "DELETE FROM rfm.rule_set_band WHERE rule_set_id = %s AND band_no = 1",
+                (rule_set_id,),
+            )
+            outcome.append("edited")
+        except psycopg.errors.CheckViolation as refused:
+            outcome.append(str(refused.diag.constraint_name))
+
+    try:
+        publisher.execute(
+            "UPDATE rfm.rule_set SET state = 'PUBLISHED', published_at = now()"
+            " WHERE rule_set_id = %s",
+            (rule_set_id,),
+        )
+        worker = threading.Thread(target=edit)
+        worker.start()
+        assert _waits_on_a_lock(
+            owner, editor.info.backend_pid
+        ), "the band edit does not wait for a publication that is still open"
+        publisher.commit()
+        worker.join(10)
+    finally:
+        publisher.close()
+        editor.close()
+    assert outcome == ["rule_set_published_immutable"], outcome
+    assert analyst.row(rule_set_id)[2:6] == ("PUBLISHED", 1, None, 4)

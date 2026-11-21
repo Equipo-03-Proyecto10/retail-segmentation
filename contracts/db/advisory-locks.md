@@ -17,12 +17,13 @@ first key of a two-key lock.
 | 296001 | two keys: `296001`, `hashtext(customer_id::text || ':' || store_id::text)` | check-ins serializes the duplicate-window decision for one customer and store: after every refusal, `recordCustomerVisit` takes the lock, finds the earliest stored visit strictly less than 7,200 seconds away, and inserts only when none matches. | Implemented in `services/check-ins/src/lib.rs` (F21-23). |
 | 297001 | one key | rfm-engine's scheduled pass holds `pg_try_advisory_lock(297001)` on a session of its own for as long as it runs, so two instances never run the pass at once; an instance that dies releases it and the next one resumes the pass left RUNNING in `rfm.pass_run`. | Implemented in `services/rfm-engine/app/ageing.py` (F22-07). |
 | 298001 | two keys: `298001`, `experiment_id` | experimentation serializes the primary look of one experiment: `pg_advisory_xact_lock(298001, experiment_id)`, taken by `getExperimentResult` before it looks for a stored result, so the first primary read at or after the analysis instant computes and stores the result once and a concurrent read waits and returns it (ADR-0085). | Implemented in `services/experimentation/app/results.py` (F25-13). |
+| 299001 | one key | model-registry's drift monitor holds `pg_try_advisory_lock(299001)` on a session of its own while it runs one pass, so two instances never write the same report; a second instance skips the pass. The unique key on `models.drift_report (version_id, kind, window_end)` is what makes a repeated pass a no-op. | Implemented in `services/model-registry/app/monitor.py` (F23-09). |
 
 The category hierarchy also uses the independently named lock
 `hashtext('category_hierarchy')` in `sql/01_schema.sql`; it does not consume a
 numeric key from this registry.
 
 The two-key forms of 290001, 290002, 293001, 294001, 295001, 296001 and 298001 do not overlap the
-one-key locks 221001, 222001, 272001, 285001 and 297001: PostgreSQL keeps one-key and
+one-key locks 221001, 222001, 272001, 285001, 297001 and 299001: PostgreSQL keeps one-key and
 two-key advisory locks in separate spaces, and no one-key lock may take any of
 those seven values either.

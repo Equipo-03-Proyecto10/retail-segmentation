@@ -2400,10 +2400,10 @@ record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v
 and `api_products.product_ref_v1`) and the two F26-03 adds
 (`api_segments.assignment_change_v1`, `api_models.run_version_v1`) and nothing
 else. `api_segments.assignment_change_v1` is segments' view, a derived one (the
-later of two consecutive assignments whose labels differ, with each side's model
-version), created in this boundary's section because it joins
-`api_models.run_version_v1`, which the later model-registry section creates; it
-adds no table, so no normal-form decision. ADR-0059 gives it the
+later of two consecutive assignments whose labels differ, each side named by its
+run), created in segments' own section; analytics-kpis only grants it and reads the
+model version of each run through `api_models.run_version_v1`. It adds no table, so
+no normal-form decision. ADR-0059 gives it the
 schemas `kpis` and `api_kpis`; they are created empty, and the role may not
 create an object in either, so a table of its own would need its own story and
 its own entry here.

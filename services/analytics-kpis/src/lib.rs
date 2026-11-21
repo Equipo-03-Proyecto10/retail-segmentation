@@ -247,7 +247,7 @@ async fn get_migration_report(ctx: Ctx) -> Result<Reply, ApiError> {
         group_by: &query.group_by,
         scope: &scope,
         generated_at,
-        views: vec![migrations::CHANGE_VIEW],
+        views: vec![migrations::CHANGE_VIEW, spend::VERSION_VIEW],
         synthetic: report.synthetic,
         spans_model_versions: report.spans_model_versions,
         rows: report.rows.iter().map(migrations::Row::wire).collect(),

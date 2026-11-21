@@ -416,7 +416,6 @@ paths:
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/ExperimentIdFilter'
@@ -480,7 +479,6 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - MARKETING
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:

@@ -33,7 +33,7 @@
 
 ## Endpoints
 
-Every business operation below is `planned` except planning and reading an experiment (F25-09), the two on conversions (F25-11), the result of an experiment (F25-13) and the empty list of attributions. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
+Every business operation below is `planned` except planning and reading an experiment (F25-09), the two on conversions (F25-11), the result of an experiment (F25-13), assigning a frame and listing the assignments (F25-08) and the empty list of attributions. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
@@ -62,7 +62,9 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Tables the web writes today | S, W (E-09) | F25-07 (#838) took ownership: `svc_experiments` holds SELECT, INSERT and UPDATE on `experiment` and `experiment_group`, and SELECT and INSERT only on assignment, exposure and conversion, as `retail_app` does (ADR-0026, ADR-0027, ADR-0050). Neither role deletes. The web keeps writing them. Experiments assigned under the web's earlier shuffle are served as assignment rule `V0`: readable, with no frame, salt or key, and not called verified |
 | `experiments.experiment_plan`, `experiment_frame_member`, `experiment_frame_exclusion`, `experiment_flag` | Tables (`experiments`) | S | F25-09 (#840): the plan, frozen: design values, the stored frame (one row per customer), what each reason removed, and the flags. SELECT and INSERT only, and a trigger refuses any change. An experiment with no plan row is assignment rule V0 (the web's earlier shuffle). Justified in `docs/data-model.md` |
 | `experiments.experiment_result`, `experiment_result_arm`, `experiment_result_comparison`, `experiment_result_balance` | Tables (`experiments`) | S | F25-13 (#844, ADR-0085): the primary result, written once by the first primary read at or after the analysis instant. SELECT and INSERT only, and the plan's trigger refuses any change. Justified in `docs/data-model.md` |
-| The stored checks, the exposure projection and the attributions | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-08 (#839), F25-10 (#841), F25-12 (#843). The contract fixes only what the endpoints serve |
+| `experiments.experiment_assignment_record`, `experiment_assignment_balance` | Tables (`experiments`) | S | F25-08 (#839): who assigned, whether an `UNDERPOWERED` plan was acknowledged, whether recomputing gave the stored arms, the sample ratio's p-value, and each arm's balance on the customers' recency, purchase count and net spend before the frame instant. SELECT and INSERT only, and the plan's trigger refuses any change. Justified in `docs/data-model.md` |
+| `public.experiment_assignment` | Guards | S, W | F25-08: a trigger refuses any UPDATE or DELETE from every role including the owner (RN-42), and refuses an INSERT by the web into an experiment that has a plan: only this service assigns a planned frame. An experiment the web created has no plan and the web keeps assigning it |
+| The exposure projection and the attributions | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-10 (#841), F25-12 (#843). The contract fixes only what the endpoints serve |
 
 ## Database contracts
 
@@ -114,7 +116,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `already_assigned` | The experiment is already assigned |
 | 409 | `underpowered_not_acknowledged` | An `UNDERPOWERED` plan is assigned without `acknowledge_underpowered` |
 | 409 | `empty_frame` | The frame holds no customer |
-| 409 | `assignment_conflict` | The database refused a second assignment of a customer in an experiment (RN-23); mapped to this 409, never a 500 |
+| 409 | `assignment_conflict` | A customer of the frame is assigned in another experiment whose period overlaps this one's (the message counts them, and nothing is assigned; ADR-0068), or the database refused a second assignment of a customer in an experiment (RN-23); mapped to this 409, never a 500 |
 | 409 | `experiment_not_assigned` | Conversions are evaluated, or a result is read, for an experiment that is not assigned |
 | 422 | `invalid_query` | A filter is malformed, or `customer_id` or `campaign_id` is missing on `current` |
 | 422 | `invalid_body` | A plan breaks its rules: `control_count`, `treatment_count`, `unknown_campaign` or `out_of_range` |
@@ -143,4 +145,10 @@ None is added by this contract. Every foreign id is a query or body field (`camp
 
 ## Backlog
 
-F25-06 contract (#837), F25-07 stand-up (#838), F25-08 stable and verifiable assignment (#839), F25-09 sample size (#840), F25-10 real exposures (#841), F25-11 conversions (#842), F25-12 attribution (#843), F25-13 effect with its uncertainty (#844), F25-14 validation (#845); consumed by F27-07 (#861) and F28-10 (#879). Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F25-06 contract (#837), F25-07 stand-up (#838), F25-08 stable and verifiable assignment (#839, done), F25-09 sample size (#840), F25-10 real exposures (#841), F25-11 conversions (#842), F25-12 attribution (#843), F25-13 effect with its uncertainty (#844), F25-14 validation (#845); consumed by F27-07 (#861) and F28-10 (#879). Issue numbers live in [`docs/backlog.md`](../backlog.md).
+
+## Assigning and verifying (F25-08)
+
+`POST /v1/experiment-assignments` deals the stored frame in one transaction under a lock on the experiment: customers ordered by `(HMAC-SHA-256 key, customer_id)` and dealt round-robin to the arms, control first, so arms differ by at most one customer (ADR-0068). It then reads the rows back, deals again from what was stored and records whether the two agree, stores the sample ratio check and the balance on recency, purchase count and net spend before the frame instant, and adds `SAMPLE_RATIO_FAILED`, `BALANCE_FLAGGED` or `RECOMPUTATION_MISMATCH` to the experiment's flags when a check fails, so `getExperiment` and `getExperimentResult` carry the warning. A balance difference is a diagnostic: it flags and never redraws an assignment.
+
+`python -m app.verify assignment.json` is the auditor's check, with no database and only the standard library: the document holds the experiment id, the published salt, the arm order and the assignments listed by `GET /v1/experiment-assignments`, and the command prints every disagreement.

@@ -354,6 +354,8 @@ svc_campaigns,public.campaign,INSERT
 svc_campaigns,public.campaign,UPDATE
 definer_guard,public.experiment,SELECT
 definer_guard,public.experiment_group,SELECT
+definer_guard,experiments,USAGE
+definer_guard,experiments.experiment_plan,SELECT
 svc_audit_trail,public.audit_log,SELECT
 definer_audit,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 definer_audit,audit_events,USAGE
@@ -546,6 +548,10 @@ svc_experiments,experiments.experiment_result_comparison,SELECT
 svc_experiments,experiments.experiment_result_comparison,INSERT
 svc_experiments,experiments.experiment_result_balance,SELECT
 svc_experiments,experiments.experiment_result_balance,INSERT
+svc_experiments,experiments.experiment_assignment_record,SELECT
+svc_experiments,experiments.experiment_assignment_record,INSERT
+svc_experiments,experiments.experiment_assignment_balance,SELECT
+svc_experiments,experiments.experiment_assignment_balance,INSERT
 svc_experiments,api_segments,USAGE
 svc_experiments,api_segments.current_label_v1,SELECT
 svc_experiments,api_preferences,USAGE

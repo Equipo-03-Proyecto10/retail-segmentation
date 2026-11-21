@@ -20,7 +20,7 @@ from mosaiq_kit import Kit, Page, Representation, configure_logging
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.streams import StreamConsumer
 
-from app import conversions, experiments, exposures, plan, results
+from app import assignment, conversions, experiments, exposures, plan, results
 from app.config import ENGAGEMENT_STREAM, Settings
 
 
@@ -116,6 +116,36 @@ def create_app() -> Flask:
         response = Representation("Experiment", created, status=201)
         response.headers = {"Location": f"/v1/experiments/{experiment_id}"}
         return response
+
+    @kit.operation("assignExperiment")
+    def assign_experiment() -> Representation:
+        body = kit.body
+        actor = str(kit.principal["sub"])
+        with kit.db.transaction() as connection:
+            summary = assignment.assign(
+                connection,
+                body["experiment_id"],
+                actor=actor,
+                acknowledge_underpowered=bool(body.get("acknowledge_underpowered")),
+            )
+        return Representation("AssignmentSummary", summary, status=201)
+
+    @kit.operation("listExperimentAssignments")
+    def list_experiment_assignments() -> Page:
+        filters = assignment.parse_filters(request.args)
+        with kit.db.connection() as connection:
+            rows, total = assignment.list_assignments(
+                connection, filters, page=kit.page, size=kit.size
+            )
+        return Page(
+            "ExperimentAssignments",
+            "ExperimentAssignment",
+            "assignments",
+            rows,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
 
     @kit.operation("getExperiment")
     def get_experiment(experiment_id: int) -> Representation:

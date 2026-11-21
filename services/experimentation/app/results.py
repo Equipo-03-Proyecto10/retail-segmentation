@@ -31,7 +31,7 @@ from typing import Any
 
 from psycopg import Connection
 
-from app import conversions, experiments, plan, stats
+from app import assignment, conversions, experiments, plan, stats
 
 PRIMARY = "PRIMARY"
 RE_READ = "RE_READ"
@@ -39,7 +39,7 @@ BASES = (PRIMARY, RE_READ)
 CONTROLLED = "CONTROLLED"
 EFFECT = "EFFECT"
 TREATMENT_DIFFERENCE = "TREATMENT_DIFFERENCE"
-MEASURES = ("PRE_RECENCY_DAYS", "PRE_PURCHASE_COUNT", "PRE_NET_SPEND")
+MEASURES = assignment.MEASURES
 SAMPLE_RATIO_FAILED = "SAMPLE_RATIO_FAILED"
 BALANCE_FLAGGED = "BALANCE_FLAGGED"
 COMPARISON_WITHHELD_SMALL_ARM = "COMPARISON_WITHHELD_SMALL_ARM"
@@ -97,25 +97,6 @@ SELECT a.group_id,
                   AND v.notice = 'VOIDED')) AS first
  WHERE e.experiment_id = %s
  GROUP BY a.group_id
-"""
-
-# The pre-assignment measures: over the period of one window before the frame
-# instant, the net purchases of each assigned customer.
-BALANCE = """
-SELECT a.group_id,
-       count(DISTINCT n.transaction_id),
-       COALESCE(sum(n.net_amount), 0)::float8,
-       max(n.occurred_at)
-  FROM public.experiment AS e
-  JOIN public.experiment_assignment AS a ON a.experiment_id = e.experiment_id
-  LEFT JOIN api_sales.net_purchase_line_v1 AS n
-    ON n.customer_id = a.customer_id
-   AND n.occurred_at < %(taken)s
-   AND n.occurred_at >= %(taken)s
-                        - make_interval(hours => 24 * e.conversion_window_days)
- WHERE e.experiment_id = %(experiment)s
- GROUP BY a.assignment_id, a.group_id
- ORDER BY a.assignment_id
 """
 
 STORED = """
@@ -387,37 +368,13 @@ def _balance(
     experiment: dict[str, Any],
     frame_taken_at: datetime,
 ) -> list[dict[str, Any]]:
-    window = experiment["design"]["conversion_window_days"]
-    measures: dict[int, dict[str, list[float]]] = {
-        arm["arm_id"]: {name: [] for name in MEASURES} for arm in experiment["arms"]
-    }
-    with connection.cursor() as cursor:
-        cursor.execute(
-            BALANCE,
-            {"experiment": experiment["experiment_id"], "taken": frame_taken_at},
-        )
-        for group_id, purchases, spend, last in cursor.fetchall():
-            recency = (
-                float(window)
-                if last is None
-                else (frame_taken_at - last).total_seconds() / 86400.0
-            )
-            measures[group_id]["PRE_RECENCY_DAYS"].append(recency)
-            measures[group_id]["PRE_PURCHASE_COUNT"].append(float(purchases))
-            measures[group_id]["PRE_NET_SPEND"].append(spend)
-    reference = experiment["arms"][0]["arm_id"]
-    return [
-        {
-            "group_id": arm["arm_id"],
-            "reference_group_id": reference,
-            "measure": name,
-            "standardized_mean_difference": stats.standardized_mean_difference(
-                measures[reference][name], measures[arm["arm_id"]][name]
-            ),
-        }
-        for arm in experiment["arms"][1:]
-        for name in MEASURES
-    ]
+    return assignment.balance_rows(
+        connection,
+        experiment["experiment_id"],
+        [arm["arm_id"] for arm in experiment["arms"]],
+        frame_taken_at,
+        experiment["design"]["conversion_window_days"],
+    )
 
 
 def _compute(

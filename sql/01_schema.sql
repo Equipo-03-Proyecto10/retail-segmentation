@@ -5999,6 +5999,94 @@ FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
 GRANT SELECT, INSERT ON experiments.experiment_result, experiments.experiment_result_arm,
     experiments.experiment_result_comparison, experiments.experiment_result_balance
     TO svc_experiments;
+
+-- The assignment and its checks (F25-08, ADR-0068, RN-23, RN-42). What the assignment of an
+-- experiment adds to its `experiment_assignment` rows: one record, written in the assigning
+-- transaction (who assigned, whether an UNDERPOWERED plan was acknowledged, whether recomputing
+-- the deal reproduced the stored arms, the sample ratio's p-value) and one balance row per arm
+-- and measure. Derived, so not stored: the assignment instant and total (the rows), each arm's
+-- count, the sample ratio's status (p below 0.001), whether a difference is flagged (above
+-- 0.25) and its reference arm (the control, or the first offer). A failed check is also a row of
+-- `experiment_flag`. docs/data-model.md holds the normal-form note.
+CREATE TABLE IF NOT EXISTS experiments.experiment_assignment_record (
+    experiment_id             integer PRIMARY KEY
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    assigned_by               uuid NOT NULL
+        REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    acknowledged_underpowered boolean NOT NULL,
+    recomputation_matches     boolean NOT NULL,
+    sample_ratio_p_value      double precision NOT NULL
+        CONSTRAINT experiment_assignment_record_p_check
+        CHECK (sample_ratio_p_value >= 0 AND sample_ratio_p_value <= 1)
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_assignment_balance (
+    experiment_id                integer NOT NULL
+        REFERENCES experiments.experiment_assignment_record (experiment_id)
+        ON DELETE RESTRICT,
+    group_id                     integer NOT NULL,
+    measure                      varchar(20) NOT NULL
+        CONSTRAINT experiment_assignment_balance_measure_check
+        CHECK (measure IN ('PRE_RECENCY_DAYS', 'PRE_PURCHASE_COUNT', 'PRE_NET_SPEND')),
+    standardized_mean_difference double precision NOT NULL,
+    PRIMARY KEY (experiment_id, group_id, measure),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT
+);
+
+CREATE OR REPLACE TRIGGER trg_experiment_assignment_record_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_assignment_record
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_assignment_balance_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_assignment_balance
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.experiment_assignment_record,
+    experiments.experiment_assignment_balance TO svc_experiments;
+
+-- An assignment never changes (RN-42), whoever asks. retail_app and svc_experiments hold no
+-- UPDATE or DELETE on the table; these triggers close the owner's path too, and they close the
+-- web's INSERT into an experiment this service planned, whose arms are a function of its plan:
+-- a shuffle there would make the assignment unverifiable. Definer rights, because the web cannot
+-- read `experiments`.
+CREATE OR REPLACE FUNCTION experiments.fn_assignment_is_fixed() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $fixed$
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        IF session_user = 'retail_app' AND EXISTS (
+            SELECT FROM experiments.experiment_plan AS p
+             WHERE p.experiment_id = NEW.experiment_id
+        ) THEN
+            RAISE EXCEPTION 'Experiment % was planned by the experimentation service: '
+                'only it assigns it', NEW.experiment_id
+                USING ERRCODE = 'check_violation',
+                      CONSTRAINT = 'experiment_assignment_planned_by_service';
+        END IF;
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'An assignment is never rewritten: % of customer % in experiment % '
+        'is refused', TG_OP, OLD.customer_id, OLD.experiment_id
+        USING ERRCODE = 'check_violation',
+              CONSTRAINT = 'experiment_assignment_never_rewritten';
+END
+$fixed$;
+REVOKE EXECUTE ON FUNCTION experiments.fn_assignment_is_fixed() FROM PUBLIC;
+-- Owned by definer_guard (ADR-0034): its only privileges here are USAGE on the schema and
+-- SELECT on the plan, to tell a planned experiment from one the web created.
+ALTER FUNCTION experiments.fn_assignment_is_fixed() OWNER TO definer_guard;
+GRANT USAGE ON SCHEMA experiments TO definer_guard;
+GRANT SELECT ON experiments.experiment_plan TO definer_guard;
+
+CREATE OR REPLACE TRIGGER trg_experiment_assignment_insert
+BEFORE INSERT ON public.experiment_assignment
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
+CREATE OR REPLACE TRIGGER trg_experiment_assignment_never_rewritten
+BEFORE UPDATE ON public.experiment_assignment
+FOR EACH ROW WHEN (OLD IS DISTINCT FROM NEW)
+EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
+CREATE OR REPLACE TRIGGER trg_experiment_assignment_never_deleted
+BEFORE DELETE ON public.experiment_assignment
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry

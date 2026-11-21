@@ -256,7 +256,7 @@ campaign caused.
 | AP-1 | Android: store seller | F19-03, F19-04, F27-01, F27-02, F27-03, F27-04, F27-05, F27-06 |
 | AP-2 | Android: store manager | F19-03, F27-01, F27-04, F27-08 |
 | AP-3 | Android: loyalty officer | F19-03, F19-04, F27-01, F27-09 |
-| AP-4 | Android: commercial supervisor | F19-03, F19-04, F27-01, F27-10, F27-11, F27-12, F27-14 |
+| AP-4 | Android: commercial supervisor | F19-03, F19-04, F27-01, F27-10, F27-11, F27-12, F27-14, F27-16 |
 
 ### Android technical functions
 

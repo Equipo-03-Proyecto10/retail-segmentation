@@ -1010,6 +1010,22 @@ FROM (
 WHERE rn = 1
 ORDER BY assignment_id;
 
+-- A second treatment assignee is reached in every even-numbered experiment, three
+-- to seven hours after being assigned, so half the experiments still leave a
+-- treatment customer unexposed (ADR-0019) while the sales that follow these
+-- exposures give F25-12 (ADR-0069) real attributions to hold.
+INSERT INTO experiment_exposure (assignment_id, exposed_at)
+SELECT assignment_id, assigned_at + make_interval(hours => 3 + experiment_id % 5)
+FROM (
+    SELECT a.assignment_id, a.experiment_id, a.assigned_at,
+           ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
+    FROM experiment_assignment a
+    JOIN experiment_group g ON g.group_id = a.group_id
+    WHERE g.kind = 'TREATMENT'
+) ranked
+WHERE rn = 2 AND experiment_id % 2 = 0
+ORDER BY assignment_id;
+
 -- ---------- experiment_conversion (every qualifying sale of every assignee) ----------
 -- What F11-06 evaluates, as web/db/experiment_conversions.py evaluates it: an
 -- assignee's own sale in [assigned_at, assigned_at + conversion_window_days),
@@ -1026,6 +1042,13 @@ JOIN transaction t
  AND t.occurred_at >= a.assigned_at
  AND t.occurred_at < a.assigned_at + make_interval(days => x.conversion_window_days)
 ORDER BY a.assignment_id, t.occurred_at, t.transaction_id;
+
+-- ---------- experiments.sale_attribution (one row per attributed sale) ----------
+-- Written by the function the service calls, so the seed holds no second copy of
+-- the holder rule (ADR-0069). A sale whose window is still open stays unwritten.
+DO $attr$ BEGIN
+    PERFORM experiments.attribute_experiment(n) FROM generate_series(1,30) AS n;
+END $attr$;
 
 -- ---------- inventory (30 stores x 5 products = 150) ----------
 INSERT INTO inventory (store_id, product_id, quantity_on_hand)

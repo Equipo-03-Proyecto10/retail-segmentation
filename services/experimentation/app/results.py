@@ -31,7 +31,7 @@ from typing import Any
 
 from psycopg import Connection
 
-from app import conversions, experiments, plan, stats
+from app import attribution, conversions, experiments, plan, stats
 
 PRIMARY = "PRIMARY"
 RE_READ = "RE_READ"
@@ -187,7 +187,7 @@ STATEMENTS = {
         "exposed or not."
     ),
     "NET_OF_REVERSALS": (
-        "Conversions and revenue count sales net of reversals, as known at " "`as_of`."
+        "Conversions and revenue count sales net of reversals, as known at `as_of`."
     ),
     "SINGLE_LOOK": (
         "The result is read once, at the analysis instant; stopping early or "
@@ -864,14 +864,18 @@ def get_result(
     if basis == PRIMARY and reached:
         stored = _stored(connection, experiment_id)
         if stored is not None:
-            return render(experiment, stored, basis, estimate=True, elapsed=1.0)
+            shown = render(experiment, stored, basis, estimate=True, elapsed=1.0)
+            shown["attribution"] = attribution.result_section(connection, experiment)
+            return shown
     conversions.evaluate(connection, experiment_id)
     core = _compute(connection, experiment, now, estimate=reached)
     if basis == PRIMARY and reached:
         _store(connection, experiment, core)
     last = connection.execute(LATEST_ASSIGNMENT, (experiment_id,)).fetchone()[0]
     elapsed = _elapsed(now, last, window)
-    return render(experiment, core, basis, estimate=reached, elapsed=elapsed)
+    shown = render(experiment, core, basis, estimate=reached, elapsed=elapsed)
+    shown["attribution"] = attribution.result_section(connection, experiment)
+    return shown
 
 
 def _elapsed(now: datetime, last: datetime, window: int) -> float:

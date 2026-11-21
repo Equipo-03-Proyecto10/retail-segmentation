@@ -5999,6 +5999,140 @@ FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
 GRANT SELECT, INSERT ON experiments.experiment_result, experiments.experiment_result_arm,
     experiments.experiment_result_comparison, experiments.experiment_result_balance
     TO svc_experiments;
+-- F25-12 (#843, ADR-0069): one sale is held by at most one campaign. The row
+-- stores only what cannot be derived: the sale, the assignment that holds it
+-- and the exposure that earned the credit. Experiment, campaign, customer, arm,
+-- the sale's time and window, and the net amount are read from their owners, so
+-- no second copy can disagree (4NF, docs/data-model.md). UNIQUE (sale_id) is
+-- the schema's refusal of a second holder; ON DELETE RESTRICT keeps a holder
+-- from being reopened by a cascade (ADR-0069 "never reassigned").
+CREATE TABLE IF NOT EXISTS experiments.sale_attribution (
+    attribution_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    sale_id        bigint NOT NULL
+        CONSTRAINT sale_attribution_sale_key UNIQUE
+        REFERENCES public.transaction (transaction_id) ON DELETE RESTRICT,
+    assignment_id  bigint NOT NULL
+        REFERENCES public.experiment_assignment (assignment_id) ON DELETE RESTRICT,
+    exposure_id    bigint NOT NULL
+        REFERENCES public.experiment_exposure (exposure_id) ON DELETE RESTRICT,
+    attributed_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS sale_attribution_assignment_idx
+    ON experiments.sale_attribution (assignment_id);
+
+-- Refuses a holder ADR-0069 would not make eligible: a control assignment, an
+-- experiment with no campaign, an exposure of another assignment or not before
+-- the sale, a sale of another customer or past the conversion window. It runs
+-- as the owner because svc_experiments reads sales only through api_sales views.
+CREATE OR REPLACE FUNCTION experiments.fn_sale_attribution_eligible() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $elig$
+DECLARE
+    v_kind     varchar(20);
+    v_campaign integer;
+    v_window   smallint;
+    v_assigned timestamptz;
+    v_customer uuid;
+    v_exposed  timestamptz;
+    v_exp_of   bigint;
+    v_sold     timestamptz;
+    v_sale_cus uuid;
+BEGIN
+    SELECT g.kind, e.campaign_id, e.conversion_window_days, a.assigned_at, a.customer_id
+      INTO v_kind, v_campaign, v_window, v_assigned, v_customer
+      FROM experiment_assignment AS a
+      JOIN experiment_group AS g ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+      JOIN experiment AS e ON e.experiment_id = a.experiment_id
+     WHERE a.assignment_id = NEW.assignment_id;
+    IF v_kind IS DISTINCT FROM 'TREATMENT' THEN
+        RAISE EXCEPTION 'Assignment % is not a treatment assignment', NEW.assignment_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'sale_attribution_treatment_only';
+    END IF;
+    IF v_campaign IS NULL THEN
+        RAISE EXCEPTION 'The experiment of assignment % has no campaign', NEW.assignment_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'sale_attribution_campaign_required';
+    END IF;
+    SELECT x.exposed_at, x.assignment_id INTO v_exposed, v_exp_of
+      FROM experiment_exposure AS x WHERE x.exposure_id = NEW.exposure_id;
+    SELECT t.occurred_at, t.customer_id INTO v_sold, v_sale_cus
+      FROM transaction AS t WHERE t.transaction_id = NEW.sale_id;
+    IF v_exp_of IS DISTINCT FROM NEW.assignment_id OR v_exposed >= v_sold THEN
+        RAISE EXCEPTION 'Exposure % does not precede sale % for assignment %',
+            NEW.exposure_id, NEW.sale_id, NEW.assignment_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'sale_attribution_exposure_before_sale';
+    END IF;
+    IF v_sale_cus IS DISTINCT FROM v_customer
+       OR v_sold > v_assigned + make_interval(hours => 24 * v_window) THEN
+        RAISE EXCEPTION 'Sale % is not the customer''s sale inside the conversion window', NEW.sale_id
+            USING ERRCODE = 'check_violation', CONSTRAINT = 'sale_attribution_sale_in_window';
+    END IF;
+    RETURN NEW;
+END
+$elig$;
+REVOKE EXECUTE ON FUNCTION experiments.fn_sale_attribution_eligible() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_sale_attribution_eligible
+BEFORE INSERT ON experiments.sale_attribution
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_sale_attribution_eligible();
+CREATE OR REPLACE TRIGGER trg_sale_attribution_frozen
+BEFORE UPDATE OR DELETE ON experiments.sale_attribution
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.sale_attribution TO svc_experiments;
+
+-- The holder rule (ADR-0069, last touch), in one place. For every sale that is
+-- a recorded conversion of a treatment assignment of this experiment, the
+-- candidates are taken across all experiments: a recorded conversion of a
+-- treatment assignment, with an exposure before the sale, inside the window,
+-- of an experiment that has a campaign. The latest exposure holds the sale; a
+-- tie goes to the lower assignment_id. A sale is written only once every
+-- candidate's window has closed, so an exposure recorded later cannot displace
+-- a holder already written. Repeating the run writes nothing new. Net amount is
+-- read when reported, never here, so a cancelled sale keeps its holder.
+CREATE OR REPLACE FUNCTION experiments.attribute_experiment(p_experiment_id integer)
+RETURNS TABLE (attributed integer, already_attributed integer, pending integer)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $attr$
+BEGIN
+    RETURN QUERY
+    WITH mine AS (
+        SELECT DISTINCT c.transaction_id AS sale_id
+          FROM experiment_conversion AS c
+          JOIN experiment_assignment AS a ON a.assignment_id = c.assignment_id
+          JOIN experiment_group AS g ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+         WHERE a.experiment_id = p_experiment_id AND g.kind = 'TREATMENT'
+    ), cand AS (
+        SELECT c.transaction_id AS sale_id, a.assignment_id, x.exposure_id, x.exposed_at,
+               a.assigned_at + make_interval(hours => 24 * e.conversion_window_days) AS closes
+          FROM mine AS m
+          JOIN experiment_conversion AS c ON c.transaction_id = m.sale_id
+          JOIN experiment_assignment AS a ON a.assignment_id = c.assignment_id
+          JOIN experiment_group AS g ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+          JOIN experiment AS e ON e.experiment_id = a.experiment_id
+          JOIN experiment_exposure AS x ON x.assignment_id = a.assignment_id
+          JOIN transaction AS t ON t.transaction_id = c.transaction_id
+         WHERE g.kind = 'TREATMENT' AND e.campaign_id IS NOT NULL
+           AND x.exposed_at < t.occurred_at
+           AND t.occurred_at <= a.assigned_at + make_interval(hours => 24 * e.conversion_window_days)
+    ), state AS (
+        SELECT cand.sale_id, bool_and(cand.closes <= now()) AS closed FROM cand GROUP BY cand.sale_id
+    ), best AS (
+        SELECT DISTINCT ON (cand.sale_id) cand.sale_id, cand.assignment_id, cand.exposure_id
+          FROM cand ORDER BY cand.sale_id, cand.exposed_at DESC, cand.assignment_id ASC
+    ), ins AS (
+        INSERT INTO experiments.sale_attribution (sale_id, assignment_id, exposure_id)
+        SELECT b.sale_id, b.assignment_id, b.exposure_id
+          FROM best AS b JOIN state AS s ON s.sale_id = b.sale_id
+         WHERE s.closed
+        ON CONFLICT (sale_id) DO NOTHING
+        RETURNING sale_id
+    )
+    SELECT (SELECT count(*) FROM ins)::integer,
+           (SELECT count(*) FROM state AS s WHERE s.closed
+               AND NOT EXISTS (SELECT 1 FROM ins WHERE ins.sale_id = s.sale_id))::integer,
+           (SELECT count(*) FROM state AS s WHERE NOT s.closed)::integer;
+END
+$attr$;
+REVOKE EXECUTE ON FUNCTION experiments.attribute_experiment(integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION experiments.attribute_experiment(integer) TO svc_experiments;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry

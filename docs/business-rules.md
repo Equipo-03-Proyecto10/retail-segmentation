@@ -1434,6 +1434,14 @@ exposure holds it, a tie going to the lower assignment id, and the holder is nev
 reassigned or reopened, even when the sale is later reversed. Attribution is
 commercial. It is not a claim that the campaign caused the sale.
 
+The holder is written by one SQL function, `experiments.attribute_experiment`
+(F25-12), only once every candidate's window has closed, over the exposures that
+exist then, so a later exposure cannot displace it. The amount attributed is the
+sale's net amount read when it is shown (ADR-0062): a sale that is later reversed
+keeps its holder and stops counting, and the attributed revenue of all campaigns
+in a period never exceeds the period's net sales. Every figure carries the
+`ATTRIBUTION` label and the instant it was read.
+
 An effect, an incremental amount or an uplift is stated only as a treatment's
 difference against a control, with its interval and its test, over every assigned
 customer. An experiment with no control compares two offers and states no effect.

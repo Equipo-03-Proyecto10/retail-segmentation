@@ -1,6 +1,6 @@
 # experimentation
 
-> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and serves `listSaleAttributions`, whose page is empty until F25-12 (#843) builds attribution; the conversions are implemented too (F25-11, #842: list them, and evaluate them); every other operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
+> **Status:** Stood up (phase 25, third; F25-07, #838): the service answers its meta routes, holds the grants on the five experiment tables, and implements the conversions (F25-11, #842: list them, and evaluate them) and the attributions (F25-12, #843: attribute an experiment's sales, list and read them); every other operation stays `x-mosaiq-status: planned` (ADR-0073). The contract was published by F25-06 (#837). ADR-0059 places it; ADR-0068 and ADR-0069 decide how it behaves.
 > **One rule:** An experiment's frame and arms are fixed before measurement, assignment, exposure and conversion are separate append-only facts, a sale is attributed at most once, and an effect is reported only against a control, with its uncertainty (RN-23, RN-24, RN-25, RN-27, RN-42, RN-48, RN-49, RN-67)
 
 ## Summary
@@ -33,7 +33,7 @@
 
 ## Endpoints
 
-Every business operation below is `planned` except planning and reading an experiment (F25-09), the two on conversions (F25-11), the result of an experiment (F25-13) and the empty list of attributions. Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
+Every business operation below is `planned` except planning and reading an experiment (F25-09), the two on conversions (F25-11), the three on attributions (F25-12) and the result of an experiment (F25-13). Reads are for the roles that read campaigns; the writes are for the roles that write them (see the [service operation policy](../requirements.md#service-operation-policy-distributed-stage)).
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
@@ -42,6 +42,7 @@ Every business operation below is `planned` except planning and reading an exper
 | GET | `/v1/experiments/{experiment_id}` | One experiment with its arms, design values, frame, salt, assignment summary and flags | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET | `/v1/experiments/{experiment_id}/conversions` | The experiment's conversions (`customer_id`, `arm_id`, `counts`) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | POST | `/v1/experiments/{experiment_id}/conversions` | Evaluate conversions: record the qualifying sales not recorded yet; 200 | ADMIN, MARKETING |
+| POST | `/v1/experiments/{experiment_id}/attributions` | Attribute the experiment's sales: hold each sale whose windows have closed, once; 200 with `attributed`, `already_attributed`, `pending` | ADMIN, MARKETING |
 | GET | `/v1/experiment-assignments` | Assignments (`experiment_id`, `campaign_id`, `customer_id`, `arm_id`, `arm_kind`) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | POST | `/v1/experiment-assignments` | Assign an experiment's whole frame, once, with the stored checks; 201 | ADMIN, MARKETING |
 | GET | `/v1/experiment-assignments/current` | One customer's arm in one campaign (`customer_id`, `campaign_id`): the floor's read | ADMIN, STORE_MANAGER, SALES_ASSOCIATE |
@@ -50,6 +51,8 @@ Every business operation below is `planned` except planning and reading an exper
 | GET | `/v1/sale-attributions/{attribution_id}` | One attribution | ADMIN, ANALYST, MARKETING, AUDITOR |
 
 Arms are part of an experiment, fixed at planning, and have no endpoint of their own. There is no operation to edit or delete an experiment, an assignment, a conversion or an attribution; the absent routes answer 405. Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`. The contract is [`contracts/experimentation/`](../../contracts/experimentation/openapi.yaml). It adds the four resources of ADR-0059, and no other service's registered resource name appears in its paths.
+
+`POST .../attributions` calls `experiments.attribute_experiment`, the one place the holder rule of ADR-0069 is written: the latest exposure before the sale holds it, a tie going to the lower assignment id, among every experiment that has a campaign. A sale is written only when every candidate's window has closed, so an exposure recorded later cannot displace a holder; a sale whose window is open is `pending`. Repeating the run writes nothing new. The row stores only the sale, the assignment and the exposure; the campaign, customer, arm, window and the net amount are read when it is shown, so a reversed sale keeps its holder and shows `counts` false with a net amount of zero (ADR-0062).
 
 The result names attribution and effect in separate sections. Its `comparisons` carry each difference with `lower`, `upper`, the test and the confidence level; its `attribution` carries only `ATTRIBUTION`-labelled figures, none of which is called incremental, uplift or caused.
 
@@ -62,7 +65,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Tables the web writes today | S, W (E-09) | F25-07 (#838) took ownership: `svc_experiments` holds SELECT, INSERT and UPDATE on `experiment` and `experiment_group`, and SELECT and INSERT only on assignment, exposure and conversion, as `retail_app` does (ADR-0026, ADR-0027, ADR-0050). Neither role deletes. The web keeps writing them. Experiments assigned under the web's earlier shuffle are served as assignment rule `V0`: readable, with no frame, salt or key, and not called verified |
 | `experiments.experiment_plan`, `experiment_frame_member`, `experiment_frame_exclusion`, `experiment_flag` | Tables (`experiments`) | S | F25-09 (#840): the plan, frozen: design values, the stored frame (one row per customer), what each reason removed, and the flags. SELECT and INSERT only, and a trigger refuses any change. An experiment with no plan row is assignment rule V0 (the web's earlier shuffle). Justified in `docs/data-model.md` |
 | `experiments.experiment_result`, `experiment_result_arm`, `experiment_result_comparison`, `experiment_result_balance` | Tables (`experiments`) | S | F25-13 (#844, ADR-0085): the primary result, written once by the first primary read at or after the analysis instant. SELECT and INSERT only, and the plan's trigger refuses any change. Justified in `docs/data-model.md` |
-| The stored checks, the exposure projection and the attributions | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-08 (#839), F25-10 (#841), F25-12 (#843). The contract fixes only what the endpoints serve |
+| The stored checks, the exposure projection and the attributions | Tables (`experiments`) | S | Named and justified (4NF) by their own stories: F25-08 (#839), F25-10 (#841); the attributions by F25-12 (#843), recorded in [the data model](../data-model.md). The contract fixes only what the endpoints serve |
 
 ## Database contracts
 

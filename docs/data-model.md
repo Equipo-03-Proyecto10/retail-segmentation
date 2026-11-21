@@ -649,6 +649,18 @@ The primary result (ADR-0085, F25-13) adds four more, also in 4NF, written toget
 first primary read at or after the analysis instant. A look cannot be recomputed later (the net
 view keeps no history of its reversals), so each stored value is a fact of the look and not a
 function of current data:
+- **`experiments.sale_attribution`** (F25-12, ADR-0069) is keyed by `attribution_id`, and `sale_id` is
+  a second key (`UNIQUE`), so a sale has at most one holder: the schema refuses a second. The row
+  stores only what the holder rule decides: the `assignment_id` that holds the sale and the
+  `exposure_id` that earned the credit. The experiment, campaign, customer, arm, the exposure and
+  sale instants and the window's end are functions of those two keys and the sale, so they are read
+  from their owners and not copied (a copy could disagree with `experiment_assignment`). The net
+  amount and whether the sale still counts are not columns either: a reversal is a fact about the
+  sale, read from the net view when shown (ADR-0062), and the holder is never reopened. There is no
+  multivalued or join dependency left: one sale, one holder. Triggers refuse a control assignment,
+  an experiment with no campaign, an exposure that is not the assignment's or does not precede the
+  sale, and a sale that is not the customer's own or falls past the window; every `UPDATE` and
+  `DELETE` is refused, even for the owner, and `svc_experiments` holds `SELECT` and `INSERT` only.
 - **`experiments.experiment_result`** is keyed by `experiment_id`, which determines when the look
   was computed, the sample ratio's p-value and whether the figures are synthetic. The status is
   not a column: it is `INVALID` exactly when that p-value is below 0.001.
@@ -1507,6 +1519,16 @@ window.
 |---|---|---|---|---|
 | `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
 | `flag` | `VARCHAR(30)` | NN | PK part; CHECK one of the four flags of the contract | A flag that applies to the experiment |
+
+#### `experiments.sale_attribution`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `attribution_id` | `BIGINT` | NN | PK, identity | The attribution |
+| `sale_id` | `BIGINT` | NN | UNIQUE; FK → `public.transaction`, `ON DELETE RESTRICT` | The sale: held by one campaign at most |
+| `assignment_id` | `BIGINT` | NN | FK → `public.experiment_assignment`, `ON DELETE RESTRICT`; a treatment assignment of an experiment with a campaign | The assignment that holds the sale |
+| `exposure_id` | `BIGINT` | NN | FK → `public.experiment_exposure`, `ON DELETE RESTRICT`; the assignment's own exposure, before the sale | The exposure that earned the credit |
+| `attributed_at` | `TIMESTAMPTZ` | NN | DEFAULT `now()` | When the holder was written |
 
 #### `experiments.experiment_result`
 

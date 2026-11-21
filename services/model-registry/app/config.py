@@ -14,11 +14,16 @@ class Settings:
     """Read once at start."""
 
     contracts_dir: Path
+    # How long a training may run before it is closed as `timed_out` (F22-12).
+    training_timeout_seconds: int
 
     @classmethod
     def from_env(cls) -> Settings:
         return cls(
             contracts_dir=Path(
                 os.environ.get("MOSAIQ_CONTRACTS_DIR", str(DEFAULT_CONTRACTS_DIR))
-            )
+            ),
+            training_timeout_seconds=int(
+                os.environ.get("TRAINING_TIMEOUT_SECONDS", "900")
+            ),
         )

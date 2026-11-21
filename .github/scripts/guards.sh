@@ -47,7 +47,7 @@ problems=$(
     | found "ADR-0045 role code in a kit"
   git grep -noE "[\"'][a-z_]+:[a-z_]+:[^\"']*" -- packages/ \
     | grep -vE "pub:auth:v1:live:|[\"']stream:" | found "ADR-0045 Redis key in a kit"
-  for s in sales recommendations users campaigns; do
+  for s in sales recommendations users campaigns model-registry; do
     if [ -d "services/$s" ] && [ -z "$(git ls-files "services/$s/tests/golden/*.json")" ]; then
       echo "ADR-0045: services/$s has no golden fixtures in tests/golden/"
     fi

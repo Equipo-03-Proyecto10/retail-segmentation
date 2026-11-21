@@ -187,7 +187,8 @@ def _days(name: str, default: int) -> int:
     return value if value >= 0 else default
 
 
-def _zone() -> ZoneInfo:
+def business_zone() -> ZoneInfo:
+    """`SALES_TIMEZONE`, the zone a sale's calendar day is read in; UTC if unset."""
     try:
         return ZoneInfo(os.environ.get("SALES_TIMEZONE", "UTC"))
     except (ZoneInfoNotFoundError, ValueError):
@@ -205,7 +206,7 @@ def window_open(kind: str, occurred_at: datetime, now: datetime | None = None) -
 
     now = now or datetime.now(UTC)
     if kind == "CANCELLATION":
-        zone = _zone()
+        zone = business_zone()
         last_day = occurred_at.astimezone(zone).date() + timedelta(
             days=_days("SALES_CANCELLATION_WINDOW_DAYS", DEFAULT_CANCELLATION_DAYS)
         )

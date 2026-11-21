@@ -1,6 +1,6 @@
 # model-registry
 
-> **Status:** Stood up (phase 22, third; F22-11, #806): it registers, lists and reads versions and lists their publications, over `models.*`. The contract was published by F22-10 (#805) and extended with drift reports and alerts by F23-08 (#820). Publication and rollback (F22-13, #809), training (F22-12, #808) and the drift operations (F23-09, #821) are marked planned in the contract (ADR-0073) and implemented by their own stories. ADR-0059 places it; ADR-0063, ADR-0064 and ADR-0065 decide how it behaves.
+> **Status:** Stood up (phase 22, third; F22-11, #806): it registers, lists and reads versions and lists their publications, over `models.*`. Since F22-12 (#808) it also trains K-means: it starts a training with stated parameters and registers the result as a `DRAFT`. The contract was published by F22-10 (#805) and extended with drift reports and alerts by F23-08 (#820). Publication and rollback (F22-13, #809) and the drift operations (F23-09, #821) are marked planned in the contract (ADR-0073) and implemented by their own stories. ADR-0059 places it; ADR-0063, ADR-0064 and ADR-0065 decide how it behaves.
 > **One rule:** A model version is immutable once published, carries its dataset, parameters, metrics and reference distribution, changes state only by an explicit publication or rollback, and every drift alert is judged against that reference (RN-66)
 
 ## Summary
@@ -24,7 +24,8 @@
 - A version holds its method (`RFM_RULES` or `KMEANS`), definition, window, seed, frozen scoring (quintile boundaries, or centroids and normalization bounds), dataset fingerprint and origin (ADR-0052), metrics, reference distribution and owner. None of that changes after creation, and no role edits or deletes a version.
 - Exactly one version is `PUBLISHED` at a time. Publishing a `DRAFT` retires the previous version; a rollback publishes a `RETIRED` version again. Both append a row to `models.model_publication` with the version, the one it replaced, the author, the time and the reason. History is never rewritten.
 - After a publication or rollback, every customer is scored under the published version in a full run whose changed rows carry the cause `VERSION_CHANGE` (ADR-0063, ADR-0064).
-- A training fits K-means over the net purchases of a window with a recorded seed, and registers its result as a `DRAFT`. It publishes nothing.
+- A training fits K-means over the net purchases of a window with a recorded seed, and registers its result as a `DRAFT`. It publishes nothing. `POST /v1/model-trainings` stores the request as a `RUNNING` row and answers 201 at once; the fit runs after the answer, on a thread of the service, and the row ends `COMPLETED` with the version it registered or `FAILED` with a `failure_code`. One training runs at a time. The fit is the service's own code (ADR-0021), pinned to the web's results by golden fixtures (ADR-0045, E-17): customers are the window's net purchases (ADR-0062) as recency, frequency and monetary value, scaled min-max; centroids are seeded k-means++ from the seed; clusters are named by proportional rank (ADR-0030, RN-38) and `cluster_index` is that rank, best first. The same data, configuration and seed give the same fit (RN-58). The version records the dataset fingerprint and origin, the parameters, the seed, inertia and silhouette (sampled above 2,000 customers, as the web does), the frozen centroids and normalization bounds, and the reference distribution; its `stability` is null, because no repeated-seed study runs in the service.
+- A training ends `FAILED` rather than half registered: with fewer customers than clusters (`too_few_customers`), past `TRAINING_TIMEOUT_SECONDS` (`timed_out`, default 900), when the sales view cannot be read (`source_unavailable`), when the label vocabulary is empty (`label_vocabulary_unavailable`), when the name was taken meanwhile (`model_version_name_taken`), when the service restarted (`interrupted`) or on any other error (`internal_error`). A `RUNNING` row past its deadline is closed as `timed_out` by the next request, so a died worker never holds the slot.
 - A run the web started is registered as a version, and published, when no version matches its method and parameters (ADR-0064). Its source is `WEB_RUN` and it has no owner.
 - Drift reports and alerts, judged against a version's reference distribution, belong to this rule (ADR-0059). A **report** is one comparison of one version with its reference, of kind `DATA_DRIFT` (the distribution of the segments, and of R, F and M, against the reference: PSI, and the chi-square on the segment shares, with the thresholds of ADR-0065) or `OUTCOME_TEST` (the repurchase relation of a matured cohort). It carries the statistic, the reference, the current window, the threshold and the model version. A window with fewer than 200 customers is `INSUFFICIENT_DATA`, and one that crosses a publication or rollback is `NOT_COMPARED`: a change of version is never reported as behaviour (ADR-0064).
 - An **alert** is raised by a report when a variable holds its alarm in two consecutive windows (watch is displayed and never alerted), or when a segment passes the outcome test in two consecutive matured cohorts. It says which variable changed, by how much and what review it suggests, and its `claim` is the only wording a client may use: `DISTRIBUTION_CHANGE`, or, on an outcome test alone, with the relation, horizon and cohort named beside it, `CONCEPT_DRIFT` (ADR-0065). A customer's migration between segments and a customer's own consumption shift (RN-36, RN-50) are not drift and are never in a report.
@@ -58,7 +59,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | `models.model_version`, `models.model_version_feature` | Tables (`models`) | S, insert only | Immutable: a trigger refuses every DELETE and every change but `state`, `published_at` and `retired_at`, which F22-13 moves with a publication. Exempt from the 30-row seed (two versions), with its reason in `sql/seed-exempt.txt` |
 | `models.model_publication` | Table (`models`) | R until F22-13 | Append-only; one seeded row, the first publication. Exempt |
 | `models.run_version` | Table (`models`) | R until the stream consumer (ADR-0064) | Links each segmentation run to its version; the seed links all 31 runs |
-| `models.model_training` | Table (`models`) | — | Named and justified by F22-12 (#808) |
+| `models.model_training`, `models.model_training_feature`, `models.model_training_cluster` | Tables (`models`) | S | F22-12. A training's request and outcome, the variables it fitted, and the size of each cluster by rank. Insert, plus UPDATE of the outcome columns while `RUNNING`; a trigger refuses every other change and every DELETE; one unique partial index allows one `RUNNING` row. Cluster sizes are kept but not served: adding them to a v1 response type would break the XML policy of the contract check. Exempt from the 30-row seed, with its reason in `sql/seed-exempt.txt` |
 | Drift reports and alerts | Tables (`models`) | S | Named, with their 4NF justification and seed rows, by F23-09 (#821); the contract fixes only what the endpoints serve, and that reports and alerts are append-only |
 | `models_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_models`; seed-exempt runtime state |
 
@@ -68,7 +69,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|
 | Publishes | `api_models.published_version_v1` | rfm-engine, analytics-kpis |
 | Consumes | `api_rfm.current_profile_v1` | rfm-engine (current distribution sample for drift, F23-09) |
-| Consumes | `api_sales.purchase_line_v1` and the net view of `api_sales` (F21-02, #770) | sales (the net purchases a training fits) |
+| Consumes | `api_sales.net_purchase_line_v1` (F21-02, #770) | sales (the net purchases a training fits, read once in a repeatable-read snapshot and streamed) |
+| Consumes | `api_segments.label_v1` (F22-12) | segments (the label vocabulary and its order, so a training never copies the labels) |
 
 ## Events
 
@@ -100,6 +102,8 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `version_not_retired` | A rollback to a version that is not `RETIRED` |
 | 409 | `publication_conflict` | Another publication committed first; the partial unique index refused a second `PUBLISHED` row, and the service maps it to this 409, never a 500 |
 | 409 | `training_in_progress` | A training is already running |
+
+A training's own failures are not HTTP errors: they are the `failure_code` of a `FAILED` training (see the Business rule).
 | 422 | `invalid_query` | A filter is malformed |
 | 422 | `invalid_body` | A version breaks its rules: `method_mismatch`, `not_monotonic`, `distribution_mismatch` |
 
@@ -127,4 +131,4 @@ None. The path `/v1/model-versions/{version_id}/publications` nests a publicatio
 
 ## Backlog
 
-F22-10 contract (#805), F22-11 stand-up (#806), F22-12 training, F22-13 publication and rollback; F23-08 drift contract (#820), F23-09 data-drift monitor (#821), F23-11 outcome test (#823); consumed by F28-05, F28-07, F22-15 and F23. Issue numbers live in [`docs/backlog.md`](../backlog.md).
+F22-10 contract (#805), F22-11 stand-up (#806), F22-12 training (#808; [evidence](../evidence/f22-12-kmeans-training.md)), F22-13 publication and rollback; F23-08 drift contract (#820), F23-09 data-drift monitor (#821), F23-11 outcome test (#823); consumed by F28-05, F28-07, F22-15 and F23. Issue numbers live in [`docs/backlog.md`](../backlog.md).

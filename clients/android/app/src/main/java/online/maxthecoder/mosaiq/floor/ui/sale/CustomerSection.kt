@@ -19,7 +19,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -41,9 +40,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqPager
 import online.maxthecoder.mosaiq.floor.ui.components.MqSection
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
-
-/** Past this font scale a row of text beside a button stacks instead. */
-private const val LARGE_FONT_SCALE = 1.3f
+import online.maxthecoder.mosaiq.floor.ui.theme.isLargeFont
 
 /** Section 1: find or register a customer, or show the chosen one with their segment. */
 @Composable
@@ -87,7 +84,7 @@ private fun ChosenCustomer(customer: Customer, ui: SaleUi, actions: SaleActions,
         }
         val change = stringResource(R.string.sale_change)
         // At large font sizes the email would wrap mid-word beside the button, so the button drops below.
-        if (LocalDensity.current.fontScale > LARGE_FONT_SCALE) {
+        if (isLargeFont()) {
             Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
                 details(Modifier)
                 MqButton(change, onChange, variant = MqButtonVariant.Secondary)

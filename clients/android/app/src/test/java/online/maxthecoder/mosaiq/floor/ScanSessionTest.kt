@@ -1,8 +1,12 @@
 package online.maxthecoder.mosaiq.floor
 
 import java.time.Instant
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.scan.Payload
 import online.maxthecoder.mosaiq.floor.scan.ScanSession
+import online.maxthecoder.mosaiq.floor.scan.parse
+import online.maxthecoder.mosaiq.floor.scan.parseBarcode
 import online.maxthecoder.mosaiq.floor.scan.parseProductId
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -62,5 +66,32 @@ class ScanSessionTest {
         for (raw in listOf("", "0", "-1", "abc", "1.5", "+5", "2147483648", "https://x/120", "12 0")) {
             assertEquals(raw, Payload.NotAProduct, parseProductId(raw))
         }
+    }
+
+    @Test
+    fun aBarcodeIsAnyGtinLengthTheContractNames() {
+        for (raw in listOf("96385074", "036000291452", "4006381333931", "10614141000415")) {
+            assertEquals(raw, Payload.Barcode(raw), parseBarcode(raw))
+        }
+        assertEquals(Payload.Barcode("4006381333931"), parseBarcode(" 4006381333931 "))
+        for (raw in listOf("", "1234567", "123456789", "12345678901", "123456789012345", "40063813339a1")) {
+            assertEquals(raw, Payload.NotAProduct, parseBarcode(raw))
+        }
+    }
+
+    @Test
+    fun theKindTheCameraReportsDecidesWhatEightDigitsAre() {
+        assertEquals(Payload.ProductId(96385074), parse(Decoded("96385074", CodeKind.QR)))
+        assertEquals(Payload.Barcode("96385074"), parse(Decoded("96385074", CodeKind.PRODUCT_BARCODE)))
+        // A GTIN-13 is too long to be a product id, so a QR code holding one is not a product.
+        assertEquals(Payload.NotAProduct, parse(Decoded("4006381333931", CodeKind.QR)))
+    }
+
+    @Test
+    fun theSameDigitsReadAsAnotherKindAreANewScan() {
+        val session = ScanSession()
+        assertNotNull(session.onDecoded(Decoded("96385074", CodeKind.QR), now))
+        assertNotNull(session.onDecoded(Decoded("96385074", CodeKind.PRODUCT_BARCODE), now))
+        assertNull(session.onDecoded(Decoded("96385074", CodeKind.PRODUCT_BARCODE), now))
     }
 }

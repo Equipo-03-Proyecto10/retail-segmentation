@@ -124,6 +124,44 @@ impl CurrentAssignment {
     }
 }
 
+/// A customer's current state as a floor role reads it (ADR-0060): the label
+/// and `since`, never the R, F and M scores or `run_id`. The type has no field
+/// for them, so no code path can render them for a floor role.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FloorAssignment {
+    pub customer_id: String,
+    pub state: String,
+    pub label_code: Option<String>,
+    pub since: Option<DateTime<Utc>>,
+}
+
+impl FloorAssignment {
+    fn wire(&self) -> Representation {
+        Representation::new(
+            "FloorCurrentAssignment",
+            [
+                ("customer_id", Value::from(self.customer_id.clone())),
+                ("state", Value::from(self.state.clone())),
+                ("label_code", Value::from(self.label_code.clone())),
+                ("since", Value::from(self.since)),
+            ],
+        )
+    }
+}
+
+impl From<&CurrentAssignment> for FloorAssignment {
+    /// The floor view keeps the state, the label and `since` exactly as the
+    /// current assignment reports them, and drops everything else.
+    fn from(current: &CurrentAssignment) -> Self {
+        Self {
+            customer_id: current.customer_id.clone(),
+            state: current.state.clone(),
+            label_code: current.label_code.clone(),
+            since: current.since,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assignment {
     pub customer_id: Uuid,
@@ -364,7 +402,8 @@ fn query_pairs(query: &str) -> HashMap<String, String> {
     values
 }
 
-/// `customer_id` of `getCurrentAssignment`: required, a UUID.
+/// `customer_id` of `getCurrentAssignment` and `getFloorCurrentAssignment`:
+/// required, a UUID.
 pub fn current_customer(query: &str) -> Result<Uuid, ApiError> {
     match query_pairs(query).get("customer_id") {
         None => Err(invalid_query(vec![Detail::new("customer_id", "required")])),
@@ -1719,6 +1758,10 @@ pub fn current_reply(current: &CurrentAssignment) -> Reply {
     current.wire().into()
 }
 
+pub fn floor_reply(floor: &FloorAssignment) -> Reply {
+    floor.wire().into()
+}
+
 pub fn assignments_reply(assignments: &[Assignment], page: u32, size: u32, total: u64) -> Reply {
     Page::new(
         "SegmentAssignments",
@@ -1962,6 +2005,15 @@ async fn get_current_assignment(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(current_reply(&current))
 }
 
+/// The floor roles' read (ADR-0060). The kit admits only the roles the
+/// contract lists, and the reply is built from `FloorAssignment`, which holds
+/// no score and no `run_id`, whatever the cache or the database returned.
+async fn get_floor_current_assignment(ctx: Ctx) -> Result<Reply, ApiError> {
+    let customer = current_customer(&request_info().query)?;
+    let current = reader().current(ctx.db(), customer).await?;
+    Ok(floor_reply(&FloorAssignment::from(&current)))
+}
+
 async fn list_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
     let filter = assignment_filter(&request_info().query)?;
     let (rows, total) = match ctx.principal() {
@@ -2140,6 +2192,7 @@ pub fn router(
         .operation("listSegments", list_segments)?
         .operation("getSegment", get_segment)?
         .operation("getCurrentAssignment", get_current_assignment)?
+        .operation("getFloorCurrentAssignment", get_floor_current_assignment)?
         .operation("listSegmentAssignments", list_segment_assignments)?
         .operation("getSegmentMigrationMatrix", get_segment_migration_matrix)?
         .operation("listSegmentMigrations", list_segment_migrations)?
@@ -2223,6 +2276,63 @@ mod tests {
                 "{query}"
             );
         }
+    }
+
+    #[test]
+    fn the_floor_view_keeps_state_label_and_since_and_drops_the_rest() {
+        use mosaiq_kit::rendering::{render_json, render_xml};
+        let since = "2026-10-12T03:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let assigned = CurrentAssignment {
+            customer_id: "7b3ad781-c5de-4f40-ae50-1fa825ce2b25".to_owned(),
+            state: "assigned".to_owned(),
+            label_code: Some("LOYAL".to_owned()),
+            r_score: Some(4),
+            f_score: Some(5),
+            m_score: Some(4),
+            since: Some(since),
+            run_id: Some(42),
+        };
+        let floor = FloorAssignment::from(&assigned);
+        assert_eq!(floor.state, "assigned");
+        assert_eq!(floor.label_code.as_deref(), Some("LOYAL"));
+        assert_eq!(floor.since, Some(since));
+        let json = render_json(&floor_reply(&floor), 20).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+                "state": "assigned",
+                "label_code": "LOYAL",
+                "since": "2026-10-12T03:00:00Z",
+            })
+        );
+        let namespace = "https://mosaiq.maxthecoder.online/xml/segments/v1";
+        let xml = render_xml(&floor_reply(&floor), namespace, 20).unwrap();
+        assert!(xml.contains("<FloorCurrentAssignment"), "{xml}");
+        for withheld in ["score", "run_id"] {
+            assert!(!xml.contains(withheld), "{xml}");
+        }
+
+        // The unassigned states stay as they are: nulls in JSON, absent in XML.
+        let none = CurrentAssignment {
+            state: "no_open_assignment".to_owned(),
+            label_code: None,
+            r_score: None,
+            f_score: None,
+            m_score: None,
+            since: None,
+            run_id: None,
+            ..assigned
+        };
+        let json = render_json(&floor_reply(&FloorAssignment::from(&none)), 20).unwrap();
+        assert_eq!(json["state"], "no_open_assignment");
+        assert!(json["label_code"].is_null() && json["since"].is_null());
+        assert_eq!(json.as_object().unwrap().len(), 4);
+        let xml = render_xml(&floor_reply(&FloorAssignment::from(&none)), namespace, 20).unwrap();
+        assert!(
+            !xml.contains("label_code") && !xml.contains("<since>"),
+            "{xml}"
+        );
     }
 
     #[test]

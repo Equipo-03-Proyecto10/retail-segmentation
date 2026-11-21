@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | sales |
 | Producer | sales-service |
-| Consumers | stock, experimentation |
+| Consumers | stock, experimentation, recommendations |
 
 The view publishes the ids of the sales channels. sales is the read owner of
 `public.channel` (E-10): the web writes it, and sales validates every sale's
@@ -30,9 +30,9 @@ them from sales' `channels` resource.
 
 ## Access and consumers
 
-The consumers are **stock** and **experimentation**. Each receives `USAGE` on `api_sales` and `SELECT`
+The consumers are **stock**, **experimentation** and **recommendations**. Each receives `USAGE` on `api_sales` and `SELECT`
 on this view (and experimentation on the other views it already reads). experimentation counts the channels to
-tell a customer who restricted every one of them from one who did not (ADR-0068 section 1). sales holds `SELECT` as the producer. The view runs with its
+tell a customer who restricted every one of them from one who did not (ADR-0068 section 1). recommendations answers 422 `unknown_channel` for a `channel_id` that is not here (#827); its grant is in its own boundary of `sql/01_schema.sql`. sales holds `SELECT` as the producer. The view runs with its
 owner's rights (`security_invoker = off`), so the grants expose nothing else of
 `public.channel`.
 

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<RfmRuleSet xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
-  <rule_set_id>4</rule_set_id>
-  <name>Quarterly bands 2026-Q4</name>
+<RfmRuleSetDetail xmlns="https://mosaiq.maxthecoder.online/xml/rfm-engine/v1">
+  <rule_set_id>3</rule_set_id>
+  <name>Seeded bands, 180-day window</name>
   <window_days>180</window_days>
   <recency_boundaries>14</recency_boundaries>
   <recency_boundaries>35</recency_boundaries>
@@ -17,25 +17,25 @@
   <monetary_boundaries>200.00</monetary_boundaries>
   <bands>
     <label_code>CHAMPION</label_code>
-    <r_min>5</r_min>
+    <r_min>4</r_min>
     <r_max>5</r_max>
-    <f_min>5</f_min>
+    <f_min>4</f_min>
     <f_max>5</f_max>
-    <m_min>4</m_min>
+    <m_min>1</m_min>
     <m_max>5</m_max>
   </bands>
   <bands>
     <label_code>LOYAL</label_code>
     <r_min>4</r_min>
-    <r_max>4</r_max>
-    <f_min>4</f_min>
-    <f_max>5</f_max>
-    <m_min>3</m_min>
+    <r_max>5</r_max>
+    <f_min>1</f_min>
+    <f_max>3</f_max>
+    <m_min>1</m_min>
     <m_max>5</m_max>
   </bands>
   <bands>
     <label_code>AT_RISK</label_code>
-    <r_min>2</r_min>
+    <r_min>1</r_min>
     <r_max>3</r_max>
     <f_min>4</f_min>
     <f_max>5</f_max>
@@ -45,14 +45,19 @@
   <bands>
     <label_code>LOST</label_code>
     <r_min>1</r_min>
-    <r_max>1</r_max>
+    <r_max>3</r_max>
     <f_min>1</f_min>
     <f_max>3</f_max>
     <m_min>1</m_min>
-    <m_max>2</m_max>
+    <m_max>5</m_max>
   </bands>
   <fallback_label_code>LOST</fallback_label_code>
-  <published>false</published>
-  <created_at>2026-10-30T16:05:41Z</created_at>
+  <cancelled_sales>DEDUCT</cancelled_sales>
+  <returned_sales>DEDUCT</returned_sales>
+  <state>PUBLISHED</state>
+  <version_no>1</version_no>
+  <published>true</published>
+  <published_at>2026-11-02T10:00:00Z</published_at>
+  <created_at>2026-11-02T09:30:00Z</created_at>
   <created_by>11111111-1111-1111-1111-000000000001</created_by>
-</RfmRuleSet>
+</RfmRuleSetDetail>

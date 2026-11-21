@@ -39,6 +39,8 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
@@ -46,14 +48,27 @@ import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 private const val VIEWPORT_RATIO = 4f / 3f
 private const val FRAME_SHARE = 0.6f
 
+/**
+ * The product barcodes the scanner reads besides product QR codes (F27-04): the
+ * products contract's `Barcode`, GTIN-8 as EAN-8, GTIN-12 as UPC-A, GTIN-13 as
+ * EAN-13 and GTIN-14 as ITF-14. UPC-E is left out: its eight digits are a
+ * compressed GTIN-12, not a GTIN-8.
+ */
+internal val PRODUCT_BARCODE_FORMATS =
+    intArrayOf(Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_EAN_13, Barcode.FORMAT_ITF)
+
+/** A QR code holds a product id; every other format the scanner reads is a product barcode. */
+internal fun codeKind(format: Int): CodeKind =
+    if (format == Barcode.FORMAT_QR_CODE) CodeKind.QR else CodeKind.PRODUCT_BARCODE
+
 /** CameraX can deliver another frame before Compose removes the preview; only the first value wins. */
 internal class DecodeOnce {
     private var accepted = false
 
-    fun offer(raw: String?, onDecoded: (String) -> Unit) {
-        if (raw == null || accepted) return
+    fun <T> offer(value: T?, onDecoded: (T) -> Unit) {
+        if (value == null || accepted) return
         accepted = true
-        onDecoded(raw)
+        onDecoded(value)
     }
 }
 
@@ -73,15 +88,18 @@ private fun ViewportBox(modifier: Modifier = Modifier, content: @Composable () -
 
 /** The live camera with its framing overlay, and the hint under it. */
 @Composable
-fun CameraViewport(content: @Composable () -> Unit) {
-    val description = stringResource(R.string.scan_camera_description)
+fun CameraViewport(
+    content: @Composable () -> Unit,
+    description: String = stringResource(R.string.scan_camera_description),
+    hint: String = stringResource(R.string.scan_hint)
+) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
         ViewportBox(Modifier.semantics { contentDescription = description }) {
             content()
             FramingOverlay()
         }
         Text(
-            stringResource(R.string.scan_hint),
+            hint,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -92,7 +110,7 @@ fun CameraViewport(content: @Composable () -> Unit) {
 
 /** The viewport before the camera is on: the same size, with the one action that turns it on. */
 @Composable
-fun ViewportStart(onScan: () -> Unit) {
+fun ViewportStart(onScan: () -> Unit, help: String = stringResource(R.string.scan_start_help)) {
     ViewportBox {
         Column(
             modifier = Modifier.padding(Spacing.Lg),
@@ -106,7 +124,7 @@ fun ViewportStart(onScan: () -> Unit) {
                 size = Spacing.X3l
             )
             Text(
-                stringResource(R.string.scan_start_help),
+                help,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -133,13 +151,14 @@ private fun FramingOverlay() {
 }
 
 /**
- * CameraX's preview with ML Kit's QR analyzer. Every decoded value goes to the
- * current `onDecoded`, not to the one the effect started with. A camera that
- * cannot be bound, or cannot initialize, reports through `onError`. Leaving the
- * composition unbinds the camera, which is how the preview stops after a read.
+ * CameraX's preview with ML Kit's analyzer for product QR codes and barcodes.
+ * Every decoded value goes, with its kind, to the current `onDecoded`, not to
+ * the one the effect started with. A camera that cannot be bound, or cannot
+ * initialize, reports through `onError`. Leaving the composition unbinds the
+ * camera, which is how the preview stops after a read.
  */
 @Composable
-fun CameraPreview(onDecoded: (String) -> Unit, onError: (Throwable) -> Unit) {
+fun CameraPreview(onDecoded: (Decoded) -> Unit, onError: (Throwable) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val currentDecoded by rememberUpdatedState(onDecoded)
@@ -148,7 +167,9 @@ fun CameraPreview(onDecoded: (String) -> Unit, onError: (Throwable) -> Unit) {
     val scanner =
         remember {
             BarcodeScanning.getClient(
-                BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build()
+                BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE, *PRODUCT_BARCODE_FORMATS)
+                    .build()
             )
         }
     DisposableEffect(owner) {
@@ -158,7 +179,9 @@ fun CameraPreview(onDecoded: (String) -> Unit, onError: (Throwable) -> Unit) {
         controller.setImageAnalysisAnalyzer(
             executor,
             MlKitAnalyzer(listOf(scanner), ImageAnalysis.COORDINATE_SYSTEM_VIEW_REFERENCED, executor) { result ->
-                decodeOnce.offer(result.getValue(scanner)?.firstOrNull()?.rawValue, currentDecoded)
+                val code = result.getValue(scanner)?.firstOrNull()
+                val decoded = code?.rawValue?.let { raw -> Decoded(raw, codeKind(code.format)) }
+                decodeOnce.offer(decoded, currentDecoded)
             }
         )
         try {

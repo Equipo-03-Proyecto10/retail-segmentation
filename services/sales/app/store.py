@@ -112,6 +112,60 @@ def products(connection: psycopg.Connection, product_ids: list[int]) -> dict[int
     return {row[0]: row[1] for row in rows}
 
 
+def list_prices(
+    connection: psycopg.Connection, product_ids: list[int]
+) -> dict[int, Decimal]:
+    """Each product's list price now, read in the caller's transaction."""
+    rows = connection.execute(
+        "SELECT product_id, list_price FROM api_products.product_ref_v1"
+        " WHERE product_id = ANY(%s)",
+        (product_ids,),
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def store_cap(
+    connection: psycopg.Connection, store_id: int
+) -> tuple[Decimal | None] | None:
+    """The store's `max_discount_percent` (None: no cap), or None for no store."""
+    row = connection.execute(
+        "SELECT max_discount_percent FROM api_stores.store_directory_v2"
+        " WHERE store_id = %s",
+        (store_id,),
+    ).fetchone()
+    return None if row is None else (row[0],)
+
+
+def channel_exists(connection: psycopg.Connection, channel_id: int) -> bool:
+    return (
+        connection.execute(
+            "SELECT 1 FROM public.channel WHERE channel_id = %s", (channel_id,)
+        ).fetchone()
+        is not None
+    )
+
+
+def promotion_windows(
+    connection: psycopg.Connection,
+    promotion_ids: list[int],
+    store_id: int,
+    channel_id: int,
+) -> dict[int, tuple[Decimal, Any, Any]]:
+    """The named promotions that ran for this store and channel, with their
+    percentage and validity. The caller judges the sale's own day against the
+    validity: the view has no date test, so a sale queued offline on a
+    promotion's last day still finds it. A promotion not there is not usable."""
+    if not promotion_ids:
+        return {}
+    rows = connection.execute(
+        "SELECT promotion_id, discount_percent, starts_on, ends_on"
+        " FROM api_campaigns.promotion_window_v1"
+        " WHERE promotion_id = ANY(%s) AND store_id = %s AND channel_id = %s",
+        (promotion_ids, store_id, channel_id),
+    ).fetchall()
+    return {row[0]: (row[1], row[2], row[3]) for row in rows}
+
+
 def insert_sale(
     connection: psycopg.Connection,
     *,
@@ -151,6 +205,22 @@ def insert_sale(
                 line["product_id"],
                 line["quantity"],
                 line["unit_price"],
+            ),
+        )
+    for line in lines:
+        # A phone sale keeps each line's list price at sale time and its
+        # promotion (F25-05). An imported row has no list price to keep.
+        if "list_price" not in line:
+            continue
+        connection.execute(
+            "INSERT INTO sales.sale_line_price"
+            " (transaction_id, product_id, list_price, promotion_id)"
+            " VALUES (%s, %s, %s, %s)",
+            (
+                sale_id,
+                line["product_id"],
+                line["list_price"],
+                line.get("promotion_id"),
             ),
         )
     consume_stock(connection, store_id, lines)

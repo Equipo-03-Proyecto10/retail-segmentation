@@ -10,9 +10,22 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import kotlinx.coroutines.flow.Flow
+import online.maxthecoder.mosaiq.floor.alerts.MIGRATION_1_2
+import online.maxthecoder.mosaiq.floor.alerts.NotifiedItem
+import online.maxthecoder.mosaiq.floor.alerts.NotifiedItemDao
 
 /** What a queued write is; the sales story adds its own. */
-enum class Operation { CHECK_IN, QR_SCAN, SALE, RECO_CLICK }
+enum class Operation {
+    CHECK_IN,
+    QR_SCAN,
+    SALE,
+    RECO_CLICK,
+    CAMPAIGN_EXPOSURE,
+    CAPTURE_INCIDENT,
+    CART_ADD,
+    CART_REMOVE,
+    RECO_IMPRESSION
+}
 
 /** Where a write stands. A refused one is kept until the user dismisses it. */
 enum class RowState { PENDING, DONE, REFUSED }
@@ -57,6 +70,10 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE id = :id")
     fun observe(id: Long): Flow<OutboxRow?>
 
+    /** The row a client id was stored with; null means no request with that id was ever queued. */
+    @Query("SELECT * FROM outbox WHERE clientId = :clientId LIMIT 1")
+    suspend fun findByClientId(clientId: String): OutboxRow?
+
     /** What the outbox screen lists: refused rows, and rows still waiting. */
     @Query("SELECT * FROM outbox WHERE state != 'DONE' ORDER BY id")
     fun observeOpen(): Flow<List<OutboxRow>>
@@ -67,6 +84,15 @@ interface OutboxDao {
     @Query("SELECT * FROM outbox WHERE operation = 'CHECK_IN' AND userId = :userId ORDER BY id DESC LIMIT 1")
     suspend fun latestCheckIn(userId: String): OutboxRow?
 
+    /** The refused writes this user has not dismissed; capture-incident reports are not counted (ADR-0071). */
+    @Query(
+        "SELECT count(*) FROM outbox WHERE state = 'REFUSED' AND userId = :userId AND operation != 'CAPTURE_INCIDENT'"
+    )
+    fun observeRefusedCount(userId: String): Flow<Int>
+
+    @Query("SELECT count(*) FROM outbox WHERE operation = :operation AND clientId = :clientId")
+    suspend fun countWith(operation: Operation, clientId: String): Int
+
     @Query("UPDATE outbox SET attempts = attempts + 1 WHERE id = :id")
     suspend fun countAttempt(id: Long)
 
@@ -76,23 +102,33 @@ interface OutboxDao {
     )
     suspend fun markDone(id: Long, status: Int, body: String?, correlationId: String?, code: String? = null)
 
+    /** [body] is the refusal's envelope as it came, so its `details` can still name a line. */
     @Query(
         "UPDATE outbox SET state = 'REFUSED', status = :status, code = :code, message = :message, " +
-            "correlationId = :correlationId WHERE id = :id AND state = 'PENDING'"
+            "correlationId = :correlationId, responseBody = :body WHERE id = :id AND state = 'PENDING'"
     )
-    suspend fun markRefused(id: Long, status: Int, code: String, message: String, correlationId: String?)
+    suspend fun markRefused(
+        id: Long,
+        status: Int,
+        code: String,
+        message: String,
+        correlationId: String?,
+        body: String? = null
+    )
 
     /** Only a refused row can be dismissed: a pending one is never dropped. */
     @Query("DELETE FROM outbox WHERE id = :id AND state = 'REFUSED'")
     suspend fun dismiss(id: Long): Int
 }
 
-@Database(entities = [OutboxRow::class], version = 1, exportSchema = false)
+@Database(entities = [OutboxRow::class, NotifiedItem::class], version = 2, exportSchema = false)
 abstract class FloorDatabase : RoomDatabase() {
     abstract fun outbox(): OutboxDao
 
+    abstract fun notified(): NotifiedItemDao
+
     companion object {
         fun open(context: Context): FloorDatabase =
-            Room.databaseBuilder(context, FloorDatabase::class.java, "floor.db").build()
+            Room.databaseBuilder(context, FloorDatabase::class.java, "floor.db").addMigrations(MIGRATION_1_2).build()
     }
 }

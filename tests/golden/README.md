@@ -1,6 +1,6 @@
 # Golden fixtures
 
-Five rule sets exist twice: in the web, and in the service that ports them
+Six rule sets exist twice: in the web, and in the service that ports them
 ([ADR-0045](../../docs/adr/0045-services-never-import-the-web-system.md),
 accepted exception E-17). The services never import `web/`. Instead, this
 directory captures what the web does on a fixed set of inputs. Each porting
@@ -14,6 +14,7 @@ service then commits that capture as its fixtures and holds its port to them.
 | users | `create_user`, `update_user`, `change_role`, `set_active`, `transfer_administrator`, `validate_user` | a second administrator three ways, removing the only one two ways, a transfer and a refused one, a case-variant duplicate email two ways, a malformed email two ways, and two accepted writes | `services/users/tests/golden/users.json` |
 | campaigns | `TRANSITIONS`, `transition`, `create_campaign`, `update_draft`, `validate_campaign` | the table, every (from, action) pair on the seeded campaigns, duplicate draft creation, the draft-only edit, end before start two ways, and activation: an ended seeded draft (RN-49), a new draft with no experiment, and one whose experiment has no treatment (RN-24) | `services/campaigns/tests/golden/campaigns.json` |
 | segments | `classify_migration`, `build_migration_matrix`, `explain_migration`, `describe_migration` | RN-39 label comparison, RN-59's reconciled traceable matrix, and RN-60's raw-value judgements | `services/segments/tests/golden/segments.json` |
+| model-registry | `fit_customers`, `normalise`, `label_clusters`, `rank_clusters`, `labels_by_rank` | min-max and its constant feature; k-means++ seeding and the final assignment; the iteration limit and a tolerance equal to the last shift; identical customers (empty cluster refilled); two equidistant ties; fewer customers than clusters; a sampled silhouette at 2,100 customers; equal-ranked clusters; label pairing for k = 2 to 8 | `services/model-registry/tests/golden/model-registry.json` |
 
 ## Capturing
 

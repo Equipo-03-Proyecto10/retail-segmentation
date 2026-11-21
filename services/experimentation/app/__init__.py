@@ -20,7 +20,7 @@ from mosaiq_kit import Kit, Page, Representation, configure_logging
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.streams import StreamConsumer
 
-from app import conversions, experiments, exposures, plan
+from app import conversions, experiments, exposures, plan, results
 from app.config import ENGAGEMENT_STREAM, Settings
 
 
@@ -123,6 +123,15 @@ def create_app() -> Flask:
             return Representation(
                 "Experiment", experiments.get_experiment(connection, experiment_id)
             )
+
+    @kit.operation("getExperimentResult")
+    def get_experiment_result(experiment_id: int) -> Representation:
+        basis = results.parse_basis(request.args)
+        # Reading may record the sales not recorded yet and, for the first primary
+        # read at or after the analysis instant, store the result (app/results.py).
+        with kit.db.transaction() as connection:
+            result = results.get_result(connection, experiment_id, basis)
+        return Representation("ExperimentResult", result)
 
     @kit.operation("listExperiments")
     def list_experiments() -> Page:

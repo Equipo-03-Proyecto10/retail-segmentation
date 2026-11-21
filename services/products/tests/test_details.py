@@ -554,6 +554,94 @@ def test_the_check_constraint_refuses_a_bad_barcode_below_the_service(
     assert (error.status, error.code) == (422, "invalid_barcode")
 
 
+# -- listing by barcode (#1088, #1089) ------------------------------------------
+
+
+def list_ids(client, query: str) -> tuple[list[int], int]:
+    response = client.get("/v1/products?" + query, headers=headers())
+    assert response.status_code == 200, response.data
+    body = response.get_json()
+    return [item["product_id"] for item in body["products"]], body["page_info"]["total"]
+
+
+def test_a_barcode_lists_exactly_its_product(client) -> None:
+    # Other products exist, so a service that ignored the filter would fail.
+    first, second = create(client, 1), create(client, 2)
+    patch_details(client, first, {"barcode": gtin13(11)})
+    patch_details(client, second, {"barcode": gtin13(12)})
+    assert list_ids(client, "barcode=" + gtin13(12)) == ([second], 1)
+    assert list_ids(client, "barcode=7501000000012") == ([1], 1)
+
+
+def test_a_barcode_no_product_carries_is_an_empty_page(client) -> None:
+    create(client)
+    assert list_ids(client, "barcode=" + gtin13(99)) == ([], 0)
+
+
+@pytest.mark.parametrize("code", ["4006381333932", "036000291453", "96385075"])
+def test_a_wrong_check_digit_matches_nothing(client, code) -> None:
+    # Within the Barcode pattern, so not 422: the contract says it matches
+    # no product, and the CHECK keeps every stored barcode valid.
+    assert list_ids(client, "barcode=" + code) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    "value", ["12ab", "", "1234567", "123456789", "123456789012345", "4006381333931%0A"]
+)
+def test_a_barcode_outside_the_pattern_is_422_invalid_query(client, value) -> None:
+    response = client.get("/v1/products?barcode=" + value, headers=headers())
+    assert response.status_code == 422
+    error = response.get_json()
+    assert error["code"] == "invalid_query"
+    assert error["details"] == [{"field": "barcode", "code": "invalid_format"}]
+
+
+def test_the_barcode_filter_combines_with_the_others(client) -> None:
+    product_id = create(client)
+    code = gtin13(21)
+    patch_details(client, product_id, {"barcode": code})
+    assert list_ids(client, f"barcode={code}&active=true") == ([product_id], 1)
+    assert list_ids(client, f"barcode={code}&active=false") == ([], 0)
+    assert list_ids(client, f"barcode={code}&sku=TST-D0001") == ([product_id], 1)
+    assert list_ids(client, f"barcode={code}&sku=TST-OTHER") == ([], 0)
+    assert list_ids(client, f"barcode={code}&ids=1,2") == ([], 0)
+    retired = client.patch(
+        f"/v1/products/{product_id}", json={"is_active": False}, headers=headers()
+    )
+    assert retired.status_code == 200
+    assert list_ids(client, f"barcode={code}&active=false") == ([product_id], 1)
+    assert list_ids(client, f"barcode={code}&active=true") == ([], 0)
+
+
+def test_a_replaced_barcode_no_longer_finds_the_product(client) -> None:
+    product_id = create(client)
+    patch_details(client, product_id, {"barcode": gtin13(31)})
+    patch_details(client, product_id, {"barcode": gtin13(32)})
+    assert list_ids(client, "barcode=" + gtin13(31)) == ([], 0)
+    assert list_ids(client, "barcode=" + gtin13(32)) == ([product_id], 1)
+
+
+def test_the_barcode_page_in_xml_validates_against_the_xsd(client, xsd) -> None:
+    product_id = create(client)
+    patch_details(client, product_id, {"barcode": gtin13(41)})
+    response = client.get(
+        "/v1/products?barcode=" + gtin13(41),
+        headers=headers(Accept="application/xml"),
+    )
+    assert response.status_code == 200
+    root = etree.fromstring(response.data)
+    xsd.assertValid(root)
+    assert [
+        product.findtext(f"{{{NAMESPACE}}}product_id")
+        for product in root.findall(f"{{{NAMESPACE}}}Product")
+    ] == [str(product_id)]
+    total = root.findtext(
+        "{https://mosaiq.maxthecoder.online/xml/common/v1}PageInfo/"
+        "{https://mosaiq.maxthecoder.online/xml/common/v1}total"
+    )
+    assert total == "1"
+
+
 # -- relations ----------------------------------------------------------------
 
 

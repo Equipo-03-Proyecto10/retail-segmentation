@@ -49,13 +49,18 @@ def list_products(
     *,
     q: str | None,
     sku: str | None,
+    barcode: str | None,
     category_id: int | None,
     active: bool | None,
     ids: list[int] | None,
     limit: int,
     offset: int,
 ) -> tuple[list[dict], int]:
-    """One page and the filtered total. ``ids`` is a single ``= ANY(%s)``."""
+    """One page and the filtered total. ``ids`` is a single ``= ANY(%s)``.
+
+    ``barcode`` is an exact match through the unique index on
+    ``products.product_barcode.barcode``, so it selects at most one product.
+    """
 
     conditions: list[sql.Composable] = []
     params: list[Any] = []
@@ -65,6 +70,14 @@ def list_products(
     if sku is not None:
         conditions.append(sql.SQL("sku = %s"))
         params.append(sku)
+    if barcode is not None:
+        conditions.append(
+            sql.SQL(
+                "product_id IN (SELECT product_id FROM products.product_barcode "
+                "WHERE barcode = %s)"
+            )
+        )
+        params.append(barcode)
     if category_id is not None:
         conditions.append(sql.SQL("category_id = %s"))
         params.append(category_id)

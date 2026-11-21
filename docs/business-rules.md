@@ -170,9 +170,19 @@ A line with zero units is not a line.
 `transaction_line.unit_price` is what the customer paid, not
 `product.list_price`. A later price change must not rewrite history.
 
+A sale recorded through sales-service also keeps the product's list price at
+sale time and the promotion its discount relied on (F25-05). A line charged
+below its list price must name a promotion active for the sale's store, channel
+and day, and is charged no lower than the smaller of the promotion's discount
+and the store's maximum discount (RN-53, RN-71).
+
 **Enforced:** the model — the price is stored on the line rather than read
 through the product. The application must never populate it by copying the
-current list price at read time. Reviewed, not constrained. · `RF-10`
+current list price at read time. Reviewed, not constrained. For phone sales,
+sales-service refuses an undeclared or excessive discount
+(`discount_without_promotion`, `promotion_not_applicable`,
+`discount_above_promotion`, `discount_above_store_cap`) and keeps the list
+price in `sales.sale_line_price`. · `RF-10` · #836
 
 ### RN-14 — Stock is never negative
 Stock is consumed by an accepted sale for the same store, product and quantity.
@@ -232,9 +242,16 @@ because ADR-0018 forbids a null label for anyone scored; the run reports how man
 did as "Matched no rule", separately from customers with no sales in the window
 (RN-21), who stay unassigned.
 
+A rule set of rfm-engine goes further than the web's retuned bands: its bands must
+partition the 125 triples, so it is refused when a triple sits in none or in more than
+one (F22-09), and a rule set is frozen once published, so the partition it was
+validated with is the one every profile was scored under.
+
 **Enforced:** the fallback join in `web.db.segments` and the `via_fallback` flag it
-returns. **Verified** — `tests/test_seed_segment_rules.py` (partition, every label
+returns; for rfm-engine, `rfm.rule_set_partition`, checked when a rule set is created,
+edited or published, and `trg_rule_set_guard`. **Verified** — `tests/test_seed_segment_rules.py` (partition, every label
 and every segment reachable), `tests/test_segmentation_pipeline.py`,
+`services/rfm-engine/tests/test_rule_sets.py`,
 [`evidence/f345-segment-rule-bands.md`](evidence/f345-segment-rule-bands.md).
 
 ### RN-51 — A quintile boundary is computed once per distinct value, so equal measures get equal scores
@@ -514,12 +531,12 @@ A product is recommended to a customer only when all of these hold:
   recommendations-service may name the reference store, which then takes precedence over
   the usual store, and a reference channel, which is never defaulted from the customer's
   habits. A product is available when its commercial status allows the sale, the store's
-  status permits sales, the store enables the channel when one is given, and on-hand is
-  above zero; hours are not part of it. A product that matches a signal and fails is
-  excluded for exactly one reason, taken in this order: `already_bought`, `inactive`,
-  `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`,
-  `PERSONALIZATION_WITHDRAWN`. A customer who objected to personalization is not
-  recommended to and nothing about them is read. When the reason is `not_sellable`,
+  status permits sales, the store enables the channel when one is given (and some
+  channel when none is, ADR-0084), and on-hand is above zero; hours are not part of it.
+  A product that matches a signal and fails is excluded for exactly one reason, taken in
+  this order: `already_bought`, `inactive`, `not_sellable`, `store_not_selling`,
+  `channel_not_enabled`, `out_of_stock`, `PERSONALIZATION_WITHDRAWN`. A customer who
+  objected to personalization is not recommended to and nothing about them is read. When the reason is `not_sellable`,
   `channel_not_enabled` or `out_of_stock`, one substitute (a declared substitute relation,
   itself available and not bought) may be offered in its place, marked as an alternative
   and naming the product it replaces; another store holding the product is reported only
@@ -1382,7 +1399,7 @@ window, the threshold and the version; a window that crosses a change of version
 not compared, and "concept drift" is said only of an outcome-test result
 ([ADR-0065](adr/0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md)).
 
-**Enforced:** model-registry (planned), ADR-0059 and ADR-0064 —
+**Enforced:** model-registry, ADR-0059 and ADR-0064 —
 `models.model_version` is insert-only for `svc_models` apart from its state, a
 partial unique index allows one `PUBLISHED` row, and `models.model_publication`
 is append-only. The contract of F22-10 (#805) specifies versions, training runs,

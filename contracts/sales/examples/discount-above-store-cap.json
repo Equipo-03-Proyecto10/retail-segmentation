@@ -1,0 +1,11 @@
+{
+  "code": "discount_above_store_cap",
+  "message": "A line is charged below what the store's commercial rule allows.",
+  "correlation_id": "corr-discount-above-store-cap",
+  "details": [
+    {
+      "field": "lines[0].unit_price",
+      "code": "below_store_cap"
+    }
+  ]
+}

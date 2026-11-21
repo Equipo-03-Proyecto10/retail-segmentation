@@ -1,6 +1,11 @@
 package online.maxthecoder.mosaiq.floor.ui.shell
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,17 +38,20 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.em
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.auth.FloorAccess
@@ -51,7 +59,10 @@ import online.maxthecoder.mosaiq.floor.auth.FloorSection
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
+import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesScreen
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanScreen
@@ -59,15 +70,25 @@ import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.checkin.StoreAndCheckIn
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
+import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
+import online.maxthecoder.mosaiq.floor.ui.identify.IdentifyScreen
+import online.maxthecoder.mosaiq.floor.ui.inbox.InboxScreen
+import online.maxthecoder.mosaiq.floor.ui.inbox.InboxViewModel
+import online.maxthecoder.mosaiq.floor.ui.inbox.focusOf
+import online.maxthecoder.mosaiq.floor.ui.indicators.IndicatorsScreen
+import online.maxthecoder.mosaiq.floor.ui.indicators.IndicatorsViewModel
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
+import online.maxthecoder.mosaiq.floor.ui.record.CustomerRecordScreen
+import online.maxthecoder.mosaiq.floor.ui.record.NewCustomerScreen
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
+import online.maxthecoder.mosaiq.floor.ui.theme.isLargeFont
 
 private val WORDMARK_TRACKING = 0.14.em
 
 /**
  * The floor process once signed in: top bar, bottom navigation and the section the location names.
  * Each role gets its own profile of sections (ADR-0060, [FloorAccess]); a role that has none is shown a
- * plain message instead of any screen.
+ * plain message instead of any screen. [indicators] is null only where Indicators is never opened.
  */
 @Composable
 fun FloorHome(
@@ -76,12 +97,17 @@ fun FloorHome(
     scan: ScanViewModel,
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
-    onSignOut: () -> Unit
+    identify: IdentifyViewModel,
+    record: CustomerRecordViewModel,
+    promotions: PromotionsViewModel,
+    onSignOut: () -> Unit,
+    inbox: InboxViewModel? = null,
+    indicators: IndicatorsViewModel? = null
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, onSignOut)
+        FloorProfile(signedIn, model, scan, sales, insights, identify, record, promotions, onSignOut, inbox, indicators)
     }
 }
 
@@ -107,7 +133,12 @@ private fun FloorProfile(
     scan: ScanViewModel,
     sales: SalesViewModel,
     insights: CustomerInsightsViewModel,
-    onSignOut: () -> Unit
+    identify: IdentifyViewModel,
+    record: CustomerRecordViewModel,
+    promotions: PromotionsViewModel,
+    onSignOut: () -> Unit,
+    inbox: InboxViewModel?,
+    indicators: IndicatorsViewModel?
 ) {
     val role = signedIn.role
     var saved: FloorLocation by rememberSaveable(stateSaver = FloorLocationSaver) {
@@ -120,8 +151,18 @@ private fun FloorProfile(
     val go: (FloorLocation) -> Unit = { saved = it.allowedFor(role) }
     val chosen by model.chosen.collectAsStateWithLifecycle()
     val rows by model.open.collectAsStateWithLifecycle()
-    val pendingWrites = rows.count { it.state == RowState.PENDING }
+    val pendingWrites = rows.orEmpty().count { it.state == RowState.PENDING }
     val canSell = FloorAccess.holds(role, FloorSection.SALE)
+    val unread = inbox?.unread?.collectAsStateWithLifecycle()?.value ?: 0
+    val opened = inbox?.opened?.collectAsStateWithLifecycle()?.value
+    // A tapped notification opens the updates screen at what it was about (ADR-0071).
+    LaunchedEffect(opened) {
+        if (opened != null && inbox != null) {
+            go(FloorLocation.Inbox(focusOf(opened.kind, opened.subjectId)))
+            inbox.consumeOpened()
+        }
+    }
+    if (inbox != null) NotificationPermission(due = unread > 0)
 
     // Back steps one state (ADR-0058); on the first section it is off, so the system leaves the app.
     val back = location.backFor(role)
@@ -135,7 +176,9 @@ private fun FloorProfile(
                     signedIn = signedIn,
                     store = chosen,
                     onStoreClick = { go(FloorLocation.StorePicker) },
-                    onSignOut = requestSignOut
+                    onSignOut = requestSignOut,
+                    unread = unread,
+                    onInbox = inbox?.let { { go(FloorLocation.Inbox()) } }
                 )
             },
             bottomBar = {
@@ -162,7 +205,7 @@ private fun FloorProfile(
                             scan,
                             chosen,
                             onPickStore = { go(FloorLocation.CheckIn) },
-                            onAddProduct = if (canSell) sales::addProduct else null
+                            onAddProduct = if (canSell) { product -> sales.addProduct(product) } else null
                         )
                     FloorLocation.Sale, FloorLocation.RegisterCustomer ->
                         SalesScreen(
@@ -177,9 +220,64 @@ private fun FloorProfile(
                             onOpenProduct = { productId ->
                                 scan.showProduct(productId)
                                 go(FloorLocation.ProductFromRecommendation(productId))
-                            }
+                            },
+                            promotions = promotions
                         )
+                    FloorLocation.Indicators -> indicators?.let { IndicatorsScreen(it, chosen) }
                     FloorLocation.Outbox -> OutboxList(model)
+                    FloorLocation.Customer, is FloorLocation.CustomerProfile ->
+                        Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
+                            // The loyalty officer's way into registration and the record (F27-09).
+                            if (FloorAccess.holds(role, FloorSection.CUSTOMER_RECORD)) {
+                                val profileId = (here as? FloorLocation.CustomerProfile)?.customerId
+                                MqButton(
+                                    stringResource(
+                                        if (profileId == null) {
+                                            R.string.record_register_entry
+                                        } else {
+                                            R.string.record_open_entry
+                                        }
+                                    ),
+                                    {
+                                        if (profileId == null) {
+                                            record.startEnrolment()
+                                            go(FloorLocation.NewCustomer)
+                                        } else {
+                                            go(FloorLocation.CustomerRecord(profileId))
+                                        }
+                                    },
+                                    variant = MqButtonVariant.Secondary,
+                                    fullWidth = true,
+                                    modifier = Modifier.testTag("record-entry")
+                                )
+                            }
+                            Box(Modifier.weight(1f)) {
+                                IdentifyScreen(
+                                    identify,
+                                    profileId = (here as? FloorLocation.CustomerProfile)?.customerId,
+                                    onOpenProfile = { go(FloorLocation.CustomerProfile(it)) },
+                                    onBack = { go(FloorLocation.Customer) },
+                                    onOpenProduct = { productId ->
+                                        scan.showProduct(productId)
+                                        go(FloorLocation.ProductFromRecommendation(productId))
+                                    }
+                                )
+                            }
+                        }
+                    FloorLocation.NewCustomer ->
+                        NewCustomerScreen(record, onRegistered = { go(FloorLocation.CustomerRecord(it)) })
+                    is FloorLocation.CustomerRecord ->
+                        CustomerRecordScreen(
+                            record,
+                            here.customerId,
+                            onBack = { go(FloorLocation.CustomerProfile(here.customerId)) }
+                        )
+                    is FloorLocation.Inbox ->
+                        if (inbox != null) {
+                            InboxScreen(inbox, here.focus, onOpenOutbox = { go(FloorLocation.Outbox) })
+                        } else {
+                            OutboxList(model)
+                        }
                 }
             }
         }
@@ -192,7 +290,9 @@ internal fun FloorTopBar(
     signedIn: SessionState.SignedIn,
     store: ChosenStore?,
     onStoreClick: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    unread: Int = 0,
+    onInbox: (() -> Unit)? = null
 ) {
     TopAppBar(
         title = {
@@ -201,7 +301,7 @@ internal fun FloorTopBar(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)
             ) {
                 // At large font sizes the wordmark gives its room to the store name.
-                if (LocalDensity.current.fontScale <= LARGE_FONT_SCALE) {
+                if (!isLargeFont()) {
                     Text(
                         stringResource(R.string.signin_wordmark),
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -228,8 +328,52 @@ internal fun FloorTopBar(
                 )
             }
         },
-        actions = { AccountMenu(signedIn, onSignOut) }
+        actions = {
+            onInbox?.let { InboxButton(unread, it) }
+            AccountMenu(signedIn, onSignOut)
+        }
     )
+}
+
+/** The updates screen's way in, with how many alerts are unread (ADR-0071). */
+@Composable
+private fun InboxButton(unread: Int, onClick: () -> Unit) {
+    val label =
+        if (unread > 0) {
+            pluralStringResource(R.plurals.a11y_inbox_unread, unread, unread)
+        } else {
+            stringResource(R.string.inbox_open)
+        }
+    IconButton(onClick = onClick, modifier = Modifier.testTag("inbox-button")) {
+        BadgedBox(
+            badge = {
+                if (unread > 0) Badge(modifier = Modifier.testTag("inbox-badge")) { Text(unread.toString()) }
+            }
+        ) {
+            Icon(painterResource(R.drawable.ic_lucide_bell), contentDescription = label)
+        }
+    }
+}
+
+/**
+ * Android 13 and later ask for the notification permission at the first moment one is due, never at launch
+ * (ADR-0071), and once per screen state. Declined, the updates screen and its badge still show everything.
+ */
+@Composable
+private fun NotificationPermission(due: Boolean) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val context = LocalContext.current
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked = true }
+    LaunchedEffect(due, asked) {
+        val granted =
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        if (due && !asked && !granted) {
+            asked = true
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 }
 
 @Composable
@@ -253,6 +397,8 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
                 leadingIcon = {
                     Icon(painterResource(R.drawable.ic_lucide_log_out), contentDescription = null)
                 },
+                // Material's menu item is clickable with no role, so TalkBack would not say "button".
+                modifier = Modifier.semantics { role = Role.Button },
                 onClick = {
                     open = false
                     onSignOut()
@@ -261,8 +407,6 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
         }
     }
 }
-
-private const val LARGE_FONT_SCALE = 1.3f
 
 private class Section(
     val section: FloorSection,
@@ -276,8 +420,15 @@ private class Section(
 private val SECTIONS =
     listOf(
         Section(FloorSection.CHECK_IN, R.string.nav_check_in, R.drawable.ic_lucide_map_pin, "nav-check-in"),
+        Section(FloorSection.CUSTOMER, R.string.nav_customer, R.drawable.ic_lucide_user_search, "nav-customer"),
         Section(FloorSection.SCAN, R.string.nav_scan, R.drawable.ic_lucide_scan_line, "nav-scan"),
         Section(FloorSection.SALE, R.string.nav_sale, R.drawable.ic_lucide_shopping_cart, "nav-sale"),
+        Section(
+            FloorSection.INDICATORS,
+            R.string.nav_indicators,
+            R.drawable.ic_lucide_chart_column,
+            "nav-indicators"
+        ),
         Section(FloorSection.OUTBOX, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")
     )
 
@@ -288,7 +439,7 @@ internal fun FloorBottomBar(
     held: List<FloorSection> = FloorSection.entries,
     onSelect: (FloorLocation) -> Unit
 ) {
-    val largeFont = LocalDensity.current.fontScale > LARGE_FONT_SCALE
+    val largeFont = isLargeFont()
     NavigationBar {
         SECTIONS.filter { it.section in held }.forEach { section ->
             NavigationBarItem(

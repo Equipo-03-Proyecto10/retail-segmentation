@@ -357,6 +357,18 @@ The two minimum-purchase columns are present together or not at all, and a
 per-customer amount never exceeds the total, both as `CHECK` constraints. They
 are separate from `campaign` because the frozen web still writes that table.
 
+A promotion (RN-71, #1104) is kept in three tables of the same schema. Its
+campaign, name, percentage and validity are single-valued and depend on
+`promotion_id` alone, so they are one relation. The stores where it applies and
+the channels on which it applies are two independent multivalued facts of one
+promotion: any of its stores goes with any of its channels. Holding both in one
+relation keyed by `(promotion_id, store_id, channel_id)` would be the textbook
+4NF violation, a promotion for three stores and two channels stored as six rows
+that must be kept a full product by hand. So `promotion_store` and
+`promotion_channel` each hold one row per member, and the product is formed only
+when `api_campaigns.active_promotion_v1` or `api_campaigns.promotion_window_v1`
+is read. No array column holds either list.
+
 `notification` and `notification_recipient` (AN-04, ADR-0047) split an event from
 the people it was written for, for the same reason `segmentation_run` and
 `customer_segment_history` do. One relation holding the event beside each
@@ -618,6 +630,35 @@ experiment planned through the service:
 A plan is frozen: `svc_experiments` holds SELECT and INSERT only, and a trigger refuses an UPDATE
 or DELETE of a plan, a member or an exclusion from anyone.
 
+The primary result (ADR-0085, F25-13) adds four more, also in 4NF, written together once by the
+first primary read at or after the analysis instant. A look cannot be recomputed later (the net
+view keeps no history of its reversals), so each stored value is a fact of the look and not a
+function of current data:
+- **`experiments.experiment_result`** is keyed by `experiment_id`, which determines when the look
+  was computed, the sample ratio's p-value and whether the figures are synthetic. The status is
+  not a column: it is `INVALID` exactly when that p-value is below 0.001.
+- **`experiments.experiment_result_arm`** is keyed by `(experiment_id, group_id)`, which determines
+  the arm's counts (analysed, exposed, exposed who converted, converted, pending, not converted),
+  its net revenue and the standard deviation of its revenue per customer. The rates and revenue
+  per customer are not columns: they are counts over `analysed` and revenue over `analysed`. A
+  check keeps `converted + pending + not_converted = analysed`.
+- **`experiments.experiment_result_comparison`** is keyed by `(experiment_id, group_id,
+  against_group_id, metric)`, which determines the difference, its interval, the p-value, the
+  degrees of freedom and, for revenue only, the bootstrap interval. Not columns, because each
+  follows from the key, the stored values and the plan: the label (whether the other arm is a
+  control), the role (whether the metric is the plan's primary), the test (a function of the
+  metric), the confidence level (`1 - comparison_alpha`), the conclusion (the p-value against the
+  level, and the `UNDERPOWERED` flag), the incremental revenue (the difference and the interval
+  times the arm's `analysed`) and whether the bootstrap agrees.
+- **`experiments.experiment_result_balance`** is keyed by `(experiment_id, group_id, measure)`,
+  which determines the reference arm and the standardized mean difference. Whether it is flagged
+  is not a column: it is its absolute value against 0.25.
+
+They are one relation per kind of fact, never an array and never a document, so that a constraint
+can keep each fact consistent. The two flags a look can raise go to `experiment_flag`. Frozen like
+the plan: `svc_experiments` holds SELECT and INSERT only, and the same trigger refuses any UPDATE
+or DELETE.
+
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
 - **`recommendations.recommendation_decision`** is keyed by `decision_id`, which
@@ -668,6 +709,25 @@ The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
     the same fact twice, free to disagree (ADR-0039).
   - `request_sha256` is a fact of the request as accepted, not a function of
     current data, so it is not derived state.
+- **`sales.sale_line_price`** (F25-05) is keyed by `(transaction_id,
+  product_id)`, the key of the line it describes, which determines `list_price`
+  and `promotion_id`. A line names at most one promotion, so both are
+  single-valued facts of the line and there is no multivalued dependency to
+  split. It is a 1:1 split of `transaction_line` for phone sales only, for the
+  same reason `sale_capture` splits `transaction`: a CSV or imported line has no
+  list price of its day to keep, and the web, which writes those lines, must not
+  see the columns.
+  - `list_price` is not derived state: it is the product's price on the day of
+    the sale, which `product.list_price` no longer says once the catalog
+    changes. That is the fact RN-13 says the line does not otherwise keep.
+  - `promotion_id` is `NULL` when no promotion discounted the line (none was
+    named, or the line was charged at or above its list price), the one
+    meaning of its absence. It has no foreign key: promotions are campaigns'
+    (ADR-0044), checked through `api_campaigns.promotion_window_v1` when the
+    line is written, and a promotion of a campaign that ran is never rewritten.
+  - The seed's thirty rows are illustrative: they sit on seeded sales that have
+    no `sale_capture` row (that table is runtime state and seed-exempt), as if
+    those sales had been recorded through the service on the day of the load.
 
 The stores boundary (RN-53, ADR-0046, F21-12) adds six relations beside
 `stores.store_location`, all in 4NF. Each fact of a store is its own relation,
@@ -968,15 +1028,38 @@ decision that matters is how a product's many-valued facts are split:
   every measure, score, label and flag, `unassigned` has a count of zero and none of
   them. A customer with no row is `pending`, which the view derives and nothing
   stores.
+- **`rfm.pass_run`** (rfm-engine, F22-07, ADR-0063) is keyed by `pass_run_id`: each row
+  is one scheduled pass, and its other columns are facts of that pass alone (the rule
+  set and instant it measures from, when it started and finished, how many customers
+  it examined and how many of them changed), so the relation is in BCNF. It is the
+  record of the pass, not a copy of anything else: `as_of` is fixed at the start so a
+  pass that stops and resumes writes what one uninterrupted pass would, and the unique
+  index `pass_run_one_running` allows one RUNNING row. `pass_run_finish_shape` ties
+  `finished_at` to the status.
 - **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
-  Its boundaries are four-element arrays: each is written once, frozen, and read
-  whole (a customer is scored against all four of a measure's boundaries, in order),
-  and no query selects or updates a part of one, so rows per boundary would store the
-  same facts without a dependency to remove; the CHECKs keep them ordered.
+  Its boundaries are four-element arrays: each is written once, read whole (a
+  customer is scored against all four of a measure's boundaries, in order), and no
+  query selects or updates a part of one, so rows per boundary would store the same
+  facts without a dependency to remove; the CHECKs keep them ordered. F22-09 adds
+  what governs it: `state` and `published_at` (a draft until published, frozen
+  after; `rule_set_state_shape` ties them), `version_no` and `parent_rule_set_id`
+  (the version it changes; `rule_set_lineage`, and the unique index
+  `rule_set_one_successor`, make a lineage a line), and `cancelled_sales` and
+  `returned_sales`, the treatment of a reversed sale (`DEDUCT` alone, ADR-0062; a CHECK for each). Each is one value of this
+  rule set, so none is a multivalued fact for a table of its own and the relation
+  stays in BCNF; a lineage is a column and not a link table because a version has
+  one parent and, by the index, one successor. `trg_rule_set_guard` makes a
+  published rule set immutable, for every role, and refuses to publish bands that
+  do not partition the 125 triples of scores (RN-46). The seed holds the web's
+  published rule set (`PUBLISHED`, version 1) and a `DRAFT` version 2 of it.
 - **`rfm.rule_set_band`** is the repeated group "this rule set maps this box of
   scores to this label": one row per box, keyed `(rule_set_id, band_no)`, not a
   document inside `rule_set`. `band_no` is the order the first box that holds a
   customer's scores wins in; every column depends on the key and nothing else.
+  The boxes of a rule set partition the 125 triples (RN-46), which
+  `rfm.rule_set_partition` counts, and `trg_rule_set_band_guard` freezes the boxes
+  of a published rule set. The seed holds the 30 boxes of version 1 and the same 30
+  under the draft.
 
 - **`models.model_version`** (model-registry, F22-11, ADR-0064) is one relation
   keyed by `version_id`, with `name` a second candidate key, so every other
@@ -1005,6 +1088,24 @@ decision that matters is how a product's many-valued facts are split:
   determines every column, and `previous_version_id` is a second reference to
   `model_version`, not a copy of it. It is append-only, so a rollback is a new
   row and history is never rewritten.
+- **`models.model_training`** (model-registry, F22-12) is one relation keyed by
+  `training_id`: one row is one request to train, with the parameters asked for
+  (`window_days`, `seed`, `k`, `max_iterations`, `tolerance`, `normalization`), who
+  asked and when, and, once it ends, what came of it. Every column depends on the
+  key and nothing else, so it is in BCNF. The outcome columns are null while the
+  training is `RUNNING`, and a CHECK ties the null pattern to `state`, so a row
+  cannot claim a result it does not have. `version_id` is the version the training
+  registered, unique, so a version has at most one training. A trigger lets only
+  the move from `RUNNING` to `COMPLETED` or `FAILED` change the outcome columns,
+  and refuses every DELETE; a unique partial index allows one `RUNNING` row.
+- **`models.model_training_feature`** is the multivalued fact "this training fitted
+  these variables" (R, F, M), keyed `(training_id, feature)`, independent of
+  every other fact, so it is in 4NF; the same shape as `model_version_feature`.
+- **`models.model_training_cluster`** is the multivalued fact "the cluster at this
+  rank of this training held this many customers", keyed `(training_id,
+  cluster_index)`. The count depends on the whole key, and it is not derivable
+  from the version's `reference_distribution` (which holds shares of labels, not
+  of clusters), so it is a stored fact; it is in 4NF. Both are insert-only.
 - **`models.run_version`** is the 1:N fact "this segmentation run was scored
   under this version" (ADR-0064). `run_id → version_id`, and the run is the
   web's, named by value with no foreign key (the record outlives any maintenance
@@ -1373,6 +1474,54 @@ window.
 | `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
 | `flag` | `VARCHAR(30)` | NN | PK part; CHECK one of the four flags of the contract | A flag that applies to the experiment |
 
+#### `experiments.experiment_result`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment whose primary look this is |
+| `computed_at` | `TIMESTAMPTZ` | NN | — | When the look was computed: the result's `as_of` |
+| `sample_ratio_p_value` | `DOUBLE PRECISION` | NN | CHECK in [0, 1] | The chi-square goodness-of-fit p-value of the arm counts against the planned allocation |
+| `synthetic` | `BOOLEAN` | NN | — | The experiment is not observed, or a counted sale is seeded (RN-26) |
+
+#### `experiments.experiment_result_arm`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result`, `ON DELETE RESTRICT` | The look |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
+| `analysed` | `INTEGER` | NN | CHECK `>= 0` | Assigned customers that reached the analysis |
+| `exposed` | `INTEGER` | NN | CHECK `>= 0` | Customers with a non-voided exposure; 0 for a control |
+| `exposed_converted` | `INTEGER` | yes | CHECK in [0, `exposed`] | Of the exposed, those who bought inside the window from their first exposure (RN-48); null for a control |
+| `converted` | `INTEGER` | NN | CHECK `>= 0` | Customers with a conversion that still counts |
+| `pending` | `INTEGER` | NN | CHECK `>= 0` | No conversion, and the customer's window was open |
+| `not_converted` | `INTEGER` | NN | CHECK `>= 0` | No conversion, and the window had closed |
+| `net_revenue` | `NUMERIC(14,2)` | NN | CHECK `>= 0` | The arm's net sales in the window |
+| `revenue_std_dev` | `DOUBLE PRECISION` | NN | CHECK `>= 0` | The sample standard deviation of revenue per customer, zeros included |
+
+#### `experiments.experiment_result_comparison`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result` | The look |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm compared |
+| `against_group_id` | `INTEGER` | NN | PK part; FK likewise; CHECK `<> group_id` | The control, or the first offer when there is none |
+| `metric` | `VARCHAR(20)` | NN | PK part; CHECK `CONVERSION` or `REVENUE_PER_CUSTOMER` | The metric compared |
+| `difference` | `DOUBLE PRECISION` | NN | — | `group_id` minus `against_group_id`, in the metric's unit |
+| `lower`, `upper` | `DOUBLE PRECISION` | NN | CHECK `lower <= upper` | The interval at `1 - comparison_alpha` |
+| `p_value` | `DOUBLE PRECISION` | NN | CHECK in [0, 1] | Two-sided |
+| `degrees_of_freedom` | `DOUBLE PRECISION` | yes | CHECK `> 0` | Satterthwaite, for revenue only |
+| `bootstrap_lower`, `bootstrap_upper` | `DOUBLE PRECISION` | yes | both null exactly for `CONVERSION` | The seeded percentile bootstrap's interval |
+
+#### `experiments.experiment_result_balance`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result` | The look |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
+| `reference_group_id` | `INTEGER` | NN | FK likewise | The control, or the first offer when there is none |
+| `measure` | `VARCHAR(20)` | NN | PK part; CHECK one of `PRE_RECENCY_DAYS`, `PRE_PURCHASE_COUNT`, `PRE_NET_SPEND` | A measure over the window before the frame instant |
+| `standardized_mean_difference` | `DOUBLE PRECISION` | NN | — | The arm minus the reference over the pooled standard deviation |
+
 #### `recommendations.recommendation_decision`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -1436,6 +1585,21 @@ has no privilege on `sales`. A CSV header has no row here.
 | `request_sha256` | `BYTEA` | NN | `CHECK octet_length = 32` (`sale_capture_request_sha256_check`) | SHA-256 of the canonical request (the caller's `sub`, the ids, `occurred_at` in UTC, the lines sorted with two-decimal prices); a retry with the same key is compared with it |
 | `recorded_by` | `UUID` | NN | FK → `public.app_user`, `ON DELETE RESTRICT` | The token's `sub`: who recorded the sale |
 | `captured_at` | `TIMESTAMPTZ` | NN | default `now()` | When the sale was accepted |
+
+#### `sales.sale_line_price`
+
+One row per line of a sale recorded through `POST /v1/sales`, written with the
+line in the sale's transaction (F25-05, #836). Append-only: `svc_sales` holds
+SELECT and INSERT only, and the web has no privilege on `sales`. A CSV or
+imported line has no row here; the seed's thirty rows are illustrative (see the
+normal-form note).
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `transaction_id` | `BIGINT` | NN | PK with `product_id`; FK `(transaction_id, product_id)` → `public.transaction_line`, `ON DELETE CASCADE` (`sale_line_price_line_fkey`) | The sale |
+| `product_id` | `INTEGER` | NN | PK with `transaction_id` | The line's product |
+| `list_price` | `NUMERIC(10,2)` | NN | `CHECK >= 0` (`sale_line_price_list_price_check`) | The product's list price read in the sale's transaction; `unit_price` on the line is what was charged |
+| `promotion_id` | `INTEGER` | yes | `CHECK > 0`; no FK (campaigns' identifier) | The promotion the line's discount relied on, or `NULL` |
 
 #### `sales.sale_reversal`
 
@@ -2254,8 +2418,15 @@ which returns identifiers only for an active code. It publishes no stream, so
 it has no `customers_events`.
 
 The analytics-kpis boundary (F26-02) owns no table, so it has no 4NF decision to
-record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v1`
-and `api_users.store_assignment_v1` and nothing else. ADR-0059 gives it the
+record: it reads `api_sales.net_purchase_line_v1`, `api_segments.current_label_v1`,
+`api_users.store_assignment_v1`, the two views F26-05 adds (`api_stock.stock_level_v1`
+and `api_products.product_ref_v1`) and the two F26-03 adds
+(`api_segments.assignment_change_v1`, `api_models.run_version_v1`) and nothing
+else. `api_segments.assignment_change_v1` is segments' view, a derived one (the
+later of two consecutive assignments whose labels differ, each side named by its
+run), created in segments' own section; analytics-kpis only grants it and reads the
+model version of each run through `api_models.run_version_v1`. It adds no table, so
+no normal-form decision. ADR-0059 gives it the
 schemas `kpis` and `api_kpis`; they are created empty, and the role may not
 create an object in either, so a table of its own would need its own story and
 its own entry here.

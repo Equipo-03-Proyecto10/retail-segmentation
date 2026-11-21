@@ -1794,6 +1794,33 @@ FOR EACH ROW EXECUTE FUNCTION sales.refuse_case_rewrite();
 GRANT SELECT, INSERT ON sales.reconciliation_case TO svc_sales;
 GRANT UPDATE (resolution, resolved_by, resolved_at, note)
     ON sales.reconciliation_case TO svc_sales;
+
+-- BEGIN F25-05 sale line price (#836)
+-- RN-13 keeps on a line the price actually charged, never the list price. A sale
+-- recorded through POST /v1/sales also keeps, here, the product's list price read
+-- in the sale's own transaction and the promotion its discount relied on, so a
+-- discount can be reported against the price of that day rather than today's.
+-- One row per line of a phone sale, keyed by the line itself and written with
+-- it; a CSV or imported line has none. promotion_id is campaigns' identifier,
+-- checked against api_campaigns.promotion_window_v1 when the line is written,
+-- with no foreign key into the campaigns boundary (ADR-0044). Append-only, like
+-- the line. docs/data-model.md holds the normal-form note.
+CREATE TABLE IF NOT EXISTS sales.sale_line_price (
+    transaction_id bigint NOT NULL,
+    product_id     integer NOT NULL,
+    list_price     numeric(10,2) NOT NULL
+        CONSTRAINT sale_line_price_list_price_check CHECK (list_price >= 0),
+    promotion_id   integer
+        CONSTRAINT sale_line_price_promotion_id_check CHECK (promotion_id > 0),
+    PRIMARY KEY (transaction_id, product_id),
+    CONSTRAINT sale_line_price_line_fkey FOREIGN KEY (transaction_id, product_id)
+        REFERENCES public.transaction_line (transaction_id, product_id)
+        ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS sale_line_price_promotion
+    ON sales.sale_line_price (promotion_id) WHERE promotion_id IS NOT NULL;
+GRANT SELECT, INSERT ON sales.sale_line_price TO svc_sales;
+-- END F25-05 sale line price
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products
@@ -2355,8 +2382,8 @@ GRANT SELECT ON api_sales.purchase_line_v1 TO svc_customers;
 -- BEGIN BOUNDARY segments
 -- segments-service (F14-20, RN-20, RN-21, ADR-0034, ADR-0044). It reads the
 -- runs the web makes and never writes a segmentation table (RN-05): its
--- contract view of each customer's current label, its outbox for
--- stream:segments.v1.run_recorded and the read grants of svc_segments.
+-- contract view of each customer's current label and of each change of label, its
+-- outbox for stream:segments.v1.run_recorded and the read grants of svc_segments.
 
 CREATE SCHEMA IF NOT EXISTS api_segments;
 REVOKE ALL ON SCHEMA api_segments FROM PUBLIC;
@@ -2395,6 +2422,54 @@ FROM api_customers.customer_ref_v1 AS c
 LEFT JOIN public.customer_segment_history AS h
        ON h.customer_id = c.customer_id AND h.valid_to IS NULL;
 REVOKE ALL ON api_segments.current_label_v1 FROM PUBLIC;
+
+-- contracts/db/api_segments.label.v1.md: the stable label vocabulary in its declared
+-- best-to-worst order, which ADR-0030 pairs with K-means clusters by proportional
+-- rank. The vocabulary is segments' (ADR-0018), so a consumer reads it here and
+-- keeps no copy of it. Definer rights, so a consumer needs no privilege on the table.
+CREATE OR REPLACE VIEW api_segments.label_v1
+WITH (security_invoker = off) AS
+SELECT label_code, ordinal_position
+FROM public.segment_label;
+REVOKE ALL ON api_segments.label_v1 FROM PUBLIC;
+
+-- contracts/db/api_segments.assignment_change.v1.md: one row per change of a
+-- customer's label between two consecutive assignments, never the first assignment
+-- (a customer with one row has changed nothing), and never a new run that left the
+-- label as it was. A label of NULL is the run's result of no label (RN-21). Each side
+-- is named by its run: the consumer reads the model version of a run through
+-- api_models.run_version_v1 (ADR-0064), so this view needs nothing that model-registry's
+-- section creates later. A change is SEEDED when either run is (ADR-0052).
+-- Definer rights, so a consumer needs no privilege on either table.
+CREATE OR REPLACE VIEW api_segments.assignment_change_v1
+WITH (security_invoker = off) AS
+WITH ordered AS (
+    SELECT h.customer_id,
+           h.run_id,
+           h.label_code,
+           h.valid_from,
+           r.data_origin,
+           row_number() OVER w AS position,
+           lag(h.label_code) OVER w AS previous_label_code,
+           lag(h.run_id) OVER w AS previous_run_id,
+           lag(r.data_origin) OVER w AS previous_data_origin
+    FROM public.customer_segment_history AS h
+    JOIN public.segmentation_run AS r ON r.run_id = h.run_id
+    JOIN api_customers.customer_ref_v1 AS c ON c.customer_id = h.customer_id
+    WINDOW w AS (PARTITION BY h.customer_id ORDER BY h.valid_from, h.history_id)
+)
+SELECT customer_id,
+       previous_label_code,
+       label_code AS new_label_code,
+       previous_run_id,
+       valid_from AS changed_at,
+       run_id,
+       CASE WHEN data_origin = 'SEEDED' OR previous_data_origin = 'SEEDED'
+            THEN 'SEEDED' ELSE 'OBSERVED' END::text AS data_origin
+FROM ordered
+WHERE position > 1
+  AND label_code IS DISTINCT FROM previous_label_code;
+REVOKE ALL ON api_segments.assignment_change_v1 FROM PUBLIC;
 
 -- One event per run the web records, so the service and recommendations move
 -- their caches to the new run's keys.
@@ -4260,6 +4335,106 @@ GRANT USAGE ON SCHEMA api_campaigns TO svc_experiments;
 GRANT SELECT ON api_campaigns.campaign_target_v1,
     api_campaigns.campaign_excluded_customer_v1,
     api_campaigns.campaign_excluded_label_v1 TO svc_experiments;
+
+-- BEGIN F25-05 promotions (#1104)
+-- A promotion (RN-71, ADR-0059) belongs to one campaign and discounts by a
+-- percentage within a validity. Where it applies and on which channels are two
+-- independent multivalued facts of one promotion, so each has its own relation
+-- with one row per member, and the stores-by-channels product is formed only
+-- by the view below, never stored (4NF). The validity lying within the
+-- campaign's dates, and changes only while the campaign is DRAFT, are checked
+-- by campaigns-service on every write (RN-71); a row-level CHECK keeps the
+-- percentage and the order of the dates. The store and channel foreign keys
+-- are checked as the parents' owner (E-11). docs/data-model.md holds the
+-- normal-form note.
+CREATE TABLE IF NOT EXISTS campaigns.promotion (
+    promotion_id     integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    campaign_id      integer NOT NULL
+        REFERENCES public.campaign (campaign_id) ON DELETE CASCADE,
+    name             varchar(120) NOT NULL
+        CONSTRAINT promotion_name_check CHECK (length(btrim(name)) > 0),
+    discount_percent numeric(5,2) NOT NULL
+        CONSTRAINT promotion_discount_percent_check
+        CHECK (discount_percent > 0 AND discount_percent <= 100),
+    starts_on        date NOT NULL,
+    ends_on          date NOT NULL,
+    CONSTRAINT promotion_validity_check CHECK (starts_on <= ends_on)
+);
+CREATE INDEX IF NOT EXISTS promotion_campaign ON campaigns.promotion (campaign_id);
+
+CREATE TABLE IF NOT EXISTS campaigns.promotion_store (
+    promotion_id integer NOT NULL
+        REFERENCES campaigns.promotion (promotion_id) ON DELETE CASCADE,
+    store_id     smallint NOT NULL
+        CONSTRAINT promotion_store_store_id_fkey
+        REFERENCES public.store (store_id) ON DELETE RESTRICT,
+    PRIMARY KEY (promotion_id, store_id)
+);
+CREATE INDEX IF NOT EXISTS promotion_store_store ON campaigns.promotion_store (store_id);
+
+CREATE TABLE IF NOT EXISTS campaigns.promotion_channel (
+    promotion_id integer NOT NULL
+        REFERENCES campaigns.promotion (promotion_id) ON DELETE CASCADE,
+    channel_id   smallint NOT NULL
+        CONSTRAINT promotion_channel_channel_id_fkey
+        REFERENCES public.channel (channel_id) ON DELETE RESTRICT,
+    PRIMARY KEY (promotion_id, channel_id)
+);
+
+-- The service keeps promotion_id when it replaces a promotion of a draft
+-- campaign, so the header is updated in place and its stores and channels are
+-- deleted and inserted. The identity needs no sequence grant.
+GRANT SELECT, INSERT, UPDATE, DELETE ON campaigns.promotion TO svc_campaigns;
+GRANT SELECT, INSERT, DELETE ON campaigns.promotion_store,
+    campaigns.promotion_channel TO svc_campaigns;
+
+-- What a sale may rely on today (contracts/db/api_campaigns.active_promotion.v1.md):
+-- one row per store and channel of each promotion whose campaign is ACTIVE and
+-- whose validity contains CURRENT_DATE, both ends inclusive. The date test is
+-- made when the view is read, so no job retires a row. security_invoker = off,
+-- so svc_sales needs no privilege on campaigns.* or public.campaign.
+CREATE OR REPLACE VIEW api_campaigns.active_promotion_v1
+WITH (security_invoker = off) AS
+SELECT p.promotion_id,
+       p.campaign_id,
+       ps.store_id,
+       pc.channel_id,
+       p.discount_percent,
+       p.starts_on,
+       p.ends_on
+FROM campaigns.promotion AS p
+JOIN public.campaign AS c ON c.campaign_id = p.campaign_id
+JOIN campaigns.promotion_store AS ps ON ps.promotion_id = p.promotion_id
+JOIN campaigns.promotion_channel AS pc ON pc.promotion_id = p.promotion_id
+WHERE c.status = 'ACTIVE'
+  AND CURRENT_DATE BETWEEN p.starts_on AND p.ends_on;
+REVOKE ALL ON api_campaigns.active_promotion_v1 FROM PUBLIC;
+
+-- What a sale may have relied on, on its own day
+-- (contracts/db/api_campaigns.promotion_window.v1.md): one row per store and
+-- channel of each promotion whose campaign is ACTIVE or FINISHED, with no date
+-- test. A sale can reach the service after the day it happened (an offline
+-- queue), and sales reads the sale's day in SALES_TIMEZONE, not the database
+-- session's CURRENT_DATE, so the consumer applies the validity itself.
+CREATE OR REPLACE VIEW api_campaigns.promotion_window_v1
+WITH (security_invoker = off) AS
+SELECT p.promotion_id,
+       p.campaign_id,
+       ps.store_id,
+       pc.channel_id,
+       p.discount_percent,
+       p.starts_on,
+       p.ends_on
+FROM campaigns.promotion AS p
+JOIN public.campaign AS c ON c.campaign_id = p.campaign_id
+JOIN campaigns.promotion_store AS ps ON ps.promotion_id = p.promotion_id
+JOIN campaigns.promotion_channel AS pc ON pc.promotion_id = p.promotion_id
+WHERE c.status IN ('ACTIVE', 'FINISHED');
+REVOKE ALL ON api_campaigns.promotion_window_v1 FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_campaigns TO svc_campaigns, svc_sales;
+GRANT SELECT ON api_campaigns.active_promotion_v1 TO svc_campaigns;
+GRANT SELECT ON api_campaigns.promotion_window_v1 TO svc_campaigns, svc_sales;
+-- END F25-05 promotions
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail
@@ -4522,7 +4697,9 @@ BEGIN
         WHEN 'CRITICAL_ACTION' THEN
             RETURN audit_events.str_in(d, 'action', ARRAY[
                     'SALE_REVERSED', 'STOCK_ADJUSTED', 'CUSTOMER_ANONYMIZED',
-                    'AUDIT_PAYLOAD_REDACTED', 'EXPERIMENT_FROZEN', 'CAMPAIGN_ACTIVATED'])
+                    'AUDIT_PAYLOAD_REDACTED', 'EXPERIMENT_FROZEN', 'CAMPAIGN_ACTIVATED',
+                    'RULE_SET_CREATED', 'RULE_SET_EDITED', 'RULE_SET_VERSIONED',
+                    'RULE_SET_PUBLISHED'])
                AND (NOT d ? 'reason_code' OR audit_events.str_like(d, 'reason_code', reason));
         WHEN 'HISTORY_READ' THEN
             RETURN audit_events.str_in(d, 'history', ARRAY['CONSENT', 'SEGMENT', 'SALES']);
@@ -4576,7 +4753,8 @@ DECLARE
     r audit_events.domain_event;
     subjects text[] := ARRAY[
         'user', 'customer', 'model_version', 'calculation', 'sale', 'sale_reversal',
-        'stock_level', 'campaign', 'experiment', 'audit_entry', 'domain_event'];
+        'stock_level', 'campaign', 'experiment', 'rule_set', 'audit_entry',
+        'domain_event'];
 BEGIN
     -- 1. The kind is in the closed list and mapped to the recording role.
     writers := CASE p_kind
@@ -4585,7 +4763,7 @@ BEGIN
         WHEN 'MODEL_ROLLED_BACK' THEN ARRAY['svc_models']
         WHEN 'PERMISSION_CHANGED' THEN ARRAY['svc_users']
         WHEN 'CRITICAL_ACTION' THEN ARRAY['svc_sales', 'svc_stock', 'svc_customers',
-                                          'svc_experiments', 'svc_campaigns']
+                                          'svc_experiments', 'svc_campaigns', 'svc_rfm']
         WHEN 'HISTORY_READ' THEN ARRAY['svc_preferences', 'svc_segments', 'svc_sales']
         WHEN 'AUDIT_READ' THEN ARRAY['svc_audit_trail']
     END;
@@ -4748,11 +4926,14 @@ REVOKE ALL ON SCHEMA api_rfm FROM PUBLIC;
 GRANT USAGE ON SCHEMA rfm, rfm_events, api_rfm TO svc_rfm;
 
 -- A rule set: the window and the boundaries a customer is scored against, frozen
--- when it is created (ADR-0063). The scores are read off the boundaries: recency
--- 5, 4, 3 and 2 hold up to the first four recency values, frequency and monetary
--- from the first four values up; anything beyond scores 1. The seed holds the one
--- rule set of the web's published version; F22-09 creates the others, and
--- model-registry publishes the version that names one.
+-- when it is published (ADR-0063), and how a cancelled or a returned sale counts.
+-- The scores are read off the boundaries: recency 5, 4, 3 and 2 hold up to the
+-- first four recency values, frequency and monetary from the first four values up;
+-- anything beyond scores 1. A rule set is a DRAFT until it is published and
+-- immutable after (F22-09): a change to a published one is a new version, a row
+-- of its own whose parent is the version it changes. The seed holds the rule set
+-- of the web's published version; model-registry publishes the version that names
+-- one.
 CREATE TABLE IF NOT EXISTS rfm.rule_set (
     rule_set_id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name                 varchar(80) NOT NULL UNIQUE CHECK (length(name) >= 1),
@@ -4780,10 +4961,75 @@ CREATE TABLE IF NOT EXISTS rfm.rule_set (
     created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT
 );
 
+-- F22-09 governance, added to a table that may already exist in a live database
+-- (ADR-0040: an operator applies this section before the service deploys), so every
+-- statement is repeatable. CREATE TABLE IF NOT EXISTS above does nothing over an
+-- existing table, which is why the columns, the constraints and the state of the rows
+-- already there are written here and not inside it.
+--
+-- How a sale that was cancelled, or had units returned, counts (ADR-0062). DEDUCT
+-- leaves it out of the net purchases, as every reader of accepted sales does, and it
+-- is the only value: a rule set that counted such a sale as sold needs an accepted
+-- record that supersedes ADR-0062 (the contract's SaleTreatment, ADR-0073).
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS cancelled_sales varchar(6) NOT NULL DEFAULT 'DEDUCT';
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS returned_sales varchar(6) NOT NULL DEFAULT 'DEDUCT';
+-- A rule set already in the table was in force before there was a state to hold, and
+-- profiles were scored against it: it is PUBLISHED. The column is added with that
+-- default, so the rows already there take it, and the default then becomes DRAFT for
+-- every rule set from now on. The second statement is repeatable.
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS state varchar(9) NOT NULL DEFAULT 'PUBLISHED';
+ALTER TABLE rfm.rule_set ALTER COLUMN state SET DEFAULT 'DRAFT';
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS version_no integer NOT NULL DEFAULT 1;
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS parent_rule_set_id bigint
+    REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT;
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS published_at timestamptz;
+-- A PUBLISHED row is published at some instant; for one that predates the column it
+-- is the instant it was created. Matches nothing once every PUBLISHED row has one.
+UPDATE rfm.rule_set SET published_at = created_at
+ WHERE state = 'PUBLISHED' AND published_at IS NULL;
+
+-- The sales contract publishes net lines and does not say which of a cancellation or
+-- a return took a unit away, so only DEDUCT exists and the two cannot differ. An
+-- earlier shape of these constraints allowed KEEP; it is dropped, and the narrower
+-- one is added only when it is not there already.
+ALTER TABLE rfm.rule_set DROP CONSTRAINT IF EXISTS rule_set_cancelled_sales_check;
+ALTER TABLE rfm.rule_set DROP CONSTRAINT IF EXISTS rule_set_returned_sales_check;
+ALTER TABLE rfm.rule_set DROP CONSTRAINT IF EXISTS rule_set_treatment_supported;
+DO $rule_set_constraints$
+DECLARE
+    wanted record;
+BEGIN
+    FOR wanted IN
+        SELECT * FROM (VALUES
+            ('rule_set_cancelled_sales_deduct', 'CHECK (cancelled_sales = ''DEDUCT'')'),
+            ('rule_set_returned_sales_deduct', 'CHECK (returned_sales = ''DEDUCT'')'),
+            ('rule_set_state_check', 'CHECK (state IN (''DRAFT'', ''PUBLISHED''))'),
+            ('rule_set_version_no_check', 'CHECK (version_no >= 1)'),
+            ('rule_set_state_shape',
+             'CHECK ((state = ''PUBLISHED'') = (published_at IS NOT NULL))'),
+            ('rule_set_lineage',
+             'CHECK ((parent_rule_set_id IS NULL) = (version_no = 1)'
+             ' AND parent_rule_set_id IS DISTINCT FROM rule_set_id)')
+        ) AS c (name, definition)
+    LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                        WHERE conrelid = 'rfm.rule_set'::regclass
+                          AND conname = wanted.name) THEN
+            EXECUTE format('ALTER TABLE rfm.rule_set ADD CONSTRAINT %I %s',
+                           wanted.name, wanted.definition);
+        END IF;
+    END LOOP;
+END
+$rule_set_constraints$;
+-- A version has at most one successor, so a lineage is a line and not a tree.
+CREATE UNIQUE INDEX IF NOT EXISTS rule_set_one_successor
+    ON rfm.rule_set (parent_rule_set_id) WHERE parent_rule_set_id IS NOT NULL;
+
 -- The boxes of scores that map to a label, one row per box: a repeated group is a
--- table of its own (4NF). No two boxes of one rule set overlap (RN-46), which
--- F22-09 checks when it creates one; the lowest band_no wins in any case, as the
--- lowest segment_id does in the web.
+-- table of its own (4NF). The boxes of one rule set partition the 125 triples of
+-- scores (RN-46): rfm.rule_set_partition counts the triples no box and more than
+-- one box holds, F22-09 refuses a rule set with either, and the lowest band_no wins
+-- in any case, as the lowest segment_id does in the web.
 CREATE TABLE IF NOT EXISTS rfm.rule_set_band (
     rule_set_id bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
     band_no     smallint NOT NULL CHECK (band_no >= 1),
@@ -4797,6 +5043,97 @@ CREATE TABLE IF NOT EXISTS rfm.rule_set_band (
     PRIMARY KEY (rule_set_id, band_no),
     CHECK (r_min <= r_max AND f_min <= f_max AND m_min <= m_max)
 );
+
+-- RN-46: how many of the 125 (R, F, M) triples no band holds, and how many more
+-- than one holds. A rule set partitions the score space when both are zero.
+CREATE OR REPLACE FUNCTION rfm.rule_set_partition(p_rule_set_id bigint)
+RETURNS TABLE (uncovered integer, overlapped integer)
+LANGUAGE sql STABLE
+AS $partition$
+    SELECT count(*) FILTER (WHERE t.n = 0)::integer,
+           count(*) FILTER (WHERE t.n > 1)::integer
+    FROM (
+        SELECT (SELECT count(*) FROM rfm.rule_set_band AS b
+                 WHERE b.rule_set_id = p_rule_set_id
+                   AND r BETWEEN b.r_min AND b.r_max
+                   AND f BETWEEN b.f_min AND b.f_max
+                   AND m BETWEEN b.m_min AND b.m_max) AS n
+        FROM generate_series(1, 5) AS r
+        CROSS JOIN generate_series(1, 5) AS f
+        CROSS JOIN generate_series(1, 5) AS m
+    ) AS t
+$partition$;
+
+-- A published rule set is immutable, for every role including the owner (ADR-0064,
+-- F22-09): the only change a draft has to make into a published one is the move,
+-- and the move is refused unless its bands partition the score space. A draft's
+-- identity and lineage never change; a published rule set is never deleted.
+CREATE OR REPLACE FUNCTION rfm.fn_rule_set_guard() RETURNS trigger
+LANGUAGE plpgsql
+AS $guard$
+DECLARE
+    gaps record;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.state = 'PUBLISHED' THEN
+            RAISE EXCEPTION 'a published rule set is never deleted'
+                USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.state = 'PUBLISHED' THEN
+        RAISE EXCEPTION 'a published rule set is never edited; make a new version'
+            USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';
+    END IF;
+    IF NEW.rule_set_id <> OLD.rule_set_id OR NEW.version_no <> OLD.version_no
+       OR NEW.parent_rule_set_id IS DISTINCT FROM OLD.parent_rule_set_id
+       OR NEW.created_at <> OLD.created_at
+       OR NEW.created_by IS DISTINCT FROM OLD.created_by THEN
+        RAISE EXCEPTION 'a rule set keeps its identity, lineage and author'
+            USING ERRCODE = '23514', CONSTRAINT = 'rule_set_lineage_immutable';
+    END IF;
+    IF NEW.state = 'PUBLISHED' THEN
+        SELECT * INTO gaps FROM rfm.rule_set_partition(NEW.rule_set_id);
+        IF gaps.uncovered > 0 OR gaps.overlapped > 0 THEN
+            RAISE EXCEPTION 'the bands of rule set % do not partition the score space',
+                NEW.rule_set_id
+                USING ERRCODE = '23514', CONSTRAINT = 'rule_set_bands_partition';
+        END IF;
+    END IF;
+    RETURN NEW;
+END
+$guard$;
+
+DROP TRIGGER IF EXISTS trg_rule_set_guard ON rfm.rule_set;
+CREATE TRIGGER trg_rule_set_guard
+BEFORE UPDATE OR DELETE ON rfm.rule_set
+FOR EACH ROW EXECUTE FUNCTION rfm.fn_rule_set_guard();
+
+-- The bands of a published rule set are as frozen as the rule set.
+CREATE OR REPLACE FUNCTION rfm.fn_rule_set_band_guard() RETURNS trigger
+LANGUAGE plpgsql
+AS $band_guard$
+DECLARE
+    owner_state varchar(9);
+BEGIN
+    -- FOR SHARE: a publication, which updates the row, waits for a band edit that is
+    -- still open, and an edit that starts after the publication sees PUBLISHED.
+    SELECT state INTO owner_state FROM rfm.rule_set
+     WHERE rule_set_id = CASE WHEN TG_OP = 'DELETE' THEN OLD.rule_set_id
+                              ELSE NEW.rule_set_id END
+       FOR SHARE;
+    IF owner_state = 'PUBLISHED' THEN
+        RAISE EXCEPTION 'the bands of a published rule set are never edited'
+            USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';
+    END IF;
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END
+$band_guard$;
+
+DROP TRIGGER IF EXISTS trg_rule_set_band_guard ON rfm.rule_set_band;
+CREATE TRIGGER trg_rule_set_band_guard
+BEFORE INSERT OR UPDATE OR DELETE ON rfm.rule_set_band
+FOR EACH ROW EXECUTE FUNCTION rfm.fn_rule_set_band_guard();
 
 -- One row per customer who has been processed; a customer with no row is `pending`
 -- in the contract view. `scored` holds a customer with a net purchase in the window,
@@ -4828,9 +5165,33 @@ CREATE TABLE IF NOT EXISTS rfm.customer_profile (
             AND label_code IS NULL AND via_fallback IS NULL
             AND next_change_at IS NULL))
 );
--- The daily pass reads only the customers who are due (ADR-0063, F22-06).
+-- The daily pass reads only the customers who are due (ADR-0063, F22-07).
 CREATE INDEX IF NOT EXISTS customer_profile_due
     ON rfm.customer_profile (next_change_at) WHERE next_change_at IS NOT NULL;
+
+-- One row per scheduled pass over the customers whose window or recency changed
+-- with no event (ADR-0063, F22-07). `as_of` is the instant the pass measures from,
+-- fixed when it starts: a pass that stops and resumes measures every customer from
+-- the same instant, so it writes what one uninterrupted pass would. The counts grow
+-- in the same transaction that recomputes each customer, so they never run ahead of
+-- or behind the profiles. At most one pass is RUNNING at a time.
+CREATE TABLE IF NOT EXISTS rfm.pass_run (
+    pass_run_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rule_set_id        bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    as_of              timestamptz NOT NULL,
+    status             varchar(9) NOT NULL DEFAULT 'RUNNING'
+        CHECK (status IN ('RUNNING', 'COMPLETED')),
+    started_at         timestamptz NOT NULL DEFAULT clock_timestamp(),
+    finished_at        timestamptz,
+    customers_examined integer NOT NULL DEFAULT 0 CHECK (customers_examined >= 0),
+    customers_changed  integer NOT NULL DEFAULT 0
+        CHECK (customers_changed >= 0 AND customers_changed <= customers_examined),
+    CONSTRAINT pass_run_finish_shape CHECK (
+        (status = 'RUNNING' AND finished_at IS NULL)
+        OR (status = 'COMPLETED' AND finished_at IS NOT NULL AND finished_at >= started_at))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pass_run_one_running
+    ON rfm.pass_run ((true)) WHERE status = 'RUNNING';
 
 -- stream:rfm.v1.profile_changed (contracts/streams/rfm.profile_changed.v1.md).
 -- Keys only, never state: consumers re-read api_rfm.current_profile_v1.
@@ -4900,12 +5261,27 @@ LEFT JOIN rfm.customer_profile AS p ON p.customer_id = c.customer_id;
 REVOKE ALL ON api_rfm.current_profile_v1 FROM PUBLIC;
 
 -- svc_rfm reads sales only through api_sales (ADR-0044) and writes its own
--- profile; it reads rule sets and creates none yet (F22-09). A profile's
--- customer_id never changes. Each is a row of contracts/db/grants.csv.
+-- profile, the record of each daily pass, and its rule sets (F22-09): it creates the
+-- rule sets, edits a draft and moves it to published, and never deletes one; a draft's
+-- bands are replaced, never updated. A profile's customer_id never changes. Each is a
+-- row of contracts/db/grants.csv.
 GRANT USAGE ON SCHEMA api_sales TO svc_rfm;
 GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1 TO svc_rfm;
-GRANT SELECT ON rfm.rule_set, rfm.rule_set_band TO svc_rfm;
+GRANT SELECT, INSERT ON rfm.rule_set TO svc_rfm;
+GRANT UPDATE (name, window_days, recency_boundaries, frequency_boundaries,
+              monetary_boundaries, fallback_label_code, cancelled_sales, returned_sales,
+              state, published_at)
+    ON rfm.rule_set TO svc_rfm;
+GRANT SELECT, INSERT, DELETE ON rfm.rule_set_band TO svc_rfm;
+-- A change to a rule set is a critical action, recorded in its transaction
+-- (ADR-0072, contracts/db/api_audit.record_event.v1.md).
+GRANT USAGE ON SCHEMA api_audit TO svc_rfm;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_rfm;
 GRANT SELECT, INSERT ON rfm.customer_profile TO svc_rfm;
+GRANT SELECT, INSERT ON rfm.pass_run TO svc_rfm;
+GRANT UPDATE (status, finished_at, customers_examined, customers_changed)
+    ON rfm.pass_run TO svc_rfm;
 GRANT UPDATE (state, rule_set_id, r_days, f_count, m_total, r_score, f_score, m_score,
               label_code, via_fallback, computed_at, next_change_at)
     ON rfm.customer_profile TO svc_rfm;
@@ -5099,6 +5475,113 @@ GRANT SELECT ON api_preferences.consent_state_v1, api_preferences.restriction_v1
     TO svc_experiments;
 GRANT SELECT ON api_customers.customer_ref_v1 TO svc_experiments;
 GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
+
+-- The primary result (F25-13, ADR-0068, ADR-0085): the one look at the analysis instant, computed
+-- once and stored so that no later read, and no later sale or reversal, can change it. Four
+-- relations, written together in one transaction, then frozen like the plan. Derived, so not
+-- stored: the status (INVALID when the sample ratio p-value is below 0.001), each rate (counts over
+-- analysed), revenue per customer (revenue over analysed), whether a balance difference is flagged,
+-- a comparison's label, role, test, confidence level, conclusion, incremental revenue and whether
+-- its bootstrap agrees. docs/data-model.md holds the normal-form note.
+CREATE TABLE IF NOT EXISTS experiments.experiment_result (
+    experiment_id        integer PRIMARY KEY
+        REFERENCES public.experiment (experiment_id) ON DELETE RESTRICT,
+    computed_at          timestamptz NOT NULL,
+    sample_ratio_p_value double precision NOT NULL
+        CONSTRAINT experiment_result_sample_ratio_check
+        CHECK (sample_ratio_p_value >= 0 AND sample_ratio_p_value <= 1),
+    synthetic            boolean NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_result_arm (
+    experiment_id     integer NOT NULL
+        REFERENCES experiments.experiment_result (experiment_id) ON DELETE RESTRICT,
+    group_id          integer NOT NULL,
+    analysed          integer NOT NULL
+        CONSTRAINT experiment_result_arm_analysed_check CHECK (analysed >= 0),
+    exposed           integer NOT NULL
+        CONSTRAINT experiment_result_arm_exposed_check CHECK (exposed >= 0),
+    exposed_converted integer
+        CONSTRAINT experiment_result_arm_exposed_converted_check
+        CHECK (exposed_converted >= 0 AND exposed_converted <= exposed),
+    converted         integer NOT NULL
+        CONSTRAINT experiment_result_arm_converted_check CHECK (converted >= 0),
+    pending           integer NOT NULL
+        CONSTRAINT experiment_result_arm_pending_check CHECK (pending >= 0),
+    not_converted     integer NOT NULL
+        CONSTRAINT experiment_result_arm_not_converted_check CHECK (not_converted >= 0),
+    net_revenue       numeric(14,2) NOT NULL
+        CONSTRAINT experiment_result_arm_revenue_check CHECK (net_revenue >= 0),
+    revenue_std_dev   double precision NOT NULL
+        CONSTRAINT experiment_result_arm_std_dev_check CHECK (revenue_std_dev >= 0),
+    PRIMARY KEY (experiment_id, group_id),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    CONSTRAINT experiment_result_arm_outcomes_check
+        CHECK (converted + pending + not_converted = analysed)
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_result_comparison (
+    experiment_id     integer NOT NULL
+        REFERENCES experiments.experiment_result (experiment_id) ON DELETE RESTRICT,
+    group_id          integer NOT NULL,
+    against_group_id  integer NOT NULL,
+    metric            varchar(20) NOT NULL
+        CONSTRAINT experiment_result_comparison_metric_check
+        CHECK (metric IN ('CONVERSION', 'REVENUE_PER_CUSTOMER')),
+    difference        double precision NOT NULL,
+    lower             double precision NOT NULL,
+    upper             double precision NOT NULL,
+    p_value           double precision NOT NULL
+        CONSTRAINT experiment_result_comparison_p_check CHECK (p_value >= 0 AND p_value <= 1),
+    degrees_of_freedom double precision
+        CONSTRAINT experiment_result_comparison_df_check CHECK (degrees_of_freedom > 0),
+    bootstrap_lower   double precision,
+    bootstrap_upper   double precision,
+    PRIMARY KEY (experiment_id, group_id, against_group_id, metric),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (against_group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    CONSTRAINT experiment_result_comparison_order_check CHECK (lower <= upper),
+    CONSTRAINT experiment_result_comparison_arms_check CHECK (group_id <> against_group_id),
+    CONSTRAINT experiment_result_comparison_bootstrap_check
+        CHECK ((bootstrap_lower IS NULL) = (bootstrap_upper IS NULL)
+               AND (bootstrap_lower IS NULL) = (metric = 'CONVERSION'))
+);
+
+CREATE TABLE IF NOT EXISTS experiments.experiment_result_balance (
+    experiment_id        integer NOT NULL
+        REFERENCES experiments.experiment_result (experiment_id) ON DELETE RESTRICT,
+    group_id             integer NOT NULL,
+    reference_group_id   integer NOT NULL,
+    measure              varchar(20) NOT NULL
+        CONSTRAINT experiment_result_balance_measure_check
+        CHECK (measure IN ('PRE_RECENCY_DAYS', 'PRE_PURCHASE_COUNT', 'PRE_NET_SPEND')),
+    standardized_mean_difference double precision NOT NULL,
+    PRIMARY KEY (experiment_id, group_id, measure),
+    FOREIGN KEY (group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (reference_group_id, experiment_id)
+        REFERENCES public.experiment_group (group_id, experiment_id) ON DELETE RESTRICT
+);
+
+CREATE OR REPLACE TRIGGER trg_experiment_result_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_result_arm_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result_arm
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_result_comparison_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result_comparison
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+CREATE OR REPLACE TRIGGER trg_experiment_result_balance_frozen
+BEFORE UPDATE OR DELETE ON experiments.experiment_result_balance
+FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
+
+GRANT SELECT, INSERT ON experiments.experiment_result, experiments.experiment_result_arm,
+    experiments.experiment_result_comparison, experiments.experiment_result_balance
+    TO svc_experiments;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry
@@ -5109,7 +5592,8 @@ GRANT SELECT ON api_sales.channel_v1 TO svc_experiments;
 -- lets any role edit its definition or delete a row, and the publication
 -- history is append-only. Publication and rollback (F22-13) own the outbox
 -- for stream:models.v1.publication_recorded and the current-version view.
--- Training (F22-12) and the drift tables (F23-09) are their own stories.
+-- Training (F22-12) is the model_training tables below; the drift tables (F23-09) are
+-- their own story.
 --
 -- The web has no privilege here (ADR-0046): retail_app gets no USAGE on
 -- `models`, so it cannot even name these tables.
@@ -5290,6 +5774,101 @@ SELECT run_id, version_id, linked_at
   FROM models.run_version;
 REVOKE ALL ON api_models.run_version_v1 FROM PUBLIC;
 
+-- A K-means training (F22-12, ADR-0021, RN-58): the request that started the
+-- fit and, once it ends, what the fit produced. A POST answers at once with the
+-- row RUNNING and the fit runs after the answer, so the row is the thing a
+-- client polls. It is the only mutable row of the boundary besides a version's
+-- projection: it moves once, from RUNNING to COMPLETED or FAILED, and trg_model_training_guard
+-- refuses every other change and every DELETE, for every role including the
+-- owner. A COMPLETED training names the DRAFT version it registered, so the
+-- version stays immutable and the link lives here.
+--
+-- The seed is NOT NULL: a run that did not record it could not be repeated
+-- (RN-58), and the service chooses one when the caller gives none. The partial
+-- unique index is the schema's half of "two trainings never run at once": the
+-- service checks it first and maps the index's refusal to a 409.
+CREATE TABLE IF NOT EXISTS models.model_training (
+    training_id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    method                 VARCHAR(20) NOT NULL CHECK (method = 'KMEANS'),
+    state                  VARCHAR(20) NOT NULL DEFAULT 'RUNNING'
+                           CHECK (state IN ('RUNNING', 'COMPLETED', 'FAILED')),
+    version_name           VARCHAR(80) NOT NULL CHECK (length(version_name) >= 1),
+    window_days            INTEGER NOT NULL CHECK (window_days BETWEEN 1 AND 3650),
+    seed                   BIGINT NOT NULL,
+    k                      INTEGER NOT NULL CHECK (k BETWEEN 2 AND 20),
+    max_iterations         INTEGER NOT NULL CHECK (max_iterations BETWEEN 1 AND 1000),
+    tolerance              DOUBLE PRECISION NOT NULL CHECK (tolerance > 0),
+    normalization          VARCHAR(20) NOT NULL CHECK (normalization = 'MIN_MAX'),
+    started_by             UUID NOT NULL REFERENCES public.app_user(user_id)
+                           ON DELETE RESTRICT,
+    started_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    finished_at            TIMESTAMPTZ,
+    failure_code           VARCHAR(40),
+    -- What a COMPLETED fit leaves, each a single value of the training.
+    dataset_fingerprint    CHAR(64) CHECK (dataset_fingerprint ~ '^[0-9a-f]{64}$'),
+    dataset_origin         VARCHAR(20) CHECK (dataset_origin IN ('OBSERVED', 'SEEDED')),
+    dataset_row_count      INTEGER CHECK (dataset_row_count >= 0),
+    inertia                DOUBLE PRECISION CHECK (inertia >= 0),
+    silhouette             DOUBLE PRECISION CHECK (silhouette BETWEEN -1 AND 1),
+    iterations             INTEGER CHECK (iterations >= 1),
+    converged              BOOLEAN,
+    stopped_on             VARCHAR(20) CHECK (stopped_on IN ('tolerance', 'iteration_limit')),
+    final_shift            DOUBLE PRECISION CHECK (final_shift >= 0),
+    empty_cluster_events   INTEGER CHECK (empty_cluster_events >= 0),
+    -- Set only when the silhouette is the mean over a sample (RN-58).
+    silhouette_sample_size INTEGER CHECK (silhouette_sample_size >= 1),
+    version_id             BIGINT UNIQUE REFERENCES models.model_version(version_id)
+                           ON DELETE RESTRICT,
+    CONSTRAINT model_training_state_shape CHECK (
+        (state = 'RUNNING'
+            AND finished_at IS NULL AND failure_code IS NULL AND version_id IS NULL
+            AND dataset_fingerprint IS NULL AND dataset_origin IS NULL
+            AND dataset_row_count IS NULL AND inertia IS NULL AND silhouette IS NULL
+            AND iterations IS NULL AND converged IS NULL AND stopped_on IS NULL
+            AND final_shift IS NULL AND empty_cluster_events IS NULL
+            AND silhouette_sample_size IS NULL)
+        OR
+        (state = 'COMPLETED'
+            AND finished_at IS NOT NULL AND failure_code IS NULL AND version_id IS NOT NULL
+            AND dataset_fingerprint IS NOT NULL AND dataset_origin IS NOT NULL
+            AND dataset_row_count IS NOT NULL AND inertia IS NOT NULL
+            AND iterations IS NOT NULL AND converged IS NOT NULL AND stopped_on IS NOT NULL
+            AND final_shift IS NOT NULL AND empty_cluster_events IS NOT NULL
+            AND (converged = (stopped_on = 'tolerance')))
+        OR
+        (state = 'FAILED'
+            AND finished_at IS NOT NULL AND failure_code IS NOT NULL AND version_id IS NULL
+            AND dataset_fingerprint IS NULL AND dataset_origin IS NULL
+            AND dataset_row_count IS NULL AND inertia IS NULL AND silhouette IS NULL
+            AND iterations IS NULL AND converged IS NULL AND stopped_on IS NULL
+            AND final_shift IS NULL AND empty_cluster_events IS NULL
+            AND silhouette_sample_size IS NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS model_training_one_running
+    ON models.model_training (state) WHERE state = 'RUNNING';
+CREATE INDEX IF NOT EXISTS model_training_newest ON models.model_training (training_id DESC);
+
+-- The variables a training fits: a multivalued fact, so rows and not an array
+-- (4NF), as model_version_feature is for a version.
+CREATE TABLE IF NOT EXISTS models.model_training_feature (
+    training_id BIGINT NOT NULL REFERENCES models.model_training(training_id)
+                ON DELETE RESTRICT,
+    feature     CHAR(1) NOT NULL CHECK (feature IN ('R', 'F', 'M')),
+    PRIMARY KEY (training_id, feature)
+);
+
+-- How many customers each cluster of a COMPLETED fit holds. `cluster_index` is the
+-- cluster's position in best-to-worst order (RN-38), the same index the version's
+-- centroids carry, and never the raw number one fit gave it (ADR-0018). Written
+-- with the version in one transaction, and never changed.
+CREATE TABLE IF NOT EXISTS models.model_training_cluster (
+    training_id    BIGINT NOT NULL REFERENCES models.model_training(training_id)
+                   ON DELETE RESTRICT,
+    cluster_index  INTEGER NOT NULL CHECK (cluster_index BETWEEN 0 AND 19),
+    customer_count INTEGER NOT NULL CHECK (customer_count >= 1),
+    PRIMARY KEY (training_id, cluster_index)
+);
+
 -- Immutability, for every role. Only state, published_at and retired_at of a
 -- version may change; nothing is ever deleted, in any of the four tables.
 CREATE OR REPLACE FUNCTION models.refuse_change() RETURNS trigger
@@ -5320,6 +5899,39 @@ FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
 CREATE OR REPLACE TRIGGER trg_run_version_immutable
 BEFORE UPDATE OR DELETE ON models.run_version
 FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_training_feature_immutable
+BEFORE UPDATE OR DELETE ON models.model_training_feature
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+CREATE OR REPLACE TRIGGER trg_model_training_cluster_immutable
+BEFORE UPDATE OR DELETE ON models.model_training_cluster
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
+-- A training moves once, from RUNNING to COMPLETED or FAILED, and only the
+-- columns of its outcome change; what was asked (the request) never does, and
+-- a finished training never changes again. Nothing is deleted.
+CREATE OR REPLACE FUNCTION models.guard_training() RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+    outcome text[] := ARRAY['state', 'finished_at', 'failure_code', 'dataset_fingerprint',
+        'dataset_origin', 'dataset_row_count', 'inertia', 'silhouette', 'iterations',
+        'converged', 'stopped_on', 'final_shift', 'empty_cluster_events',
+        'silhouette_sample_size', 'version_id'];
+BEGIN
+    IF TG_OP = 'UPDATE' AND OLD.state = 'RUNNING' AND NEW.state IN ('COMPLETED', 'FAILED')
+       AND (to_jsonb(NEW) - outcome) = (to_jsonb(OLD) - outcome) THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'models.model_training is immutable once finished: % refused (ADR-0064)', TG_OP
+        USING ERRCODE = '23000', CONSTRAINT = 'model_training_immutable';
+END
+$$;
+
+CREATE OR REPLACE TRIGGER trg_model_training_guard
+BEFORE UPDATE OR DELETE ON models.model_training
+FOR EACH ROW EXECUTE FUNCTION models.guard_training();
 
 -- Each is a row of contracts/db/grants.csv. svc_models registers versions and
 -- publishes by changing only state/times and appending a publication fact. It
@@ -5329,6 +5941,14 @@ GRANT SELECT, INSERT ON models.model_version, models.model_version_feature TO sv
 GRANT UPDATE (state, published_at, retired_at) ON models.model_version TO svc_models;
 GRANT SELECT, INSERT ON models.model_publication TO svc_models;
 GRANT SELECT ON models.run_version TO svc_models;
+-- A training is written by the registry alone: it inserts the RUNNING row and its
+-- variables, and then moves the row once, changing only the columns of its outcome.
+GRANT SELECT, INSERT ON models.model_training, models.model_training_feature,
+    models.model_training_cluster TO svc_models;
+GRANT UPDATE (state, finished_at, failure_code, dataset_fingerprint, dataset_origin,
+    dataset_row_count, inertia, silhouette, iterations, converged, stopped_on,
+    final_shift, empty_cluster_events, silhouette_sample_size, version_id)
+    ON models.model_training TO svc_models;
 
 GRANT USAGE ON SCHEMA models_events TO svc_models, definer_models;
 GRANT INSERT ON models_events.outbox TO definer_models;
@@ -5337,6 +5957,13 @@ GRANT SELECT, DELETE, UPDATE (relayed_at) ON models_events.outbox TO svc_models;
 -- Consumer grants arrive with their stories; the producer can verify its view.
 GRANT USAGE ON SCHEMA api_models TO svc_models;
 GRANT SELECT ON api_models.published_version_v1 TO svc_models;
+
+-- What a training fits and how it names its clusters (F22-12): the net purchases
+-- of the window (ADR-0062) and the label vocabulary in its declared order
+-- (ADR-0030), each through its owner's view and never the owner's table.
+GRANT USAGE ON SCHEMA api_sales, api_segments TO svc_models;
+GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_models;
+GRANT SELECT ON api_segments.label_v1 TO svc_models;
 GRANT USAGE ON SCHEMA api_models TO svc_segments;
 GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
 
@@ -5640,6 +6267,20 @@ GRANT SELECT, INSERT, DELETE ON recommendations.recommendation_decision,
     recommendations.recommendation_exclusion, recommendations.recommendation_item,
     recommendations.recommendation_reason TO svc_recommendations;
 GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_recommendations;
+
+-- What /v2/recommendations reads beyond the views granted in their producers'
+-- sections (F24-04, F24-07, ADR-0067, ADR-0084): the store directory, to tell a
+-- store that is not selling from a channel it does not enable and to find the
+-- nearest store for an `elsewhere` entry; the channel ids, for 422
+-- unknown_channel; a floor caller's stores, re-read per request (ADR-0060); and
+-- the model version a run was scored under. Each is a row of
+-- contracts/db/grants.csv. Every view is created above, so a clean run keeps
+-- its order, and each statement is idempotent.
+GRANT USAGE ON SCHEMA api_stores, api_sales, api_users, api_models TO svc_recommendations;
+GRANT SELECT ON api_stores.store_directory_v2 TO svc_recommendations;
+GRANT SELECT ON api_sales.channel_v1 TO svc_recommendations;
+GRANT SELECT ON api_users.store_assignment_v1 TO svc_recommendations;
+GRANT SELECT ON api_models.run_version_v1 TO svc_recommendations;
 -- END BOUNDARY recommendations
 
 -- BEGIN BOUNDARY analytics-kpis
@@ -5655,6 +6296,14 @@ GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_rec
 -- request, ADR-0060). F26-05 adds the two views the demand-coverage report reads:
 -- api_stock.stock_level_v1 (the units held per store and product) and
 -- api_products.product_ref_v1 (the product's current category and is_active).
+-- F26-03 adds the three reports that were planned: spend and retention read the same
+-- two sales views, and the migration report reads api_segments.assignment_change_v1,
+-- the changes of a customer's label (contracts/db/api_segments.assignment_change.v1.md).
+-- Segments creates that view, in its own section. This one only grants it, and reads
+-- the model version of each side through api_models.run_version_v1, which the
+-- model-registry section creates after segments'. Spend and retention read the same
+-- view through the label's run, to name the model versions of the labels a figure
+-- groups by (ADR-0064).
 -- The stories that add a report add the grants it needs here.
 -- Each is a row of contracts/db/grants.csv. Idempotent: an operator re-applies it.
 CREATE SCHEMA IF NOT EXISTS kpis;
@@ -5668,6 +6317,10 @@ GRANT SELECT ON api_segments.current_label_v1 TO svc_kpis;
 GRANT SELECT ON api_users.store_assignment_v1 TO svc_kpis;
 GRANT SELECT ON api_stock.stock_level_v1 TO svc_kpis;
 GRANT SELECT ON api_products.product_ref_v1 TO svc_kpis;
+
+GRANT SELECT ON api_segments.assignment_change_v1 TO svc_kpis;
+GRANT USAGE ON SCHEMA api_models TO svc_kpis;
+GRANT SELECT ON api_models.run_version_v1 TO svc_kpis;
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

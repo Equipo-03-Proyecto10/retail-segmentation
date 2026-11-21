@@ -127,19 +127,33 @@ models.model_version_feature
 # version. The history grows only by an administrator's publication (F22-13).
 models.model_publication
 
+# models.model_training, its variables and its cluster sizes: a training is a run an
+# administrator started and what that fit produced (F22-12). Seeding trainings would
+# invent a history of runs nobody started, and each COMPLETED one would have to be
+# explained by a version, so the seed's two versions stay registered ones. The three
+# tables fill only when a training runs.
+models.model_training
+models.model_training_feature
+models.model_training_cluster
+
 # rfm_events.outbox: relayed rows are purged after seven days, so it is runtime
 # state and never seed data (F22-05). The capture triggers on rfm.customer_profile
 # fill it as the service writes profiles.
 rfm_events.outbox
 
+# rfm.pass_run: one row per daily pass, written as the service runs. A seeded history
+# of passes would claim runs that never happened (F22-07).
+rfm.pass_run
+
 # model-registry's publication outbox is runtime relay state under ADR-0044;
 # committed publications create it and relayed rows are purged after seven days.
 models_events.outbox
 
-# rfm.rule_set: the one rule set rfm-engine starts with, the scoring the published
-# version of the web's last rule-based run froze (F22-05). A rule set is a
-# deliberate, immutable act of creation (F22-09), not a population: padding it
-# with invented rule sets would fake a history of boundaries nobody chose.
+# rfm.rule_set: the published rule set rfm-engine starts with, the scoring the
+# published version of the web's last rule-based run froze (F22-05), and a draft
+# version 2 of it that an analyst edits and publishes (F22-09). A rule set is a
+# deliberate act of an analyst, not a population: padding it with invented rule
+# sets would fake a history of boundaries nobody chose.
 rfm.rule_set
 
 # rfm.customer_profile: runtime state, empty at the seed. The first sale event, or
@@ -158,6 +172,15 @@ experiments.experiment_plan
 experiments.experiment_frame_member
 experiments.experiment_frame_exclusion
 experiments.experiment_flag
+
+# The primary result (F25-13, ADR-0068, ADR-0085) is the one look at an experiment's analysis
+# instant, stored when that look is first read. It exists only for an experiment planned through
+# the service and read after its analysis instant, and the seeded experiments are assignment
+# rule V0, which has no analysis instant. Runtime facts, like a plan.
+experiments.experiment_result
+experiments.experiment_result_arm
+experiments.experiment_result_comparison
+experiments.experiment_result_balance
 
 # experiments.exposure_notice is runtime projection state. Rows exist only as
 # experimentation consumes RECORDED and VOIDED notices from engagement's

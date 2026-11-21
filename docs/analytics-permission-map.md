@@ -39,7 +39,7 @@ deny still applies.
 |---|---|---|
 | `sales_ingest.execute` | Used by all four `/admin/sales-import/` routes | The route landed after the permission map, so the earlier no-route finding is no longer true. `tests/test_analytics_authz.py` keeps the mapping explicit. |
 | `inventory.write` | No route | Accepted sales decrement stock atomically under ADR-0031. This dormant permission remains for a separate, auditable receipt/transfer/count/adjustment entry point; its implementation is sequenced in `roadmap.md`. |
-| `segment.write` | No route | Runs use `segment_run.execute`; changing the stable label vocabulary or rule catalog is withheld until a governance story defines how historical comparability is preserved. |
+| `segment.write` | No route | Runs use `segment_run.execute`. F22-09 decided the governance of the rule catalog: rfm-engine versions rule sets (draft, published and immutable, a change is a new version, every change audited with its author), so historical comparability is preserved there. The web adds no route, and the label vocabulary stays closed. |
 | `user.self` | No route | `CUSTOMER` is a declared loyalty-customer profile, and the schema has an optional `customer.user_id` ownership link, but the seed and current user workflow never populate it. A self-service story must define that link's lifecycle and populate it before a route can safely narrow a query. |
 
 The last three permissions are therefore dormant capabilities, not hidden

@@ -9,9 +9,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import online.maxthecoder.mosaiq.floor.R
@@ -37,6 +41,14 @@ private fun DisplayLight() = Sheet(dark = false) { Display() }
 @Preview(name = "Display, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT * 2, showBackground = true)
 @Composable
 private fun DisplayDark() = Sheet(dark = true) { Display() }
+
+@Preview(name = "Feedback, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT / 2, showBackground = true)
+@Composable
+private fun FeedbackLight() = Sheet(dark = false) { Feedback() }
+
+@Preview(name = "Feedback, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT / 2, showBackground = true)
+@Composable
+private fun FeedbackDark() = Sheet(dark = true) { Feedback() }
 
 @Composable
 private fun Sheet(dark: Boolean, content: @Composable () -> Unit) = MosaiqTheme(darkTheme = dark) {
@@ -101,4 +113,14 @@ private fun Display() {
         onAction = {}
     )
     MqErrorPanel(ApiError.unreachable("abc-123"), onRetry = {})
+}
+
+@Composable
+private fun Feedback() {
+    MqInlineError("Choose a registration channel.")
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(snackbar) {
+        snackbar.showSnackbar("Sale saved on this phone.", actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
+    }
+    MqSnackbarHost(snackbar)
 }

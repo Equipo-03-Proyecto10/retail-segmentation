@@ -1,6 +1,8 @@
 //! The query string of a sales report, without a database.
 
-use analytics_kpis::query::{parse_sales_query, Dimension, Granularity};
+use analytics_kpis::query::{
+    parse_migration_query, parse_retention_query, parse_sales_query, Dimension, Granularity,
+};
 
 fn rejected(query: &str) -> Vec<(String, String)> {
     let error = parse_sales_query(query).unwrap_err();
@@ -86,4 +88,44 @@ fn each_rejected_parameter_is_named() {
     );
     let query = parse_sales_query("from=2026-10-01&to=2026-10-31&group_by=").unwrap();
     assert!(query.group_by.is_empty());
+}
+
+#[test]
+fn a_retention_row_is_always_a_cohort_so_period_is_a_dimension_nobody_has_to_name() {
+    let query = parse_retention_query("from=2026-10-01&to=2026-10-31").unwrap();
+    assert_eq!(query.group_by, [Dimension::Period]);
+    assert_eq!(query.granularity, Some(Granularity::Month));
+    // Period comes first, then what the caller named, and a granularity is
+    // allowed without it (it is `requires_period` for every other report).
+    let query =
+        parse_retention_query("from=2026-10-01&to=2026-10-31&group_by=store&granularity=week")
+            .unwrap();
+    assert_eq!(query.group_by, [Dimension::Period, Dimension::Store]);
+    assert_eq!(query.granularity, Some(Granularity::Week));
+    let query =
+        parse_retention_query("from=2026-10-01&to=2026-10-31&group_by=segment,period").unwrap();
+    assert_eq!(query.group_by, [Dimension::Segment, Dimension::Period]);
+    assert!(parse_sales_query("from=2026-10-01&to=2026-10-31&granularity=week").is_err());
+}
+
+#[test]
+fn a_migration_has_no_store_and_no_channel() {
+    let query = parse_migration_query(
+        "from=2026-10-01&to=2026-10-31&group_by=segment,period&segment_code=LOYAL&model_version_id=4",
+    )
+    .unwrap();
+    assert_eq!(query.group_by, [Dimension::Segment, Dimension::Period]);
+    assert_eq!(query.granularity, Some(Granularity::Month));
+    assert_eq!(query.segment_code.as_deref(), Some("LOYAL"));
+    assert_eq!(query.model_version_id, Some(4));
+    for dimension in ["store", "channel"] {
+        let error = parse_migration_query(&format!(
+            "from=2026-10-01&to=2026-10-31&group_by={dimension}"
+        ))
+        .unwrap_err();
+        assert_eq!(error.details[0].field, "group_by");
+        assert_eq!(error.details[0].code, "dimension_not_supported");
+    }
+    let error = parse_migration_query("from=2026-10-01&to=2026-10-31&granularity=day").unwrap_err();
+    assert_eq!(error.details[0].code, "requires_period");
 }

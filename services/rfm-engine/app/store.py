@@ -19,7 +19,7 @@ LOCK_KEY = 295001
 def rule_set(connection: Connection, rule_set_id: int) -> RuleSet | None:
     row = connection.execute(
         "SELECT rule_set_id, window_days, recency_boundaries, frequency_boundaries,"
-        " monetary_boundaries, fallback_label_code"
+        " monetary_boundaries, fallback_label_code, state"
         " FROM rfm.rule_set WHERE rule_set_id = %s",
         (rule_set_id,),
     ).fetchone()
@@ -40,6 +40,7 @@ def rule_set(connection: Connection, rule_set_id: int) -> RuleSet | None:
             Band(b[0], (b[1], b[2]), (b[3], b[4]), (b[5], b[6])) for b in bands
         ),
         fallback_label=row[5],
+        published=row[6] == "PUBLISHED",
     )
 
 

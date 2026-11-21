@@ -129,7 +129,13 @@ def validate_sale_rules(body: dict[str, Any]) -> tuple[datetime, list[dict[str, 
                 "out_of_range",
             )
         normalized.append(
-            {"product_id": product_id, "quantity": quantity, "unit_price": price}
+            {
+                "product_id": product_id,
+                "quantity": quantity,
+                "unit_price": price,
+                # Optional (F25-05); a sale import's rows never carry one.
+                "promotion_id": line.get("promotion_id"),
+            }
         )
     total = sum(
         (line["unit_price"] * line["quantity"] for line in normalized), Decimal(0)

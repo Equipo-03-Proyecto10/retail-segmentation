@@ -1,7 +1,7 @@
 package online.maxthecoder.mosaiq.floor.net
 
 /**
- * The one place a service's path is built. Each prefix is `api/<name>/v1/`,
+ * The one place a service's path is built. Each prefix is `api/<name>/v<n>/`,
  * where `<name>` is the service that `contracts/registry.yaml` registers the
  * resource to (ADR-0041): the app calls a resource only at its owner.
  */
@@ -21,10 +21,10 @@ object Services {
     /** products owns `products`. */
     const val PRODUCTS = "api/products/v1/"
 
-    /** stock owns `stock-levels`. */
+    /** stock owns `stock-levels`, `stock-movements` and `availabilities`. */
     const val STOCK = "api/stock/v1/"
 
-    /** customers owns `customers`. */
+    /** customers owns `customers` and `loyalty-cards`. */
     const val CUSTOMERS = "api/customers/v1/"
 
     /** customer-preferences owns `preference-profiles`. */
@@ -36,7 +36,7 @@ object Services {
     /** sales owns `sales` and `channels`. */
     const val SALES = "api/sales/v1/"
 
-    /** engagement owns `engagement-events` and `engagement-summaries`. */
+    /** engagement owns `engagement-events`, `engagement-summaries` and `capture-incidents` (ADR-0071). */
     const val ENGAGEMENT = "api/engagement/v1/"
 
     /** segments owns `segments` and `segment-assignments`. */
@@ -44,4 +44,19 @@ object Services {
 
     /** recommendations owns `recommendations`. */
     const val RECOMMENDATIONS = "api/recommendations/v1/"
+
+    /** engagement's `/v2`, the version that records a `CAMPAIGN_EXPOSURE`, a `CART_ADD`, a `CART_REMOVE` and a `RECO_IMPRESSION`. */
+    const val ENGAGEMENT_V2 = "api/engagement/v2/"
+
+    /** campaigns owns `campaigns` and `promotions`. */
+    const val CAMPAIGNS = "api/campaigns/v1/"
+
+    /** recommendations' `/v2`: judged at a reference store, with alternatives and a decision id. */
+    const val RECOMMENDATIONS_V2 = "api/recommendations/v2/"
+
+    /** experimentation owns `experiments`, `experiment-assignments`, `experiment-results`, `sale-attributions`. */
+    const val EXPERIMENTATION = "api/experimentation/v1/"
+
+    /** analytics-kpis owns `kpi-reports`. */
+    const val ANALYTICS_KPIS = "api/analytics-kpis/v1/"
 }

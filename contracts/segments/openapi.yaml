@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.5.0
+  version: 1.5.1
   description: >-
     Serves what the segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history, the assignments of each model
@@ -211,7 +211,6 @@ paths:
         read from `getCurrentAssignment`, whose response type is closed to
         removals within v1.
       operationId: getFloorCurrentAssignment
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - SALES_ASSOCIATE
         - LOYALTY_OFFICER

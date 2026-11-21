@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: experimentation-service
-  version: 1.0.5
+  version: 1.1.0
   description: >-
     Plans experiments, assigns customers to their arms, evaluates conversions, credits sales to campaigns
     and reports results (RN-67). An experiment's frame and arms are fixed before measurement, assignment,
@@ -355,7 +355,7 @@ paths:
         Records, for every assigned customer, each qualifying sale in the experiment's window that is
         not recorded yet. It records the same conversions however often it runs, and a conversion already
         recorded is never changed or deleted (ADR-0050). It reads sales net of reversals (ADR-0062) and
-        writes no attribution: attribution is written by the service when the window has closed. Answers
+        writes no attribution: attribution is written by `evaluateAttributions` once the window has closed. Answers
         200 with what it added, including when that is nothing. An experiment that is not assigned has
         nothing to evaluate: 409 `experiment_not_assigned`.
       operationId: evaluateConversions
@@ -384,6 +384,61 @@ paths:
               examples:
                 evaluated:
                   externalValue: ./examples/conversion-evaluation.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/NotAssigned'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiments/{experiment_id}/attributions:
+    post:
+      tags:
+      - Attributions
+      summary: Attribute an experiment's sales
+      description: >-
+        Holds, for every sale that is a recorded conversion of a treatment assignment of the experiment,
+        the one campaign that attributes it (ADR-0069). The holder is the latest exposure before the sale,
+        inside the window, among every experiment with a campaign; a tie goes to the lower `assignment_id`.
+        A sale is written only once every candidate's window has closed, over the exposures that exist then,
+        and a holder is never reassigned or reopened. It writes the same rows however often it runs; a sale
+        that is not held yet because a window is open is counted as `pending`. It reads no net amount: that
+        is read when an attribution is shown (ADR-0062). The result is attribution, not effect: nothing it
+        writes says a campaign caused a sale. Answers 200 with what it added, including when that is
+        nothing. An experiment that is not assigned has nothing to attribute: 409 `experiment_not_assigned`.
+      operationId: evaluateAttributions
+      x-mosaiq-roles:
+      - ADMIN
+      - MARKETING
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: The attribution ran.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttributionEvaluation'
+              examples:
+                evaluated:
+                  externalValue: ./examples/attribution-evaluation.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/AttributionEvaluation'
+              examples:
+                evaluated:
+                  externalValue: ./examples/attribution-evaluation.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -769,7 +824,6 @@ paths:
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/AttributionId'
@@ -1923,6 +1977,46 @@ components:
           minimum: 0
       xml:
         name: ConversionEvaluation
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    AttributionEvaluation:
+      type: object
+      additionalProperties: false
+      description: >-
+        What one attribution run did. Running again writes nothing that was written, so repeating it holds the
+        same sales. This is attribution, not effect (ADR-0069).
+      required:
+      - experiment_id
+      - attributed
+      - already_attributed
+      - pending
+      - label
+      - as_of
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        attributed:
+          type: integer
+          minimum: 0
+          description: Sales this run held.
+        already_attributed:
+          type: integer
+          minimum: 0
+          description: Sales the experiment's conversions have that were already held, by this or another campaign.
+        pending:
+          type: integer
+          minimum: 0
+          description: Sales not held yet because a candidate's window is still open.
+        label:
+          type: string
+          enum:
+          - ATTRIBUTION
+        as_of:
+          type: string
+          format: date-time
+      xml:
+        name: AttributionEvaluation
         namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
     ArmOutcome:
       type: object

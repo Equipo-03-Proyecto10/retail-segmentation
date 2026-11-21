@@ -13,10 +13,12 @@ import os
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
+from lxml import etree
 
 from tests.conftest import ADMIN, ANALYST, AUDITOR, MARKETING, _with_database
 
@@ -670,6 +672,9 @@ def test_the_same_result_in_xml(api: Any, scene: Scenario) -> None:
     root = ET.fromstring(reply.data)
     assert root.tag.endswith("ExperimentResult")
     assert "90.00" in reply.get_data(as_text=True)
+    contract = Path(__file__).resolve().parents[1] / "contracts/experimentation"
+    schema = etree.XMLSchema(etree.parse(str(contract / "experimentation.xsd")))
+    schema.assertValid(etree.fromstring(reply.data))
 
 
 @pytest.mark.parametrize(

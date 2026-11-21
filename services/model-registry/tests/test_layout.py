@@ -111,6 +111,7 @@ def test_the_distributed_stack_and_local_environment_include_the_service() -> No
     env = (REPO / ".env.example").read_text()
     assert re.search(r"^REDIS_MODELS_PASSWORD=svc_models$", env, re.M)
     assert re.search(r"^SVC_MODELS_DB_PASSWORD=svc_models$", env, re.M)
+    assert re.search(r"^TRAINING_TIMEOUT_SECONDS=900$", env, re.M)
     local = (REPO / "docker/distributed/svc/model-registry.env").read_text()
     assert "DATABASE_URL=postgresql://svc_models@/retail?host=/run/postgresql" in local
     assert "REDIS_MODELS_PASSWORD=svc_models" in local

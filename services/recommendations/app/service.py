@@ -1,4 +1,4 @@
-"""The Flask application: `/v1` and `/v2` reads, their cache, and seven
+"""The Flask application: `/v1` and `/v2` reads, their cache, and eight
 invalidation consumers."""
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ import redis
 
 from . import decision_store, decisions, retention, rule, rule_v2, store
 from .cache import ResultCache, result_key, result_key_v2
-from .config import DEFAULT_LIMIT, MAX_LIMIT, STREAMS, Settings
+from .config import ASSIGNMENT_STREAM, DEFAULT_LIMIT, MAX_LIMIT, STREAMS, Settings
 
 LOGGER = logging.getLogger(__name__)
 SUFFIX = "recommendations"
@@ -350,7 +350,8 @@ def create_app() -> Flask:
 
 
 def _start_consumers(app: Flask, settings: Settings, cache: ResultCache) -> None:
-    """One consumer per stream, group `recommendations`, each emptying the cache."""
+    """One consumer per stream, group `recommendations`, each emptying the cache (a
+    changed assignment empties only that customer's results)."""
     if not settings.stream_consumer_enabled:
         return
 
@@ -358,10 +359,21 @@ def _start_consumers(app: Flask, settings: Settings, cache: ResultCache) -> None
         # A Redis failure raises, so the kit redelivers, up to five times.
         cache.invalidate()
 
+    def handle_assignment(fields: dict[str, str]) -> None:
+        """A customer's label changed: only their results are stale. An entry that
+        names no customer cannot be narrowed, so it empties the cache as any other."""
+        customer_id = fields.get("entity_id")
+        if customer_id:
+            cache.invalidate_customer(customer_id)
+        else:
+            cache.invalidate()
+
     consumers = []
     for stream in STREAMS:
         consumer = StreamConsumer(
-            _long_timeout_client(settings.redis_state_url, 10), stream, handle
+            _long_timeout_client(settings.redis_state_url, 10),
+            stream,
+            handle_assignment if stream == ASSIGNMENT_STREAM else handle,
         )
         consumer.start()
         consumers.append(consumer)

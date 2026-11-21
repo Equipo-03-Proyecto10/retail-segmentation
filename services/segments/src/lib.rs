@@ -41,6 +41,9 @@ use uuid::Uuid;
 pub const SERVICE: &str = "segments";
 pub const SUFFIX: &str = "segments";
 pub const STREAM: &str = "stream:segments.v1.run_recorded";
+/// A customer's label changed (F22-15). Produced here and consumed by recommendations;
+/// this service reads no entry of it.
+pub const ASSIGNMENT_STREAM: &str = "stream:segments.v1.assignment_changed";
 const CACHE_SECONDS: u64 = 900;
 /// The run tracker before PostgreSQL has been asked.
 const RUN_UNSET: i64 = i64::MIN;
@@ -743,7 +746,10 @@ impl Reader {
         let fresh = read_list(db).await?;
         let actual = fresh.run_id.unwrap_or(NO_RUN);
         self.advance(actual);
-        cache.put(&list_key(actual), &fresh).await;
+        // The list is the latest whole run's, and the tracked run may be a later
+        // incremental one: stored under the key that is asked for, it is found again
+        // until a run moves the tracked id.
+        cache.put(&list_key(run.max(actual)), &fresh).await;
         Ok(fresh)
     }
 
@@ -784,14 +790,17 @@ fn reader() -> &'static Reader {
 // PostgreSQL
 // ---------------------------------------------------------------------------
 
-/// The labels with their sizes in the latest run, in one statement so the run
-/// and its counts come from one snapshot.
+/// The labels with their sizes in the latest whole run, in one statement so the
+/// run and its counts come from one snapshot. An incremental run (F22-15) holds the
+/// few customers an event or the clock moved, not the population, so it never
+/// stands for "the latest run" here (ADR-0087).
 pub async fn read_list(db: &Database) -> Result<SegmentList, ApiError> {
     let connection = db.connection().await?;
     let rows = connection
         .query(
             "WITH latest AS ( \
                  SELECT run_id, run_at FROM public.segmentation_run \
+                 WHERE scope = 'FULL' \
                  ORDER BY run_id DESC LIMIT 1) \
              SELECT l.label_code, l.name, l.description, l.ordinal_position, \
                     (SELECT count(*) FROM public.customer_segment_history AS h \
@@ -2099,13 +2108,14 @@ async fn redis_connection(
         .await
 }
 
-/// The outbox relay for `stream:segments.v1.run_recorded`. The first
+/// The outbox relay for `stream:segments.v1.run_recorded` and
+/// `stream:segments.v1.assignment_changed`. The first
 /// connection is retried every second, so the service comes up during a Redis
 /// outage; after that the kit rebuilds the connection after every outage.
 pub async fn run_relay(database_url: String, redis_url: String, password: Option<String>) {
     loop {
         if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
-            match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
+            match OutboxRelay::new(&database_url, SUFFIX, [STREAM, ASSIGNMENT_STREAM], redis) {
                 Ok(relay) => {
                     relay
                         .run_with_reconnect(|| {

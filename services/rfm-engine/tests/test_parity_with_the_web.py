@@ -23,7 +23,7 @@ def test_every_customer_the_web_scored_is_scored_the_same_under_the_seeded_rule_
 ) -> None:
     run = owner.execute(
         "SELECT run_id, run_at, window_days FROM public.segmentation_run"
-        " WHERE method = 'RFM_RULES' ORDER BY run_id DESC LIMIT 1"
+        " WHERE method = 'RFM_RULES' AND scope = 'FULL' ORDER BY run_id DESC LIMIT 1"
     ).fetchone()
     assert run is not None
     run_id, run_at, window_days = run

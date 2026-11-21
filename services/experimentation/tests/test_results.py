@@ -44,6 +44,43 @@ def _code(reply: Any) -> tuple[int, str | None]:
     return reply.status_code, (reply.get_json(silent=True) or {}).get("code")
 
 
+def _comparison_and_assumption_views(
+    reply: Any, media_type: str
+) -> tuple[str, set[str], list[tuple[str, str]], set[str]]:
+    """Read the fields under test from either representation and validate XML."""
+    if media_type == "application/json":
+        body = reply.get_json()
+        return (
+            body["status"],
+            {comparison["metric"] for comparison in body["comparisons"]},
+            [
+                (assumption["code"], assumption["statement"])
+                for assumption in body["assumptions"]
+            ],
+            set(body["flags"]),
+        )
+    contract = Path(__file__).resolve().parents[1] / "contracts/experimentation"
+    schema = etree.XMLSchema(etree.parse(str(contract / "experimentation.xsd")))
+    root = etree.fromstring(reply.data)
+    schema.assertValid(root)
+    namespace = {"ex": root.nsmap[None]}
+    return (
+        root.findtext("ex:status", namespaces=namespace) or "",
+        {
+            comparison.findtext("ex:metric", namespaces=namespace) or ""
+            for comparison in root.findall("ex:comparisons", namespaces=namespace)
+        },
+        [
+            (
+                assumption.findtext("ex:code", namespaces=namespace) or "",
+                assumption.findtext("ex:statement", namespaces=namespace) or "",
+            )
+            for assumption in root.findall("ex:assumptions", namespaces=namespace)
+        ],
+        {flag.text or "" for flag in root.findall("ex:flags", namespaces=namespace)},
+    )
+
+
 class Scenario:
     """One planned experiment on up to thirty seeded customers.
 
@@ -529,6 +566,54 @@ def test_a_clean_sample_ratio_passes(api: Any, scene: Scenario) -> None:
         1.0,
         0.001,
     )
+
+
+@pytest.mark.parametrize(
+    ("sizes", "expected_metrics"),
+    [
+        ((0, 2), set()),
+        ((1, 1), {"CONVERSION"}),
+        ((1, 5), {"CONVERSION"}),
+        ((2, 2), {"CONVERSION", "REVENUE_PER_CUSTOMER"}),
+    ],
+)
+@pytest.mark.parametrize("media_type", ["application/json", "application/xml"])
+def test_small_arms_withhold_only_the_unsupported_comparisons(
+    api: Any,
+    owner: psycopg.Connection,
+    sizes: tuple[int, int],
+    expected_metrics: set[str],
+    media_type: str,
+) -> None:
+    scene = Scenario(owner, sizes=sizes, metric="CONVERSION")
+    owner.execute(
+        "INSERT INTO experiments.experiment_flag (experiment_id, flag)"
+        " VALUES (%s, 'UNDERPOWERED')",
+        (scene.experiment,),
+    )
+    for query in ("", "?basis=RE_READ"):
+        reply = scene.get(api, query, headers={"Accept": media_type})
+        assert reply.status_code == 200
+        status, metrics, assumptions, flags = _comparison_and_assumption_views(
+            reply, media_type
+        )
+        assert status == "COMPLETE"
+        assert metrics == expected_metrics
+        assert "UNDERPOWERED" in flags
+        withheld = [
+            statement
+            for code, statement in assumptions
+            if code == "COMPARISON_WITHHELD_SMALL_ARM"
+        ]
+        assert len(withheld) == 2 - len(expected_metrics)
+        for metric in {"CONVERSION", "REVENUE_PER_CUSTOMER"} - expected_metrics:
+            statement = next(text for text in withheld if text.startswith(metric))
+            assert all(str(arm) in statement for arm in scene.arms)
+            if metric == "CONVERSION":
+                assert "at least one customer per arm" in statement
+            else:
+                assert "at least two customers per arm" in statement
+    assert scene.stored("_comparison") == len(expected_metrics)
 
 
 def test_a_flagged_balance_is_a_warning_and_changes_no_estimate(

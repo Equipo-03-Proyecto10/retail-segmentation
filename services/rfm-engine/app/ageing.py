@@ -83,27 +83,37 @@ def _begin(connection: Connection, rule_set_id: int) -> Run:
     return _run(row)
 
 
-def _due(connection: Connection, as_of: datetime, after: UUID | None) -> list[UUID]:
+def _due(
+    connection: Connection, as_of: datetime, window_days: int, after: UUID | None
+) -> list[UUID]:
     """The next customers whose instant has come, in key order so a batch never
-    returns to a customer it has seen."""
-    if after is None:
-        rows = connection.execute(
-            "SELECT customer_id FROM rfm.customer_profile"
-            " WHERE next_change_at IS NOT NULL AND next_change_at <= %s"
-            " ORDER BY customer_id LIMIT %s",
-            (as_of, BATCH),
-        ).fetchall()
-    else:
-        rows = connection.execute(
-            "SELECT customer_id FROM rfm.customer_profile"
-            " WHERE next_change_at IS NOT NULL AND next_change_at <= %s"
-            " AND customer_id > %s ORDER BY customer_id LIMIT %s",
-            (as_of, after, BATCH),
-        ).fetchall()
+    returns to a customer it has seen. A customer with a net purchase in the window
+    and no profile at all is due too: no event ever reached them (a seeded customer,
+    or a first sale whose event was lost), and the pass is what gives them one, so a
+    verification finds them `pending` only when the pass has not (ADR-0086)."""
+    rows = connection.execute(
+        "SELECT customer_id FROM ("
+        " SELECT customer_id FROM rfm.customer_profile"
+        "  WHERE next_change_at IS NOT NULL AND next_change_at <= %(as_of)s"
+        " UNION"
+        " SELECT n.customer_id FROM api_sales.net_purchase_line_v1 AS n"
+        "  WHERE n.occurred_at >= %(as_of)s - make_interval(days => %(days)s)"
+        "    AND n.occurred_at <= %(as_of)s"
+        "    AND NOT EXISTS (SELECT FROM rfm.customer_profile AS p"
+        "                     WHERE p.customer_id = n.customer_id)) AS due"
+        " WHERE (%(after)s::uuid IS NULL OR customer_id > %(after)s::uuid)"
+        " ORDER BY customer_id LIMIT %(limit)s",
+        {"as_of": as_of, "days": window_days, "after": after, "limit": BATCH},
+    ).fetchall()
     return [row[0] for row in rows]
 
 
-def _refresh(db: Any, run: Run, customer_id: UUID) -> bool | None:
+def _refresh(
+    db: Any,
+    run: Run,
+    customer_id: UUID,
+    version: recompute.Version | None = None,
+) -> bool | None:
     """Recompute one customer at the pass's instant and count it, in one
     transaction. Returns whether a captured value changed, or None when the customer
     was not due any more and was left alone."""
@@ -119,11 +129,22 @@ def _refresh(db: Any, run: Run, customer_id: UUID) -> bool | None:
             "SELECT next_change_at FROM rfm.customer_profile WHERE customer_id = %s",
             (customer_id,),
         ).fetchone()
-        if row is None or row[0] is None or row[0] > run.as_of:
+        # No row at all is a customer with purchases the pass gives a first profile.
+        if row is not None and (row[0] is None or row[0] > run.as_of):
             return None
         before = store.current(connection, customer_id)
         result = recompute.customer(
-            connection, customer_id, run.rule_set_id, as_of=run.as_of
+            connection,
+            customer_id,
+            run.rule_set_id,
+            as_of=run.as_of,
+            applying=(
+                None
+                if version is None
+                else recompute.Applying(
+                    version, "AGEING", recompute.pass_batch(run.pass_run_id)
+                )
+            ),
         )
         changed = before is None or tuple(before) != result.values()
         connection.execute(
@@ -134,7 +155,9 @@ def _refresh(db: Any, run: Run, customer_id: UUID) -> bool | None:
     return changed
 
 
-def run_pass(db: Any, rule_set_id: int) -> Run | None:
+def run_pass(
+    db: Any, rule_set_id: int, version: recompute.Version | None = None
+) -> Run | None:
     """Run one pass to its end, or resume the one an instance left RUNNING.
 
     Returns the finished run, or None when another instance holds the pass. The lock
@@ -153,16 +176,34 @@ def run_pass(db: Any, rule_set_id: int) -> Run | None:
             recompute.require_published(work, rule_set_id)
             work.commit()
             run = _begin(work, rule_set_id)
+            measured = store.rule_set(work, run.rule_set_id)
+            assert measured is not None
+            work.commit()
+        if version is not None and run.rule_set_id != version.rule_set_id:
+            # A pass left RUNNING keeps the rule set it began under. The version now
+            # published holds another, so what this pass writes is not scored under
+            # it, and it is no assignment under that version (ADR-0063).
+            LOGGER.warning(
+                "Pass %s measures under rule set %s, the published version holds %s:"
+                " its changes are not applied to the segment history",
+                run.pass_run_id,
+                run.rule_set_id,
+                version.rule_set_id,
+            )
+            version = None
         after: UUID | None = None
         failed = streak = 0
         while True:
             with db.connection() as work:
-                batch = _due(work, run.as_of, after)
+                batch = _due(work, run.as_of, measured.window_days, after)
             if not batch:
                 break
             for customer_id in batch:
                 try:
-                    _refresh(db, run, customer_id)
+                    if version is None:
+                        _refresh(db, run, customer_id)
+                    else:
+                        _refresh(db, run, customer_id, version)
                     streak = 0
                 except Exception:  # noqa: BLE001 - one customer must not stop the pass
                     failed += 1
@@ -208,14 +249,16 @@ class DailyPass(threading.Thread):
     def __init__(
         self,
         db: Any,
-        rule_set_id: int,
+        rule_set_id: int | None,
         at: time,
         retry_first: float = RETRY_FIRST,
         retry_max: float = RETRY_MAX,
+        default_rule_set_id: int = 1,
     ):
         super().__init__(name="rfm-engine-daily-pass", daemon=True)
         self.db = db
         self.rule_set_id = rule_set_id
+        self.default_rule_set_id = default_rule_set_id
         self.at = at
         self.retry_first = retry_first
         self.retry_max = retry_max
@@ -224,6 +267,26 @@ class DailyPass(threading.Thread):
     def stop(self) -> None:
         self.stopping.set()
 
+    def _in_force(self) -> tuple[int, recompute.Version | None]:
+        """The rule set to measure under and, when it is the published version's, the
+        version to record the changes against. A pass built with a rule set of its
+        own measures under it and applies nothing."""
+        if self.rule_set_id is not None:
+            return self.rule_set_id, None
+        with self.db.connection() as connection:
+            version = recompute.in_force(connection, self.default_rule_set_id)
+            connection.commit()
+        if version is None:
+            return self.default_rule_set_id, None
+        return version.rule_set_id, version
+
+    def _pass(self) -> None:
+        rule_set_id, version = self._in_force()
+        if version is None:
+            run_pass(self.db, rule_set_id)
+        else:
+            run_pass(self.db, rule_set_id, version)
+
     def _attempt(self) -> bool:
         """One pass. True when it ended, or another instance has it; False when it
         failed."""
@@ -231,12 +294,12 @@ class DailyPass(threading.Thread):
             with self.db.connection() as connection:
                 resumed = _unfinished(connection) is not None
                 connection.commit()
-            run_pass(self.db, self.rule_set_id)
+            self._pass()
             if resumed:
                 # A resumed pass measures from the instant it began, perhaps hours
                 # ago, so what fell due since waits for the next day. One that starts
                 # now measures from now.
-                run_pass(self.db, self.rule_set_id)
+                self._pass()
             return True
         except Exception:  # noqa: BLE001
             LOGGER.exception("The scheduled pass failed; it is retried")

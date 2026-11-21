@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use mosaiq_kit::OutboxRelay;
 use redis::aio::MultiplexedConnection;
-use segments::{run_consumer, run_relay, STREAM, SUFFIX};
+use segments::{run_consumer, run_relay, ASSIGNMENT_STREAM, STREAM, SUFFIX};
 use support::{
     admin, connect, drop_acl, load_acl, owner_url, redis_url, service_redis, RecordedRun,
 };
@@ -77,7 +77,7 @@ async fn a_recorded_run_reaches_the_stream_within_five_seconds_and_old_rows_are_
     let mut relay = OutboxRelay::new(
         &support::service_url(&db_url),
         SUFFIX,
-        [STREAM],
+        [STREAM, ASSIGNMENT_STREAM],
         service_redis(&redis_url, &password).await,
     )
     .unwrap();
@@ -108,7 +108,7 @@ async fn a_recorded_run_reaches_the_stream_within_five_seconds_and_old_rows_are_
     let mut relay = OutboxRelay::new(
         &support::service_url(&db_url),
         SUFFIX,
-        [STREAM],
+        [STREAM, ASSIGNMENT_STREAM],
         service_redis(&redis_url, &password).await,
     )
     .unwrap();
@@ -145,6 +145,14 @@ async fn a_recorded_run_reaches_the_stream_within_five_seconds_and_old_rows_are_
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.clone())
     };
+    // The same run changed customers' labels, so the history trigger announced them
+    // (F22-15) and the relay delivers them to their own stream beside the run's.
+    let announced: i64 = redis::cmd("XLEN")
+        .arg(ASSIGNMENT_STREAM)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    assert!(announced > 0, "changed labels reach {ASSIGNMENT_STREAM}");
     assert_eq!(field("event_type").as_deref(), Some("INSERT"));
     assert_eq!(field("v").as_deref(), Some("1"));
     assert_eq!(field("entity_id"), Some(entity.clone()));
@@ -172,6 +180,11 @@ async fn a_recorded_run_reaches_the_stream_within_five_seconds_and_old_rows_are_
         .unwrap();
     let _: i64 = redis::cmd("DEL")
         .arg(STREAM)
+        .query_async(&mut admin)
+        .await
+        .unwrap();
+    let _: i64 = redis::cmd("DEL")
+        .arg(ASSIGNMENT_STREAM)
         .query_async(&mut admin)
         .await
         .unwrap();

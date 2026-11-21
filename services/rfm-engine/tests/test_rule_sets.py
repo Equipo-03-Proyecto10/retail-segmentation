@@ -700,11 +700,14 @@ def test_a_sale_event_is_refused_while_the_rule_set_in_force_is_a_draft(
     owner: psycopg.Connection,
     now: datetime,
 ) -> None:
-    from app import recompute
+    from app import recompute, store
 
     customer = shop.customer()
     sale = shop.sale(customer, days_ago(now, 3))
-    monkeypatch.setenv("RFM_RULE_SET_ID", str(_draft(owner)))
+    draft = _draft(owner)
+    monkeypatch.setattr(
+        store, "published_version", lambda connection: (1, "RFM_RULES", draft, 90)
+    )
     app = build_app()
     with pytest.raises(recompute.RuleSetNotPublished):
         app.extensions["rfm_handle_sale"](

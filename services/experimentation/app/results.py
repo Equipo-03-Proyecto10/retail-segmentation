@@ -42,6 +42,7 @@ TREATMENT_DIFFERENCE = "TREATMENT_DIFFERENCE"
 MEASURES = ("PRE_RECENCY_DAYS", "PRE_PURCHASE_COUNT", "PRE_NET_SPEND")
 SAMPLE_RATIO_FAILED = "SAMPLE_RATIO_FAILED"
 BALANCE_FLAGGED = "BALANCE_FLAGGED"
+COMPARISON_WITHHELD_SMALL_ARM = "COMPARISON_WITHHELD_SMALL_ARM"
 
 # contracts/db/advisory-locks.md: two keys, this and the experiment. One reader at a
 # time computes and stores the primary look, so it is stored exactly once.
@@ -303,6 +304,21 @@ def _pairs(experiment: dict[str, Any]) -> list[tuple[int, int]]:
     return [(arm["arm_id"], reference["arm_id"]) for arm in arms[1:]]
 
 
+def _withheld_comparisons(
+    experiment: dict[str, Any], core_arms: dict[int, dict[str, Any]]
+) -> list[tuple[str, int, int, int]]:
+    """Metric, arm, reference and minimum size for unsupported comparisons."""
+    design = experiment["design"]
+    metrics = [design["primary_metric"], design["secondary_metric"]]
+    return [
+        (metric, arm_id, against, minimum)
+        for metric in metrics
+        for arm_id, against in _pairs(experiment)
+        for minimum in (1 if metric == plan.CONVERSION else 2,)
+        if any(core_arms[member]["analysed"] < minimum for member in (arm_id, against))
+    ]
+
+
 def _comparisons(
     experiment: dict[str, Any],
     core_arms: dict[int, dict[str, Any]],
@@ -313,6 +329,10 @@ def _comparisons(
     pairs = _pairs(experiment)
     primary = design["primary_metric"]
     metrics = [primary, design["secondary_metric"]]
+    withheld = {
+        (metric, arm_id, against)
+        for metric, arm_id, against, _ in _withheld_comparisons(experiment, core_arms)
+    }
     summary = {
         arm_id: (len(v), *stats.mean_and_variance(v)) if v else (0, 0.0, 0.0)
         for arm_id, v in values.items()
@@ -321,6 +341,8 @@ def _comparisons(
     out: list[dict[str, Any]] = []
     for metric in metrics:
         for arm_id, against in pairs:
+            if (metric, arm_id, against) in withheld:
+                continue
             row: dict[str, Any] = {
                 "group_id": arm_id,
                 "against_group_id": against,
@@ -679,7 +701,33 @@ def _comparison_view(
     }
 
 
-def _assumptions(experiment: dict[str, Any], estimate: bool) -> list[dict[str, str]]:
+def _small_arm_statement(
+    metric: str,
+    arm_id: int,
+    against: int,
+    minimum: int,
+    core_arms: dict[int, dict[str, Any]],
+) -> str:
+    deficient = []
+    for member in (arm_id, against):
+        count = core_arms[member]["analysed"]
+        if count < minimum:
+            quantity = "no customers" if count == 0 else "one customer"
+            deficient.append(f"arm {member} has {quantity}")
+    requirement = (
+        "a proportion test needs at least one customer per arm"
+        if metric == plan.CONVERSION
+        else "Welch's interval needs at least two customers per arm"
+    )
+    return (
+        f"{metric} comparison between arm {arm_id} and arm {against} is withheld "
+        f"because {requirement}; {' and '.join(deficient)}."
+    )
+
+
+def _assumptions(
+    experiment: dict[str, Any], core: dict[str, Any], estimate: bool
+) -> list[dict[str, str]]:
     codes = ["INTENT_TO_TREAT", "NET_OF_REVERSALS", "SINGLE_LOOK"]
     if estimate:
         controlled = experiment["design_kind"] == CONTROLLED
@@ -690,7 +738,20 @@ def _assumptions(experiment: dict[str, Any], estimate: bool) -> list[dict[str, s
         if controlled:
             codes.append("CONTROL_NEVER_EXPOSED")
         codes.append("ZERO_FOR_NON_BUYERS")
-    return [{"code": code, "statement": STATEMENTS[code]} for code in codes]
+    assumptions = [{"code": code, "statement": STATEMENTS[code]} for code in codes]
+    if estimate:
+        assumptions += [
+            {
+                "code": COMPARISON_WITHHELD_SMALL_ARM,
+                "statement": _small_arm_statement(
+                    metric, arm_id, against, minimum, core["arms"]
+                ),
+            }
+            for metric, arm_id, against, minimum in _withheld_comparisons(
+                experiment, core["arms"]
+            )
+        ]
+    return assumptions
 
 
 def render(
@@ -774,7 +835,7 @@ def render(
             else {"code": "NO_CONTROL", "message": NO_CONTROL_MESSAGE}
         ),
         "attribution": None,
-        "assumptions": _assumptions(experiment, estimate),
+        "assumptions": _assumptions(experiment, core, estimate),
         "flags": sorted(flags),
     }
 

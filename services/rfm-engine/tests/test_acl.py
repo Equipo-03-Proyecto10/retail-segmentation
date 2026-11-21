@@ -16,7 +16,8 @@ EXPECTED = (
     "user svc_rfm on {{password}} resetchannels -@all +@connection +@read"
     " +@write -@dangerous -scan -randomkey ~rfm:rl:* +waitaof"
     " (%R~pub:auth:v1:live:* +exists) (~stream:rfm.v1.profile_changed +xadd)"
-    " (~stream:sales.v1.recorded ~stream:sales.v1.reversed +xreadgroup +xack"
+    " (~stream:sales.v1.recorded ~stream:sales.v1.reversed"
+    " ~stream:preferences.v1.consent_changed +xreadgroup +xack"
     " +xgroup|create +xpending +xclaim)"
 )
 USER = "svc_rfm_acltest"
@@ -86,6 +87,23 @@ def _dryrun(client: Any, *command: str) -> str:
         ),
         ("XACK", "stream:sales.v1.reversed", "rfm-engine", "1-1"),
         ("XPENDING", "stream:sales.v1.reversed", "rfm-engine"),
+        (
+            "XGROUP",
+            "CREATE",
+            "stream:preferences.v1.consent_changed",
+            "rfm-engine",
+            "$",
+        ),
+        (
+            "XREADGROUP",
+            "GROUP",
+            "rfm-engine",
+            "c",
+            "STREAMS",
+            "stream:preferences.v1.consent_changed",
+            ">",
+        ),
+        ("XACK", "stream:preferences.v1.consent_changed", "rfm-engine", "1-1"),
         (
             "XCLAIM",
             "stream:sales.v1.recorded",

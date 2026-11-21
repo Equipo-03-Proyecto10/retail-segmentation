@@ -662,3 +662,76 @@ def test_the_listing_keeps_the_v1_shape_and_the_record_carries_the_governance(
         "/v1/rfm-rule-sets/2", headers=analyst.headers
     ).get_json()
     assert (seeded_draft["state"], seeded_draft["parent_rule_set_id"]) == ("DRAFT", 1)
+
+
+# --- A profile is scored under a published rule set only (ADR-0064) ----------
+
+
+def _draft(owner: psycopg.Connection) -> int:
+    row = owner.execute(
+        "SELECT min(rule_set_id) FROM rfm.rule_set WHERE state = 'DRAFT'"
+    ).fetchone()
+    assert row is not None and row[0] is not None, "the seed holds a draft"
+    return int(row[0])
+
+
+def test_a_customer_is_not_recomputed_under_a_draft(
+    shop: Shop, owner: psycopg.Connection, service: psycopg.Connection, now: datetime
+) -> None:
+    from app import recompute
+
+    customer = shop.customer()
+    shop.sale(customer, days_ago(now, 10))
+    with pytest.raises(recompute.RuleSetNotPublished):
+        with service.transaction():
+            recompute.customer(service, customer, _draft(owner), now)
+    assert shop.profile(customer) is None, "a refused recomputation writes nothing"
+    with service.transaction():
+        recompute.customer(service, customer, 1, now)
+    assert shop.profile(customer) is not None
+
+
+def test_a_sale_event_is_refused_while_the_rule_set_in_force_is_a_draft(
+    build_app: Callable[..., Flask],
+    monkeypatch: pytest.MonkeyPatch,
+    shop: Shop,
+    owner: psycopg.Connection,
+    now: datetime,
+) -> None:
+    from app import recompute
+
+    customer = shop.customer()
+    sale = shop.sale(customer, days_ago(now, 3))
+    monkeypatch.setenv("RFM_RULE_SET_ID", str(_draft(owner)))
+    app = build_app()
+    with pytest.raises(recompute.RuleSetNotPublished):
+        app.extensions["rfm_handle_sale"](
+            {
+                "event_id": str(uuid.uuid4()),
+                "event_type": "INSERT",
+                "entity_id": str(sale),
+                "occurred_at": "2026-11-01T12:00:00Z",
+                "v": "1",
+            }
+        )
+    assert shop.profile(customer) is None
+
+
+def test_the_scheduled_pass_is_refused_under_a_draft_and_records_nothing(
+    shop: Shop,
+    owner: psycopg.Connection,
+    service_url: str,
+) -> None:
+    from mosaiq_kit.database import Database
+
+    from app import ageing, recompute
+
+    owner.execute("DELETE FROM rfm.pass_run")
+    db = Database(service_url)
+    try:
+        with pytest.raises(recompute.RuleSetNotPublished):
+            ageing.run_pass(db, _draft(owner))
+    finally:
+        db.close()
+    found = owner.execute("SELECT count(*) FROM rfm.pass_run").fetchone()
+    assert found == (0,), "a refused pass leaves no run RUNNING"

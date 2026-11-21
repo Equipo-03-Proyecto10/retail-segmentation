@@ -17,6 +17,22 @@ class NoRuleSet(RuntimeError):
     """The rule set in force does not exist; the entry is redelivered."""
 
 
+class RuleSetNotPublished(RuntimeError):
+    """The rule set in force is still a draft, which an analyst can change. No
+    profile is scored under one, so a profile never carries rules that were edited
+    after it was written; the entry is redelivered."""
+
+
+def require_published(connection: Connection, rule_set_id: int) -> profile.RuleSet:
+    """The rule set, or the reason a profile cannot be scored under it."""
+    rules = store.rule_set(connection, rule_set_id)
+    if rules is None:
+        raise NoRuleSet(f"rule set {rule_set_id} does not exist")
+    if not rules.published:
+        raise RuleSetNotPublished(f"rule set {rule_set_id} is not published")
+    return rules
+
+
 def customer(
     connection: Connection,
     customer_id: UUID,
@@ -30,9 +46,7 @@ def customer(
     recomputation would. A profile whose captured values did not move leaves the
     outbox untouched, because the trigger compares them (BOUNDARY rfm-engine).
     """
-    rules = store.rule_set(connection, rule_set_id)
-    if rules is None:
-        raise NoRuleSet(f"rule set {rule_set_id} does not exist")
+    rules = require_published(connection, rule_set_id)
     store.lock(connection, customer_id)
     moment = as_of if as_of is not None else store.now(connection)
     result = profile.build(

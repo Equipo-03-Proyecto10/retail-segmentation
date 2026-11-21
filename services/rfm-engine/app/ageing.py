@@ -149,6 +149,9 @@ def run_pass(db: Any, rule_set_id: int) -> Run | None:
             LOGGER.info("Another instance runs the pass; this one stands down")
             return None
         with db.connection() as work:
+            # Before a run is recorded: a refused pass must not leave one RUNNING.
+            recompute.require_published(work, rule_set_id)
+            work.commit()
             run = _begin(work, rule_set_id)
         after: UUID | None = None
         failed = streak = 0

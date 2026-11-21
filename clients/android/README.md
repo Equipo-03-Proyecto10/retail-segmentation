@@ -87,4 +87,4 @@ Icons are [Lucide](https://lucide.dev) icons, vendored as vector drawables in `a
 - **Conversion:** only the shape geometry (`path`, `circle`, `line`, `rect`, `polyline`) is kept, in a 24dp viewport with no fill, a black 2-unit stroke and round caps and joins. The black is a placeholder: every use site tints it with `Icon(tint = ...)` through `MqIcon`.
 - **Component kit:** `ui/components/` holds the `Mq*` components (button, text field, list row, badge, loading, empty state, pager, error panel, card, section, quantity stepper, snackbar host). Each has a preview in both schemes in `ComponentsPreview.kt`.
 
-Icons in use: search, x, plus, minus, chevron-right, chevron-down, eye, eye-off, circle-alert, circle-check, info, refresh-cw, package, user-search, trash-2, clock, wifi-off, triangle-alert.
+Icons in use: search, x, plus, minus, chevron-right, chevron-down, eye, eye-off, circle-alert, circle-check, info, refresh-cw, package, user-search, trash-2, clock, wifi-off, triangle-alert, chart-column.

@@ -99,7 +99,8 @@ class FloorAccessContractTest {
 
     @Test
     fun eachStoreProfileGetsItsOwnNavigation() {
-        val everything = listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.OUTBOX)
+        val everything =
+            listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.INDICATORS, FloorSection.OUTBOX)
         assertEquals(
             listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             FloorAccess.sections("SALES_ASSOCIATE")
@@ -146,6 +147,12 @@ class FloorAccessContractTest {
             )
         }
         assertEquals(RecordPart.entries.toSet(), RecordWriters.writers.keys)
+    }
+
+    @Test
+    fun onlyTheStoreManagerAndTheAdministratorReadTheStoreIndicators() {
+        val holders = SessionRepository.FLOOR_ROLES.filter { FloorAccess.holds(it, FloorSection.INDICATORS) }
+        assertEquals(setOf("STORE_MANAGER", "ADMIN"), holders.toSet())
     }
 
     @Test

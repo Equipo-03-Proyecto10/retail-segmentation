@@ -216,6 +216,7 @@
     <string name="nav_check_in">Check-in</string>
     <string name="nav_scan">Scan</string>
     <string name="nav_sale">Sale</string>
+    <string name="nav_indicators">Indicators</string>
     <string name="nav_outbox">Outbox</string>
     <string name="nav_customer">Customer</string>
     <!-- Identifying a customer (F27-02, #856) -->
@@ -383,6 +384,31 @@
     <string name="sale_status_replayed">Sale %1$s was already recorded; this is the same sale.</string>
     <string name="sale_status_recorded">Sale %1$s recorded.</string>
     <!-- end UX-12 (#730) -->
+    <!-- Store indicators (F27-08) -->
+    <string name="indicators_title">Store indicators</string>
+    <string name="indicators_assigned_stores">All your assigned stores</string>
+    <string name="indicators_period_days">Last %1$d days</string>
+    <string name="indicators_window">%1$s to %2$s, in UTC. Tap a figure to see what it means.</string>
+    <string name="indicators_loading">Loading the store\'s figures</string>
+    <string name="indicators_store_refused">This store is not assigned to you, so its figures are refused. Choose one of your stores.</string>
+    <string name="indicators_sales">Local sales</string>
+    <string name="indicators_conversion">Conversions</string>
+    <string name="indicators_customers">Customers, in aggregate</string>
+    <string name="indicators_campaigns">Active campaigns</string>
+    <string name="indicators_campaigns_none">No active promotion applies to this store today.</string>
+    <string name="indicators_campaign_line">%1$s%% off · %2$s to %3$s</string>
+    <string name="indicators_campaigns_definition">A promotion of a campaign that applies to this store. It is active when its campaign is ACTIVE and today lies within its validity.</string>
+    <string name="indicators_stock">Stock alerts</string>
+    <string name="indicators_stock_none">Every category\'s stock covers its demand.</string>
+    <string name="indicators_stock_line">%1$d on hand · %2$s days of cover · restock %3$d</string>
+    <string name="indicators_category">Category %1$d</string>
+    <string name="indicators_no_figures">No figures for this period.</string>
+    <string name="indicators_not_computable">Not computable</string>
+    <string name="indicators_percent">%1$s%%</string>
+    <string name="indicators_synthetic">Synthetic</string>
+    <string name="indicators_definition">%1$s\n\n%2$s: %3$s\n\nWindow: %4$s</string>
+    <string name="indicators_definition_unavailable">The definition could not be read from the KPI catalog.</string>
+    <string name="indicators_close">Close</string>
     <!-- Accessibility (#731) -->
     <string name="a11y_quantity">Quantity %1$d</string>
     <plurals name="a11y_outbox_waiting">

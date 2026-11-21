@@ -74,6 +74,8 @@ import online.maxthecoder.mosaiq.floor.ui.identify.IdentifyScreen
 import online.maxthecoder.mosaiq.floor.ui.inbox.InboxScreen
 import online.maxthecoder.mosaiq.floor.ui.inbox.InboxViewModel
 import online.maxthecoder.mosaiq.floor.ui.inbox.focusOf
+import online.maxthecoder.mosaiq.floor.ui.indicators.IndicatorsScreen
+import online.maxthecoder.mosaiq.floor.ui.indicators.IndicatorsViewModel
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.record.CustomerRecordScreen
 import online.maxthecoder.mosaiq.floor.ui.record.NewCustomerScreen
@@ -84,7 +86,7 @@ private val WORDMARK_TRACKING = 0.14.em
 /**
  * The floor process once signed in: top bar, bottom navigation and the section the location names.
  * Each role gets its own profile of sections (ADR-0060, [FloorAccess]); a role that has none is shown a
- * plain message instead of any screen.
+ * plain message instead of any screen. [indicators] is null only where Indicators is never opened.
  */
 @Composable
 fun FloorHome(
@@ -97,12 +99,13 @@ fun FloorHome(
     record: CustomerRecordViewModel,
     promotions: PromotionsViewModel,
     onSignOut: () -> Unit,
-    inbox: InboxViewModel? = null
+    inbox: InboxViewModel? = null,
+    indicators: IndicatorsViewModel? = null
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, identify, record, promotions, onSignOut, inbox)
+        FloorProfile(signedIn, model, scan, sales, insights, identify, record, promotions, onSignOut, inbox, indicators)
     }
 }
 
@@ -132,7 +135,8 @@ private fun FloorProfile(
     record: CustomerRecordViewModel,
     promotions: PromotionsViewModel,
     onSignOut: () -> Unit,
-    inbox: InboxViewModel?
+    inbox: InboxViewModel?,
+    indicators: IndicatorsViewModel?
 ) {
     val role = signedIn.role
     var saved: FloorLocation by rememberSaveable(stateSaver = FloorLocationSaver) {
@@ -217,6 +221,7 @@ private fun FloorProfile(
                             },
                             promotions = promotions
                         )
+                    FloorLocation.Indicators -> indicators?.let { IndicatorsScreen(it, chosen) }
                     FloorLocation.Outbox -> OutboxList(model)
                     FloorLocation.Customer, is FloorLocation.CustomerProfile ->
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
@@ -412,6 +417,12 @@ private val SECTIONS =
         Section(FloorSection.CUSTOMER, R.string.nav_customer, R.drawable.ic_lucide_user_search, "nav-customer"),
         Section(FloorSection.SCAN, R.string.nav_scan, R.drawable.ic_lucide_scan_line, "nav-scan"),
         Section(FloorSection.SALE, R.string.nav_sale, R.drawable.ic_lucide_shopping_cart, "nav-sale"),
+        Section(
+            FloorSection.INDICATORS,
+            R.string.nav_indicators,
+            R.drawable.ic_lucide_chart_column,
+            "nav-indicators"
+        ),
         Section(FloorSection.OUTBOX, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")
     )
 

@@ -4,7 +4,7 @@ package online.maxthecoder.mosaiq.floor.auth
  * The sections of the floor shell, whoever may open them. Each is a root of the bottom bar except
  * [CUSTOMER_RECORD], which lives inside Customer: it has no bar entry and is reached from there.
  */
-enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX, CUSTOMER, CUSTOMER_RECORD }
+enum class FloorSection { CHECK_IN, SCAN, SALE, INDICATORS, OUTBOX, CUSTOMER, CUSTOMER_RECORD }
 
 /** One operation of a service contract, as `operationId` in `contracts/<service>/openapi.yaml`. */
 data class ServiceOperation(
@@ -30,7 +30,8 @@ data class ServiceOperation(
  * (`getFloorCurrentAssignment`, F21-26) and of their interests and restrictions (F27-03).
  */
 object FloorAccess {
-    private val EVERYTHING = listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.OUTBOX)
+    private val EVERYTHING =
+        listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.INDICATORS, FloorSection.OUTBOX)
 
     /** The profile of each role, in the order its bottom bar shows; the first is where it opens. */
     val profiles: Map<String, List<FloorSection>> =
@@ -79,6 +80,17 @@ object FloorAccess {
                     ServiceOperation("campaigns", "listPromotions"),
                     ServiceOperation("experimentation", "getCurrentAssignment"),
                     ServiceOperation("engagement", "createEngagementEventV2")
+                ),
+            // The store's own figures (F27-08): aggregate reports, its active promotions, and category names.
+            FloorSection.INDICATORS to
+                listOf(
+                    ServiceOperation("analytics-kpis", "getNetSalesReport"),
+                    ServiceOperation("analytics-kpis", "getConversionReport"),
+                    ServiceOperation("analytics-kpis", "getSpendReport"),
+                    ServiceOperation("analytics-kpis", "getDemandCoverageReport"),
+                    ServiceOperation("analytics-kpis", "listKpiDefinitions"),
+                    ServiceOperation("campaigns", "listPromotions"),
+                    ServiceOperation("categories", "listCategories")
                 ),
             FloorSection.OUTBOX to emptyList(),
             // Identifying a customer by loyalty card or by a floor search (F27-02), and their

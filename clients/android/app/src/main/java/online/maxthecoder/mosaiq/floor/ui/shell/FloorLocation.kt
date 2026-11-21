@@ -30,6 +30,8 @@ sealed interface FloorLocation {
 
     data object Sale : Root
 
+    data object Indicators : Root
+
     data object Outbox : Root
 
     data object Customer : Root
@@ -100,6 +102,7 @@ val FloorLocation.section: FloorSection
                     FloorLocation.CheckIn -> FloorSection.CHECK_IN
                     FloorLocation.Scan -> FloorSection.SCAN
                     FloorLocation.Sale -> FloorSection.SALE
+                    FloorLocation.Indicators -> FloorSection.INDICATORS
                     FloorLocation.Outbox -> FloorSection.OUTBOX
                     FloorLocation.Customer -> FloorSection.CUSTOMER
                 }
@@ -111,6 +114,7 @@ val FloorSection.root: FloorLocation.Root
             FloorSection.CHECK_IN -> FloorLocation.CheckIn
             FloorSection.SCAN -> FloorLocation.Scan
             FloorSection.SALE -> FloorLocation.Sale
+            FloorSection.INDICATORS -> FloorLocation.Indicators
             FloorSection.OUTBOX -> FloorLocation.Outbox
             FloorSection.CUSTOMER -> FloorLocation.Customer
             // No bar entry of its own: it is reached from Customer.
@@ -143,6 +147,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 FloorLocation.CheckIn -> "check_in"
                 FloorLocation.Scan -> "scan"
                 FloorLocation.Sale -> "sale"
+                FloorLocation.Indicators -> "indicators"
                 FloorLocation.Outbox -> "outbox"
                 FloorLocation.Customer -> "customer"
                 FloorLocation.StorePicker -> "store_picker"
@@ -158,6 +163,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
             when {
                 saved == "scan" -> FloorLocation.Scan
                 saved == "sale" -> FloorLocation.Sale
+                saved == "indicators" -> FloorLocation.Indicators
                 saved == "outbox" -> FloorLocation.Outbox
                 saved == "customer" -> FloorLocation.Customer
                 saved == "store_picker" -> FloorLocation.StorePicker

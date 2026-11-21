@@ -53,4 +53,7 @@ object Services {
 
     /** experimentation owns `experiments`, `experiment-assignments`, `experiment-results`, `sale-attributions`. */
     const val EXPERIMENTATION = "api/experimentation/v1/"
+
+    /** analytics-kpis owns `kpi-reports`. */
+    const val ANALYTICS_KPIS = "api/analytics-kpis/v1/"
 }

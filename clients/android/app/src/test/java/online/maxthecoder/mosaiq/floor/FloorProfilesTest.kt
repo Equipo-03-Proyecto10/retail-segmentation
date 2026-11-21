@@ -57,6 +57,7 @@ class FloorProfilesTest {
             FloorSection.CHECK_IN to "nav-check-in",
             FloorSection.SCAN to "nav-scan",
             FloorSection.SALE to "nav-sale",
+            FloorSection.INDICATORS to "nav-indicators",
             FloorSection.OUTBOX to "nav-outbox",
             FloorSection.CUSTOMER to "nav-customer"
         )

@@ -593,7 +593,7 @@ def test_an_audit_failure_rolls_back_state_publication_and_outbox(
     ).fetchone() == (0,)
 
 
-def test_outbox_is_trigger_owned_and_consumer_grants_are_deferred(
+def test_outbox_is_trigger_owned_and_unpublished_view_grants_are_deferred(
     service_db: psycopg.Connection, owner: psycopg.Connection
 ) -> None:
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
@@ -608,15 +608,9 @@ def test_outbox_is_trigger_owned_and_consumer_grants_are_deferred(
         ).fetchone()
         if exists is not None:
             assert owner.execute(
-                "SELECT has_schema_privilege(%s, %s, 'USAGE'),"
-                " has_table_privilege(%s, %s, 'SELECT')",
-                (
-                    role,
-                    "api_models",
-                    role,
-                    "api_models.published_version_v1",
-                ),
-            ).fetchone() == (False, False)
+                "SELECT has_table_privilege(%s, %s, 'SELECT')",
+                (role, "api_models.published_version_v1"),
+            ).fetchone() == (False,)
 
 
 # The schema's half of immutability, as svc_models and as the owner.

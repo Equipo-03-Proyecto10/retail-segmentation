@@ -10,6 +10,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
+import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorApp
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
@@ -43,6 +44,8 @@ class MainActivity : ComponentActivity() {
                 viewModel(factory = viewModelFactory { initializer { CustomerInsightsViewModel(graph) } })
             val identify: IdentifyViewModel =
                 viewModel(factory = viewModelFactory { initializer { IdentifyViewModel(graph) } })
+            val record: CustomerRecordViewModel =
+                viewModel(factory = viewModelFactory { initializer { CustomerRecordViewModel(graph) } })
             val state = model.state.collectAsStateWithLifecycle()
             // Signing in again lets this user's queued writes go out.
             LaunchedEffect(state.value is SessionState.SignedIn) {
@@ -53,7 +56,18 @@ class MainActivity : ComponentActivity() {
                 onSignIn = model::signIn,
                 onRetry = model::refreshProfile,
                 onSignOut = model::signOut,
-                floor = { signedIn -> FloorHome(signedIn, floor, scan, sales, insights, identify, model::signOut) },
+                floor = { signedIn ->
+                    FloorHome(
+                        signedIn,
+                        floor,
+                        scan,
+                        sales,
+                        insights,
+                        identify,
+                        record,
+                        model::signOut
+                    )
+                },
                 signOut = { SignOutButton(floor, model::signOut) }
             )
         }

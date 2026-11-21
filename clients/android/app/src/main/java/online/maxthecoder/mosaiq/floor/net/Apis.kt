@@ -91,6 +91,38 @@ interface CustomerPreferencesApi {
         @Path("customer_id") customerId: String,
         @Body request: ReplaceInterestCategoriesRequest
     ): Response<PreferenceProfile>
+
+    @PUT(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/preferred-channels")
+    suspend fun replacePreferredChannels(
+        @Path("customer_id") customerId: String,
+        @Body request: ReplacePreferredChannelsRequest
+    ): Response<PreferenceProfile>
+
+    @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/consent")
+    suspend fun getConsentState(@Path("customer_id") customerId: String): Response<ConsentState>
+
+    /** Appends one decision per entry; answers 201 with the three purposes after the append. */
+    @POST(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/consent-decisions")
+    suspend fun recordConsentDecisions(
+        @Path("customer_id") customerId: String,
+        @Body request: RecordConsentDecisionsRequest
+    ): Response<ConsentState>
+
+    /** The consent log, newest first. Each read is an audited history read (ADR-0066 section 4). */
+    @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/consent-decisions")
+    suspend fun listConsentDecisions(
+        @Path("customer_id") customerId: String,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 20
+    ): Response<ConsentDecisions>
+
+    /** Each replace of the two declared sets, newest first. */
+    @GET(Services.CUSTOMER_PREFERENCES + "preference-profiles/{customer_id}/preference-changes")
+    suspend fun listPreferenceChanges(
+        @Path("customer_id") customerId: String,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = 20
+    ): Response<PreferenceChanges>
 }
 
 interface CategoriesApi {

@@ -52,6 +52,24 @@ sealed interface FloorLocation {
             get() = Customer
     }
 
+    /** Registering a customer with their consent (F27-09); part of Customer, in the customer record's section. */
+    data object NewCustomer : FloorLocation {
+        override val root: Root
+            get() = Customer
+    }
+
+    /**
+     * A customer's record: consent, benefits, preferences and their history (F27-09), by id only.
+     * Back returns to that customer's profile, which is where it was opened from.
+     */
+    data class CustomerRecord(val customerId: String) : FloorLocation {
+        override val root: Root
+            get() = Customer
+
+        override val back: FloorLocation
+            get() = CustomerProfile(customerId)
+    }
+
     /** A product opened from a recommendation; part of Scan. */
     data class ProductFromRecommendation(val productId: Int) : FloorLocation {
         override val root: Root
@@ -59,15 +77,22 @@ sealed interface FloorLocation {
     }
 }
 
-/** The section this location is in, which is what a role's profile is made of. */
+/**
+ * The section this location is in, which is what a role's profile is made of. The customer record's
+ * locations hang off Customer but are their own section, so holding Customer does not open them.
+ */
 val FloorLocation.section: FloorSection
     get() =
-        when (root) {
-            FloorLocation.CheckIn -> FloorSection.CHECK_IN
-            FloorLocation.Scan -> FloorSection.SCAN
-            FloorLocation.Sale -> FloorSection.SALE
-            FloorLocation.Outbox -> FloorSection.OUTBOX
-            FloorLocation.Customer -> FloorSection.CUSTOMER
+        when (this) {
+            FloorLocation.NewCustomer, is FloorLocation.CustomerRecord -> FloorSection.CUSTOMER_RECORD
+            else ->
+                when (root) {
+                    FloorLocation.CheckIn -> FloorSection.CHECK_IN
+                    FloorLocation.Scan -> FloorSection.SCAN
+                    FloorLocation.Sale -> FloorSection.SALE
+                    FloorLocation.Outbox -> FloorSection.OUTBOX
+                    FloorLocation.Customer -> FloorSection.CUSTOMER
+                }
         }
 
 val FloorSection.root: FloorLocation.Root
@@ -78,6 +103,8 @@ val FloorSection.root: FloorLocation.Root
             FloorSection.SALE -> FloorLocation.Sale
             FloorSection.OUTBOX -> FloorLocation.Outbox
             FloorSection.CUSTOMER -> FloorLocation.Customer
+            // No bar entry of its own: it is reached from Customer.
+            FloorSection.CUSTOMER_RECORD -> FloorLocation.Customer
         }
 
 /**
@@ -94,6 +121,7 @@ fun FloorLocation.backFor(role: String?): FloorLocation? = back?.allowedFor(role
 
 private const val PRODUCT_PREFIX = "product:"
 private const val CUSTOMER_PREFIX = "customer:"
+private const val RECORD_PREFIX = "record:"
 
 /** Saved as a short string: the name of the location, plus the product or customer id where it has one. */
 val FloorLocationSaver: Saver<FloorLocation, String> =
@@ -109,6 +137,8 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 FloorLocation.RegisterCustomer -> "register_customer"
                 is FloorLocation.ProductFromRecommendation -> PRODUCT_PREFIX + location.productId
                 is FloorLocation.CustomerProfile -> CUSTOMER_PREFIX + location.customerId
+                FloorLocation.NewCustomer -> "new_customer"
+                is FloorLocation.CustomerRecord -> RECORD_PREFIX + location.customerId
             }
         },
         restore = { saved ->
@@ -126,6 +156,11 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 saved.startsWith(CUSTOMER_PREFIX) ->
                     saved.removePrefix(CUSTOMER_PREFIX).takeIf { it.isNotBlank() }?.let {
                         FloorLocation.CustomerProfile(it)
+                    } ?: FloorLocation.Customer
+                saved == "new_customer" -> FloorLocation.NewCustomer
+                saved.startsWith(RECORD_PREFIX) ->
+                    saved.removePrefix(RECORD_PREFIX).takeIf { it.isNotBlank() }?.let {
+                        FloorLocation.CustomerRecord(it)
                     } ?: FloorLocation.Customer
                 // "check_in", and anything unknown, lands on the start.
                 else -> FloorLocation.CheckIn

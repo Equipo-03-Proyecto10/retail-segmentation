@@ -189,6 +189,77 @@ data class PreferenceProfile(
 @Serializable
 data class ReplaceInterestCategoriesRequest(@SerialName("category_ids") val categoryIds: List<Int>)
 
+/** `ReplacePreferredChannelsRequest` of contracts/customer-preferences: the complete new set. */
+@Serializable
+data class ReplacePreferredChannelsRequest(@SerialName("channel_ids") val channelIds: List<Int>)
+
+/**
+ * One purpose's current state (`PurposeConsent`). `NOT_RECORDED` is never granted; for it every
+ * member after [state] is null, and [recordedBy] is null for a `MIGRATION` decision too.
+ */
+@Serializable
+data class PurposeConsent(
+    val purpose: String,
+    val state: String,
+    @SerialName("decision_id") val decisionId: Long? = null,
+    @SerialName("recorded_at") val recordedAt: String? = null,
+    @SerialName("recorded_by") val recordedBy: String? = null,
+    val source: String? = null,
+    val basis: String? = null
+)
+
+/** `ConsentState`: the three purposes, in the contract's order. */
+@Serializable
+data class ConsentState(
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("as_of") val asOf: String,
+    val purposes: List<PurposeConsent>
+)
+
+/** `ConsentDecisionInput`: a purpose and a decision, nothing else; the service adds who, when and how. */
+@Serializable
+data class ConsentDecisionInput(val purpose: String, val decision: String)
+
+@Serializable
+data class RecordConsentDecisionsRequest(val decisions: List<ConsentDecisionInput>)
+
+/** One row of the append-only consent log (`ConsentDecision`). */
+@Serializable
+data class ConsentDecision(
+    @SerialName("decision_id") val decisionId: Long,
+    @SerialName("customer_id") val customerId: String,
+    val purpose: String,
+    val decision: String,
+    @SerialName("recorded_at") val recordedAt: String,
+    @SerialName("recorded_by") val recordedBy: String? = null,
+    val source: String,
+    val basis: String
+)
+
+@Serializable
+data class ConsentDecisions(
+    @SerialName("consent_decisions") val decisions: List<ConsentDecision>,
+    @SerialName("page_info") val pageInfo: PageInfo
+)
+
+/** One replace of one declared set (`PreferenceChange`), with the ids before and after. */
+@Serializable
+data class PreferenceChange(
+    @SerialName("change_id") val changeId: Long,
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("preference_set") val preferenceSet: String,
+    @SerialName("before_ids") val beforeIds: List<Int>,
+    @SerialName("after_ids") val afterIds: List<Int>,
+    @SerialName("changed_at") val changedAt: String,
+    @SerialName("changed_by") val changedBy: String
+)
+
+@Serializable
+data class PreferenceChanges(
+    @SerialName("preference_changes") val changes: List<PreferenceChange>,
+    @SerialName("page_info") val pageInfo: PageInfo
+)
+
 @Serializable
 data class SaleLineRequest(
     @SerialName("product_id") val productId: Int,

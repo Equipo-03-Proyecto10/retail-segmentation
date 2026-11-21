@@ -69,6 +69,21 @@ class FloorLocationAccessTest {
 
     @Test
     fun everySectionHasOneRootAndBack() {
-        FloorSection.entries.forEach { assertEquals(it, it.root.section) }
+        // Every bar section is its root's; the customer record has no root of its own and lives in Customer.
+        FloorSection.entries.filter { it != FloorSection.CUSTOMER_RECORD }.forEach { assertEquals(it, it.root.section) }
+        assertEquals(FloorLocation.Customer, FloorSection.CUSTOMER_RECORD.root)
+        assertEquals(FloorSection.CUSTOMER_RECORD, FloorLocation.NewCustomer.section)
+        assertEquals(FloorSection.CUSTOMER_RECORD, FloorLocation.CustomerRecord("c").section)
+    }
+
+    @Test
+    fun onlyTheLoyaltyOfficerReachesTheRecordOrRegistration() {
+        listOf(FloorLocation.NewCustomer, FloorLocation.CustomerRecord("c")).forEach {
+            assertEquals(it, it.allowedFor("LOYALTY_OFFICER"))
+            listOf("SALES_ASSOCIATE", "STORE_MANAGER", "ADMIN").forEach { role ->
+                assertEquals(role, FloorLocation.CheckIn, it.allowedFor(role))
+            }
+        }
+        assertEquals(FloorLocation.CustomerProfile("c"), FloorLocation.CustomerRecord("c").backFor("LOYALTY_OFFICER"))
     }
 }

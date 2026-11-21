@@ -63,8 +63,10 @@ def _statistic(row: tuple[Any, ...]) -> dict[str, Any]:
     basis, watch, alarm = THRESHOLDS[name]
     return {
         "statistic": name,
-        "value": round(value, 4),
-        "p_value": None if p_value is None else float(f"{p_value:.4g}"),
+        # As stored, as the level was decided: a rounded value could read as past a
+        # threshold its level is not.
+        "value": value,
+        "p_value": p_value,
         "degrees_of_freedom": dof,
         "threshold_basis": basis,
         "watch_threshold": watch,

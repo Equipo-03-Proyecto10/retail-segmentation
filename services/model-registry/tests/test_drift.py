@@ -132,7 +132,9 @@ def test_segment_shares_alarm_needs_both_statistics() -> None:
     assert small.state == "WATCH"
 
 
-def test_persistence_needs_two_windows_and_an_alert_is_raised_once() -> None:
+def test_persistence_needs_two_windows_and_a_continuing_alarm_alerts_each_time() -> (
+    None
+):
     shifted = drift.feature_bins(REFERENCE, [35.0] * 800 + [5.0] * 200)
     first = drift.judge("R", shifted, 1000, None)
     second = drift.judge("R", shifted, 1000, first.state)
@@ -142,9 +144,11 @@ def test_persistence_needs_two_windows_and_an_alert_is_raised_once() -> None:
         "ALARM",
         "ALARM",
     ]
-    assert not drift.raises_alert(first.state, None)
-    assert drift.raises_alert(second.state, first.state)
-    assert not drift.raises_alert(third.state, second.state)
+    # The contract (listDriftAlerts): an alarm that continues raises a further
+    # alert in each report whose variable is still at ALARM.
+    assert not drift.raises_alert(first.state)
+    assert drift.raises_alert(second.state)
+    assert drift.raises_alert(third.state)
 
 
 def test_a_recovered_window_resets_the_persistence() -> None:
@@ -157,7 +161,7 @@ def test_watch_is_a_state_and_never_an_alert() -> None:
     watch = drift.judge("R", drift.feature_bins(REFERENCE, values), 1000, None)
     assert watch.statistics[0].level == "WATCH"
     assert watch.state == "WATCH"
-    assert not drift.raises_alert(watch.state, "WATCH")
+    assert not drift.raises_alert(watch.state)
 
 
 def test_the_same_inputs_give_the_same_report() -> None:
@@ -191,3 +195,35 @@ def test_no_sentence_the_monitor_can_say_names_the_outcome_claim() -> None:
                 assert source.name == "drift.py" and "never" in line, (source, number)
     assert drift.review_code("R") == "REVIEW_FEATURE_DISTRIBUTION"
     assert drift.review_code(drift.SEGMENT_SHARES) == "REVIEW_SEGMENT_MIX"
+
+
+def test_a_label_the_reference_never_saw_is_kept_in_a_bin_of_its_own() -> None:
+    assigned = segments(1000, [0.04, 0.15, 0.39, 0.42]) + ["NEWCOMERS"] * 250
+    bins = drift.segment_bins(LABELS, assigned)
+    assert [b.label for b in bins][-1] == "NEWCOMERS"
+    assert bins[-1].reference_share == 0.0 and bins[-1].count == 250
+    assert sum(b.count for b in bins) == len(assigned)
+    judged = drift.judge(drift.SEGMENT_SHARES, bins, len(assigned), None)
+    assert judged.state == "ALARM_PENDING"
+
+
+def test_a_reference_of_one_segment_records_psi_and_cannot_alarm() -> None:
+    bins = drift.segment_bins([{"label_code": "LOYAL", "share": 1.0}], ["LOYAL"] * 300)
+    judged = drift.judge(drift.SEGMENT_SHARES, bins, 300, "ALARM_PENDING")
+    assert [s.statistic for s in judged.statistics] == ["PSI"]
+    assert judged.state == "NORMAL"
+
+
+def test_the_review_text_keeps_its_closing_sentence_however_long_the_labels() -> None:
+    long_labels = [
+        {"label_code": f"{i}_" + "A_VERY_LONG_SEGMENT_LABEL" * 3, "share": 0.25}
+        for i in range(4)
+    ]
+    assigned = [long_labels[0]["label_code"]] * 900 + [
+        long_labels[1]["label_code"]
+    ] * 100
+    text = drift.review_text(
+        drift.SEGMENT_SHARES, drift.segment_bins(long_labels, assigned)
+    )
+    assert len(text) <= drift.REVIEW_TEXT_MAX
+    assert text.endswith("stopped predicting anything.")

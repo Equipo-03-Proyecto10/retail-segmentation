@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import secrets
 from collections.abc import Iterator
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from xml.etree import ElementTree
 
@@ -84,27 +84,30 @@ def feed(service_db: psycopg.Connection, monkeypatch: pytest.MonkeyPatch) -> Any
     service_db.execute("DROP TABLE IF EXISTS pg_temp.drift_feed")
     service_db.execute(
         "CREATE TEMP TABLE drift_feed (label_code text, r_days int, f_count int,"
-        " m_total numeric)"
+        " m_total numeric, computed_at timestamptz)"
     )
 
     def load(rows: list[tuple[Any, ...]]) -> None:
         with service_db.cursor() as cursor:
             cursor.executemany(
-                "INSERT INTO pg_temp.drift_feed VALUES (%s, %s, %s, %s)", rows
+                "INSERT INTO pg_temp.drift_feed (label_code, r_days, f_count,"
+                " m_total) VALUES (%s, %s, %s, %s)",
+                rows,
             )
         monkeypatch.setattr(
             monitor,
             "_PROFILES",
-            "SELECT label_code, r_days, f_count, m_total FROM pg_temp.drift_feed"
-            " WHERE %s::timestamptz < %s::timestamptz",
+            "SELECT label_code, r_days, f_count, m_total, computed_at"
+            " FROM pg_temp.drift_feed",
         )
 
     return load
 
 
 def one_pass(db: psycopg.Connection, now: datetime) -> int | None:
-    with db.transaction():
-        return monitor.run_once(db, now)
+    """A pass owns its transactions: it reads in one snapshot and writes in
+    another, so it is called on a connection with none open."""
+    return monitor.run_once(db, now)
 
 
 def report(owner: psycopg.Connection, report_id: int) -> dict[str, Any]:
@@ -175,7 +178,7 @@ def test_every_statistic_is_recorded_over_each_variable(
     assert bins == len(reference["features"][0]["proportions"]) + 1
 
 
-def test_two_alarming_windows_raise_one_alert_that_names_variable_change_and_version(
+def test_an_alarm_held_two_windows_alerts_and_alerts_again_while_it_continues(
     service_db: psycopg.Connection,
     owner: psycopg.Connection,
     reference: dict[str, Any],
@@ -203,10 +206,14 @@ def test_two_alarming_windows_raise_one_alert_that_names_variable_change_and_ver
     assert [a[0] for a in alerts] == ["F", "M", "R", "SEGMENT_SHARES"]
     assert all(a[1] == "DISTRIBUTION_CHANGE" and a[3] == first for a in alerts)
     third = one_pass(service_db, after_publication + timedelta(days=2))
-    (after,) = owner.execute(
-        "SELECT count(*) FROM models.drift_alert WHERE report_id = %s", (third,)
-    ).fetchone()
-    assert after == 0
+    # listDriftAlerts: an alarm that continues raises a further alert in each
+    # report whose variable is still at ALARM.
+    again = owner.execute(
+        "SELECT variable, previous_report_id FROM models.drift_alert"
+        " WHERE report_id = %s ORDER BY variable",
+        (third,),
+    ).fetchall()
+    assert again == [(v, second) for v in ("F", "M", "R", "SEGMENT_SHARES")]
 
 
 def test_repeating_a_pass_on_the_same_data_changes_nothing(
@@ -495,12 +502,164 @@ def test_unknown_ids_roles_and_read_only(client: FlaskClient, token: Any) -> Non
     ).status_code in (404, 405)
 
 
-def test_the_seeded_report_is_insufficient_data(
-    client: FlaskClient, token: Any
+def test_the_seeded_report_is_what_the_monitor_would_write_at_the_seed(
+    client: FlaskClient, token: Any, owner: psycopg.Connection
 ) -> None:
+    """The version is published as the seed runs, inside the latest window, so the
+    one report the seed can state honestly is not compared, with no customer."""
+    (row,) = owner.execute(
+        "SELECT array[r.comparison, r.not_compared_reason, r.customer_count::text,"
+        " (r.computed_at >= r.window_end)::text,"
+        " (p.published_at > r.window_start)::text]"
+        " FROM models.drift_report AS r JOIN models.model_publication AS p"
+        " USING (version_id) ORDER BY r.report_id LIMIT 1"
+    ).fetchone()
+    assert row == ["NOT_COMPARED", "VERSION_CHANGE", "0", "true", "true"]
     page = get(client, token, "/v1/drift-reports").get_json()
     assert any(
-        r["comparison"] == "INSUFFICIENT_DATA" and r["variables"] == []
+        r["comparison"] == "NOT_COMPARED" and r["variables"] == []
         for r in page["reports"]
     )
     assert json.dumps(page).count("concept") == 0
+
+
+# ------------------------------------------------------ what the review of #1125 found
+
+
+def test_an_older_report_than_the_window_before_does_not_count_for_persistence(
+    service_db: psycopg.Connection,
+    owner: psycopg.Connection,
+    reference: dict[str, Any],
+    after_publication: datetime,
+    feed: Any,
+) -> None:
+    """After days without a report, an alarm starts over: one week-old pending
+    alarm and today's are not two consecutive windows."""
+    feed(profiles(reference, 1000, shift=True))
+    first = one_pass(service_db, after_publication)
+    later = one_pass(service_db, after_publication + timedelta(days=4))
+    result = report(owner, later)
+    assert result["previous"] == first
+    assert set(result["states"].values()) == {"ALARM_PENDING"}
+    (alerts,) = owner.execute(
+        "SELECT count(*) FROM models.drift_alert WHERE report_id = %s", (later,)
+    ).fetchone()
+    assert alerts == 0
+
+
+def test_a_version_published_after_the_window_end_is_not_compared_against_it(
+    service_db: psycopg.Connection,
+    owner: psycopg.Connection,
+    reference: dict[str, Any],
+    feed: Any,
+) -> None:
+    """Published after today's 03:00: the profiles were scored under the version
+    before it, so today's window is not compared (ADR-0064)."""
+    (published,) = owner.execute(
+        "SELECT max(published_at) FROM models.model_publication"
+    ).fetchone()
+    now = published + timedelta(seconds=1)
+    if monitor.boundary(now) >= published:
+        now = published + timedelta(days=1, seconds=-1)  # still before tomorrow's end
+    assert monitor.boundary(now) < published
+    feed(profiles(reference, 1000))
+    result = report(owner, one_pass(service_db, now))
+    assert (result["comparison"], result["reason"]) == (
+        "NOT_COMPARED",
+        "VERSION_CHANGE",
+    )
+
+
+def test_a_label_the_reference_never_saw_is_counted_and_judged(
+    service_db: psycopg.Connection,
+    owner: psycopg.Connection,
+    reference: dict[str, Any],
+    after_publication: datetime,
+    feed: Any,
+) -> None:
+    rows = profiles(reference, 1000)
+    code = "OUTSIDE_THE_REFERENCE"
+    assert code not in {label["label_code"] for label in reference["labels"]}
+    feed(rows + [(code, *rows[0][1:])] * 300)
+    report_id = one_pass(service_db, after_publication)
+    result = report(owner, report_id)
+    assert result["customers"] == 1300
+    assert result["states"]["SEGMENT_SHARES"] == "ALARM_PENDING"
+    (share,) = owner.execute(
+        "SELECT reference_share FROM models.drift_bin WHERE report_id = %s"
+        " AND variable = 'SEGMENT_SHARES' AND label = %s",
+        (report_id, code),
+    ).fetchone()
+    assert share == 0.0
+
+
+def test_r_is_aged_to_the_end_of_the_window() -> None:
+    end = datetime(2026, 11, 21, 3, 0, tzinfo=UTC)
+    assert (
+        monitor._aged(("LOYAL", 5, 2, 10, end - timedelta(days=10, hours=3)), end)[1]
+        == 15
+    )
+    assert monitor._aged(("LOYAL", 5, 2, 10, end + timedelta(hours=2)), end)[1] == 5
+    assert monitor._aged(("LOYAL", 5, 2, 10, None), end)[1] == 5
+
+
+def test_an_event_another_service_audits_during_a_pass_does_not_break_it(
+    service_db: psycopg.Connection,
+    service_url: str,
+    owner: psycopg.Connection,
+    reference: dict[str, Any],
+    after_publication: datetime,
+    feed: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The write is read committed, so the trail's head is the one committed last,
+    not the one of the pass's read snapshot."""
+    from uuid import uuid4
+
+    from app import audit
+
+    window = after_publication + timedelta(days=200 + secrets.randbelow(20000))
+    feed(profiles(reference, 300))
+    original = monitor.drift.segment_bins
+
+    def meanwhile(*args: Any) -> Any:
+        with psycopg.connect(service_url, autocommit=True) as other:
+            audit.drift_run(
+                other,
+                event_id=uuid4(),
+                version_id=1,
+                window=(window - timedelta(days=30), window),
+                input_count=0,
+                output_count=0,
+                digest=None,
+                status="FAILED",
+                correlation_id=None,
+            )
+        return original(*args)
+
+    monkeypatch.setattr(monitor.drift, "segment_bins", meanwhile)
+    report_id = one_pass(service_db, window)
+    assert report_id is not None
+    assert report(owner, report_id)["comparison"] == "COMPARED"
+
+
+def test_an_outcome_test_may_be_insufficient_with_many_customers(
+    owner: psycopg.Connection,
+) -> None:
+    """No segment with 100 on both sides can hold with far more than 200 customers:
+    the 200 rule is the data-drift one (ADR-0065)."""
+    owner.execute(
+        "INSERT INTO models.drift_report (version_id, kind, comparison,"
+        " window_start, window_end, customer_count)"
+        " SELECT version_id, 'OUTCOME_TEST', 'INSUFFICIENT_DATA',"
+        " now() - interval '60 days', now() - interval '30 days', 500"
+        " FROM models.model_version WHERE state = 'PUBLISHED'"
+    )
+    with pytest.raises(psycopg.errors.CheckViolation):
+        owner.execute(
+            "INSERT INTO models.drift_report (version_id, kind, comparison,"
+            " window_start, window_end, customer_count)"
+            " SELECT version_id, 'DATA_DRIFT', 'INSUFFICIENT_DATA',"
+            " now() - interval '31 days', now() - interval '1 day', 500"
+            " FROM models.model_version WHERE state = 'PUBLISHED'"
+        )

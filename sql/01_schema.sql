@@ -6377,7 +6377,9 @@ CREATE TABLE IF NOT EXISTS models.drift_report (
     CHECK ((comparison = 'NOT_COMPARED') = (not_compared_reason IS NOT NULL)),
     -- No number is compared on fewer than 200 customers (ADR-0065).
     CHECK (kind <> 'DATA_DRIFT' OR comparison <> 'COMPARED' OR customer_count >= 200),
-    CHECK (comparison <> 'INSUFFICIENT_DATA' OR customer_count < 200)
+    -- The 200-customer rule is data drift's; an outcome test is insufficient when no
+    -- segment has 100 customers on both sides, which more than 200 can still be.
+    CHECK (kind <> 'DATA_DRIFT' OR comparison <> 'INSUFFICIENT_DATA' OR customer_count < 200)
 );
 
 CREATE TABLE IF NOT EXISTS models.drift_variable (

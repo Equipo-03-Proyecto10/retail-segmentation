@@ -23,6 +23,7 @@ FEATURES = ("R", "F", "M")
 NO_VALUE = "NO_VALUE"
 SEGMENT_SHARES = "SEGMENT_SHARES"
 PENDING_STATES = ("ALARM_PENDING", "ALARM")
+REVIEW_TEXT_MAX = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,8 +160,13 @@ def feature_bins(reference: dict[str, Any], values: list[float | None]) -> list[
 
 
 def segment_bins(labels: list[dict[str, Any]], assigned: list[str]) -> list[Bin]:
-    """One bin per segment of the reference, in the reference's order."""
+    """One bin per segment of the reference, in the reference's order, then one
+    per label the reference does not name, in code order, with a reference share
+    of 0 (floored like any empty bin). A segment the reference never saw is the
+    kind of change drift exists to show, so its customers are never dropped."""
     n = len(assigned)
+    known = [label["label_code"] for label in labels]
+    unknown = sorted({code for code in assigned if code not in known})
     return [
         Bin(
             label["label_code"],
@@ -171,6 +177,9 @@ def segment_bins(labels: list[dict[str, Any]], assigned: list[str]) -> list[Bin]
             assigned.count(label["label_code"]),
         )
         for label in labels
+    ] + [
+        Bin(code, None, None, 0.0, assigned.count(code) / n, assigned.count(code))
+        for code in unknown
     ]
 
 
@@ -197,6 +206,15 @@ def judge(
             (first,),
             tuple(bins),
         )
+    if len(bins) < 2:
+        # One segment has no goodness of fit to test (no degree of freedom), and an
+        # alarm on the segment shares needs the chi-square too (ADR-0065).
+        return Variable(
+            variable,
+            _state(False, [first.level], previous),
+            (first,),
+            tuple(bins),
+        )
     stat, p_value, dof = chi_square(bins, n)
     second = Statistic("CHI_SQUARE", stat, p_value, dof, p_level(p_value))
     alarm = first.level == "ALARM" and second.level == "ALARM"
@@ -208,10 +226,11 @@ def judge(
     )
 
 
-def raises_alert(state: str, previous: str | None) -> bool:
-    """An alert is raised when the alarm holds for the second window running, and
-    not again while it goes on: ALARM after ALARM is the same finding."""
-    return state == "ALARM" and previous == "ALARM_PENDING"
+def raises_alert(state: str) -> bool:
+    """An alert is raised by every report whose variable is at ALARM: the alarm
+    held in this window and the one before, and a continuing alarm raises a
+    further alert in each report (the published contract, F23-08)."""
+    return state == "ALARM"
 
 
 def review_code(variable: str) -> str:
@@ -240,11 +259,16 @@ def review_text(variable: str, bins: list[Bin]) -> str:
     subject = (
         "The segment mix" if variable == SEGMENT_SHARES else f"The {variable} values"
     )
-    return (
-        f"{subject} moved against the reference of this version: "
-        + "; ".join(parts)
-        + ". Check whether its frozen scoring still fits the current customers; if it"
+    head = f"{subject} moved against the reference of this version: "
+    tail = (
+        ". Check whether its frozen scoring still fits the current customers; if it"
         " does not, register a draft version fitted on current data and compare it"
         " with this one. A distribution change does not show that the segments"
         " stopped predicting anything."
-    )[:500]
+    )
+    # The 500 characters are spent on the bins, never on the closing sentence.
+    room = REVIEW_TEXT_MAX - len(head) - len(tail)
+    moves = "; ".join(parts)
+    if len(moves) > room:
+        moves = moves[: max(room - 1, 0)].rstrip("; ") + "…"
+    return head + moves + tail

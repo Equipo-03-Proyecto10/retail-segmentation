@@ -1,11 +1,18 @@
 """The drift monitor: one pass writes one report for the published version.
 
-A pass reads the published version's reference and the customers' current
-profiles in one repeatable-read snapshot, judges them with `drift.py`, appends
-the report, its variables, statistics, bins and any alert, and records the run in
-the audit trail, all in one transaction. A pass for a window that already has a
-report changes nothing and returns that report, so repeating it on the same data
-gives the same result (ADR-0065, F23-09).
+A pass reads the published version's reference and every scored customer's current
+profile in one repeatable-read, read-only snapshot, and judges them with `drift.py`.
+It then appends the report, its variables, statistics, bins and any alert, and
+records the run in the audit trail, in one read-committed transaction. The audit
+trail's sequence must see every event committed before it. A pass for a window that
+already has a report changes nothing and returns that report, so repeating it on the
+same data gives the same result (ADR-0065, ADR-0088, F23-09).
+
+The window is the customers' current assignments as one snapshot at its end
+(ADR-0065): every scored profile, with R aged to the end, since a profile is not
+rewritten while only the clock moves. A publication after the window's start makes it
+NOT_COMPARED, whenever the pass runs. A variable's previous state counts only from the
+report of the window just before, one day earlier.
 """
 
 from __future__ import annotations
@@ -35,19 +42,21 @@ _EXISTING = (
     "SELECT report_id FROM models.drift_report"
     " WHERE version_id = %s AND kind = %s AND window_end = %s"
 )
+# Any publication or rollback since the window began, also one after its end: the
+# profiles read now were scored under the version before it (ADR-0064).
 _VERSION_CHANGES = (
-    "SELECT count(*) FROM models.model_publication"
-    " WHERE published_at > %s AND published_at <= %s"
+    "SELECT count(*) FROM models.model_publication WHERE published_at > %s"
 )
 _PROFILES = (
-    "SELECT label_code, r_days, f_count, m_total FROM api_rfm.current_profile_v1"
-    " WHERE state = 'scored' AND computed_at > %s AND computed_at <= %s"
+    "SELECT label_code, r_days, f_count, m_total, computed_at"
+    " FROM api_rfm.current_profile_v1 WHERE state = 'scored'"
 )
 _PREVIOUS = (
-    "SELECT report_id FROM models.drift_report"
+    "SELECT report_id, window_end FROM models.drift_report"
     " WHERE version_id = %s AND kind = %s AND window_end < %s"
     " ORDER BY window_end DESC LIMIT 1"
 )
+CADENCE = timedelta(days=1)
 _PREVIOUS_STATES = (
     "SELECT variable, state FROM models.drift_variable WHERE report_id = %s"
 )
@@ -125,7 +134,7 @@ def _insert_report(
                     bin_.current_share,
                 ),
             )
-        if drift.raises_alert(item.state, previous_states.get(item.variable)):
+        if drift.raises_alert(item.state):
             connection.execute(
                 "INSERT INTO models.drift_alert (report_id, variable,"
                 " previous_report_id, review_code) VALUES (%s, %s, %s, %s)",
@@ -139,43 +148,78 @@ def _insert_report(
     return int(report_id)
 
 
+def _aged(row: tuple[Any, ...], end: datetime) -> tuple[Any, ...]:
+    """A profile as of the window's end: R grows a day for each whole day since the
+    profile was written, which the profile itself never records."""
+    label, r_days, f_count, m_total, computed_at = row
+    if r_days is not None and computed_at is not None and computed_at <= end:
+        r_days = int(r_days) + (end - computed_at) // timedelta(days=1)
+    return (label, r_days, f_count, m_total)
+
+
+def _read(connection: psycopg.Connection[Any], now: datetime) -> dict[str, Any] | None:
+    """Everything a pass judges, from one read-only snapshot. None when no version
+    is published."""
+    with connection.transaction():
+        connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        published = connection.execute(_PUBLISHED).fetchone()
+        if published is None:
+            return None
+        version_id, _name, reference = published
+        end = boundary(now)
+        start = end - timedelta(days=drift.WINDOW_DAYS)
+        read: dict[str, Any] = {
+            "version_id": version_id,
+            "reference": reference,
+            "start": start,
+            "end": end,
+            "found": connection.execute(_EXISTING, (version_id, KIND, end)).fetchone(),
+            "previous_id": None,
+            "previous_states": {},
+            "changes": 0,
+            "profiles": [],
+        }
+        if read["found"]:
+            return read
+        previous = connection.execute(_PREVIOUS, (version_id, KIND, end)).fetchone()
+        if previous:
+            read["previous_id"] = int(previous[0])
+            if previous[1] == end - CADENCE:
+                # Only the window just before is the other window of the
+                # persistence rule; an older report starts every variable over.
+                read["previous_states"] = dict(
+                    connection.execute(_PREVIOUS_STATES, (previous[0],)).fetchall()
+                )
+        read["changes"] = connection.execute(_VERSION_CHANGES, (start,)).fetchone()[0]
+        if not read["changes"]:
+            read["profiles"] = [
+                _aged(row, end) for row in connection.execute(_PROFILES).fetchall()
+            ]
+    return read
+
+
 def run_once(
     connection: psycopg.Connection[Any],
     now: datetime,
     correlation_id: str | None = None,
 ) -> int | None:
-    """One pass in the caller's transaction. Returns the report's id, or None
-    when no version is published. The caller commits."""
-    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-    published = connection.execute(_PUBLISHED).fetchone()
-    if published is None:
+    """One pass on a connection with no transaction open. Returns the report's id,
+    or None when no version is published. It reads in one snapshot and writes in a
+    transaction of its own, so the audit event takes the trail's current head."""
+    read = _read(connection, now)
+    if read is None:
         return None
-    version_id, _name, reference = published
-    end = boundary(now)
-    start = end - timedelta(days=drift.WINDOW_DAYS)
-    found = connection.execute(_EXISTING, (version_id, KIND, end)).fetchone()
-    if found:
-        return int(found[0])
-    previous = connection.execute(_PREVIOUS, (version_id, KIND, end)).fetchone()
-    previous_id = int(previous[0]) if previous else None
-    previous_states = (
-        dict(connection.execute(_PREVIOUS_STATES, (previous_id,)).fetchall())
-        if previous_id
-        else {}
-    )
-    profiles: list[tuple[Any, ...]] = []
+    if read["found"]:
+        return int(read["found"][0])
+    version_id, reference = read["version_id"], read["reference"]
+    start, end = read["start"], read["end"]
+    previous_id, previous_states = read["previous_id"], read["previous_states"]
+    profiles: list[tuple[Any, ...]] = read["profiles"]
     reason = None
-    changes = connection.execute(_VERSION_CHANGES, (start, end)).fetchone()[0]
     labels = reference["labels"]
-    known = {label["label_code"] for label in labels}
-    if changes:
+    if read["changes"]:
         comparison, reason = "NOT_COMPARED", "VERSION_CHANGE"
     else:
-        profiles = [
-            row
-            for row in connection.execute(_PROFILES, (start, end)).fetchall()
-            if row[0] in known
-        ]
         comparison = (
             "COMPARED" if len(profiles) >= drift.MIN_CUSTOMERS else "INSUFFICIENT_DATA"
         )
@@ -203,37 +247,43 @@ def run_once(
                     previous_states.get(name),
                 )
             )
-    report_id = _insert_report(
-        connection,
-        version_id,
-        end,
-        comparison,
-        reason,
-        len(profiles),
-        previous_id,
-        previous_states,
-        variables,
-    )
-    audit.drift_run(
-        connection,
-        event_id=uuid5(NAMESPACE_URL, f"drift:{version_id}:{KIND}:{end.isoformat()}"),
-        version_id=version_id,
-        window=(start, end),
-        input_count=len(profiles),
-        output_count=len(variables),
-        digest=_digest(version_id, end, profiles),
-        status="COMPLETED",
-        correlation_id=correlation_id,
-    )
+    with connection.transaction():
+        found = connection.execute(_EXISTING, (version_id, KIND, end)).fetchone()
+        if found:
+            return int(found[0])  # another pass wrote this window meanwhile
+        report_id = _insert_report(
+            connection,
+            version_id,
+            end,
+            comparison,
+            reason,
+            len(profiles),
+            previous_id,
+            previous_states,
+            variables,
+        )
+        audit.drift_run(
+            connection,
+            event_id=uuid5(
+                NAMESPACE_URL, f"drift:{version_id}:{KIND}:{end.isoformat()}"
+            ),
+            version_id=version_id,
+            window=(start, end),
+            input_count=len(profiles),
+            output_count=len(variables),
+            digest=_digest(version_id, end, profiles),
+            status="COMPLETED",
+            correlation_id=correlation_id,
+        )
     return report_id
 
 
 def run(db: Any, now: datetime | None = None) -> int | None:
-    """One pass under the monitor's own transaction, audited as FAILED when it
-    cannot finish."""
+    """One pass on a connection of the pool, audited as FAILED when it cannot
+    finish."""
     moment = now or datetime.now(UTC)
     try:
-        with db.transaction() as connection:
+        with db.connection() as connection:
             return run_once(connection, moment)
     except Exception:
         LOGGER.exception("drift pass failed")

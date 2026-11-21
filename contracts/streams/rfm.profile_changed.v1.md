@@ -10,7 +10,7 @@
 | Captured operations | `INSERT`, and `UPDATE OF state, rule_set_id, f_count, m_total, r_score, f_score, m_score, label_code`, by any writer |
 | Outbox | `rfm_events.outbox` |
 | Private wake-up channel | `rfm_outbox` |
-| Consumer groups | `model-registry`, `analytics-kpis` |
+| Consumer groups | `analytics-kpis` |
 | Retention | `XADD MAXLEN ~ 10000` |
 | Delivery | At least once |
 
@@ -45,11 +45,12 @@ consumer apply an older value.
 
 | Group | Effect |
 |---|---|
-| `model-registry` | Marks the customer's row in the current distribution sample stale, so data drift is judged against the published version's reference distribution from current profiles (F23-09). |
 | `analytics-kpis` | Invalidates its cached figures for the segments and windows the customer belongs to (F26-03). |
 
-Both groups join when their service's contract and implementation land (F22-10 and
-F26-01); until then the stream has no reader and `MAXLEN` bounds it. Each group
+The group joins when analytics-kpis' contract and implementation land (F26-01); until
+then the stream has no reader and `MAXLEN` bounds it. model-registry is not a consumer:
+its drift monitor reads the current profiles from `api_rfm.current_profile_v1` in one
+snapshot per window and keeps no sample of them (ADR-0088). Each group
 deduplicates by `event_id` before acknowledging an entry. On restart it handles
 pending entries first, may claim entries idle for more than 60 seconds, and
 acknowledges only after its effect succeeds. After five failed deliveries it logs
@@ -78,10 +79,9 @@ figures are in `docs/evidence/f20-06-stream-propagation.md`.
 
 | Group | p95 (ms) | Max (ms) |
 |---|---:|---:|
-| `model-registry` | 3000 | 5000 |
 | `analytics-kpis` | 3000 | 5000 |
 
-Not measured yet: `model-registry`, `analytics-kpis`.
+Not measured yet: `analytics-kpis`.
 Their bound is the default, and it holds from the first run that measures them.
 
 ## Failure and compatibility

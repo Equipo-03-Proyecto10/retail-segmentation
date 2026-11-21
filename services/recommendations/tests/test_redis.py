@@ -1,4 +1,4 @@
-"""The result cache and its seven invalidation consumers, on a real Redis."""
+"""The result cache and its eight invalidation consumers, on a real Redis."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import pytest
 from flask import Flask
 
 import redis
-from app.cache import INDEX, result_key
+from app.cache import INDEX, customer_index, result_key
 from app.config import STREAMS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -298,3 +298,38 @@ def test_reapplying_an_event_leaves_the_same_state(
     assert observe() == first
     assert redis_connection.xpending(stream, group)["pending"] == 0
     redis_connection.xgroup_destroy(stream, group)
+
+
+def test_a_changed_assignment_empties_that_customers_results_and_no_one_elses(
+    build_app: Callable[..., Flask],
+    token: Callable[..., dict],
+    redis_connection: redis.Redis,
+    owner: psycopg.Connection,
+) -> None:
+    """F22-15: the entry names the customer, so only their cached results go."""
+    app = build_app(consumers=True)
+    assert _wait(lambda: _groups_ready(redis_connection), 10)
+    _ask(app, token)
+    key = result_key(CUSTOMER, _run_id(owner), 10)
+    stranger = "00000000-0000-4000-8000-00000000f215"
+    other = result_key(stranger, 1, 10)
+    redis_connection.set(other, "{}", ex=60)
+    redis_connection.sadd(INDEX, other)
+    redis_connection.sadd(customer_index(stranger), other)
+    assert redis_connection.exists(key)
+    assert redis_connection.sismember(
+        customer_index(CUSTOMER), key
+    ), "indexed by customer"
+
+    redis_connection.xadd(
+        "stream:segments.v1.assignment_changed",
+        {"event_id": f"a-{time.time_ns()}", "entity_id": stranger, "v": 1},
+    )
+    assert _wait(lambda: not redis_connection.exists(other), 10)
+    assert redis_connection.exists(key), "another customer's results stay"
+
+    redis_connection.xadd(
+        "stream:segments.v1.assignment_changed",
+        {"event_id": f"b-{time.time_ns()}", "entity_id": CUSTOMER, "v": 1},
+    )
+    assert _wait(lambda: not redis_connection.exists(key), 10)

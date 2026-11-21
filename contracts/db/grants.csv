@@ -134,6 +134,8 @@ svc_recommendations,api_categories.category_tree_v1,SELECT
 definer_categories,categories_events,USAGE
 definer_categories,categories_events.outbox,INSERT
 definer_guard,public.customer_interest_category,SELECT
+definer_guard,public.transaction(data_origin),SELECT
+definer_guard,public.transaction(occurred_at),SELECT
 svc_stock,public.inventory,SELECT
 svc_stock,stock_events,USAGE
 svc_stock,stock_events.outbox,SELECT
@@ -310,6 +312,16 @@ svc_segments,segments_events.outbox,DELETE
 svc_segments,segments_events.outbox(relayed_at),UPDATE
 definer_segments,segments_events,USAGE
 definer_segments,segments_events.outbox,INSERT
+definer_segments,public.segment_label,SELECT
+definer_segments,public.segmentation_run,SELECT
+definer_segments,public.segmentation_run,INSERT
+definer_segments,public.segmentation_run(customer_count),UPDATE
+definer_segments,public.customer_segment_history,SELECT
+definer_segments,public.customer_segment_history,INSERT
+definer_segments,public.customer_segment_history(valid_to),UPDATE
+definer_segments,api_customers,USAGE
+definer_segments,api_customers.customer_ref_v1,SELECT
+definer_segments,"api_segments.apply_assignment_v1(uuid,uuid,character varying,smallint,smallint,smallint,timestamp with time zone,integer,numeric,text,bigint,text,integer,bigint)",EXECUTE
 svc_segments,api_segments,USAGE
 svc_recommendations,api_segments,USAGE
 svc_segments,api_segments.current_label_v1,SELECT
@@ -442,9 +454,24 @@ svc_rfm,rfm.pass_run(status),UPDATE
 svc_rfm,rfm.pass_run(finished_at),UPDATE
 svc_rfm,rfm.pass_run(customers_examined),UPDATE
 svc_rfm,rfm.pass_run(customers_changed),UPDATE
+svc_rfm,rfm.recalculation,SELECT
+svc_rfm,rfm.recalculation,INSERT
+svc_rfm,rfm.recalculation_difference,SELECT
+svc_rfm,rfm.recalculation_difference,INSERT
+svc_rfm,rfm.recalculation(state),UPDATE
+svc_rfm,rfm.recalculation(finished_at),UPDATE
+svc_rfm,rfm.recalculation(customers_checked),UPDATE
+svc_rfm,rfm.recalculation(customers_different),UPDATE
+svc_rfm,rfm.recalculation(failure_code),UPDATE
 svc_rfm,rfm_events.outbox,SELECT
 svc_rfm,rfm_events.outbox,DELETE
 svc_rfm,rfm_events.outbox(relayed_at),UPDATE
+svc_rfm,api_segments,USAGE
+svc_rfm,"api_segments.apply_assignment_v1(uuid,uuid,character varying,smallint,smallint,smallint,timestamp with time zone,integer,numeric,text,bigint,text,integer,bigint)",EXECUTE
+svc_rfm,api_preferences,USAGE
+svc_rfm,api_preferences.consent_state_v1,SELECT
+svc_rfm,api_models,USAGE
+svc_rfm,api_models.published_version_v1,SELECT
 definer_rfm,rfm_events,USAGE
 definer_rfm,rfm_events.outbox,INSERT
 svc_models,api_rfm,USAGE

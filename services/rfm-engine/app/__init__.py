@@ -9,7 +9,8 @@ as if it had never counted, because the net view no longer lists it (ADR-0062). 
 change to the captured values puts one profile-changed event in the outbox, in the
 same transaction (ADR-0063). The other
 operations of contracts/rfm-engine/openapi.yaml are marked planned (ADR-0073) until
-the stories after this one register them, except the rule sets (F22-09): an analyst
+the stories after this one register them, except the verification recalculations
+(F22-08, app/verification.py) and the rule sets (F22-09): an analyst
 creates one as a draft, edits it, publishes it, and a published one is never edited,
 only versioned (app/rulesets.py). It is ready when PostgreSQL answers and its
 own schema is there.
@@ -18,6 +19,7 @@ own schema is there.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +30,7 @@ from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
-from . import ageing, recompute, rulesets
+from . import ageing, recompute, rulesets, verification
 from .config import RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
@@ -142,6 +144,85 @@ def create_app() -> Flask:
             frozen = rulesets.one(connection, rule_set_id)
         return Representation("RfmRuleSetDetail", wire_value(frozen))
 
+    verifications: list[threading.Thread] = []
+    app.extensions["rfm_verifications"] = verifications
+
+    @kit.operation("createRfmRecalculation")
+    def create_recalculation() -> Representation:
+        principal = author()
+        body = kit.body or {}
+        with kit.db.transaction() as connection:
+            row = verification.start(
+                connection,
+                trigger="ON_DEMAND",
+                started_by=str(principal["sub"]),
+                rule_set_id=body.get("rule_set_id"),
+                in_force=settings.rule_set_id,
+            )
+        thread = threading.Thread(
+            target=verification.execute,
+            args=(
+                kit.db,
+                row["recalculation_id"],
+                (str(principal["sub"]), str(principal["role"])),
+            ),
+            name=f"rfm-verification-{row['recalculation_id']}",
+            daemon=True,
+        )
+        verifications.append(thread)
+        thread.start()
+        response = Representation("RfmRecalculation", wire_value(row), status=201)
+        response.headers = {
+            "Location": f"/v1/rfm-recalculations/{row['recalculation_id']}"
+        }
+        return response
+
+    @kit.operation("listRfmRecalculations")
+    def list_recalculations() -> Page:
+        rule_set = request.args.get("rule_set_id")
+        with kit.db.connection() as connection:
+            items, total = verification.listing(
+                connection,
+                state=request.args.get("state"),
+                trigger=request.args.get("trigger"),
+                rule_set_id=None if rule_set is None else int(rule_set),
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "RfmRecalculations",
+            "RfmRecalculation",
+            "recalculations",
+            [wire_value(item) for item in items],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    @kit.operation("getRfmRecalculation")
+    def get_recalculation(recalculation_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = verification.one(connection, recalculation_id)
+        return Representation("RfmRecalculation", wire_value(row))
+
+    @kit.operation("listRfmRecalculationDifferences")
+    def list_recalculation_differences(recalculation_id: int) -> Page:
+        with kit.db.connection() as connection:
+            items, total = verification.differences(
+                connection, recalculation_id, page=kit.page, size=kit.size
+            )
+        return Page(
+            "RfmRecalculationDifferences",
+            "RfmRecalculationDifference",
+            "differences",
+            items,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
     def handle_sale(fields: dict[str, str]) -> None:
         """One entry of `stream:sales.v1.recorded`: recompute the sale's customer.
 
@@ -187,6 +268,20 @@ def create_app() -> Flask:
         )
         relay.start()
         app.extensions["rfm_relay"] = relay
+    if kit.db.dsn:
+        try:
+            verification.reap_orphans(kit.db)
+        except Exception:  # noqa: BLE001 - the schema may not be there yet
+            LOGGER.exception("Could not look for an unfinished verification")
+    if settings.verification_enabled and kit.db.dsn:
+        weekly = verification.WeeklyVerification(
+            kit.db,
+            settings.rule_set_id,
+            settings.verification_weekday,
+            settings.verification_at,
+        )
+        weekly.start()
+        app.extensions["rfm_weekly_verification"] = weekly
     if settings.pass_enabled and kit.db.dsn:
         daily = ageing.DailyPass(kit.db, settings.rule_set_id, settings.pass_at)
         daily.start()

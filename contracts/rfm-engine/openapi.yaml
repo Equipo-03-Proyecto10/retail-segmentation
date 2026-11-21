@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rfm-engine-service
-  version: 1.1.0
+  version: 1.2.0
   description: >-
     Keeps each customer's R, F and M current. A customer's profile is a function
     of their accepted, unreversed purchases under one rule-set version; it changes
@@ -540,7 +540,6 @@ paths:
         Returns a page of verification recalculations, newest first. `state`,
         `trigger` and `rule_set_id` filter on the stored values.
       operationId: listRfmRecalculations
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -600,7 +599,6 @@ paths:
         set, it is 409 `no_published_rule_set`. A named rule set that does not
         exist is 404 `rule_set_not_found`.
       operationId: createRfmRecalculation
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -677,7 +675,6 @@ paths:
         customer does not, and `GET .../differences` lists them. A failed
         recalculation carries a `failure_code` and no outcome.
       operationId: getRfmRecalculation
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -740,7 +737,6 @@ paths:
         there is nothing final to list, and the answer is 409
         `recalculation_not_finished`.
       operationId: listRfmRecalculationDifferences
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

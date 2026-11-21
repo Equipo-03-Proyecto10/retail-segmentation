@@ -1036,6 +1036,25 @@ decision that matters is how a product's many-valued facts are split:
   pass that stops and resumes writes what one uninterrupted pass would, and the unique
   index `pass_run_one_running` allows one RUNNING row. `pass_run_finish_shape` ties
   `finished_at` to the status.
+- **`rfm.recalculation`** (rfm-engine, F22-08, ADR-0063, ADR-0086) is keyed by
+  `recalculation_id`: each row is one verification, and its other columns are facts of
+  that verification alone (the trigger, the rule set and instant it measures from, who
+  started it, when it started and finished, the customers it compared and how many
+  differ, or why it failed), so the relation is in BCNF. The outcome is not a column:
+  it is `EQUIVALENT` exactly when a `COMPLETED` row has `customers_different = 0`.
+  `recalculation_starter` ties `started_by` to the trigger (an administrator for
+  `ON_DEMAND`, nobody for `SCHEDULE`, RN-05), `recalculation_state_shape` ties the
+  counts and the failure code to the state, and the unique index
+  `recalculation_one_running` allows one `RUNNING` row. A trigger refuses any change to a
+  finished row, from every role.
+- **`rfm.recalculation_difference`** is keyed by `(recalculation_id, customer_id)`:
+  one row per customer a verification found different, holding the eight values held
+  incrementally (`pending` when there is no profile row) and the eight recomputed. The
+  two sets are two facts of the same key, so there is no dependency between non-key
+  columns. `fields`, the values that differ, is not a column: it is the comparison of
+  the two sets, and storing it could disagree with them. A difference is evidence and is
+  never changed; it goes only with its customer (a delete one trigger level down,
+  inside the foreign key's own cascade, F21-19).
 - **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
   Its boundaries are four-element arrays: each is written once, read whole (a
   customer is scored against all four of a measure's boundaries, in order), and no

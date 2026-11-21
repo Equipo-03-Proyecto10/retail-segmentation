@@ -1,6 +1,6 @@
 # rfm-engine
 
-> **Status:** Rule-set governance implemented (phase 22, F22-09, #804) on the scheduled pass (F22-07, #781), the incremental update (F22-05, #779, and F22-06, #780) and the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` and a reversal on `stream:sales.v1.reversed` each recompute the one customer they name, a daily pass at 02:00 UTC recomputes the customers whose window or recency changed with no event, and an administrator creates, edits, publishes and versions rule sets under `/v1/rfm-rule-sets`. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Verification implemented (phase 22, F22-08, #782) on rule-set governance (F22-09, #804), the scheduled pass (F22-07, #781), the incremental update (F22-05, #779, and F22-06, #780) and the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` and a reversal on `stream:sales.v1.reversed` each recompute the one customer they name, a daily pass at 02:00 UTC recomputes the customers whose window or recency changed with no event, an administrator creates, edits, publishes and versions rule sets under `/v1/rfm-rule-sets`, and a verification recalculation compares the incremental result with a full one under `/v1/rfm-recalculations`, weekly and on demand. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
 > **One rule:** A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)
 
 ## Summary
@@ -55,7 +55,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | `rfm.customer_profile` | Table (`rfm`) | S | One row per processed customer; `scored` or `unassigned` (a customer with no row is `pending` in the view). Seed-exempt: the first event, or the daily pass, creates a row. Indexed on `next_change_at` for the pass (F22-07) |
 | `rfm.pass_run` | Table (`rfm`) | S (SELECT, INSERT, UPDATE of status, finish and counts; never DELETE) | One row per scheduled pass: the rule set, `as_of` (fixed at the start), start and finish, customers examined and changed. One row may be `RUNNING`. Seed-exempt: runtime history (F22-07) |
 | `rfm.rule_set`, `rfm.rule_set_band` | Tables (`rfm`) | S (SELECT, INSERT, UPDATE of a draft's columns and of `state`, never DELETE) | The window, the boundaries, the bands, how a cancelled and a returned sale count, and the state and lineage that govern them. The seed holds the scoring of the web's published rule version (`web-rfm-rules-180d`, `PUBLISHED`) with the 30 segment boxes as bands, and a `DRAFT` version 2 of it over 90 days; `rule_set` is seed-exempt, `rule_set_band` has 60 rows |
-| `rfm.recalculation`, `rfm.recalculation_difference` | Tables (`rfm`) | S | Named by the verification story (F22-08) |
+| `rfm.recalculation`, `rfm.recalculation_difference` | Tables (`rfm`) | S (SELECT, INSERT; UPDATE of a `RUNNING` row's state, finish, counts and failure code; never DELETE) | F22-08 (#782): one row per verification and per customer it found different, final once finished (a trigger refuses any change, from every role). A difference goes only with its customer (F21-19). Seed-exempt: runtime history. Justified in `docs/data-model.md` |
 | `rfm_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_rfm` through `trg_capture_profile_inserted` and `trg_capture_profile_changed`; seed-exempt runtime state |
 
 ## Database contracts
@@ -113,7 +113,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `rule_set_not_published` | A version of a rule set that is still a draft: edit it |
 | 409 | `rule_set_version_exists` | The rule set already has a newer version: edit that draft |
 | 409 | `recalculation_in_progress` | A recalculation is already running |
-| 409 | `no_published_rule_set` | `POST /v1/rfm-recalculations` names no rule set and none is published |
+| 409 | `no_published_rule_set` | `POST /v1/rfm-recalculations` names no rule set and none is published, or names a draft (a draft is never a reference) |
 | 409 | `recalculation_not_finished` | The differences of a recalculation that is `RUNNING` or `FAILED` |
 | 422 | `invalid_query` | A filter is malformed |
 | 422 | `invalid_body` | A rule set breaks its rules: `not_monotonic`, `band_range`, `bands_overlap`, `bands_gap` (RN-46), `not_allowed` (a `cancelled_sales` or `returned_sales` other than `DEDUCT`) |
@@ -151,7 +151,16 @@ A profile moves with the clock alone when its oldest purchase leaves the window 
 
 ## Deploying the reversal consumer
 
-A consumer group is created at the end of its stream (ADR-0044), so the first start of the version that reads `stream:sales.v1.reversed` (0.3.0) skips every entry already on it. A sale reversed while an earlier version ran, and not yet relayed to this group, never reaches the engine as an event: that customer's profile keeps the cancelled sale's R, F and M and its label until another sale of theirs arrives, or until the cancelled sale leaves the window and the daily pass moves them. Neither the event nor the pass catches it sooner. The verification of F22-08 reports every customer whose profile differs from a full recalculation, and is what finds such a customer; until it exists, an operator who deploys onto a database with reversals recorded since the engine first ran (`sales.sale_reversal`) knows these customers are stale.
+A consumer group is created at the end of its stream (ADR-0044), so the first start of the version that reads `stream:sales.v1.reversed` (0.3.0) skips every entry already on it. A sale reversed while an earlier version ran, and not yet relayed to this group, never reaches the engine as an event: that customer's profile keeps the cancelled sale's R, F and M and its label until another sale of theirs arrives, or until the cancelled sale leaves the window and the daily pass moves them. Neither the event nor the pass catches it sooner. The verification (F22-08) reports every customer whose profile differs from a full recalculation, and is what finds such a customer: an operator who deploys onto a database with reversals recorded since the engine first ran (`sales.sale_reversal`) starts one afterwards. It also reports, once, every customer with purchases and no profile (`pending`), such as the seeded ones before a first pass.
+
+## The verification
+
+A verification (ADR-0063, [ADR-0086](../adr/0086-a-verification-compares-a-profile-as-the-incremental-design-promises-it-at-one-instant.md)) recomputes every customer with a profile or a net purchase in the window, under one rule set at one instant (`as_of`), from one repeatable-read snapshot, and writes no profile and no segment. It runs weekly (`VERIFICATION_WEEKDAY`, `VERIFICATION_AT_UTC`; Sunday 03:00 UTC by default, an hour after the daily pass; off with `VERIFICATION_ENABLED=false`) as the system, and on demand for an administrator (`POST /v1/rfm-recalculations`, 201 `RUNNING`, polled with `GET`).
+
+- **What is compared.** State, F, M, the three scores and the label, as they stand at `as_of`; and R measured to the profile's own `computed_at`, because R ages by itself and the profile is not rewritten for it. A profile that fell due after the last completed pass is the next pass's and is not compared; one that fell due at or before it, or a customer with purchases and no profile (`pending`), is a difference.
+- **What it records.** `rfm.recalculation` (rule set, `as_of`, who started it, customers compared and different, `failure_code`) and one `rfm.recalculation_difference` per differing customer, with both sets of values. The outcome is `EQUIVALENT` exactly when a completed verification found none; `fields` names what differs.
+- **Alert and audit.** Every verification is audited as a `CALCULATION_RUN` of `RFM` (subject `rfm-verification-<id>`, the compared and different counts as `input_count` and `output_count`), in the transaction that finishes it. A scheduled verification that finds a difference, or fails, logs an ERROR line an operator watches for: `rfm_verification_differences` or `rfm_verification_failed`, with the recalculation id. One an administrator asked for logs a warning, since the answer is in the response.
+- **One at a time.** A verification holds `pg_advisory_lock(299001)` on a session of its own while it runs, and the unique index `recalculation_one_running` allows one `RUNNING` row (a second start is 409 `recalculation_in_progress`). A row left `RUNNING` by an instance that stopped is marked `FAILED` (`interrupted`) at the next start.
 
 ## Failure behaviour
 
@@ -166,7 +175,7 @@ A consumer group is created at the end of its stream (ADR-0044), so the first st
 
 - A test recomputes the same events twice and out of order and gets the same profile; another proves one sale writes one customer's profile (ADR-0063): every other profile row is locked by a second connection during the recomputation, which would time out if it read one for writing.
 - 1,000 sales cost the same with 5,000 more customers: [`f22-05-incremental-cost.md`](../evidence/f22-05-incremental-cost.md).
-- The verification reports zero differences over a scripted history of sales, reversals, late sales and redeliveries (F22-08).
+- The verification reports zero differences over a scripted history of sales, reversals, late sales and redeliveries, and a difference fails the test naming the customer (F22-08, `tests/test_verification.py`). One recorded sale, before and after and against the reference: [`f22-08-incremental-verification.md`](../evidence/f22-08-incremental-verification.md).
 - [ADR-0043](../adr/0043-at-least-ten-microservices-each-implementing-one-business-rule.md) Compliance (registry: one rule, RN ids resolve), and ADR-0035 (resources are unique).
 
 ## Backlog

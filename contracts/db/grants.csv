@@ -442,6 +442,15 @@ svc_rfm,rfm.pass_run(status),UPDATE
 svc_rfm,rfm.pass_run(finished_at),UPDATE
 svc_rfm,rfm.pass_run(customers_examined),UPDATE
 svc_rfm,rfm.pass_run(customers_changed),UPDATE
+svc_rfm,rfm.recalculation,SELECT
+svc_rfm,rfm.recalculation,INSERT
+svc_rfm,rfm.recalculation_difference,SELECT
+svc_rfm,rfm.recalculation_difference,INSERT
+svc_rfm,rfm.recalculation(state),UPDATE
+svc_rfm,rfm.recalculation(finished_at),UPDATE
+svc_rfm,rfm.recalculation(customers_checked),UPDATE
+svc_rfm,rfm.recalculation(customers_different),UPDATE
+svc_rfm,rfm.recalculation(failure_code),UPDATE
 svc_rfm,rfm_events.outbox,SELECT
 svc_rfm,rfm_events.outbox,DELETE
 svc_rfm,rfm_events.outbox(relayed_at),UPDATE

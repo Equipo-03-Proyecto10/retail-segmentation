@@ -213,5 +213,6 @@ These follow a specific review rather than a story.
 
 | Document | What it records |
 |---|---|
+| [F29-01 (#886)](f29-01-rfm-hand-computed.md) | RFM worked out by hand for fourteen customers (both window edges, a clock change, cents, a cancellation, a partial return, ties, customers with no purchase) and compared with the web and with rfm-engine, customer by customer; and what R across a clock change depends on |
 | [F29-03 (#888)](f29-03-transaction-path.md) | **Not yet run on the instance.** The runbook and template of AC-01 "Venta Android", AC-02 "Paridad web" and AC-03 "Consulta escritorio": who does each step, `tests/acceptance/f29_03.py` collecting the sale's JSON and XSD-valid XML, its rows and the portal, service and `inventory` before and after; and a local dry run, which is not the acceptance |
 | [F29-06 (#891)](f29-06-privacy-revocation-disconnection.md) | **Not yet run on the instance.** The runbook and template of AC-12 "Privacidad", AC-13 "Sesión revocada" and AC-14 "Desconexión": F18-04's new every-role privacy case, its revocation cases, the offline sales with a dropped response, and `tests/acceptance/f29_06.py`'s duplicate checks; and a local dry run, which is not the acceptance |

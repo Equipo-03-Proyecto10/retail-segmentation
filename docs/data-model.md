@@ -252,6 +252,21 @@ many runs — so the run's own attributes and each customer's per-run result
 are decomposed into two relations joined by `run_id`, the same shape as the
 `customer_preferred_channel` / `customer_interest_category` split above.
 
+F22-15 adds one fact to each of the two relations and none to a third. `segmentation_run.scope`
+(`FULL` or `INCREMENTAL`) says what the run re-scored, which is a fact about the run and
+depends on `run_id` alone; `customer_segment_history.cause` says why this customer's row
+exists, which depends on the row. A cause is not repeated on the run: a batch of one
+event has one, and a pass has one, but the history row is the unit the cause explains, and
+the run keeps the cause its batch agreed on in `parameters` for the function's own
+check, with the rule set the batch was scored under. The reason a customer is unassigned (no
+purchases, or `PROFILING` withdrawn) is not stored: `api_segments.current_label_v1` derives
+it as `unassigned_reason`, because it is determined by `cause` and a `NULL` `label_code`, and a column of its own
+would state one fact twice and could contradict it (`customer_segment_history_withdrawn_unassigned`
+makes the one impossible combination, a label under `CONSENT_WITHDRAWN`, a violation). Both
+columns are in BCNF: each non-key attribute depends on the key and on nothing else.
+A run's version, method and window stay in `parameters` and are read through
+`api_models.run_version_v1` (ADR-0064) and are not copied to a column.
+
 `sales_load` and `sales_load_rejection` apply the same rule to an upload and
 its rejected lines. Keeping `filename`, the contract version, the reconciled
 counts and the actor on every rejection would repeat one load-level fact once
@@ -1036,6 +1051,25 @@ decision that matters is how a product's many-valued facts are split:
   pass that stops and resumes writes what one uninterrupted pass would, and the unique
   index `pass_run_one_running` allows one RUNNING row. `pass_run_finish_shape` ties
   `finished_at` to the status.
+- **`rfm.recalculation`** (rfm-engine, F22-08, ADR-0063, ADR-0086) is keyed by
+  `recalculation_id`: each row is one verification, and its other columns are facts of
+  that verification alone (the trigger, the rule set and instant it measures from, who
+  started it, when it started and finished, the customers it compared and how many
+  differ, or why it failed), so the relation is in BCNF. The outcome is not a column:
+  it is `EQUIVALENT` exactly when a `COMPLETED` row has `customers_different = 0`.
+  `recalculation_starter` ties `started_by` to the trigger (an administrator for
+  `ON_DEMAND`, nobody for `SCHEDULE`, RN-05), `recalculation_state_shape` ties the
+  counts and the failure code to the state, and the unique index
+  `recalculation_one_running` allows one `RUNNING` row. A trigger refuses any change to a
+  finished row, from every role.
+- **`rfm.recalculation_difference`** is keyed by `(recalculation_id, customer_id)`:
+  one row per customer a verification found different, holding the eight values held
+  incrementally (`pending` when there is no profile row) and the eight recomputed. The
+  two sets are two facts of the same key, so there is no dependency between non-key
+  columns. `fields`, the values that differ, is not a column: it is the comparison of
+  the two sets, and storing it could disagree with them. A difference is evidence and is
+  never changed; it goes only with its customer (a delete one trigger level down,
+  inside the foreign key's own cascade, F21-19).
 - **`rfm.rule_set`** is keyed by `rule_set_id`, with `name` a second candidate key.
   Its boundaries are four-element arrays: each is written once, read whole (a
   customer is scored against all four of a measure's boundaries, in order), and no

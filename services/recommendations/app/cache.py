@@ -7,8 +7,10 @@ new key. A `/v2` result lives at ``recommendations:cache:v2:{customer_id}:
 at one store or channel is never served for another. The entry carries the id
 of the decision recorded for it, so a cached answer is still attributable to a
 stored decision (ADR-0067). Each key is also added to an index set under the
-same prefix. An event on any of the seven streams renames the index away and
-deletes what it named, so no SCAN, KEYS or RANDOMKEY is ever needed (the ACL
+same prefix, and to its customer's own index set, so a change of one customer's
+assignment drops that customer's keys without reading anyone else's (F22-15).
+Any other event on the eight streams renames the index away and deletes what it
+named, so no SCAN, KEYS or RANDOMKEY is ever needed (the ACL
 forbids them). Any Redis failure is a miss: the result is recomputed from the
 views. Each entry carries its pre-computation generation; invalidation replaces
 the generation even when the index was evicted, so an in-flight old result
@@ -32,6 +34,7 @@ from .config import CACHE_TTL_SECONDS
 LOGGER = logging.getLogger(__name__)
 PREFIX = "recommendations:cache:"
 INDEX = PREFIX + "index"
+CUSTOMER_INDEX = PREFIX + "customer-index:"
 GENERATION = PREFIX + "generation"
 
 
@@ -68,6 +71,17 @@ def result_key_v2(
     if restricted:
         key += ":r" + "-".join(str(c) for c in sorted(restricted))
     return key
+
+
+def customer_index(customer_id: str) -> str:
+    """The set naming one customer's cached results, `/v1` and `/v2`."""
+    return f"{CUSTOMER_INDEX}{customer_id}"
+
+
+def _customer_of(key: str) -> str | None:
+    rest = key.removeprefix(PREFIX).removeprefix("v2:")
+    customer = rest.partition(":")[0]
+    return customer or None
 
 
 class Cached(NamedTuple):
@@ -150,9 +164,27 @@ class ResultCache:
             pipe.sadd(INDEX, key)
             # The index outlives every key it names, and no longer.
             pipe.expire(INDEX, CACHE_TTL_SECONDS)
+            customer = _customer_of(key)
+            if customer is not None:
+                pipe.sadd(customer_index(customer), key)
+                pipe.expire(customer_index(customer), CACHE_TTL_SECONDS)
             pipe.execute()
         except redis.RedisError as error:
             LOGGER.warning("Cache write failed: %r", error)
+
+    def invalidate_customer(self, customer_id: str) -> None:
+        """Delete the cached results of one customer, `/v1` and `/v2`, and leave every
+        other customer's. Raises on a Redis failure, so the consumer redelivers the
+        event. Their keys name the run behind their open label, so a changed label is
+        a new key anyway; this drops the old ones instead of waiting out their 120 s
+        (F22-15)."""
+        if self.client is None:
+            return
+        index = customer_index(customer_id)
+        doomed = list(self.client.smembers(index))
+        self.client.delete(*doomed, index)
+        if doomed:
+            self.client.srem(INDEX, *doomed)
 
     def invalidate(self) -> None:
         """Delete every cached result. Raises on a Redis failure, so the

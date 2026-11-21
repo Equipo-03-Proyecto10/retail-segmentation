@@ -49,7 +49,7 @@ entry is late.
 |---|---|
 | `recommendations` | Invalidates its cached result for the customer, so the next read reflects the change and the cache serves nothing older (ADR-0066 section 2) |
 | `campaigns` | Re-reads the customer's consent and restrictions before they are next counted in an audience or contacted. What it does with an audience frame already stored is F25-04's decision |
-| `rfm-engine` | Re-reads the customer's `PROFILING` decision. On a withdrawal it closes the open assignment and reports the customer as unassigned with reason `PROFILING_WITHDRAWN` (ADR-0063, ADR-0066 section 2) |
+| `rfm-engine` | Re-reads the customer's `PROFILING` decision. On a withdrawal it closes the open assignment and reports the customer as unassigned with reason `PROFILING_WITHDRAWN` (ADR-0063, ADR-0066 section 2). Joined by F22-15, which recomputes the customer on every entry, whatever purpose it was for, and so also when a withdrawal is granted again |
 
 Each group joins when the story that implements its reaction lands, and until then
 the stream has no reader and `MAXLEN` bounds it. A group deduplicates by `event_id`

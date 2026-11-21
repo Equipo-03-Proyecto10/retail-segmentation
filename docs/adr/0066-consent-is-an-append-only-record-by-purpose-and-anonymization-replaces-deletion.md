@@ -1,10 +1,10 @@
 # ADR-0066 — Consent is an append-only record by purpose, an objection narrows what is done with a customer, and anonymization replaces deletion
 
-**Status:** Accepted (2026-11-04)
+**Status:** Partially superseded by ADR-0087 (rfm-engine's reading of a missing or unreadable `PROFILING`)
 **Owner:** Maximiliano
 **Issue:** #793
 **Supersedes:** —
-**Superseded by:** —
+**Superseded by:** [ADR-0087](0087-an-incremental-change-is-applied-to-the-segment-history-in-the-profile-transaction-under-the-published-version.md), in part (rfm-engine's reading of a missing or unreadable `PROFILING`)
 
 ---
 

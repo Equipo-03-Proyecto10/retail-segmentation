@@ -126,6 +126,7 @@ def test_attribution_examples_never_say_effect(stem) -> None:
         "result-pending",
         "result-invalid",
         "result-offer-comparison",
+        "result-withheld-small-arm",
     ],
 )
 def test_a_result_keeps_attribution_and_effect_apart(stem) -> None:

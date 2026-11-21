@@ -1821,6 +1821,31 @@ CREATE INDEX IF NOT EXISTS sale_line_price_promotion
     ON sales.sale_line_price (promotion_id) WHERE promotion_id IS NOT NULL;
 GRANT SELECT, INSERT ON sales.sale_line_price TO svc_sales;
 -- END F25-05 sale line price
+
+-- BEGIN F25-15 campaign spending (#1048)
+-- What a campaign's promotions have discounted
+-- (contracts/db/api_sales.promotion_line.v1.md): one row per phone-sale line
+-- whose promotion was retained because it granted a positive discount, with
+-- only the units left after reversals (ADR-0062). CSV and imported lines have
+-- no sales.sale_line_price row and therefore cannot appear. Definer rights let
+-- campaigns read the publication without reaching sales.* or public.*.
+CREATE OR REPLACE VIEW api_sales.promotion_line_v1
+WITH (security_invoker = off) AS
+SELECT n.transaction_id,
+       n.customer_id,
+       n.product_id,
+       p.promotion_id,
+       n.net_quantity,
+       n.unit_price,
+       p.list_price
+FROM public.net_sale_line AS n
+JOIN sales.sale_line_price AS p
+  USING (transaction_id, product_id)
+WHERE p.promotion_id IS NOT NULL
+  AND p.list_price > n.unit_price;
+REVOKE ALL ON api_sales.promotion_line_v1 FROM PUBLIC;
+GRANT SELECT ON api_sales.promotion_line_v1 TO svc_campaigns;
+-- END F25-15 campaign spending
 -- END BOUNDARY sales
 
 -- BEGIN BOUNDARY products

@@ -9,25 +9,17 @@
 
 mod support;
 
-use std::path::PathBuf;
-use std::process::Command;
-use std::time::Duration;
-
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::Router;
 use chrono::{Duration as ChronoDuration, SecondsFormat};
 use http_body_util::BodyExt;
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use mosaiq_kit::KitConfig;
 use segments::Reader;
 use serde_json::{json, Value};
-use support::{admin, connect, drop_acl, load_acl, owner_url, redis_url, service_url};
+use support::{admin, connect, drop_acl, kit_config, load_acl, owner_url, redis_url, Keys};
 use tokio_postgres::Client;
 use uuid::Uuid;
 
-const ISSUER: &str = "https://auth.test/";
-const KID: &str = "segments-test";
 const CUSTOMER: &str = "00000000-0000-0000-0000-000000000007";
 const ANALYST: &str = "11111111-1111-1111-1111-000000000002";
 const PLANNER: &str = "11111111-1111-1111-1111-000000000005";
@@ -40,81 +32,6 @@ const GRANT: &str = "GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, t
 
 /// The tests share the ACL user and revoke a grant; they take turns.
 static TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-fn base64url(bytes: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-    let mut out = String::new();
-    for chunk in bytes.chunks(3) {
-        let block = chunk.iter().enumerate().fold(0u32, |acc, (i, byte)| {
-            acc | (u32::from(*byte) << (16 - 8 * i))
-        });
-        for i in 0..=chunk.len() {
-            out.push(ALPHABET[((block >> (18 - 6 * i)) & 63) as usize] as char);
-        }
-    }
-    out
-}
-
-fn openssl(arguments: &[&str]) -> Vec<u8> {
-    let output = Command::new("openssl")
-        .args(arguments)
-        .output()
-        .expect("openssl is installed");
-    assert!(output.status.success(), "openssl {arguments:?}");
-    output.stdout
-}
-
-/// A throwaway signing key and its public half as a JWKS file.
-struct Keys {
-    dir: PathBuf,
-    pem: Vec<u8>,
-}
-
-impl Keys {
-    fn make() -> Self {
-        let dir = std::env::temp_dir().join(format!("segments-test-{}", Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let key = dir.join("key.pem");
-        let path = key.to_str().unwrap();
-        openssl(&["genrsa", "-out", path, "2048"]);
-        let modulus =
-            String::from_utf8(openssl(&["rsa", "-in", path, "-noout", "-modulus"])).unwrap();
-        let hex = modulus.trim().strip_prefix("Modulus=").unwrap();
-        let bytes: Vec<u8> = (0..hex.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
-            .collect();
-        let jwks = json!({"keys": [{
-            "kty": "RSA", "use": "sig", "alg": "RS256", "kid": KID,
-            "n": base64url(&bytes), "e": "AQAB",
-        }]});
-        std::fs::write(dir.join("jwks.json"), jwks.to_string()).unwrap();
-        let pem = std::fs::read(&key).unwrap();
-        Self { dir, pem }
-    }
-
-    fn token(&self, sub: &str, role: &str, sid: &str) -> String {
-        let now = chrono::Utc::now().timestamp();
-        let claims = json!({
-            "iss": ISSUER, "aud": "mosaiq-api", "sub": sub, "sid": sid,
-            "role": role, "iat": now, "exp": now + 300,
-        });
-        let mut header = Header::new(Algorithm::RS256);
-        header.kid = Some(KID.to_owned());
-        encode(
-            &header,
-            &claims,
-            &EncodingKey::from_rsa_pem(&self.pem).unwrap(),
-        )
-        .unwrap()
-    }
-}
-
-impl Drop for Keys {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.dir);
-    }
-}
 
 struct Stack {
     app: Router,
@@ -140,18 +57,7 @@ impl Stack {
             .await
             .unwrap();
         let keys = Keys::make();
-        let config = KitConfig {
-            issuer: ISSUER.to_owned(),
-            jwks_path: keys.dir.join("jwks.json"),
-            redis_state_url: url,
-            redis_password: Some(password),
-            rate_limit_enabled: false,
-            rate_limit_requests: 120,
-            rate_limit_window_seconds: 60,
-            database_url: Some(service_url(&database)),
-            database_pool_timeout: Duration::from_secs(2),
-            database_connect_timeout: Duration::from_secs(2),
-        };
+        let config = kit_config(&keys, url, password, &database);
         let (app, _) = segments::router(config, "contracts", Reader::new(None)).unwrap();
         let owner = connect(&database).await;
         Some(Self {

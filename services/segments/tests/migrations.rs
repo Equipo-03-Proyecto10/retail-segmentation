@@ -11,25 +11,10 @@ use segments::{
     MigrationQuery, MigrationState, MigrationWindow, Snapshot,
 };
 use std::collections::HashMap;
-use support::{connect, owner_url, service_database};
+use support::{assert_valid_xml, connect, owner_url, service_database};
 use uuid::Uuid;
 
 const NAMESPACE: &str = "https://mosaiq.maxthecoder.online/xml/segments/v1";
-
-/// Validate an XML body against the contract's XSD, as Electron does.
-fn assert_valid_xml(xml: &str) {
-    use libxml::parser::Parser;
-    use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
-    let mut schema = SchemaParserContext::from_file("contracts/segments/segments.xsd");
-    let mut context = SchemaValidationContext::from_parser(&mut schema).expect("the XSD compiles");
-    let document = Parser::default()
-        .parse_string(xml)
-        .expect("well-formed XML");
-    if let Err(errors) = context.validate_document(&document) {
-        let messages: Vec<String> = errors.into_iter().filter_map(|e| e.message).collect();
-        panic!("the XML does not validate: {messages:?}\n{xml}");
-    }
-}
 
 async fn run_at(owner: &tokio_postgres::Client, run_id: i64) -> DateTime<Utc> {
     owner

@@ -9,7 +9,8 @@ as if it had never counted, because the net view no longer lists it (ADR-0062). 
 change to the captured values puts one profile-changed event in the outbox, in the
 same transaction (ADR-0063). The other
 operations of contracts/rfm-engine/openapi.yaml are marked planned (ADR-0073) until
-the stories after this one register them, except the rule sets (F22-09): an analyst
+the stories after this one register them, except the verification recalculations
+(F22-08, app/verification.py) and the rule sets (F22-09): an analyst
 creates one as a draft, edits it, publishes it, and a published one is never edited,
 only versioned (app/rulesets.py). It is ready when PostgreSQL answers and its
 own schema is there.
@@ -18,18 +19,20 @@ own schema is there.
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import redis
-from flask import Flask, request
+from flask import Flask, g, request
 from mosaiq_kit import Kit, Page, Representation, configure_logging
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
-from . import ageing, recompute, rulesets
-from .config import RECORDED_STREAM, REVERSED_STREAM, Settings
+from . import ageing, recompute, rulesets, store, verification
+from .config import CONSENT_STREAM, RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
 SUFFIX = "rfm"
@@ -88,12 +91,28 @@ def create_app() -> Flask:
             info_key="page_info",
         )
 
-    def recompute_sale(stream: str, sale: str, fields: dict[str, str]) -> None:
+    def scoring(
+        connection: Any, stream: str, fields: dict[str, str], cause: str
+    ) -> tuple[int, recompute.Applying | None]:
+        """The rule set to score under and what to apply the result as. With no
+        version published the profile is still written and nothing is applied, so an
+        entry is never refused for it (ADR-0087)."""
+        version = recompute.in_force(connection, settings.rule_set_id)
+        if version is None:
+            return settings.rule_set_id, None
+        return version.rule_set_id, recompute.Applying(
+            version, cause, recompute.batch_of(stream, fields)
+        )
+
+    def recompute_sale(
+        stream: str, sale: str, fields: dict[str, str], cause: str
+    ) -> None:
         if not sale.isdigit():
             LOGGER.warning("Entry of %s without a transaction id: %r", stream, fields)
             return
         with kit.db.transaction() as connection:
-            recompute.from_sale(connection, int(sale), settings.rule_set_id)
+            rule_set_id, applying = scoring(connection, stream, fields, cause)
+            recompute.from_sale(connection, int(sale), rule_set_id, applying=applying)
 
     def author() -> dict[str, Any]:
         principal = kit.principal
@@ -142,13 +161,97 @@ def create_app() -> Flask:
             frozen = rulesets.one(connection, rule_set_id)
         return Representation("RfmRuleSetDetail", wire_value(frozen))
 
+    verifications: list[threading.Thread] = []
+    app.extensions["rfm_verifications"] = verifications
+
+    @kit.operation("createRfmRecalculation")
+    def create_recalculation() -> Representation:
+        principal = author()
+        body = kit.body or {}
+        # The lock is taken before the row is recorded and handed to the thread, which
+        # holds it to the end; a RUNNING row left by a stopped process is reaped here.
+        row, lock = verification.begin(
+            kit.db,
+            trigger="ON_DEMAND",
+            started_by=str(principal["sub"]),
+            rule_set_id=body.get("rule_set_id"),
+            in_force=settings.rule_set_id,
+        )
+        thread = threading.Thread(
+            target=verification.execute,
+            args=(
+                kit.db,
+                row["recalculation_id"],
+                (str(principal["sub"]), str(principal["role"])),
+            ),
+            kwargs={
+                "lock": lock,
+                "correlation_id": getattr(g, "correlation_id", None),
+            },
+            name=f"rfm-verification-{row['recalculation_id']}",
+            daemon=True,
+        )
+        verifications.append(thread)
+        thread.start()
+        response = Representation("RfmRecalculation", wire_value(row), status=201)
+        response.headers = {
+            "Location": f"/v1/rfm-recalculations/{row['recalculation_id']}"
+        }
+        return response
+
+    @kit.operation("listRfmRecalculations")
+    def list_recalculations() -> Page:
+        filters = verification.filters(request.args)
+        with kit.db.connection() as connection:
+            items, total = verification.listing(
+                connection,
+                state=filters["state"],
+                trigger=filters["trigger"],
+                rule_set_id=filters["rule_set_id"],
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "RfmRecalculations",
+            "RfmRecalculation",
+            "recalculations",
+            [wire_value(item) for item in items],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    @kit.operation("getRfmRecalculation")
+    def get_recalculation(recalculation_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = verification.one(connection, recalculation_id)
+        return Representation("RfmRecalculation", wire_value(row))
+
+    @kit.operation("listRfmRecalculationDifferences")
+    def list_recalculation_differences(recalculation_id: int) -> Page:
+        with kit.db.connection() as connection:
+            items, total = verification.differences(
+                connection, recalculation_id, page=kit.page, size=kit.size
+            )
+        return Page(
+            "RfmRecalculationDifferences",
+            "RfmRecalculationDifference",
+            "differences",
+            items,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
     def handle_sale(fields: dict[str, str]) -> None:
         """One entry of `stream:sales.v1.recorded`: recompute the sale's customer.
 
         `entity_id` names the sale, never the customer. A failure raises, so the
         kit redelivers, up to five times.
         """
-        recompute_sale(RECORDED_STREAM, fields.get("entity_id", ""), fields)
+        recompute_sale(RECORDED_STREAM, fields.get("entity_id", ""), fields, "SALE")
 
     def handle_reversal(fields: dict[str, str]) -> None:
         """One entry of `stream:sales.v1.reversed`: recompute the reversed sale's
@@ -162,8 +265,32 @@ def create_app() -> Flask:
                 "Entry of %s without a reversal id: %r", REVERSED_STREAM, fields
             )
             return
-        recompute_sale(REVERSED_STREAM, sale, fields)
+        recompute_sale(REVERSED_STREAM, sale, fields, "REVERSAL")
 
+    def handle_consent(fields: dict[str, str]) -> None:
+        """One entry of `stream:preferences.v1.consent_changed`: re-read the
+        customer's PROFILING decision and act on what it says now. The entry does not
+        say which purpose moved or which way, so a replay or a reordering cannot leave
+        the customer on an older decision (ADR-0066 section 2)."""
+        try:
+            customer_id = UUID(fields.get("entity_id", ""))
+        except ValueError:
+            LOGGER.warning("Entry of %s without a customer: %r", CONSENT_STREAM, fields)
+            return
+        with kit.db.transaction() as connection:
+            # CONSENT_GRANTED only when PROFILING is granted now: an entry about
+            # another purpose that finds the customer overdue moves them for the
+            # clock, and a withdrawal is recorded as CONSENT_WITHDRAWN anyway.
+            granted = store.profiling_decision(connection, customer_id) == "GRANTED"
+            rule_set_id, applying = scoring(
+                connection,
+                CONSENT_STREAM,
+                fields,
+                "CONSENT_GRANTED" if granted else "AGEING",
+            )
+            recompute.customer(connection, customer_id, rule_set_id, applying=applying)
+
+    app.extensions["rfm_handle_consent"] = handle_consent
     app.extensions["rfm_handle_sale"] = handle_sale
     app.extensions["rfm_handle_reversal"] = handle_reversal
     if settings.stream_consumer_enabled:
@@ -171,6 +298,7 @@ def create_app() -> Flask:
         for stream, handler in (
             (RECORDED_STREAM, handle_sale),
             (REVERSED_STREAM, handle_reversal),
+            (CONSENT_STREAM, handle_consent),
         ):
             consumer = StreamConsumer(
                 _client(settings.redis_state_url, 10), stream, handler
@@ -187,8 +315,24 @@ def create_app() -> Flask:
         )
         relay.start()
         app.extensions["rfm_relay"] = relay
+    if kit.db.dsn:
+        try:
+            verification.reap_orphans(kit.db)
+        except Exception:  # noqa: BLE001 - the schema may not be there yet
+            LOGGER.exception("Could not look for an unfinished verification")
+    if settings.verification_enabled and kit.db.dsn:
+        weekly = verification.WeeklyVerification(
+            kit.db,
+            settings.rule_set_id,
+            settings.verification_weekday,
+            settings.verification_at,
+        )
+        weekly.start()
+        app.extensions["rfm_weekly_verification"] = weekly
     if settings.pass_enabled and kit.db.dsn:
-        daily = ageing.DailyPass(kit.db, settings.rule_set_id, settings.pass_at)
+        daily = ageing.DailyPass(
+            kit.db, None, settings.pass_at, default_rule_set_id=settings.rule_set_id
+        )
         daily.start()
         app.extensions["rfm_daily_pass"] = daily
     return app

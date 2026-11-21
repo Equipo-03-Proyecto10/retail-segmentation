@@ -29,8 +29,12 @@ def db(service_url: str) -> Iterator[Database]:
 
 
 @pytest.fixture(autouse=True)
-def no_runs(owner: psycopg.Connection) -> Iterator[None]:
-    """The record of passes is the test's own: nothing else may be RUNNING."""
+def no_runs(owner: psycopg.Connection, db: Database) -> Iterator[None]:
+    """The record of passes is the test's own: nothing else may be RUNNING. The
+    population is settled first, so the seeded customers with purchases and no profile
+    yet (which the pass also gives one, ADR-0086) are not counted in the test's pass."""
+    owner.execute("DELETE FROM rfm.pass_run")
+    ageing.run_pass(db, RULE_SET)
     owner.execute("DELETE FROM rfm.pass_run")
     yield
     owner.execute("DELETE FROM rfm.pass_run")
@@ -87,6 +91,36 @@ def test_the_pass_recomputes_the_customers_whose_instant_has_come(
     assert _profile(owner, due)[:2] == ("unassigned", 0)
     assert _profile(owner, steady) == untouched
     assert shop.events(due) == ["INSERT", "UPDATE"]
+
+
+def test_a_customer_with_purchases_and_no_profile_gets_one_from_the_pass(
+    shop: Shop,
+    owner: psycopg.Connection,
+    db: Database,
+    now: datetime,
+) -> None:
+    """No event reached them (a seeded customer, or a first sale whose event was
+    lost): the pass writes their first profile, so a verification after it does not
+    report them `pending` (ADR-0086). A purchase out of the window gives none."""
+    lost = shop.customer()
+    shop.sale(lost, days_ago(now, 10))
+    gone = shop.customer()
+    shop.sale(gone, days_ago(now, 400))
+    owner.execute(
+        "DELETE FROM rfm.customer_profile WHERE customer_id = ANY(%s)", ([lost, gone],)
+    )
+
+    run = ageing.run_pass(db, RULE_SET)
+
+    assert run is not None and run.status == "COMPLETED"
+    assert (run.customers_examined, run.customers_changed) == (1, 1)
+    assert _profile(owner, lost)[:2] == ("scored", 1)
+    assert (
+        owner.execute(
+            "SELECT 1 FROM rfm.customer_profile WHERE customer_id = %s", (gone,)
+        ).fetchone()
+        is None
+    )
 
 
 def test_a_due_customer_whose_values_hold_is_examined_and_not_changed(
@@ -294,9 +328,12 @@ def test_an_event_that_recomputes_a_customer_after_the_batch_was_read_is_kept(
     fired: list[datetime] = []
 
     def sale_after_the_read(
-        connection: psycopg.Connection, as_of: datetime, after: uuid.UUID | None
+        connection: psycopg.Connection,
+        as_of: datetime,
+        window_days: int,
+        after: uuid.UUID | None,
     ) -> list[uuid.UUID]:
-        batch = original(connection, as_of, after)
+        batch = original(connection, as_of, window_days, after)
         if batch and not fired:
             moment = datetime.now(UTC)
             shop.sale(customer, moment - timedelta(seconds=1))

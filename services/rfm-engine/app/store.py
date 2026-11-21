@@ -81,6 +81,30 @@ def measures(
     return Measures(row[0], row[1], row[2], row[3])
 
 
+def measures_many(
+    connection: Connection,
+    customer_ids: list[UUID],
+    window_days: int,
+    as_of: datetime,
+) -> dict[UUID, Measures]:
+    """`measures` for several customers in one statement: only those with a net
+    purchase in the window appear, and the rest have none to count."""
+    rows = connection.execute(
+        "WITH sale AS ("
+        " SELECT customer_id, transaction_id, min(occurred_at) AS occurred_at,"
+        "        sum(net_amount) AS net_total"
+        "   FROM api_sales.net_purchase_line_v1"
+        "  WHERE customer_id = ANY(%(customers)s)"
+        "    AND occurred_at >= %(as_of)s - make_interval(days => %(days)s)"
+        "    AND occurred_at <= %(as_of)s"
+        "  GROUP BY customer_id, transaction_id)"
+        " SELECT customer_id, count(*), COALESCE(sum(net_total), 0)::numeric(12,2),"
+        "        min(occurred_at), max(occurred_at) FROM sale GROUP BY customer_id",
+        {"customers": customer_ids, "as_of": as_of, "days": window_days},
+    ).fetchall()
+    return {row[0]: Measures(row[1], row[2], row[3], row[4]) for row in rows}
+
+
 def now(connection: Connection) -> datetime:
     row = connection.execute("SELECT clock_timestamp()").fetchone()
     assert row is not None

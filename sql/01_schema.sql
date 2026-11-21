@@ -5193,6 +5193,96 @@ CREATE TABLE IF NOT EXISTS rfm.pass_run (
 CREATE UNIQUE INDEX IF NOT EXISTS pass_run_one_running
     ON rfm.pass_run ((true)) WHERE status = 'RUNNING';
 
+-- F22-08 (#782, ADR-0063): the verification recalculation, one row each. A
+-- verification recomputes every customer from the net purchases at one instant,
+-- `as_of`, under one rule set, writes no profile and records what it found. It is
+-- STARTED by an administrator (ON_DEMAND, `started_by`) or by the system on a
+-- schedule (SCHEDULE, no `started_by`, RN-05). At most one is RUNNING at a time. The
+-- outcome is not a column: it is EQUIVALENT exactly when a COMPLETED row found no
+-- difference. A finished row is final: only a RUNNING row may be updated.
+CREATE TABLE IF NOT EXISTS rfm.recalculation (
+    recalculation_id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    trigger_kind        varchar(9) NOT NULL CHECK (trigger_kind IN ('SCHEDULE', 'ON_DEMAND')),
+    state               varchar(9) NOT NULL DEFAULT 'RUNNING'
+        CHECK (state IN ('RUNNING', 'COMPLETED', 'FAILED')),
+    rule_set_id         bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    as_of               timestamptz NOT NULL,
+    started_at          timestamptz NOT NULL DEFAULT clock_timestamp(),
+    finished_at         timestamptz,
+    started_by          uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    customers_checked   integer CHECK (customers_checked >= 0),
+    customers_different integer CHECK (customers_different >= 0),
+    failure_code        varchar(40),
+    CONSTRAINT recalculation_starter CHECK (
+        (trigger_kind = 'ON_DEMAND' AND started_by IS NOT NULL)
+        OR (trigger_kind = 'SCHEDULE' AND started_by IS NULL)),
+    CONSTRAINT recalculation_state_shape CHECK (
+        (state = 'RUNNING' AND finished_at IS NULL AND customers_checked IS NULL
+            AND customers_different IS NULL AND failure_code IS NULL)
+        OR (state = 'COMPLETED' AND finished_at >= started_at
+            AND customers_checked IS NOT NULL AND customers_different IS NOT NULL
+            AND customers_different <= customers_checked AND failure_code IS NULL)
+        OR (state = 'FAILED' AND finished_at >= started_at
+            AND customers_checked IS NULL AND customers_different IS NULL
+            AND failure_code IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS recalculation_one_running
+    ON rfm.recalculation ((true)) WHERE state = 'RUNNING';
+
+-- One row per customer a verification found different: the values held
+-- incrementally (`state` is `pending` when the customer has no profile row) and the
+-- recomputed ones, each the eight values the contract compares. `fields`, the list of
+-- values that differ, is not a column: it is the comparison of the two sets.
+-- A difference is evidence and is never changed; it goes only with its customer.
+CREATE TABLE IF NOT EXISTS rfm.recalculation_difference (
+    recalculation_id bigint NOT NULL
+        REFERENCES rfm.recalculation (recalculation_id) ON DELETE RESTRICT,
+    customer_id      uuid NOT NULL REFERENCES public.customer (customer_id) ON DELETE CASCADE,
+    inc_state        varchar(12) NOT NULL CHECK (inc_state IN ('scored', 'unassigned', 'pending')),
+    inc_r_days       integer CHECK (inc_r_days >= 0),
+    inc_f_count      integer CHECK (inc_f_count >= 0),
+    inc_m_total      numeric(12,2) CHECK (inc_m_total >= 0),
+    inc_r_score      smallint CHECK (inc_r_score BETWEEN 1 AND 5),
+    inc_f_score      smallint CHECK (inc_f_score BETWEEN 1 AND 5),
+    inc_m_score      smallint CHECK (inc_m_score BETWEEN 1 AND 5),
+    inc_label_code   varchar(40),
+    rec_state        varchar(12) NOT NULL CHECK (rec_state IN ('scored', 'unassigned')),
+    rec_r_days       integer CHECK (rec_r_days >= 0),
+    rec_f_count      integer CHECK (rec_f_count >= 0),
+    rec_m_total      numeric(12,2) CHECK (rec_m_total >= 0),
+    rec_r_score      smallint CHECK (rec_r_score BETWEEN 1 AND 5),
+    rec_f_score      smallint CHECK (rec_f_score BETWEEN 1 AND 5),
+    rec_m_score      smallint CHECK (rec_m_score BETWEEN 1 AND 5),
+    rec_label_code   varchar(40),
+    PRIMARY KEY (recalculation_id, customer_id)
+);
+
+CREATE OR REPLACE FUNCTION rfm.fn_recalculation_is_final() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $recalculation_final$
+BEGIN
+    IF TG_TABLE_NAME = 'recalculation' THEN
+        IF TG_OP = 'UPDATE' AND OLD.state = 'RUNNING' THEN
+            RETURN NEW;
+        END IF;
+    ELSIF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+        -- A customer's removal (anonymization, F21-19) takes the customer's rows with
+        -- it: that DELETE runs inside the foreign key's own trigger, one level down.
+        RETURN OLD;
+    END IF;
+    RAISE EXCEPTION 'a verification recalculation is a record and is never changed'
+        USING ERRCODE = 'check_violation', CONSTRAINT = 'recalculation_is_final';
+END;
+$recalculation_final$;
+
+DROP TRIGGER IF EXISTS trg_recalculation_final ON rfm.recalculation;
+CREATE TRIGGER trg_recalculation_final
+    BEFORE UPDATE OR DELETE ON rfm.recalculation
+    FOR EACH ROW EXECUTE FUNCTION rfm.fn_recalculation_is_final();
+DROP TRIGGER IF EXISTS trg_recalculation_difference_final ON rfm.recalculation_difference;
+CREATE TRIGGER trg_recalculation_difference_final
+    BEFORE UPDATE OR DELETE ON rfm.recalculation_difference
+    FOR EACH ROW EXECUTE FUNCTION rfm.fn_recalculation_is_final();
+
 -- stream:rfm.v1.profile_changed (contracts/streams/rfm.profile_changed.v1.md).
 -- Keys only, never state: consumers re-read api_rfm.current_profile_v1.
 CREATE TABLE IF NOT EXISTS rfm_events.outbox (
@@ -5285,6 +5375,10 @@ GRANT UPDATE (status, finished_at, customers_examined, customers_changed)
 GRANT UPDATE (state, rule_set_id, r_days, f_count, m_total, r_score, f_score, m_score,
               label_code, via_fallback, computed_at, next_change_at)
     ON rfm.customer_profile TO svc_rfm;
+
+GRANT SELECT, INSERT ON rfm.recalculation, rfm.recalculation_difference TO svc_rfm;
+GRANT UPDATE (state, finished_at, customers_checked, customers_different, failure_code)
+    ON rfm.recalculation TO svc_rfm;
 
 GRANT USAGE ON SCHEMA rfm_events TO svc_rfm, definer_rfm;
 GRANT INSERT ON rfm_events.outbox TO definer_rfm;

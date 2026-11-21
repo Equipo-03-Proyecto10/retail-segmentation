@@ -31,11 +31,11 @@ paths:
         matches a case-insensitive substring of the product name or SKU. `sku`
         is an exact match. `barcode` is an exact match on the product's
         barcode; barcodes are unique, so the page holds at most one product,
-        and a barcode no product carries gives an empty page, not 404. `ids` is a comma-separated list of at most 50
-        positive product ids; ids with no matching product are omitted from the
-        page and are not errors. Pagination applies after filtering. A filter
-        value outside its schema returns 422 `invalid_query`, naming the
-        parameter in `details`.
+        and a barcode no product carries gives an empty page, not 404. `ids` is
+        a comma-separated list of at most 50 positive product ids; ids with no
+        matching product are omitted from the page and are not errors.
+        Pagination applies after filtering. A filter value outside its schema
+        returns 422 `invalid_query`, naming the parameter in `details`.
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -65,11 +65,13 @@ paths:
         - name: barcode
           in: query
           description: >-
-            Exact barcode, digits only. The barcode itself is served by
+            Exact textual barcode, digits only, in the form printed on the
+            label. Matching uses the digits as stored: a GTIN-12 does not match
+            its zero-padded GTIN-13. The barcode itself is served by
             `getProductDetails`, not in the `Product` representation. A value
-            outside the `Barcode` pattern returns 422 `invalid_query` naming
-            `barcode`; a well-formed value with a wrong check digit matches no
-            product and gives an empty page.
+            outside the `Barcode` pattern returns 422 `invalid_query` with an
+            `invalid_format` detail naming `barcode`; a well-formed value with
+            a wrong check digit matches no product and gives an empty page.
           example: '4006381333931'
           schema:
             $ref: '#/components/schemas/Barcode'

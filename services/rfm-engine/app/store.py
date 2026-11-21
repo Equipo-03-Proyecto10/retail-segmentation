@@ -19,7 +19,7 @@ LOCK_KEY = 295001
 def rule_set(connection: Connection, rule_set_id: int) -> RuleSet | None:
     row = connection.execute(
         "SELECT rule_set_id, window_days, recency_boundaries, frequency_boundaries,"
-        " monetary_boundaries, fallback_label_code, returned_sales"
+        " monetary_boundaries, fallback_label_code"
         " FROM rfm.rule_set WHERE rule_set_id = %s",
         (rule_set_id,),
     ).fetchone()
@@ -40,7 +40,6 @@ def rule_set(connection: Connection, rule_set_id: int) -> RuleSet | None:
             Band(b[0], (b[1], b[2]), (b[3], b[4]), (b[5], b[6])) for b in bands
         ),
         fallback_label=row[5],
-        keep_reversed=row[6] == "KEEP",
     )
 
 
@@ -56,37 +55,14 @@ def customer_of_sale(connection: Connection, transaction_id: int) -> UUID | None
 
 
 def measures(
-    connection: Connection,
-    customer_id: UUID,
-    window_days: int,
-    as_of: datetime,
-    keep_reversed: bool = False,
+    connection: Connection, customer_id: UUID, window_days: int, as_of: datetime
 ) -> Measures:
     """Net purchases of this one customer in the window, closed at both ends.
-
-    With `keep_reversed` (a rule set whose cancelled and returned sales are `KEEP`) a
-    sale counts as sold at its full lines, whatever was reversed afterwards.
 
     A purchase is one sale with a net line (ADR-0062): a sale whose lines were all
     returned is not one. The statement names the customer, so its cost follows that
     customer's sales and not the customer count (idx_transaction_customer_date).
     """
-    if keep_reversed:
-        kept = connection.execute(
-            "WITH sale AS ("
-            " SELECT transaction_id, min(occurred_at) AS occurred_at,"
-            "        sum(quantity * unit_price) AS net_total"
-            "   FROM api_sales.purchase_line_v1"
-            "  WHERE customer_id = %(customer)s"
-            "    AND occurred_at >= %(as_of)s - make_interval(days => %(days)s)"
-            "    AND occurred_at <= %(as_of)s"
-            "  GROUP BY transaction_id)"
-            " SELECT count(*), COALESCE(sum(net_total), 0)::numeric(12,2),"
-            "        min(occurred_at), max(occurred_at) FROM sale",
-            {"customer": customer_id, "as_of": as_of, "days": window_days},
-        ).fetchone()
-        assert kept is not None
-        return Measures(kept[0], kept[1], kept[2], kept[3])
     row = connection.execute(
         "WITH sale AS ("
         " SELECT transaction_id, min(occurred_at) AS occurred_at,"

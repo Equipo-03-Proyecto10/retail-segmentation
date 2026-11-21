@@ -29,7 +29,10 @@ LOGGER = logging.getLogger(__name__)
 
 DRAFT = "DRAFT"
 PUBLISHED = "PUBLISHED"
-TREATMENTS = ("DEDUCT", "KEEP")
+# The one way a cancelled or a returned sale counts (ADR-0062): left out of the net
+# purchases. The contract's SaleTreatment lists no other value, so the request
+# validation refuses one before it gets here, and the table's CHECK refuses it again.
+SALE_TREATMENT = "DEDUCT"
 
 # Whole statements, never built from pieces: every value is bound.
 COLUMNS_LIST = (
@@ -128,7 +131,7 @@ def _non_decreasing(values: list[Any]) -> bool:
 
 
 def check(body: dict[str, Any]) -> Definition:
-    """The monotonic boundaries, the ranges of each band and the supported treatment.
+    """The monotonic boundaries and the ranges of each band.
 
     The schema already fixed the shapes and the bounds; these are the orderings it
     cannot say. That the bands partition the score space is the database's to count
@@ -170,15 +173,6 @@ def check(body: dict[str, Any]) -> Definition:
             raise _invalid(
                 "A band's minimum cannot exceed its maximum.", "bands", "band_range"
             )
-    cancelled = body.get("cancelled_sales", "DEDUCT")
-    returned = body.get("returned_sales", "DEDUCT")
-    if cancelled != returned:
-        raise _invalid(
-            "Cancelled and returned sales count the same way: the sales contract "
-            "does not yet say which of the two took a unit away.",
-            "returned_sales",
-            "treatment_unsupported",
-        )
     return Definition(
         name=body["name"],
         window_days=body["window_days"],
@@ -187,8 +181,8 @@ def check(body: dict[str, Any]) -> Definition:
         monetary=[f"{v:.2f}" for v in monetary],
         bands=bands,
         fallback_label_code=body["fallback_label_code"],
-        cancelled_sales=cancelled,
-        returned_sales=returned,
+        cancelled_sales=SALE_TREATMENT,
+        returned_sales=SALE_TREATMENT,
     )
 
 

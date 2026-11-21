@@ -985,7 +985,7 @@ decision that matters is how a product's many-valued facts are split:
   after; `rule_set_state_shape` ties them), `version_no` and `parent_rule_set_id`
   (the version it changes; `rule_set_lineage`, and the unique index
   `rule_set_one_successor`, make a lineage a line), and `cancelled_sales` and
-  `returned_sales`, the treatment of a reversed sale. Each is one value of this
+  `returned_sales`, the treatment of a reversed sale (`DEDUCT` alone, ADR-0062; a CHECK for each). Each is one value of this
   rule set, so none is a multivalued fact for a table of its own and the relation
   stays in BCNF; a lineage is a column and not a link table because a version has
   one parent and, by the index, one successor. `trg_rule_set_guard` makes a

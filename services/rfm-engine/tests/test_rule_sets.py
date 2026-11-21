@@ -243,11 +243,61 @@ def test_a_band_whose_minimum_exceeds_its_maximum_is_refused(analyst: Analyst) -
     _refusal(analyst, body, "band_range")
 
 
-def test_cancelled_and_returned_sales_cannot_count_differently_yet(
-    analyst: Analyst,
+@pytest.mark.parametrize(
+    "treatments, fields",
+    [
+        ({"cancelled_sales": "KEEP"}, ["cancelled_sales"]),
+        ({"returned_sales": "KEEP"}, ["returned_sales"]),
+        (
+            {"cancelled_sales": "KEEP", "returned_sales": "KEEP"},
+            ["cancelled_sales", "returned_sales"],
+        ),
+    ],
+)
+def test_a_sale_treatment_other_than_deduct_is_refused(
+    analyst: Analyst, treatments: dict[str, str], fields: list[str]
 ) -> None:
-    body = {**definition(), "cancelled_sales": "KEEP", "returned_sales": "DEDUCT"}
-    _refusal(analyst, body, "treatment_unsupported")
+    """The contract's SaleTreatment lists DEDUCT alone (ADR-0062 stands): KEEP would
+    score a cancelled sale as sold, and needs a record that supersedes it."""
+    body = {**definition(), **treatments}
+    before = analyst.count_events()
+    response = analyst.create(body)
+    assert response.status_code == 422, response.get_data(as_text=True)
+    payload = response.get_json()
+    assert payload["code"] == "invalid_body"
+    assert sorted(d["field"] for d in payload["details"]) == fields
+    assert {d["code"] for d in payload["details"]} == {"not_allowed"}
+    found = analyst.owner.execute(
+        "SELECT count(*) FROM rfm.rule_set WHERE name = %s", (body["name"],)
+    ).fetchone()
+    assert found == (0,) and analyst.count_events() == before
+
+
+def test_the_treatments_may_be_stated_and_are_deduct(analyst: Analyst) -> None:
+    body = {**definition(), "cancelled_sales": "DEDUCT", "returned_sales": "DEDUCT"}
+    response = analyst.create(body)
+    assert response.status_code == 201, response.get_data(as_text=True)
+    stored = response.get_json()
+    assert (stored["cancelled_sales"], stored["returned_sales"]) == ("DEDUCT",) * 2
+
+
+def test_the_table_refuses_keep_whoever_writes_it(owner: psycopg.Connection) -> None:
+    """Behind the service's validation, the table says it again (a direct INSERT)."""
+    for cancelled, returned, constraint in (
+        ("KEEP", "DEDUCT", "rule_set_cancelled_sales_deduct"),
+        ("DEDUCT", "KEEP", "rule_set_returned_sales_deduct"),
+    ):
+        with pytest.raises(psycopg.errors.CheckViolation) as refused:
+            with owner.transaction():
+                owner.execute(
+                    "INSERT INTO rfm.rule_set (name, window_days, recency_boundaries,"
+                    " frequency_boundaries, monetary_boundaries, fallback_label_code,"
+                    " cancelled_sales, returned_sales)"
+                    " VALUES (%s, 30, '{1,2,3,4}', '{4,3,2,1}', '{4,3,2,1}', 'LOST',"
+                    " %s, %s)",
+                    ("keep " + uuid.uuid4().hex[:12], cancelled, returned),
+                )
+        assert refused.value.diag.constraint_name == constraint
 
 
 def test_a_name_in_use_is_a_conflict(analyst: Analyst) -> None:
@@ -574,7 +624,7 @@ def test_a_change_that_cannot_be_audited_is_not_made(
 # --- A rule set decides how a reversed sale counts ---------------------------
 
 
-def test_a_rule_set_that_keeps_reversed_sales_counts_them_as_sold(
+def test_a_published_rule_set_leaves_a_reversed_sale_out_of_the_profile(
     analyst: Analyst, shop: Shop, service: psycopg.Connection, now: datetime
 ) -> None:
     from app import recompute
@@ -583,18 +633,12 @@ def test_a_rule_set_that_keeps_reversed_sales_counts_them_as_sold(
     shop.sale(customer, days_ago(now, 10), quantity=2, unit_price="50.00")
     cancelled = shop.sale(customer, days_ago(now, 5), quantity=1, unit_price="30.00")
     shop.reverse(cancelled)
-    keep = analyst.made_published(
-        {**definition(), "cancelled_sales": "KEEP", "returned_sales": "KEEP"}
-    )
+    own = analyst.made_published(definition())
     with service.transaction():
-        recompute.customer(service, customer, 1, now)
-    deducted = shop.profile(customer)
-    with service.transaction():
-        recompute.customer(service, customer, keep, now)
-    kept = shop.profile(customer)
-    assert deducted is not None and kept is not None
-    assert (deducted[3], str(deducted[4])) == (1, "100.00")
-    assert (kept[3], str(kept[4])) == (2, "130.00")
+        recompute.customer(service, customer, own, now)
+    scored = shop.profile(customer)
+    assert scored is not None
+    assert (scored[3], str(scored[4])) == (1, "100.00")
 
 
 def test_the_listing_keeps_the_v1_shape_and_the_record_carries_the_governance(

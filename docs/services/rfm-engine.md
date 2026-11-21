@@ -25,7 +25,7 @@
 - A reversal leaves the profile as if the reversed units had never counted (ADR-0062). A whole cancellation, or a return of every unit of a sale, takes that sale out of F and R, so the most recent purchase can move back to the sale before it. A partial return lowers M and leaves F alone, because the sale still has a unit. A customer left with no net purchase in the window is *unassigned* (RN-21), never scored zero. A late sale counts by its `occurred_at` and never rewrites a closed run (ADR-0017), and one outside the window changes nothing. Redelivery is harmless twice over: the consumer drops an `event_id` it handled, and a recomputation that moves no captured value announces nothing.
 - An event is a trigger and not a delta: the customer is recomputed from net purchases, so a replay or a reordering cannot change a result. Only the customer an event touched, or whose `next_change_at` has passed, is recomputed.
 - A verification recomputes everyone at one instant and writes no profile. It reports every customer whose raw R, F and M or label differ from the profile held incrementally. Only the administrator starts one on demand (RN-05).
-- A rule set is a `DRAFT` until it is published and immutable after, for every role and in the table itself. A change to a published one is refused and made as a new version: a row of its own that names its parent, so no profile is ever re-explained by a later edit (ADR-0064). Which published rule set is in force, and rolling back, stay model-registry's (F22-13). Cancelled and returned sales count as the rule set says (`DEDUCT`, the net purchases of ADR-0062, or `KEEP`); the two must agree until the sales contract tells a cancellation from a return. See [The rule sets](#the-rule-sets).
+- A rule set is a `DRAFT` until it is published and immutable after, for every role and in the table itself. A change to a published one is refused and made as a new version: a row of its own that names its parent, so no profile is ever re-explained by a later edit (ADR-0064). Which published rule set is in force, and rolling back, stay model-registry's (F22-13). A cancelled or returned sale counts as ADR-0062 says, `DEDUCT`, and that is the only treatment: the contract lists no other, the table's CHECK refuses another, and counting such a sale as sold would need an accepted record that supersedes ADR-0062. See [The rule sets](#the-rule-sets).
 
 ## Endpoints
 
@@ -114,7 +114,7 @@ The shared envelope and mechanism codes are in [ADR-0035](../adr/0035-each-servi
 | 409 | `no_published_rule_set` | `POST /v1/rfm-recalculations` names no rule set and none is published |
 | 409 | `recalculation_not_finished` | The differences of a recalculation that is `RUNNING` or `FAILED` |
 | 422 | `invalid_query` | A filter is malformed |
-| 422 | `invalid_body` | A rule set breaks its rules: `not_monotonic`, `band_range`, `bands_overlap`, `bands_gap` (RN-46), `treatment_unsupported` |
+| 422 | `invalid_body` | A rule set breaks its rules: `not_monotonic`, `band_range`, `bands_overlap`, `bands_gap` (RN-46), `not_allowed` (a `cancelled_sales` or `returned_sales` other than `DEDUCT`) |
 
 ## Accepted exceptions
 

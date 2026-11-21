@@ -37,13 +37,7 @@ def customer(
     moment = as_of if as_of is not None else store.now(connection)
     result = profile.build(
         rules,
-        store.measures(
-            connection,
-            customer_id,
-            rules.window_days,
-            moment,
-            rules.keep_reversed,
-        ),
+        store.measures(connection, customer_id, rules.window_days, moment),
         moment,
     )
     store.save(connection, customer_id, result)

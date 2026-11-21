@@ -23,6 +23,10 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
             " label_code via_fallback computed_at next_change_at"
         ).split()
     }
+    pass_updates = {
+        f"rfm.pass_run({column})"
+        for column in "status finished_at customers_examined customers_changed".split()
+    }
     assert {(r["object"], r["privilege"]) for r in rows} == {
         ("rfm", "USAGE"),
         ("rfm_events", "USAGE"),
@@ -34,10 +38,12 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
         ("rfm.rule_set_band", "SELECT"),
         ("rfm.customer_profile", "SELECT"),
         ("rfm.customer_profile", "INSERT"),
+        ("rfm.pass_run", "SELECT"),
+        ("rfm.pass_run", "INSERT"),
         ("rfm_events.outbox", "SELECT"),
         ("rfm_events.outbox", "DELETE"),
         ("rfm_events.outbox(relayed_at)", "UPDATE"),
-    } | {(column, "UPDATE") for column in updates}
+    } | {(column, "UPDATE") for column in updates | pass_updates}
 
 
 @pytest.mark.postgres

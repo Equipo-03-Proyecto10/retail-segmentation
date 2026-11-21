@@ -339,6 +339,7 @@ def build_app(
         monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
         monkeypatch.setenv("STREAM_CONSUMER_ENABLED", "false")
         monkeypatch.setenv("OUTBOX_RELAY_ENABLED", "false")
+        monkeypatch.setenv("DAILY_PASS_ENABLED", "false")
         from app import create_app
 
         application = create_app()

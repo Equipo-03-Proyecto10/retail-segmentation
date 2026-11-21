@@ -26,7 +26,7 @@ from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
-from . import recompute
+from . import ageing, recompute
 from .config import RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
@@ -179,4 +179,8 @@ def create_app() -> Flask:
         )
         relay.start()
         app.extensions["rfm_relay"] = relay
+    if settings.pass_enabled and kit.db.dsn:
+        daily = ageing.DailyPass(kit.db, settings.rule_set_id, settings.pass_at)
+        daily.start()
+        app.extensions["rfm_daily_pass"] = daily
     return app

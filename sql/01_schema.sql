@@ -4828,9 +4828,33 @@ CREATE TABLE IF NOT EXISTS rfm.customer_profile (
             AND label_code IS NULL AND via_fallback IS NULL
             AND next_change_at IS NULL))
 );
--- The daily pass reads only the customers who are due (ADR-0063, F22-06).
+-- The daily pass reads only the customers who are due (ADR-0063, F22-07).
 CREATE INDEX IF NOT EXISTS customer_profile_due
     ON rfm.customer_profile (next_change_at) WHERE next_change_at IS NOT NULL;
+
+-- One row per scheduled pass over the customers whose window or recency changed
+-- with no event (ADR-0063, F22-07). `as_of` is the instant the pass measures from,
+-- fixed when it starts: a pass that stops and resumes measures every customer from
+-- the same instant, so it writes what one uninterrupted pass would. The counts grow
+-- in the same transaction that recomputes each customer, so they never run ahead of
+-- or behind the profiles. At most one pass is RUNNING at a time.
+CREATE TABLE IF NOT EXISTS rfm.pass_run (
+    pass_run_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rule_set_id        bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    as_of              timestamptz NOT NULL,
+    status             varchar(9) NOT NULL DEFAULT 'RUNNING'
+        CHECK (status IN ('RUNNING', 'COMPLETED')),
+    started_at         timestamptz NOT NULL DEFAULT clock_timestamp(),
+    finished_at        timestamptz,
+    customers_examined integer NOT NULL DEFAULT 0 CHECK (customers_examined >= 0),
+    customers_changed  integer NOT NULL DEFAULT 0
+        CHECK (customers_changed >= 0 AND customers_changed <= customers_examined),
+    CONSTRAINT pass_run_finish_shape CHECK (
+        (status = 'RUNNING' AND finished_at IS NULL)
+        OR (status = 'COMPLETED' AND finished_at IS NOT NULL AND finished_at >= started_at))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS pass_run_one_running
+    ON rfm.pass_run ((true)) WHERE status = 'RUNNING';
 
 -- stream:rfm.v1.profile_changed (contracts/streams/rfm.profile_changed.v1.md).
 -- Keys only, never state: consumers re-read api_rfm.current_profile_v1.
@@ -4900,12 +4924,16 @@ LEFT JOIN rfm.customer_profile AS p ON p.customer_id = c.customer_id;
 REVOKE ALL ON api_rfm.current_profile_v1 FROM PUBLIC;
 
 -- svc_rfm reads sales only through api_sales (ADR-0044) and writes its own
--- profile; it reads rule sets and creates none yet (F22-09). A profile's
+-- profile and the record of each daily pass; it reads rule sets and creates none yet
+-- (F22-09). A profile's
 -- customer_id never changes. Each is a row of contracts/db/grants.csv.
 GRANT USAGE ON SCHEMA api_sales TO svc_rfm;
 GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1 TO svc_rfm;
 GRANT SELECT ON rfm.rule_set, rfm.rule_set_band TO svc_rfm;
 GRANT SELECT, INSERT ON rfm.customer_profile TO svc_rfm;
+GRANT SELECT, INSERT ON rfm.pass_run TO svc_rfm;
+GRANT UPDATE (status, finished_at, customers_examined, customers_changed)
+    ON rfm.pass_run TO svc_rfm;
 GRANT UPDATE (state, rule_set_id, r_days, f_count, m_total, r_score, f_score, m_score,
               label_code, via_fallback, computed_at, next_change_at)
     ON rfm.customer_profile TO svc_rfm;

@@ -127,6 +127,38 @@ impl CurrentAssignment {
     }
 }
 
+/// A current assignment and, for an unassigned result, why it has no label
+/// (ADR-0087): `PROFILING_WITHDRAWN` or `NO_PURCHASES`. The reason is the view's own
+/// column, a function of the open row's cause and label, never stored twice.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CurrentAssignmentState {
+    pub current: CurrentAssignment,
+    pub unassigned_reason: Option<String>,
+}
+
+impl CurrentAssignmentState {
+    fn wire(&self) -> Representation {
+        let current = &self.current;
+        Representation::new(
+            "CurrentAssignmentState",
+            [
+                ("customer_id", Value::from(current.customer_id.clone())),
+                ("state", Value::from(current.state.clone())),
+                ("label_code", Value::from(current.label_code.clone())),
+                ("r_score", Value::from(current.r_score)),
+                ("f_score", Value::from(current.f_score)),
+                ("m_score", Value::from(current.m_score)),
+                ("since", Value::from(current.since)),
+                ("run_id", Value::from(current.run_id)),
+                (
+                    "unassigned_reason",
+                    Value::from(self.unassigned_reason.clone()),
+                ),
+            ],
+        )
+    }
+}
+
 /// A customer's current state as a floor role reads it (ADR-0060): the label
 /// and `since`, never the R, F and M scores or `run_id`. The type has no field
 /// for them, so no code path can render them for a floor role.
@@ -840,11 +872,20 @@ pub async fn read_list(db: &Database) -> Result<SegmentList, ApiError> {
 /// The customer's state from the contract view, and the scores from the open
 /// history row. A customer absent from the view is 404.
 pub async fn read_current(db: &Database, customer: Uuid) -> Result<CurrentAssignment, ApiError> {
+    Ok(read_current_state(db, customer).await?.current)
+}
+
+/// `read_current` with the reason an unassigned customer has no label, from the same
+/// row of the contract view.
+pub async fn read_current_state(
+    db: &Database,
+    customer: Uuid,
+) -> Result<CurrentAssignmentState, ApiError> {
     let connection = db.connection().await?;
     let row = connection
         .query_opt(
             "SELECT v.state, v.label_code, v.since, v.run_id, \
-                    h.r_score, h.f_score, h.m_score \
+                    h.r_score, h.f_score, h.m_score, v.unassigned_reason \
              FROM api_segments.current_label_v1 AS v \
              LEFT JOIN public.customer_segment_history AS h \
                     ON h.customer_id = v.customer_id AND h.valid_to IS NULL \
@@ -863,15 +904,18 @@ pub async fn read_current(db: &Database, customer: Uuid) -> Result<CurrentAssign
             Ok(None)
         }
     };
-    Ok(CurrentAssignment {
-        customer_id: customer.to_string(),
-        r_score: score(4)?,
-        f_score: score(5)?,
-        m_score: score(6)?,
-        label_code: row.try_get(1)?,
-        since: row.try_get(2)?,
-        run_id: row.try_get(3)?,
-        state,
+    Ok(CurrentAssignmentState {
+        current: CurrentAssignment {
+            customer_id: customer.to_string(),
+            r_score: score(4)?,
+            f_score: score(5)?,
+            m_score: score(6)?,
+            label_code: row.try_get(1)?,
+            since: row.try_get(2)?,
+            run_id: row.try_get(3)?,
+            state,
+        },
+        unassigned_reason: row.try_get(7)?,
     })
 }
 
@@ -1166,20 +1210,19 @@ pub async fn read_migrations(
     let connection = db.connection().await?;
     let client: &tokio_postgres::Client = &connection;
     validate_migration_filter(client, &query.filter).await?;
-    // `cause` is NULL for now: nothing records why a history row exists on this schema yet
-    // (ADR-0063's cause column arrives with rfm-engine's apply_assignment), and the contract
-    // reports NULL for a row written before causes were recorded. A `VERSION_CHANGE` cause
-    // is already honoured by `build_migration` once a row carries one.
+    // `cause` is the history row's own column (ADR-0063, ADR-0087): NULL only for a row
+    // written before causes were recorded, which the contract reports as no cause. A
+    // `VERSION_CHANGE` cause is honoured by `build_migration`.
     let rows = connection
         .query(
             "WITH ids AS ( \
                  SELECT customer_id FROM api_customers.customer_ref_v1) \
              SELECT ids.customer_id, \
                     b.run_id, b.label_code, bv.version_id, br.run_at, b.valid_from, \
-                    NULL::text, b.recency_last_purchase_at, \
+                    b.cause, b.recency_last_purchase_at, \
                     b.frequency_count, b.monetary_total::text, b.r_score, b.f_score, b.m_score, \
                     a.run_id, a.label_code, av.version_id, ar.run_at, a.valid_from, \
-                    NULL::text, a.recency_last_purchase_at, \
+                    a.cause, a.recency_last_purchase_at, \
                     a.frequency_count, a.monetary_total::text, a.r_score, a.f_score, a.m_score \
                FROM ids \
                LEFT JOIN public.customer_segment_history AS b \
@@ -1767,6 +1810,10 @@ pub fn current_reply(current: &CurrentAssignment) -> Reply {
     current.wire().into()
 }
 
+pub fn current_state_reply(state: &CurrentAssignmentState) -> Reply {
+    state.wire().into()
+}
+
 pub fn floor_reply(floor: &FloorAssignment) -> Reply {
     floor.wire().into()
 }
@@ -2014,6 +2061,15 @@ async fn get_current_assignment(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(current_reply(&current))
 }
 
+/// `getCurrentAssignmentState`: the current assignment and why an unassigned customer
+/// has no label. Read from the database each time: the reason changes with a history
+/// row, and the cache holds the plain current assignment only.
+async fn get_current_assignment_state(ctx: Ctx) -> Result<Reply, ApiError> {
+    let customer = current_customer(&request_info().query)?;
+    let state = read_current_state(ctx.db(), customer).await?;
+    Ok(current_state_reply(&state))
+}
+
 /// The floor roles' read (ADR-0060). The kit admits only the roles the
 /// contract lists, and the reply is built from `FloorAssignment`, which holds
 /// no score and no `run_id`, whatever the cache or the database returned.
@@ -2202,6 +2258,7 @@ pub fn router(
         .operation("listSegments", list_segments)?
         .operation("getSegment", get_segment)?
         .operation("getCurrentAssignment", get_current_assignment)?
+        .operation("getCurrentAssignmentState", get_current_assignment_state)?
         .operation("getFloorCurrentAssignment", get_floor_current_assignment)?
         .operation("listSegmentAssignments", list_segment_assignments)?
         .operation("getSegmentMigrationMatrix", get_segment_migration_matrix)?

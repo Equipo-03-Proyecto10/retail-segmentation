@@ -55,7 +55,7 @@ abstract class SaleQueueScenario {
     private val server = MockWebServer()
     private val posts = CopyOnWriteArrayList<RecordedRequest>()
     private val recorded = linkedMapOf<String, Sale>()
-    private var timeoutFirst = false
+    private var cutFirst: SocketPolicy? = null
     private val databaseName = "sale-queue-scenario.db"
 
     @Before
@@ -73,9 +73,9 @@ abstract class SaleQueueScenario {
                         previous
                             ?: json.decodeFromString(Sale.serializer(), fixture("sales/examples/record-sale.json"))
                     recorded[key] = sale
-                    if (timeoutFirst && posts.size == 1) {
+                    cutFirst?.takeIf { posts.size == 1 }?.let {
                         // The transaction committed, but no response reaches the phone.
-                        return MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE)
+                        return MockResponse().setSocketPolicy(it)
                     }
                     val body = json.encodeToString(Sale.serializer(), sale)
                     return response(if (previous == null) 201 else 200, body)
@@ -166,7 +166,7 @@ abstract class SaleQueueScenario {
 
     @Test
     fun committedRequestTimesOutAndReplaysTheOriginalSaleAfterRestart() = runBlocking {
-        timeoutFirst = true
+        cutFirst = SocketPolicy.NO_RESPONSE
         val id = confirm()
         val key = graph.outbox.find(id)!!.clientId
         assertEquals(ListenableWorker.Result.retry(), work())
@@ -185,6 +185,32 @@ abstract class SaleQueueScenario {
         assertTrue(SalesViewModel(graph).status(row)!!.contains("same sale"))
         assertOneSale(id, 200)
     }
+
+    @Test
+    fun connectionCutAfterTheServerCommitsReplaysTheOriginalSaleAndNeverADuplicate() = runBlocking {
+        // The server reads the whole request and commits the sale, then the connection drops before any answer.
+        cutFirst = SocketPolicy.DISCONNECT_AFTER_REQUEST
+        val id = confirm()
+        val original = graph.outbox.find(id)!!
+        assertEquals(ListenableWorker.Result.retry(), work())
+        // The server holds the sale, yet the phone has no answer and so never claims it was recorded.
+        assertEquals(1, recorded.size)
+        assertEquals(RowState.PENDING, graph.outbox.find(id)!!.state)
+        assertEquals(null, graph.outbox.find(id)!!.responseBody)
+        assertEquals(1, graph.network.sales.listSales(customerOf(original.body)).body()!!.pageInfo.total)
+
+        // The connection returns: the same request, under the same key, gets the sale the server already holds.
+        assertEquals(ListenableWorker.Result.success(), work())
+        assertEquals(ListenableWorker.Result.success(), work())
+        val sends = posts.filter { it.method == "POST" }
+        assertEquals(2, sends.size)
+        assertEquals(listOf(original.clientId, original.clientId), sends.map { it.getHeader("Idempotency-Key") })
+        assertEquals(sends[0].body.clone().readUtf8(), sends[1].body.clone().readUtf8())
+        assertEquals("idempotent_replayed", graph.outbox.find(id)!!.code)
+        assertOneSale(id, 200)
+    }
+
+    private fun customerOf(body: String): String = json.decodeFromString(SaleRequest.serializer(), body).customerId
 
     private suspend fun assertOneSale(id: Long, status: Int) {
         val row = graph.outbox.find(id)!!

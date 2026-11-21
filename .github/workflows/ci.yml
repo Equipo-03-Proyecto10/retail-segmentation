@@ -305,7 +305,7 @@ jobs:
                        ORDER BY 1;")
           [ "$failed" -eq 0 ]
           if grep -vE '^\s*(#|$)' sql/seed-exempt.txt | grep -F . \
-               | grep -vxE 'sales\.(sale_(capture|reversal|reversal_line)|import|import_chunk|import_row_outcome|reconciliation_case)|models\.(model_version|model_version_feature|model_publication|model_training|model_training_feature|model_training_cluster)|rfm\.(rule_set|customer_profile)|experiments\.(experiment_plan|experiment_frame_member|experiment_frame_exclusion|experiment_flag|exposure_notice)|[a-z]+_events\.outbox'; then
+               | grep -vxE 'sales\.(sale_(capture|reversal|reversal_line)|import|import_chunk|import_row_outcome|reconciliation_case)|models\.(model_version|model_version_feature|model_publication|model_training|model_training_feature|model_training_cluster)|rfm\.(rule_set|customer_profile)|experiments\.(experiment_plan|experiment_frame_member|experiment_frame_exclusion|experiment_flag|experiment_result|experiment_result_arm|experiment_result_comparison|experiment_result_balance|exposure_notice)|[a-z]+_events\.outbox'; then
             echo "seed-exempt.txt names a schema-qualified table it may not exempt"
             exit 1
           fi

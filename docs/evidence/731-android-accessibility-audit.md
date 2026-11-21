@@ -36,12 +36,40 @@ checkbox and radio rows use `toggleable`/`selectable` with a role; loading rows 
 
 Counts: 3 H, 8 M, 6 L fixed or confirmed; 4 L not fixed (reasons above).
 
+## Second pass (closing #731)
+
+The first guard sized only `Role.Button` nodes, never checked that a control had a role, and ran six states at
+200% font. It now runs every state at 1.0x and at 2.0x with Robolectric's native text measurement. It reported the
+first two rows below. The other rows come from reading the screens again against each acceptance criterion.
+
+| Screen | Finding | Fix |
+|---|---|---|
+| Store picker, 200% font | The City field sat in an intrinsic-height row beside Search, which cut its typed text. | Past a 1.3 font scale, Search goes below the field at full width. |
+| Shell: account menu | "Sign out" in the menu was clickable with no role, so TalkBack did not say "button". | The menu item carries `Role.Button`. |
+| Sale: cart line stepper | Every line's buttons read "Decrease quantity" and "Increase quantity" without the product (an L left open above). | `MqQuantityStepper(itemName = …)`: "Increase quantity of Trail socks". |
+| Sale: registration form | The channel error was red text alone. | `MqInlineError`: an alert icon beside the text, merged and announced politely. |
+| Insights | The click-refusal note was red text alone. | `MqInlineError`, as above. |
+| Outbox | Before Room's first answer the screen said "Everything is synced". That was false, and TalkBack read it too. | The outbox shows a loading state until the queue has been read once. |
+| Every screen (guard) | Roles, clipped controls, cut text and most states at 200% were not checked. | The guard checks all of them, at both font sizes, for 33 states. |
+| Every screen (code) | Three private copies of the 1.3 large-font threshold. | One `isLargeFont()` in the theme. |
+| Insights error, 200% font | Drawn alone in a test, the panel's Details row ran off the bottom. | No fix needed: the card always sits in the sale screen's scrolling column, and the guard now hosts it there. |
+| Text fields | A field has a click action and no role. | No fix needed: TalkBack announces it as an edit box from its class. |
+
+Counts for this pass: 10 findings, 8 fixed and 2 needing no fix. The 200% "Search button a few dp above the field"
+item above is gone with the stacked layout. "Product row Add X" and the badge prefix stay as written above.
+
 ## Guard
 
-`AccessibilityGuardTest` renders 32 screen states (sign-in, check-in, picker, scan, sale, registration, insights,
-outbox, shell bars; six of them at 200% font), then walks the merged semantics tree. It fails if a node with a
-click action has no text, description or merged child text, or if a `Role.Button` is under 44dp. A new screen state
-needs one `audit { ... }` test.
+`AccessibilityGuardTest` renders 33 screen states: sign-in, check-in, store picker, scan, sale, registration,
+insights, outbox (loading, empty and mixed), the shell bars and the open account menu. It draws each one at the
+default font size and again at 200%, with native text measurement, and walks the semantics tree. It fails if any
+of these hold:
+- a node with a click action has no text, description or merged child text;
+- a node with a click action has no role (text fields are exempt);
+- a node with a click action is under 44dp;
+- a control is clipped and no ancestor can scroll it back into view;
+- a text overflows its height or is cut with an ellipsis.
+A new screen state needs one `audit { ... }` test.
 
 ## Not verified
 

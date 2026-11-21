@@ -39,13 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -80,6 +81,7 @@ import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.record.CustomerRecordScreen
 import online.maxthecoder.mosaiq.floor.ui.record.NewCustomerScreen
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
+import online.maxthecoder.mosaiq.floor.ui.theme.isLargeFont
 
 private val WORDMARK_TRACKING = 0.14.em
 
@@ -149,7 +151,7 @@ private fun FloorProfile(
     val go: (FloorLocation) -> Unit = { saved = it.allowedFor(role) }
     val chosen by model.chosen.collectAsStateWithLifecycle()
     val rows by model.open.collectAsStateWithLifecycle()
-    val pendingWrites = rows.count { it.state == RowState.PENDING }
+    val pendingWrites = rows.orEmpty().count { it.state == RowState.PENDING }
     val canSell = FloorAccess.holds(role, FloorSection.SALE)
     val unread = inbox?.unread?.collectAsStateWithLifecycle()?.value ?: 0
     val opened = inbox?.opened?.collectAsStateWithLifecycle()?.value
@@ -299,7 +301,7 @@ internal fun FloorTopBar(
                 horizontalArrangement = Arrangement.spacedBy(Spacing.Sm)
             ) {
                 // At large font sizes the wordmark gives its room to the store name.
-                if (LocalDensity.current.fontScale <= LARGE_FONT_SCALE) {
+                if (!isLargeFont()) {
                     Text(
                         stringResource(R.string.signin_wordmark),
                         style = MaterialTheme.typography.titleMedium.copy(
@@ -395,6 +397,8 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
                 leadingIcon = {
                     Icon(painterResource(R.drawable.ic_lucide_log_out), contentDescription = null)
                 },
+                // Material's menu item is clickable with no role, so TalkBack would not say "button".
+                modifier = Modifier.semantics { role = Role.Button },
                 onClick = {
                     open = false
                     onSignOut()
@@ -403,8 +407,6 @@ private fun AccountMenu(signedIn: SessionState.SignedIn, onSignOut: () -> Unit) 
         }
     }
 }
-
-private const val LARGE_FONT_SCALE = 1.3f
 
 private class Section(
     val section: FloorSection,
@@ -437,7 +439,7 @@ internal fun FloorBottomBar(
     held: List<FloorSection> = FloorSection.entries,
     onSelect: (FloorLocation) -> Unit
 ) {
-    val largeFont = LocalDensity.current.fontScale > LARGE_FONT_SCALE
+    val largeFont = isLargeFont()
     NavigationBar {
         SECTIONS.filter { it.section in held }.forEach { section ->
             NavigationBarItem(

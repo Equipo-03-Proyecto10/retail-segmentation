@@ -46,6 +46,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqPager
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
+import online.maxthecoder.mosaiq.floor.ui.theme.isLargeFont
 
 @Composable
 fun StorePicker(model: FloorViewModel, onPicked: () -> Unit = {}) {
@@ -85,28 +86,40 @@ fun StorePickerContent(
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { heading() }
         )
-        Row(
-            modifier = Modifier.height(IntrinsicSize.Min),
-            horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        val field: @Composable (Modifier) -> Unit = {
             MqTextField(
                 value = city,
                 onValueChange = onCity,
                 label = stringResource(R.string.picker_city),
-                modifier = Modifier.weight(1f),
+                modifier = it,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { search() })
             )
+        }
+        val button: @Composable (Modifier) -> Unit = {
             MqButton(
                 stringResource(R.string.picker_search),
                 search,
                 enabled = !state.loading,
                 variant = MqButtonVariant.Secondary,
                 leadingIcon = R.drawable.ic_lucide_search,
-                // The field's outline starts below its floating label, so the button starts there too.
-                modifier = Modifier.fillMaxHeight().padding(top = Spacing.Sm)
+                modifier = it
             )
+        }
+        if (isLargeFont()) {
+            // At large font sizes the intrinsic-height row cut the typed city: the button goes below.
+            field(Modifier)
+            button(Modifier.fillMaxWidth())
+        } else {
+            Row(
+                modifier = Modifier.height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.Sm),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                field(Modifier.weight(1f))
+                // The field's outline starts below its floating label, so the button starts there too.
+                button(Modifier.fillMaxHeight().padding(top = Spacing.Sm))
+            }
         }
         // Weighted, so a long list scrolls itself and the paging row below stays on screen.
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

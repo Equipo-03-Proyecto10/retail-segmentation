@@ -162,7 +162,8 @@ private fun CartLine(line: SaleLine, locked: Boolean, discounts: DiscountState, 
                 value = line.quantity,
                 onDecrease = { actions.onSetQuantity(id, line.quantity - 1) },
                 onIncrease = { actions.onSetQuantity(id, line.quantity + 1) },
-                modifier = Modifier.testTag("stepper-$id")
+                modifier = Modifier.testTag("stepper-$id"),
+                itemName = line.product.name
             )
             Text(
                 formatMoney(lineTotal(line, cap)),

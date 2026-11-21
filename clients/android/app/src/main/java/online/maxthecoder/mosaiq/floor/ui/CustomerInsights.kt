@@ -18,11 +18,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,6 +33,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
 import online.maxthecoder.mosaiq.floor.ui.components.MqCard
 import online.maxthecoder.mosaiq.floor.ui.components.MqEmptyState
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
+import online.maxthecoder.mosaiq.floor.ui.components.MqInlineError
 import online.maxthecoder.mosaiq.floor.ui.components.MqListRow
 import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
@@ -159,14 +158,7 @@ private fun RecommendationsBlock(state: InsightsState, onRetry: () -> Unit, onOp
                 )
         }
         state.items.forEach { shown -> RecommendationRow(shown, onOpen) }
-        state.clickNote?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-            )
-        }
+        state.clickNote?.let { MqInlineError(it) }
         if (error == null && result != null) {
             MqButton(
                 stringResource(R.string.insights_refresh),

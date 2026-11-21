@@ -98,6 +98,27 @@ fun MqEmptyState(
 }
 
 /**
+ * One line of error text under the control it is about, announced when it appears. The alert icon
+ * beside it says "error" without the red, the way [MqTextField] marks its own error (UX-13).
+ */
+@Composable
+fun MqInlineError(text: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        horizontalArrangement = Arrangement.spacedBy(Spacing.Xs),
+        verticalAlignment = Alignment.Top
+    ) {
+        MqIcon(
+            R.drawable.ic_lucide_circle_alert,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.error,
+            size = Spacing.Lg
+        )
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+    }
+}
+
+/**
  * A refusal in plain words. The main text is [friendly] when the call site knows
  * better, else the service's own message; the code, the fields and the correlation
  * id sit behind "Details" for a support question. [onRetry] adds a Retry action.

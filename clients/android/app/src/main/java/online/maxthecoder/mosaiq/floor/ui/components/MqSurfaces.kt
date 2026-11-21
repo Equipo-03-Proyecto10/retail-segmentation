@@ -55,7 +55,8 @@ fun MqSection(title: String, modifier: Modifier = Modifier, content: @Composable
 
 /**
  * "- value +". The buttons are 48dp targets and read "Decrease quantity" and
- * "Increase quantity"; decreasing stops at [min], increasing at [max].
+ * "Increase quantity", or "Decrease quantity of [itemName]" when a list holds several steppers, so
+ * TalkBack says which line each one changes. Decreasing stops at [min], increasing at [max].
  */
 @Composable
 fun MqQuantityStepper(
@@ -64,17 +65,27 @@ fun MqQuantityStepper(
     onIncrease: () -> Unit,
     modifier: Modifier = Modifier,
     min: Int = 1,
-    max: Int = Int.MAX_VALUE
+    max: Int = Int.MAX_VALUE,
+    itemName: String? = null
 ) {
+    val decrease =
+        if (itemName == null) {
+            stringResource(R.string.component_decrease_quantity)
+        } else {
+            stringResource(R.string.component_decrease_quantity_of, itemName)
+        }
+    val increase =
+        if (itemName == null) {
+            stringResource(R.string.component_increase_quantity)
+        } else {
+            stringResource(R.string.component_increase_quantity_of, itemName)
+        }
     Row(
         modifier = modifier.border(Hairline, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onDecrease, modifier = Modifier.size(ControlHeight), enabled = value > min) {
-            MqIcon(
-                R.drawable.ic_lucide_minus,
-                contentDescription = stringResource(R.string.component_decrease_quantity)
-            )
+            MqIcon(R.drawable.ic_lucide_minus, contentDescription = decrease)
         }
         val spoken = stringResource(R.string.a11y_quantity, value)
         Text(
@@ -87,7 +98,7 @@ fun MqQuantityStepper(
             style = MaterialTheme.typography.titleMedium
         )
         IconButton(onClick = onIncrease, modifier = Modifier.size(ControlHeight), enabled = value < max) {
-            MqIcon(R.drawable.ic_lucide_plus, contentDescription = stringResource(R.string.component_increase_quantity))
+            MqIcon(R.drawable.ic_lucide_plus, contentDescription = increase)
         }
     }
 }

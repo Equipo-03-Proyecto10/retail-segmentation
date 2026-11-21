@@ -1,6 +1,9 @@
 package online.maxthecoder.mosaiq.floor.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -63,3 +66,14 @@ val MosaiqTypography =
 
 /** Identifiers: body size in Plex Mono. */
 val MosaiqIdStyle: TextStyle = style(14, 20, 400, PlexMono)
+
+/**
+ * Past this font scale (the system's largest settings) a row that holds a control beside text
+ * stacks instead, so neither wraps mid-word nor is cut (UX-13).
+ */
+private const val LARGE_FONT_SCALE = 1.3f
+
+/** Whether the font is set large enough that side-by-side rows should stack. */
+@Composable
+@ReadOnlyComposable
+fun isLargeFont(): Boolean = LocalDensity.current.fontScale > LARGE_FONT_SCALE

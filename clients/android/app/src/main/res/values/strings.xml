@@ -535,4 +535,8 @@
         <item quantity="other">Updates, %1$d new</item>
     </plurals>
     <string name="outbox_kind_incident">Incident report</string>
+    <string name="component_decrease_quantity_of">Decrease quantity of %1$s</string>
+    <string name="component_increase_quantity_of">Increase quantity of %1$s</string>
+    <!-- UX-16 (#732) -->
+    <string name="outbox_loading">Reading the writes saved on this phone…</string>
 </resources>

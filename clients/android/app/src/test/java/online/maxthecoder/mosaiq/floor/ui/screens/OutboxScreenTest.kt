@@ -12,14 +12,22 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewModelScope
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import online.maxthecoder.mosaiq.floor.FloorTestApp
+import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
+import online.maxthecoder.mosaiq.floor.session.Profile
+import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxContent
+import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 import org.junit.Assert.assertEquals
@@ -57,7 +65,7 @@ class OutboxScreenTest {
         correlationId = if (state == RowState.REFUSED) "corr-77" else null
     )
 
-    private fun outbox(rows: List<OutboxRow>, sending: Set<Long> = emptySet(), onSendNow: (() -> Unit)? = null) =
+    private fun outbox(rows: List<OutboxRow>?, sending: Set<Long> = emptySet(), onSendNow: (() -> Unit)? = null) =
         compose.setContent {
             MosaiqTheme(darkTheme = false) {
                 Column {
@@ -67,6 +75,37 @@ class OutboxScreenTest {
                 }
             }
         }
+
+    @Test
+    fun beforeTheQueueIsReadItSaysSoInsteadOfClaimingEverythingIsSynced() {
+        outbox(null)
+        compose.onNodeWithText("Reading the writes saved on this phone…").assertExists()
+        compose.onNodeWithText("Everything is synced").assertDoesNotExist()
+        compose.onNodeWithText("Send now").assertDoesNotExist()
+    }
+
+    @Test
+    fun theOutboxListLoadsFromTheQueueAndThenShowsItsRows() {
+        val app = ApplicationProvider.getApplicationContext<FloorTestApp>()
+        val graph = app.build("http://127.0.0.1:9/")
+        graph.tokens.write(Tokens("token-A", "refresh-A"))
+        graph.session.signedIn(Profile("A", "Demo A", "STORE_MANAGER"))
+        val model = FloorViewModel(graph)
+        try {
+            compose.setContent { MosaiqTheme(darkTheme = false) { OutboxList(model) } }
+            compose.waitUntil(TIMEOUT_MS) {
+                compose.onAllNodesWithText("Everything is synced").fetchSemanticsNodes().isNotEmpty()
+            }
+            runBlocking { graph.writes.queueCheckIn(3, null) }
+            compose.waitUntil(TIMEOUT_MS) {
+                compose.onAllNodesWithText("Check-in").fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Everything is synced").assertDoesNotExist()
+        } finally {
+            model.viewModelScope.cancel()
+            app.database.close()
+        }
+    }
 
     @Test
     fun anEmptyQueueSaysEverythingIsSynced() {
@@ -152,5 +191,9 @@ class OutboxScreenTest {
         compose.onNodeWithText("Your role is not allowed", substring = true).assertExists()
         compose.onNodeWithText("not assigned to you", substring = true).assertExists()
         compose.onAllNodesWithText("Raw service message.").assertCountEquals(0)
+    }
+
+    private companion object {
+        const val TIMEOUT_MS = 5_000L
     }
 }

@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.core.app.ActivityOptionsCompat
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -87,6 +88,7 @@ class RestorationTest {
     private lateinit var insights: CustomerInsightsViewModel
     private val identify by lazy { IdentifyViewModel(app.graph) }
     private val record by lazy { CustomerRecordViewModel(app.graph) }
+    private val promotions by lazy { PromotionsViewModel(app.graph) }
 
     @Before
     fun start() {
@@ -129,7 +131,7 @@ class RestorationTest {
             insights = insights,
             identify = identify,
             record = record,
-            promotions = PromotionsViewModel(app.graph),
+            promotions = promotions,
             onSignOut = {}
         )
     }
@@ -181,6 +183,83 @@ class RestorationTest {
         compose.onNodeWithTag("nav-sale").assertIsSelected()
         compose.onNodeWithText("Register customer").assertExists()
         compose.onNodeWithText("Ben Ruiz").assertExists()
+    }
+
+    /** The home screen over whichever view models [models] holds when it composes. */
+    private fun homeThatSurvivesProcessDeath(models: () -> List<ViewModel>) =
+        StateRestorationTester(compose).also { tester ->
+            tester.setContent {
+                val (floor, scanning, selling, insight) = models()
+                FloorHome(
+                    signedIn = SessionState.SignedIn("Demo A", "STORE_MANAGER"),
+                    model = floor as FloorViewModel,
+                    scan = scanning as ScanViewModel,
+                    sales = selling as SalesViewModel,
+                    insights = insight as CustomerInsightsViewModel,
+                    identify = identify,
+                    record = record,
+                    promotions = promotions,
+                    onSignOut = {}
+                )
+            }
+        }
+
+    /**
+     * A killed process loses every view model; what comes back is the saved-instance bundle and what
+     * is on disk. The old view models are stopped and new ones built over the same persisted session.
+     */
+    private fun killProcess(): List<ViewModel> {
+        listOf(model, scan, sales, insights).forEach { it.viewModelScope.cancel() }
+        model = FloorViewModel(graph)
+        scan = ScanViewModel(graph)
+        sales = SalesViewModel(graph)
+        insights = CustomerInsightsViewModel(graph)
+        return listOf(model, scan, sales, insights)
+    }
+
+    @Test
+    fun theSelectedSectionSurvivesProcessDeath() {
+        var models = listOf(model, scan, sales, insights)
+        val tester = homeThatSurvivesProcessDeath { models }
+        compose.onNodeWithTag("nav-outbox").performClick()
+        compose.onNodeWithTag("nav-outbox").assertIsSelected()
+
+        models = killProcess()
+        tester.emulateSavedInstanceStateRestore()
+
+        compose.onNodeWithTag("nav-outbox").assertIsSelected()
+    }
+
+    @Test
+    fun theOpenStorePickerAndItsTypedCitySurviveProcessDeath() {
+        var models = listOf(model, scan, sales, insights)
+        val tester = homeThatSurvivesProcessDeath { models }
+        compose.onNodeWithTag("store-chip").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Leon")
+
+        models = killProcess()
+        tester.emulateSavedInstanceStateRestore()
+
+        compose.onNodeWithText("Pick your store").assertExists()
+        compose.onNode(hasSetTextAction()).assertTextContains("Leon")
+    }
+
+    @Test
+    fun customerRegistrationAndItsTypedFieldsSurviveProcessDeath() {
+        var models = listOf(model, scan, sales, insights)
+        val tester = homeThatSurvivesProcessDeath { models }
+        compose.onNodeWithTag("nav-sale").performClick()
+        compose.onNodeWithText("New customer").performScrollTo().performClick()
+        compose.onNodeWithText("Name").performTextInput("Ben Ruiz")
+        compose.onNodeWithText("Phone").performTextInput("5551234")
+
+        models = killProcess()
+        tester.emulateSavedInstanceStateRestore()
+
+        compose.onNodeWithTag("nav-sale").assertIsSelected()
+        compose.onNodeWithText("Register customer").assertExists()
+        compose.onNodeWithText("Ben Ruiz").assertExists()
+        compose.onNodeWithText("5551234").assertExists()
     }
 
     @Test

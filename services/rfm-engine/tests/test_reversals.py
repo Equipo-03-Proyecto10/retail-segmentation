@@ -356,7 +356,11 @@ def test_the_reversal_consumer_is_started_beside_the_sales_one(
 
     enabled = create_app()
     try:
-        assert [stream for stream, _ in started] == [RECORDED, REVERSED]
+        assert [stream for stream, _ in started] == [
+            RECORDED,
+            REVERSED,
+            "stream:preferences.v1.consent_changed",
+        ]
         assert started[1][1] is enabled.extensions["rfm_handle_reversal"]
     finally:
         enabled.extensions["mosaiq_kit"].db.close()

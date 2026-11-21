@@ -22,6 +22,7 @@ import logging
 import threading
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import redis
 from flask import Flask, request
@@ -31,7 +32,7 @@ from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
 from . import ageing, recompute, rulesets, verification
-from .config import RECORDED_STREAM, REVERSED_STREAM, Settings
+from .config import CONSENT_STREAM, RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
 SUFFIX = "rfm"
@@ -90,12 +91,22 @@ def create_app() -> Flask:
             info_key="page_info",
         )
 
-    def recompute_sale(stream: str, sale: str, fields: dict[str, str]) -> None:
+    def recompute_sale(
+        stream: str, sale: str, fields: dict[str, str], cause: str
+    ) -> None:
         if not sale.isdigit():
             LOGGER.warning("Entry of %s without a transaction id: %r", stream, fields)
             return
         with kit.db.transaction() as connection:
-            recompute.from_sale(connection, int(sale), settings.rule_set_id)
+            version = recompute.in_force(connection, settings.rule_set_id)
+            recompute.from_sale(
+                connection,
+                int(sale),
+                version.rule_set_id,
+                applying=recompute.Applying(
+                    version, cause, recompute.batch_of(stream, fields)
+                ),
+            )
 
     def author() -> dict[str, Any]:
         principal = kit.principal
@@ -229,7 +240,7 @@ def create_app() -> Flask:
         `entity_id` names the sale, never the customer. A failure raises, so the
         kit redelivers, up to five times.
         """
-        recompute_sale(RECORDED_STREAM, fields.get("entity_id", ""), fields)
+        recompute_sale(RECORDED_STREAM, fields.get("entity_id", ""), fields, "SALE")
 
     def handle_reversal(fields: dict[str, str]) -> None:
         """One entry of `stream:sales.v1.reversed`: recompute the reversed sale's
@@ -243,8 +254,32 @@ def create_app() -> Flask:
                 "Entry of %s without a reversal id: %r", REVERSED_STREAM, fields
             )
             return
-        recompute_sale(REVERSED_STREAM, sale, fields)
+        recompute_sale(REVERSED_STREAM, sale, fields, "REVERSAL")
 
+    def handle_consent(fields: dict[str, str]) -> None:
+        """One entry of `stream:preferences.v1.consent_changed`: re-read the
+        customer's PROFILING decision and act on what it says now. The entry does not
+        say which purpose moved or which way, so a replay or a reordering cannot leave
+        the customer on an older decision (ADR-0066 section 2)."""
+        try:
+            customer_id = UUID(fields.get("entity_id", ""))
+        except ValueError:
+            LOGGER.warning("Entry of %s without a customer: %r", CONSENT_STREAM, fields)
+            return
+        with kit.db.transaction() as connection:
+            version = recompute.in_force(connection, settings.rule_set_id)
+            recompute.customer(
+                connection,
+                customer_id,
+                version.rule_set_id,
+                applying=recompute.Applying(
+                    version,
+                    "CONSENT_GRANTED",
+                    recompute.batch_of(CONSENT_STREAM, fields),
+                ),
+            )
+
+    app.extensions["rfm_handle_consent"] = handle_consent
     app.extensions["rfm_handle_sale"] = handle_sale
     app.extensions["rfm_handle_reversal"] = handle_reversal
     if settings.stream_consumer_enabled:
@@ -252,6 +287,7 @@ def create_app() -> Flask:
         for stream, handler in (
             (RECORDED_STREAM, handle_sale),
             (REVERSED_STREAM, handle_reversal),
+            (CONSENT_STREAM, handle_consent),
         ):
             consumer = StreamConsumer(
                 _client(settings.redis_state_url, 10), stream, handler
@@ -283,7 +319,9 @@ def create_app() -> Flask:
         weekly.start()
         app.extensions["rfm_weekly_verification"] = weekly
     if settings.pass_enabled and kit.db.dsn:
-        daily = ageing.DailyPass(kit.db, settings.rule_set_id, settings.pass_at)
+        daily = ageing.DailyPass(
+            kit.db, None, settings.pass_at, default_rule_set_id=settings.rule_set_id
+        )
         daily.start()
         app.extensions["rfm_daily_pass"] = daily
     return app

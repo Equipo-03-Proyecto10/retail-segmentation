@@ -95,6 +95,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `stream:preferences.v1.consent_changed` | group `recommendations` | Invalidates its result cache. An accelerator only: consent is re-read on every request |
 | Consumes | `stream:sales.v1.recorded` | group `recommendations` | Invalidates its result cache |
 | Consumes | `stream:segments.v1.run_recorded` | group `recommendations` | Invalidates its result cache |
+| Consumes | `stream:segments.v1.assignment_changed` | group `recommendations` | Invalidates that customer's cached results (`/v1` and `/v2`) and no one else's; an entry with no customer empties the cache (F22-15) |
 
 ## Redis keys
 

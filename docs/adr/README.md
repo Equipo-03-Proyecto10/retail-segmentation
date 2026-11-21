@@ -225,6 +225,7 @@ Later runtime events must be preserved.
 | [0084](0084-a-paused-or-discontinued-product-is-not-sellable-and-the-elsewhere-store-is-the-nearest-by-great-circle-distance.md) | A paused or discontinued product is not sellable, the elsewhere store is the nearest by great-circle distance, and a floor role's store is refused before it is looked up | Accepted |
 | [0085](0085-the-primary-result-of-an-experiment-is-stored-once-as-four-frozen-relations-and-read-from-them.md) | The primary result of an experiment is stored once, as four frozen relations, and read from them | Accepted |
 | [0086](0086-a-verification-compares-a-profile-as-the-incremental-design-promises-it-at-one-instant.md) | A verification compares a profile as the incremental design promises it, at one instant | Proposed |
+| [0087](0087-an-incremental-change-is-applied-to-the-segment-history-in-the-profile-transaction-under-the-published-version.md) | An incremental change is applied to the segment history in the profile's transaction, under the published version, and a withdrawn PROFILING is the unassigned result | Proposed |
 
 ## Writing one
 

@@ -1,6 +1,6 @@
 # rfm-engine
 
-> **Status:** Verification implemented (phase 22, F22-08, #782) on rule-set governance (F22-09, #804), the scheduled pass (F22-07, #781), the incremental update (F22-05, #779, and F22-06, #780) and the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` and a reversal on `stream:sales.v1.reversed` each recompute the one customer they name, a daily pass at 02:00 UTC recomputes the customers whose window or recency changed with no event, an administrator creates, edits, publishes and versions rule sets under `/v1/rfm-rule-sets`, and a verification recalculation compares the incremental result with a full one under `/v1/rfm-recalculations`, weekly and on demand. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
+> **Status:** Applying a change to the segment history implemented (phase 22, F22-15, #811), on the verification (F22-08, #782), rule-set governance (F22-09, #804), the scheduled pass (F22-07, #781), the incremental update (F22-05, #779, and F22-06, #780) and the stand-up of F22-04 (#778): a sale on `stream:sales.v1.recorded` and a reversal on `stream:sales.v1.reversed` each recompute the one customer they name, a daily pass at 02:00 UTC recomputes the customers whose window or recency changed with no event, an administrator creates, edits, publishes and versions rule sets under `/v1/rfm-rule-sets`, and a verification recalculation compares the incremental result with a full one under `/v1/rfm-recalculations`, weekly and on demand. The other operations are still `planned` (ADR-0073). The contract was published by F22-03 (#777). ADR-0059 places it; ADR-0063 and ADR-0064 decide how it behaves.
 > **One rule:** A customer's R, F and M are a function of their accepted, unreversed purchases under one rule-set version, change only for the customers an event touched, and equal a full recalculation of that version at the same instant (RN-65)
 
 ## Summary
@@ -66,8 +66,9 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_customers.customer_ref_v1` | customers (a 404 for an unknown customer; the rows of `pending`) |
 | Consumes | `api_sales.purchase_line_v1` | sales (finds the customer of a sale) |
 | Consumes | `api_sales.net_purchase_line_v1` | sales (net purchases, ADR-0062) |
-| Consumes | model-registry's published-version view (F22-13) | model-registry (which rule set is published). Until it exists the rule set in force is `RFM_RULE_SET_ID` (default 1, the seeded one) |
-| Calls | `api_segments.apply_assignment_v1` (ADR-0063) | segments (applies the label, in the same transaction as the profile) |
+| Consumes | `api_models.published_version_v1` | model-registry (the rules version in force: its `version_id` is what a change is recorded under and its `rule_set_id` is the rule set scored under; a version that names none is scored under `RFM_RULE_SET_ID`, default 1, the seeded one, ADR-0087) |
+| Consumes | `api_preferences.consent_state_v1` | customer-preferences (`PROFILING` only: a customer whose current decision is `WITHDRAWN` is not measured, ADR-0066, ADR-0087) |
+| Calls | `api_segments.apply_assignment_v1` (ADR-0063, F22-15) | segments (applies the label, in the same transaction as the profile; the third synchronous write across a boundary, E-10) |
 | Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `CRITICAL_ACTION` with `action` `RULE_SET_CREATED`, `RULE_SET_EDITED`, `RULE_SET_VERSIONED` or `RULE_SET_PUBLISHED` for every change, in its transaction. The subject is the `rule_set` and its id, `rule_set_version` is its version number, and the actor is the administrator who made the change. A change that cannot be recorded is not made (503) |
 
 ## Events
@@ -77,6 +78,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Produces | `stream:rfm.v1.profile_changed` | captured from `rfm.customer_profile` | Tells model-registry and analytics-kpis a customer's profile changed |
 | Consumes | `stream:sales.v1.recorded` | group `rfm-engine` | Recomputes the customer of the sale (F22-05) |
 | Consumes | `stream:sales.v1.reversed` | group `rfm-engine` | Recomputes the customer of the reversed sale (F22-06). `entity_id` is `sale_id:reversal_id`; the customer comes from the gross view, which still lists a sale cancelled in full |
+| Consumes | `stream:preferences.v1.consent_changed` | group `rfm-engine` | Re-reads the customer's `PROFILING` decision and recomputes them (F22-15): a withdrawal closes the open assignment now, and a grant scores them again |
 | Consumes | model-registry's publication stream | group `rfm-engine` | Recomputes everyone under the new version, recorded as a change of version |
 
 ## Redis keys
@@ -87,7 +89,33 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
 | state | `stream:sales.v1.recorded` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
 | state | `stream:sales.v1.reversed` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
+| state | `stream:preferences.v1.consent_changed` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
 | state | `stream:rfm.v1.profile_changed` | the stream's `MAXLEN` | `XADD` by the outbox relay |
+
+## Applying a change to the segment history (F22-15)
+
+Every recomputation that comes from an event, from the daily pass or from a consent event
+writes the profile and then calls `api_segments.apply_assignment_v1` in the same
+transaction, so the profile and the assignment commit together or not at all. The call is
+named by a batch: one stream entry, or one pass. A redelivered entry names the same batch
+and finds the run it wrote.
+
+- **Under the published version.** The rule set is the one the published rules version
+  names, and the version's id is what the run records. With no rules version published
+  nothing is scored and the entry is redelivered (`NoPublishedVersion`). A pass left
+  RUNNING keeps the rule set it began under; when the published version holds another,
+  it writes its profiles and applies nothing, and says so.
+- **Cause.** `SALE`, `REVERSAL`, `AGEING` (the pass), `CONSENT_GRANTED` (a consent event).
+  A customer who withdrew `PROFILING` is applied as `CONSENT_WITHDRAWN` whatever moved
+  them: the profile is written unassigned with nothing measured, the open assignment is
+  closed, and later sales and passes leave it so. Only an explicit `WITHDRAWN` excludes
+  (ADR-0087).
+- **Refusals.** `unknown_label` and `unknown_customer` raise `ProfileRejected` and roll
+  the profile back; the kit redelivers up to five times. A 22023 is a defect and
+  propagates.
+- **What a change is.** A label that differs from the open row's, or a different
+  unassigned reason. A refresh whose scores moved inside one label writes no row and
+  creates no run.
 
 ## The rule sets
 

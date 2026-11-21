@@ -18,12 +18,13 @@ first key of a two-key lock.
 | 297001 | one key | rfm-engine's scheduled pass holds `pg_try_advisory_lock(297001)` on a session of its own for as long as it runs, so two instances never run the pass at once; an instance that dies releases it and the next one resumes the pass left RUNNING in `rfm.pass_run`. | Implemented in `services/rfm-engine/app/ageing.py` (F22-07). |
 | 298001 | two keys: `298001`, `experiment_id` | experimentation serializes the primary look of one experiment: `pg_advisory_xact_lock(298001, experiment_id)`, taken by `getExperimentResult` before it looks for a stored result, so the first primary read at or after the analysis instant computes and stores the result once and a concurrent read waits and returns it (ADR-0085). | Implemented in `services/experimentation/app/results.py` (F25-13). |
 | 299001 | one key | rfm-engine's verification recalculation holds `pg_advisory_lock(299001)` on a session of its own for as long as it runs. A `RUNNING` row in `rfm.recalculation` while the lock is free was left by an instance that stopped, and the next start marks it `FAILED` (`interrupted`). | Implemented in `services/rfm-engine/app/verification.py` (F22-08). |
+| 300001 | two keys: `300001`, `hashtext(customer_id::text)` | `api_segments.apply_assignment_v1` serializes the changes of one customer's assignment: `pg_advisory_xact_lock(300001, hashtext(customer_id::text))`, taken before it reads the open row, so a second call for the customer waits and then compares against what the first wrote. The web's run takes `285001` and not this one, so a collision with it is caught by the open-row index and the no-overlap constraint, and the function reads again (ADR-0087). | Implemented in `sql/01_schema.sql`, BOUNDARY segments (F22-15). |
 
 The category hierarchy also uses the independently named lock
 `hashtext('category_hierarchy')` in `sql/01_schema.sql`; it does not consume a
 numeric key from this registry.
 
-The two-key forms of 290001, 290002, 293001, 294001, 295001, 296001 and 298001 do not overlap the
+The two-key forms of 290001, 290002, 293001, 294001, 295001, 296001, 298001 and 300001 do not overlap the
 one-key locks 221001, 222001, 272001, 285001, 297001 and 299001: PostgreSQL keeps one-key and
 two-key advisory locks in separate spaces, and no one-key lock may take any of
-those seven values either.
+those eight values either.

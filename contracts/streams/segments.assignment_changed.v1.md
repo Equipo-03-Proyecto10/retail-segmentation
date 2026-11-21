@@ -52,7 +52,7 @@ through the segments service's contract.
 
 | Group | Effect |
 |---|---|
-| `recommendations` | Invalidates its cache of that customer's current label, instead of every customer's, which is all `run_recorded` allows. An incremental change would otherwise flush the whole cache. |
+| `recommendations` | Invalidates its cache of that customer's current label, instead of every customer's, which is all `run_recorded` allows. An incremental change would otherwise flush the whole cache. Joined by F22-15; an entry that names no customer empties the cache as any other stream's does. |
 | `analytics-kpis` | Invalidates its cached figures for the segments the customer left and entered, and for the migrations that include them (F26-03). |
 
 `analytics-kpis` joins when its contract and implementation land (F26-01); until

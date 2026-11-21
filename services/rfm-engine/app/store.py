@@ -157,3 +157,70 @@ def current(connection: Connection, customer_id: UUID) -> tuple[object, ...] | N
         " WHERE customer_id = %s",
         (customer_id,),
     ).fetchone()
+
+
+def published_rule_version(
+    connection: Connection,
+) -> tuple[int, int | None, int] | None:
+    """The published rules version as (version_id, rule_set_id or None, window_days),
+    read from the registry's view and never its table (ADR-0063, ADR-0064). `None` when
+    no rules version is published: the view holds a row per method that has one, and a
+    published K-means version is not one rfm-engine can score."""
+    row = connection.execute(
+        "SELECT version_id, rule_set_id, window_days"
+        " FROM api_models.published_version_v1 WHERE method = 'RFM_RULES'"
+    ).fetchone()
+    return None if row is None else (row[0], row[1], row[2])
+
+
+def profiling_withdrawn(connection: Connection, customer_id: UUID) -> bool:
+    """Whether the customer's current PROFILING decision is WITHDRAWN (ADR-0066).
+
+    Only an explicit withdrawal excludes: a customer with no decision is segmented,
+    because registration does not record consent yet and reading no row as a refusal
+    would stop segmenting everyone registered since (ADR-0087).
+    """
+    row = connection.execute(
+        "SELECT decision FROM api_preferences.consent_state_v1"
+        " WHERE customer_id = %s AND purpose = 'PROFILING'",
+        (customer_id,),
+    ).fetchone()
+    return row is not None and row[0] == "WITHDRAWN"
+
+
+def apply_assignment(
+    connection: Connection,
+    batch_id: UUID,
+    customer_id: UUID,
+    profile: Profile,
+    last_purchase_at: datetime | None,
+    cause: str,
+    version_id: int,
+    window_days: int,
+) -> str:
+    """Apply the customer's result to the segment history, in the transaction that
+    writes the profile (contracts/db/api_segments.apply_assignment.v1.md). Returns
+    `opened`, `changed` or `unchanged`. Every argument is cast, because an uncast NULL
+    finds no function."""
+    row = connection.execute(
+        "SELECT api_segments.apply_assignment_v1(%s::uuid, %s::uuid, %s::varchar,"
+        " %s::smallint, %s::smallint, %s::smallint, %s::timestamptz, %s::integer,"
+        " %s::numeric, %s::text, %s::bigint, %s::text, %s::integer)",
+        (
+            batch_id,
+            customer_id,
+            profile.label_code,
+            profile.r_score,
+            profile.f_score,
+            profile.m_score,
+            last_purchase_at,
+            profile.f_count,
+            profile.m_total,
+            cause,
+            version_id,
+            "RFM_RULES",
+            window_days,
+        ),
+    ).fetchone()
+    assert row is not None
+    return row[0]

@@ -6,6 +6,9 @@ import os
 from dataclasses import dataclass
 from datetime import time
 
+# The consent stream names a customer whose PROFILING decision may have changed
+# (ADR-0066 section 2): its `entity_id` is the customer.
+CONSENT_STREAM = "stream:preferences.v1.consent_changed"
 # The streams that name a customer to recompute (ADR-0063). A recorded sale's
 # `entity_id` is the sale; a reversal's is `sale_id:reversal_id` (ADR-0062, F21-02).
 RECORDED_STREAM = "stream:sales.v1.recorded"
@@ -59,9 +62,8 @@ class Settings:
     verification_enabled: bool
     verification_weekday: int
     verification_at: time
-    # The rule set a sale is scored under. Until model-registry publishes the
-    # version that names one (F22-13, api_models.published_version_v1), the one
-    # rule set the schema seeds is in force: the web's published rule version.
+    # The rule set in force when the published version names none: the version the
+    # seed publishes was derived from a web run, not from a rule set (F22-15).
     rule_set_id: int
     redis_state_url: str
 

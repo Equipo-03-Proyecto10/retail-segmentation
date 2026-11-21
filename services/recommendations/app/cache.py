@@ -7,7 +7,7 @@ new key. A `/v2` result lives at ``recommendations:cache:v2:{customer_id}:
 at one store or channel is never served for another. The entry carries the id
 of the decision recorded for it, so a cached answer is still attributable to a
 stored decision (ADR-0067). Each key is also added to an index set under the
-same prefix. An event on any of the seven streams renames the index away and
+same prefix. An event on any of the eight streams renames the index away and
 deletes what it named, so no SCAN, KEYS or RANDOMKEY is ever needed (the ACL
 forbids them). Any Redis failure is a miss: the result is recomputed from the
 views. Each entry carries its pre-computation generation; invalidation replaces
@@ -153,6 +153,22 @@ class ResultCache:
             pipe.execute()
         except redis.RedisError as error:
             LOGGER.warning("Cache write failed: %r", error)
+
+    def invalidate_customer(self, customer_id: str) -> None:
+        """Delete the cached results of one customer, `/v1` and `/v2`, and leave every
+        other customer's. Raises on a Redis failure, so the consumer redelivers the
+        event. Their keys name the run behind their open label, so a changed label is
+        a new key anyway; this drops the old ones instead of waiting out their 120 s
+        (F22-15)."""
+        if self.client is None:
+            return
+        prefixes = (f"{PREFIX}{customer_id}:", f"{PREFIX}v2:{customer_id}:")
+        doomed = [
+            key for key in self.client.smembers(INDEX) if key.startswith(prefixes)
+        ]
+        if doomed:
+            self.client.delete(*doomed)
+            self.client.srem(INDEX, *doomed)
 
     def invalidate(self) -> None:
         """Delete every cached result. Raises on a Redis failure, so the

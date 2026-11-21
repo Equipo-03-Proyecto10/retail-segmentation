@@ -10,8 +10,10 @@ import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import online.maxthecoder.mosaiq.floor.auth.Tokens
+import online.maxthecoder.mosaiq.floor.net.FloorCurrentAssignment
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CardRead
+import online.maxthecoder.mosaiq.floor.ui.FloorProfileState
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.isLoyaltyCode
 import org.junit.After
@@ -25,12 +27,23 @@ import org.junit.runner.RunWith
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
-private fun customersExample(name: String): String = File("../../../contracts/customers/examples", name).readText()
+private fun example(service: String, name: String): String = File(
+    "../../../contracts/$service/examples",
+    name
+).readText()
 
-/** customers-service's floor reads, answering with the contract's examples. */
+private fun customersExample(name: String): String = example("customers", name)
+
+/**
+ * The floor reads of customers, segments, customer-preferences, categories and sales,
+ * answering with the contracts' examples.
+ */
 private class FloorCustomers : Dispatcher() {
     var lookup: MockResponse = ok(200, customersExample("lookup-loyalty-card.json"))
     var view = "get-floor-customer-sales-associate.json"
+    var segment = "floor-view-assigned.json"
+    var interests = "get-interest-profile.json"
+    var restrictions = "get-restrictions.json"
     val requests = CopyOnWriteArrayList<RecordedRequest>()
 
     override fun dispatch(request: RecordedRequest): MockResponse {
@@ -40,6 +53,11 @@ private class FloorCustomers : Dispatcher() {
             path == "/api/customers/v1/loyalty-cards/lookup" -> lookup
             path == "/api/customers/v1/customers/floor-search" ->
                 ok(200, customersExample("search-floor-customers.json").replace("\"total\": 1", "\"total\": 41"))
+            path == "/api/segments/v1/segment-assignments/floor-view" -> ok(200, example("segments", segment))
+            path.endsWith("/interests") -> ok(200, example("customer-preferences", interests))
+            path.endsWith("/restrictions") -> ok(200, example("customer-preferences", restrictions))
+            path == "/api/categories/v1/categories" -> ok(200, example("categories", "list-categories.json"))
+            path == "/api/sales/v1/channels" -> ok(200, example("sales", "list-channels.json"))
             path.endsWith("/floor-view") -> ok(200, customersExample(view))
             else -> error(404, "not_found")
         }
@@ -165,6 +183,106 @@ class IdentifyViewModelTest {
         settle { !model.search.value.loading }
         assertEquals("2", services.requests.last().requestUrl!!.queryParameter("page"))
         assertEquals("Jordan", services.requests.last().requestUrl!!.queryParameter("q"))
+    }
+
+    private fun opened(): FloorProfileState {
+        val model = IdentifyViewModel(graph)
+        model.open(customer)
+        settle { !model.profile.value.loading && model.profile.value.customer != null }
+        return model.profile.value
+    }
+
+    @Test
+    fun theProfileReadsEachOwnersFloorRepresentation() {
+        val profile = opened()
+        val paths = services.requests.map { it.requestUrl!!.encodedPath }
+        assertTrue(paths.contains("/api/segments/v1/segment-assignments/floor-view"))
+        assertFalse("never the full assignment, which carries the scores", paths.any { it.endsWith("/current") })
+        assertTrue(paths.contains("/api/customer-preferences/v1/preference-profiles/$customer/interests"))
+        assertTrue(paths.contains("/api/customer-preferences/v1/preference-profiles/$customer/restrictions"))
+        assertFalse(
+            "never the preference profile, which carries preferred channels, nor the consent record",
+            paths.any { it.endsWith("/preference-profiles/$customer") || it.endsWith("/consent") }
+        )
+        assertEquals(
+            customer,
+            services.requests.first { it.requestUrl!!.encodedPath.startsWith("/api/segments/") }
+                .requestUrl!!.queryParameter("customer_id")
+        )
+
+        val commercial = profile.commercial
+        assertEquals(FloorCurrentAssignment(customer, "assigned", "LOYAL", "2026-10-12T03:00:00Z"), commercial.segment)
+        assertEquals(listOf(2, 11, 12), commercial.interests?.declaredCategoryIds)
+        assertEquals(listOf(9), commercial.restrictions?.restrictedCategoryIds)
+        assertEquals(listOf(5), commercial.restrictions?.restrictedChannelIds)
+        assertTrue(commercial.personalized)
+        assertEquals("Cheese", commercial.categoryNames[11])
+        assertEquals("call_center", commercial.channelNames[5])
+    }
+
+    @Test
+    fun anExcludedElementIsNeitherKeptNorShown() {
+        // A segments answer that carried the full representation, scores and run_id included:
+        // the floor model has no place for them, so they are dropped at parsing.
+        services.segment = "current-assigned.json"
+        val profile = opened()
+
+        assertEquals(
+            FloorCurrentAssignment(customer, "assigned", "LOYAL", "2026-10-12T03:00:00Z"),
+            profile.commercial.segment
+        )
+        val kept = profile.commercial.toString()
+        listOf("score", "Score", "runId", "run_id", "preferred", "Preferred", "consent", "Consent").forEach {
+            assertFalse("$it is not in the retained model: $kept", it in kept)
+        }
+        assertNull(profile.customer?.email)
+        assertNull(profile.customer?.phone)
+        val fields = FloorCurrentAssignment::class.java.declaredFields
+            .filterNot { java.lang.reflect.Modifier.isStatic(it.modifiers) }
+            .map { it.name }
+        assertEquals(setOf("customerId", "state", "labelCode", "since"), fields.toSet())
+    }
+
+    @Test
+    fun anObjectionToPersonalizationIsKeptAsSuchAndNothingIsPersonalized() {
+        services.restrictions = "get-restrictions-personalization-withdrawn.json"
+        services.interests = "get-interest-profile-without-inference.json"
+        val commercial = opened().commercial
+
+        assertEquals(false, commercial.restrictions?.personalizationAllowed)
+        assertFalse(commercial.personalized)
+        assertTrue(commercial.interests!!.inferredInterests.isEmpty())
+    }
+
+    @Test
+    fun restrictionsThatCannotBeReadPersonalizeNothing() {
+        val model = IdentifyViewModel(graph)
+        server.dispatcher =
+            object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse =
+                    if (request.requestUrl!!.encodedPath.endsWith("/restrictions")) {
+                        error(503, "database_unavailable")
+                    } else {
+                        services.dispatch(request)
+                    }
+            }
+        model.open(customer)
+        settle { !model.profile.value.loading && model.profile.value.customer != null }
+
+        val commercial = model.profile.value.commercial
+        assertEquals("database_unavailable", commercial.restrictionsError?.code)
+        assertFalse(commercial.personalized)
+    }
+
+    @Test
+    fun anUnassignedCustomerIsShownAsSegmentsStatesIt() {
+        services.segment = "floor-view-unassigned-result.json"
+        assertEquals(
+            FloorCurrentAssignment(customer, "unassigned_result", null, "2026-10-12T03:00:00Z"),
+            opened().commercial.segment
+        )
+        services.segment = "floor-view-no-open-assignment.json"
+        assertEquals(FloorCurrentAssignment(customer, "no_open_assignment", null, null), opened().commercial.segment)
     }
 
     @Test

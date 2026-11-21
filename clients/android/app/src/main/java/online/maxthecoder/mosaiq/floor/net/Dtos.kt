@@ -331,6 +331,52 @@ data class CurrentAssignment(
     @SerialName("run_id") val runId: Long? = null
 )
 
+/**
+ * A customer's current segment as a floor role reads it (contracts/segments
+ * `getFloorCurrentAssignment`, ADR-0060): the label and `since`, in the three states of
+ * the full read. It declares no score and no `run_id`, so an element the service ever
+ * sent beyond these is dropped when the body is parsed and never kept in memory.
+ */
+@Serializable
+data class FloorCurrentAssignment(
+    @SerialName("customer_id") val customerId: String,
+    val state: String,
+    @SerialName("label_code") val labelCode: String? = null,
+    val since: String? = null
+)
+
+/** One inferred interest: the category and how strong it is, nothing about how it was measured. */
+@Serializable
+data class InferredInterest(
+    @SerialName("category_id") val categoryId: Int,
+    val strength: Int
+)
+
+/**
+ * The customer's interests (contracts/customer-preferences `getInterestProfile`): what they
+ * declared and what was inferred, kept apart. Inferred ones exist only while personalization
+ * is granted.
+ */
+@Serializable
+data class InterestProfile(
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("declared_category_ids") val declaredCategoryIds: List<Int> = emptyList(),
+    @SerialName("inferred_interests") val inferredInterests: List<InferredInterest> = emptyList()
+)
+
+/**
+ * What the customer does not want done (contracts/customer-preferences
+ * `getRestrictionProfile`). `personalizationAllowed` is the one effect of consent a floor
+ * role reads; the consent record itself is not part of it.
+ */
+@Serializable
+data class RestrictionProfile(
+    @SerialName("customer_id") val customerId: String,
+    @SerialName("personalization_allowed") val personalizationAllowed: Boolean,
+    @SerialName("restricted_channel_ids") val restrictedChannelIds: List<Int> = emptyList(),
+    @SerialName("restricted_category_ids") val restrictedCategoryIds: List<Int> = emptyList()
+)
+
 @Serializable
 data class RecommendationReason(
     val signal: String,

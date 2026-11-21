@@ -34,13 +34,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import online.maxthecoder.mosaiq.floor.AppText
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.CameraPermission
 import online.maxthecoder.mosaiq.floor.ui.CardRead
+import online.maxthecoder.mosaiq.floor.ui.CommercialProfile
 import online.maxthecoder.mosaiq.floor.ui.FLOOR_SEARCH_MIN
 import online.maxthecoder.mosaiq.floor.ui.FloorProfileState
 import online.maxthecoder.mosaiq.floor.ui.FloorSearchState
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.SegmentBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
@@ -52,6 +55,8 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqPager
 import online.maxthecoder.mosaiq.floor.ui.components.MqSection
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
+import online.maxthecoder.mosaiq.floor.ui.formatDate
+import online.maxthecoder.mosaiq.floor.ui.humanize
 import online.maxthecoder.mosaiq.floor.ui.scan.CameraPreview
 import online.maxthecoder.mosaiq.floor.ui.scan.CameraViewport
 import online.maxthecoder.mosaiq.floor.ui.scan.ViewportStart
@@ -290,6 +295,142 @@ fun ProfileBody(state: FloorProfileState, onRetry: () -> Unit, onBack: () -> Uni
                     customer.phone?.let { MqListRow(stringResource(R.string.identify_phone), supporting = it) }
                 }
         }
+        if (customer != null && state.error == null) {
+            SegmentPart(state.commercial, onRetry)
+            InterestsPart(state.commercial, onRetry)
+            RestrictionsPart(state.commercial, onRetry)
+        }
         MqButton(stringResource(R.string.identify_another), onBack, variant = MqButtonVariant.Quiet)
     }
+}
+
+private const val ASSIGNED = "assigned"
+private const val UNASSIGNED_RESULT = "unassigned_result"
+private const val NO_OPEN_ASSIGNMENT = "no_open_assignment"
+
+/** The segment exactly as segments-service states it for this role: label and since, or the state as is. */
+@Composable
+private fun SegmentPart(profile: CommercialProfile, onRetry: () -> Unit) {
+    val segment = profile.segment
+    MqSection(stringResource(R.string.profile_segment_title), Modifier.testTag("profile-segment")) {
+        val error = profile.segmentError
+        when {
+            error != null -> MqErrorPanel(error, onRetry = onRetry)
+            segment == null -> Unit
+            segment.state == ASSIGNED && segment.labelCode != null -> {
+                SegmentBadge(humanize(segment.labelCode), Modifier.testTag("segment"))
+                segment.since?.let { Note(stringResource(R.string.profile_segment_since, formatDate(it))) }
+            }
+            segment.state == UNASSIGNED_RESULT -> {
+                Note(stringResource(R.string.profile_segment_unassigned), Modifier.testTag("segment-unassigned"))
+                segment.since?.let { Note(stringResource(R.string.profile_segment_unassigned_since, formatDate(it))) }
+            }
+            segment.state == NO_OPEN_ASSIGNMENT ->
+                Note(stringResource(R.string.profile_segment_none), Modifier.testTag("segment-none"))
+            else -> Note(stringResource(R.string.profile_segment_other, segment.state))
+        }
+    }
+}
+
+/**
+ * Declared and inferred interests, kept apart. Inferred ones are shown only while the
+ * customer allows personalization, since they exist only to tailor an offer.
+ */
+@Composable
+private fun InterestsPart(profile: CommercialProfile, onRetry: () -> Unit) {
+    MqSection(stringResource(R.string.profile_interests_title), Modifier.testTag("profile-interests")) {
+        val error = profile.interestsError
+        val interests = profile.interests
+        when {
+            error != null -> MqErrorPanel(error, onRetry = onRetry)
+            interests == null -> Unit
+            else -> {
+                if (interests.declaredCategoryIds.isEmpty()) {
+                    Note(stringResource(R.string.profile_interests_none))
+                } else {
+                    MqListRow(
+                        stringResource(R.string.profile_interests_declared),
+                        supporting = interests.declaredCategoryIds.joinToString(", ") { categoryName(profile, it) }
+                    )
+                }
+                val inferred = interests.inferredInterests.takeIf { profile.personalized }.orEmpty()
+                if (inferred.isNotEmpty()) {
+                    MqListRow(
+                        stringResource(R.string.profile_interests_inferred),
+                        supporting =
+                        inferred.joinToString(", ") {
+                            AppText.get(
+                                R.string.profile_interest_strength,
+                                categoryName(profile, it.categoryId),
+                                it.strength
+                            )
+                        },
+                        modifier = Modifier.testTag("interests-inferred")
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The objection to personalization first, then what not to offer and how not to reach them. */
+@Composable
+private fun RestrictionsPart(profile: CommercialProfile, onRetry: () -> Unit) {
+    MqSection(stringResource(R.string.profile_restrictions_title), Modifier.testTag("profile-restrictions")) {
+        val error = profile.restrictionsError
+        val restrictions = profile.restrictions
+        when {
+            error != null -> MqErrorPanel(error, onRetry = onRetry)
+            restrictions == null -> Unit
+            else -> {
+                if (profile.personalized) {
+                    MqBadge(
+                        stringResource(R.string.profile_personalization_allowed),
+                        tone = MqTone.Success,
+                        leadingIcon = R.drawable.ic_lucide_circle_check
+                    )
+                } else {
+                    MqBadge(
+                        stringResource(R.string.profile_personalization_objected),
+                        modifier = Modifier.testTag("personalization-objected"),
+                        tone = MqTone.Warning,
+                        leadingIcon = R.drawable.ic_lucide_eye_off
+                    )
+                    Note(stringResource(R.string.profile_no_personalized), Modifier.testTag("no-personalized"))
+                }
+                if (restrictions.restrictedCategoryIds.isNotEmpty()) {
+                    MqListRow(
+                        stringResource(R.string.profile_restricted_categories),
+                        supporting = restrictions.restrictedCategoryIds.joinToString(", ") { categoryName(profile, it) }
+                    )
+                }
+                if (restrictions.restrictedChannelIds.isNotEmpty()) {
+                    MqListRow(
+                        stringResource(R.string.profile_restricted_channels),
+                        supporting =
+                        restrictions.restrictedChannelIds.joinToString(", ") { id ->
+                            profile.channelNames[id]?.let(::humanize)
+                                ?: AppText.get(R.string.profile_channel_fallback, id)
+                        }
+                    )
+                }
+                if (restrictions.restrictedCategoryIds.isEmpty() && restrictions.restrictedChannelIds.isEmpty()) {
+                    Note(stringResource(R.string.profile_no_other_restrictions))
+                }
+            }
+        }
+    }
+}
+
+private fun categoryName(profile: CommercialProfile, id: Int): String =
+    profile.categoryNames[id] ?: AppText.get(R.string.profile_category_fallback, id)
+
+@Composable
+private fun Note(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier
+    )
 }

@@ -718,6 +718,22 @@ FROM (
 ) AS l
 WHERE l.transaction_id = t.transaction_id;
 
+-- ---------- sales.sale_line_price (30, F25-05) ----------
+-- The list price a phone sale keeps beside each line (RN-13). The seeded sales are
+-- not phone sales, so these rows stand for fifteen sales (101 to 115) as if they
+-- had been recorded through POST /v1/sales on the day of the load, at the
+-- product's list price of that day. They avoid the sales sql/verify_integrity.sql
+-- moves lines between (1 and 2), whose probes must meet their own refusal first.
+-- The seeded promotions belong to campaigns of early 2026, so no line names one.
+-- The rows are illustrative: these sales have no sales.sale_capture row, which is
+-- runtime state and seed-exempt.
+INSERT INTO sales.sale_line_price (transaction_id, product_id, list_price, promotion_id)
+SELECT l.transaction_id, l.product_id, p.list_price, NULL
+FROM transaction_line AS l
+JOIN product AS p USING (product_id)
+WHERE l.transaction_id BETWEEN 101 AND 115
+ORDER BY l.transaction_id, l.product_id;
+
 -- ---------- customer_segment_history (F7-02) ----------
 -- History is a materialized record of each run's RFM input, not a second
 -- illustrative dataset.  Derive every raw value from the transactions that

@@ -209,6 +209,40 @@ def floor_users_work_everywhere(
             set_assignments(owner_url, subject, stores)
 
 
+CATALOG_PRICE = "1.00"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def catalog_below_test_prices(owner_url: str) -> Iterator[None]:
+    """Every product is listed at 1.00 while the suite runs (F25-05).
+
+    Since #836 a line charged below its product's list price without a valid
+    promotion is refused. The cases that test other rules (stock, reversals,
+    idempotency, imports, the golden port) charge round placeholder prices of
+    2.00 and up, which were never meant as discounts, so the catalog is listed
+    below all of them. The rule itself runs on every one of their sales. The
+    price rule's own cases in `test_pricing.py` list their products at real
+    prices, and `test_golden.py` shows the captured case refused at the seed's
+    price. The seed's prices are put back afterwards.
+    """
+    with psycopg.connect(owner_url, autocommit=True) as connection:
+        before = connection.execute(
+            "SELECT product_id, list_price FROM public.product"
+        ).fetchall()
+        connection.execute(
+            "UPDATE public.product SET list_price = %s", (CATALOG_PRICE,)
+        )
+    try:
+        yield
+    finally:
+        with psycopg.connect(owner_url, autocommit=True) as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(
+                    "UPDATE public.product SET list_price = %s WHERE product_id = %s",
+                    [(price, product_id) for product_id, price in before],
+                )
+
+
 @pytest.fixture
 def token(
     signing_key: rsa.RSAPrivateKey,
@@ -427,7 +461,12 @@ def sale_xml(body: dict) -> bytes:
         f"<product_id>{line['product_id']}</product_id>"
         f"<quantity>{line['quantity']}</quantity>"
         f"<unit_price>{line['unit_price']}</unit_price>"
-        "</lines>"
+        + (
+            f"<promotion_id>{line['promotion_id']}</promotion_id>"
+            if "promotion_id" in line
+            else ""
+        )
+        + "</lines>"
         for line in body.get("lines", [])
     )
     return (

@@ -28,7 +28,7 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, imports, reconciliation, reversal, scope, store
+from . import audit, imports, pricing, reconciliation, reversal, scope, store
 from .salerules import (
     constraint as _constraint,
 )
@@ -53,6 +53,23 @@ CONTRACTS = Path(__file__).resolve().parent.parent / "contracts"
 _INTEGER = re.compile(r"-?[0-9]+")
 
 
+def _product(line: dict[str, Any]) -> int:
+    return line["product_id"]
+
+
+def _canonical_line(line: dict[str, Any]) -> dict[str, Any]:
+    value = {
+        "product_id": line["product_id"],
+        "quantity": line["quantity"],
+        "unit_price": format(line["unit_price"], ".2f"),
+    }
+    # Only a line that names a promotion carries the key, so a request without
+    # one hashes exactly as before 1.9.0 and a phone's queued retry still replays.
+    if line.get("promotion_id") is not None:
+        value["promotion_id"] = line["promotion_id"]
+    return value
+
+
 def _canonical(
     body: dict[str, Any], occurred_at: datetime, lines: list[dict[str, Any]], sub: str
 ) -> bytes:
@@ -64,14 +81,7 @@ def _canonical(
         "occurred_at": occurred_at.astimezone(UTC).isoformat(
             timespec="microseconds" if occurred_at.microsecond else "seconds"
         ),
-        "lines": [
-            {
-                "product_id": line["product_id"],
-                "quantity": line["quantity"],
-                "unit_price": format(line["unit_price"], ".2f"),
-            }
-            for line in sorted(lines, key=lambda item: item["product_id"])
-        ],
+        "lines": [_canonical_line(line) for line in sorted(lines, key=_product)],
     }
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).digest()
@@ -259,6 +269,7 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
             try:
                 with kit.db.transaction() as connection:
                     validate_sale_references(connection, body, occurred_at, lines)
+                    pricing.apply_prices(connection, body, occurred_at, lines)
                     sale_id = store.insert_sale(
                         connection,
                         source_id=source_id,

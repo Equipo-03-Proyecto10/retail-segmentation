@@ -264,6 +264,8 @@ svc_sales,public.channel,SELECT
 svc_sales,sales,USAGE
 svc_sales,sales.sale_capture,SELECT
 svc_sales,sales.sale_capture,INSERT
+svc_sales,sales.sale_line_price,SELECT
+svc_sales,sales.sale_line_price,INSERT
 svc_sales,sales.sale_reversal,SELECT
 svc_sales,sales.sale_reversal,INSERT
 svc_sales,sales.sale_reversal_line,SELECT

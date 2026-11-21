@@ -170,9 +170,19 @@ A line with zero units is not a line.
 `transaction_line.unit_price` is what the customer paid, not
 `product.list_price`. A later price change must not rewrite history.
 
+A sale recorded through sales-service also keeps the product's list price at
+sale time and the promotion its discount relied on (F25-05). A line charged
+below its list price must name a promotion active for the sale's store, channel
+and day, and is charged no lower than the smaller of the promotion's discount
+and the store's maximum discount (RN-53, RN-71).
+
 **Enforced:** the model — the price is stored on the line rather than read
 through the product. The application must never populate it by copying the
-current list price at read time. Reviewed, not constrained. · `RF-10`
+current list price at read time. Reviewed, not constrained. For phone sales,
+sales-service refuses an undeclared or excessive discount
+(`discount_without_promotion`, `promotion_not_applicable`,
+`discount_above_promotion`, `discount_above_store_cap`) and keeps the list
+price in `sales.sale_line_price`. · `RF-10` · #836
 
 ### RN-14 — Stock is never negative
 Stock is consumed by an accepted sale for the same store, product and quantity.

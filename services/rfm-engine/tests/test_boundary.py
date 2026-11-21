@@ -58,7 +58,7 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
         (
             "api_segments.apply_assignment_v1(uuid,uuid,character varying,smallint,"
             "smallint,smallint,timestamp with time zone,integer,numeric,text,bigint,"
-            "text,integer)",
+            "text,integer,bigint)",
             "EXECUTE",
         ),
         ("api_preferences", "USAGE"),

@@ -18,11 +18,22 @@ were measured now:
   instant until then, so any difference is a missed event.
 - A profile that fell due after the last pass completed is not compared. The pass owns
   it and moves it at its next run; it is not a defect of the incremental update. One
-  that fell due at or before that pass was the pass's to move and is compared.
-- A customer with net purchases and no profile row is `pending` and differs.
+  that fell due at or before that pass was the pass's to move and is compared. Before
+  any pass has completed, every due profile is the pass's.
+- A customer with net purchases and no profile row is `pending` and differs, once a
+  pass has completed: the pass gives such a customer a profile, and an event gives one
+  to a customer who bought since.
+- A profile held under another rule set than the verification's is not compared: it
+  was scored under the rules in force when it was written. Nor is one computed after
+  `as_of`, which counts what happened after the instant.
 
 `customers_checked` counts the customers compared. A verification is read-only: it
 reads one repeatable-read snapshot, so a sale committed while it runs cannot split it.
+
+One runs at a time. Whoever starts one takes lock 299001 on a session of its own
+before recording it RUNNING and holds it to the end, so a RUNNING row whose lock is
+free was left by a process that stopped, and is marked FAILED (`interrupted`),
+audited and alerted by the next one to look (ADR-0086).
 """
 
 from __future__ import annotations
@@ -30,8 +41,10 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import threading
-from dataclasses import dataclass, replace
+import time as clock
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 from typing import Any
@@ -42,13 +55,16 @@ from mosaiq_kit import ApiError
 from psycopg import Connection, IsolationLevel
 from psycopg.errors import UniqueViolation
 
-from . import profile, rulesets, store
+from . import ageing, profile, recompute, rulesets, store
 
 LOGGER = logging.getLogger(__name__)
 # contracts/db/advisory-locks.md: one key, held on a session of its own while a
 # verification runs. A RUNNING row with no holder was left by an instance that died.
 LOCK_KEY = 299001
 BATCH = 1000
+# Seconds between attempts to record how a verification ended. After the last the row
+# stays RUNNING with its lock released, and the next start or schedule reaps it.
+FINISH_RETRIES = (1.0, 5.0, 15.0)
 FIELDS = (
     "state",
     "r_days",
@@ -62,7 +78,7 @@ FIELDS = (
 CALCULATION_RUN = (
     "SELECT recorded_at FROM api_audit.record_event_v1("
     "%s, 'CALCULATION_RUN', 'SUCCESS', now(), %s, %s, %s, NULL::smallint,"
-    " 'calculation', %s, NULL::bigint, %s, NULL, %s::jsonb)"
+    " 'calculation', %s, NULL::bigint, %s::bigint, %s::text, %s::jsonb)"
 )
 
 
@@ -171,9 +187,12 @@ def not_finished() -> ApiError:
     )
 
 
-def _default_rule_set(connection: Connection, in_force: int) -> int:
-    """The published rule set: the one in force when it is published, else the most
+def _default_rule_set(connection: Connection, default_rule_set_id: int) -> int:
+    """The rule set in force, the one changes are scored under (the published
+    version's, else `RFM_RULE_SET_ID`, ADR-0087), when it is published; else the most
     recently published."""
+    version = recompute.in_force(connection, default_rule_set_id)
+    in_force = default_rule_set_id if version is None else version.rule_set_id
     rules = store.rule_set(connection, in_force)
     if rules is not None and rules.published:
         return in_force
@@ -194,7 +213,9 @@ def start(
     rule_set_id: int | None,
     in_force: int,
 ) -> dict[str, Any]:
-    """Record a verification RUNNING, in the caller's transaction, at one instant."""
+    """Record a verification RUNNING, in the caller's transaction, at one instant.
+    `in_force` is `RFM_RULE_SET_ID`, the rule set when no version names one. The caller
+    holds lock 299001 (`begin`), or a reap could take the row for an orphan."""
     if rule_set_id is None:
         chosen = _default_rule_set(connection, in_force)
     else:
@@ -211,8 +232,8 @@ def start(
             row = connection.execute(
                 "INSERT INTO rfm.recalculation (trigger_kind, rule_set_id, as_of,"
                 " started_by) VALUES (%s, %s, clock_timestamp(), %s)"
-                " RETURNING recalculation_id, trigger_kind, state, rule_set_id,"
-                " as_of, started_at, finished_at, started_by, customers_checked,"
+                " RETURNING recalculation_id, trigger_kind, state, rule_set_id, as_of,"
+                " started_at, finished_at, started_by, customers_checked,"
                 " customers_different, failure_code",
                 (trigger, chosen, started_by),
             ).fetchone()
@@ -233,6 +254,34 @@ def one(connection: Connection, recalculation_id: int) -> dict[str, Any]:
     if row is None:
         raise not_found()
     return _recalculation(row)
+
+
+STATES = ("RUNNING", "COMPLETED", "FAILED")
+TRIGGERS = ("SCHEDULE", "ON_DEMAND")
+BIGINT_MAX = 2**63 - 1
+
+
+def filters(args: Any) -> dict[str, Any]:
+    """The query of `listRfmRecalculations`, or 422 `invalid_query` naming each
+    parameter that is not one the contract allows."""
+    details: list[dict[str, str]] = []
+    state, trigger = args.get("state"), args.get("trigger")
+    if state is not None and state not in STATES:
+        details.append({"field": "state", "code": "unknown_value"})
+    if trigger is not None and trigger not in TRIGGERS:
+        details.append({"field": "trigger", "code": "unknown_value"})
+    raw = args.get("rule_set_id")
+    rule_set_id: int | None = None
+    if raw is not None:
+        if not re.fullmatch(r"[0-9]+", raw):
+            details.append({"field": "rule_set_id", "code": "invalid_type"})
+        elif not 1 <= int(raw) <= BIGINT_MAX:
+            details.append({"field": "rule_set_id", "code": "out_of_range"})
+        else:
+            rule_set_id = int(raw)
+    if details:
+        raise ApiError(422, "invalid_query", "A filter is malformed.", details)
+    return {"state": state, "trigger": trigger, "rule_set_id": rule_set_id}
 
 
 def listing(
@@ -310,7 +359,7 @@ def _stored(
 ) -> dict[UUID, tuple[Any, ...]]:
     rows = connection.execute(
         "SELECT customer_id, state, r_days, f_count, m_total, r_score, f_score,"
-        " m_score, label_code, computed_at, next_change_at"
+        " m_score, label_code, computed_at, next_change_at, rule_set_id"
         " FROM rfm.customer_profile WHERE customer_id = ANY(%s)",
         (customers,),
     ).fetchall()
@@ -321,6 +370,7 @@ def _batch(
     connection: Connection,
     customers: list[UUID],
     rules: profile.RuleSet,
+    rule_set_id: int,
     as_of: datetime,
     last_pass: datetime | None,
 ) -> tuple[int, list[tuple[UUID, Values, Values]]]:
@@ -348,14 +398,18 @@ def _batch(
             if reference.state == "unassigned":
                 checked += 1  # no profile and nothing to count: nothing to differ
                 continue
+            if last_pass is None:
+                continue  # no pass has run to give them the profile it owes them
             incremental = PENDING
         else:
-            computed_at, due = stored[8], stored[9]
+            computed_at, due, held_under = stored[8], stored[9], stored[10]
+            if held_under != rule_set_id or computed_at > as_of:
+                # Scored under other rules, or counting what came after the instant.
+                continue
             if (
                 due is not None
                 and due <= as_of
-                and last_pass is not None
-                and due > last_pass
+                and (last_pass is None or due > last_pass)
             ):
                 # Fell due after the last pass completed: the next pass moves it.
                 continue
@@ -437,7 +491,11 @@ def _audit(
     status: str,
     checked: int,
     different: int,
+    correlation_id: str | None = None,
 ) -> None:
+    """The CALCULATION_RUN, with the rule set as the event's common field
+    (contracts/db/api_audit.record_event.v1.md) and the counts reached, which for a
+    failed verification are those compared before it failed."""
     details = {
         "calculation": "RFM",
         "status": status,
@@ -458,7 +516,8 @@ def _audit(
             None if actor is None else actor[0],
             None if actor is None else actor[1],
             f"rfm-verification-{row['recalculation_id']}",
-            None,
+            row["rule_set_id"],
+            correlation_id,
             json.dumps(details),
         ),
     )
@@ -469,20 +528,92 @@ def _finish(
     row: dict[str, Any],
     actor: tuple[str, str] | None,
     *,
-    checked: int | None,
-    different: int | None,
+    checked: int,
+    different: int,
     failure: str | None,
+    found: list[tuple[UUID, Values, Values]],
+    correlation_id: str | None,
 ) -> None:
+    """End the verification in one transaction: its differences (only when it
+    completed, so a failed one keeps none), its row and its audit event."""
     status = "FAILED" if failure else "COMPLETED"
     with db.transaction() as connection:
+        if not failure and found:
+            _write(connection, row["recalculation_id"], found)
         connection.execute(
             "UPDATE rfm.recalculation SET state = %s,"
             " finished_at = greatest(clock_timestamp(), started_at),"
             " customers_checked = %s, customers_different = %s, failure_code = %s"
             " WHERE recalculation_id = %s AND state = 'RUNNING'",
-            (status, checked, different, failure, row["recalculation_id"]),
+            (
+                status,
+                None if failure else checked,
+                None if failure else different,
+                failure,
+                row["recalculation_id"],
+            ),
         )
-        _audit(connection, row, actor, status, checked or 0, different or 0)
+        _audit(connection, row, actor, status, checked, different, correlation_id)
+
+
+def _failure_code(error: BaseException) -> str:
+    """`source_unavailable` for a database that cannot be reached, which the kit's
+    pool reports as a 503 ApiError and a session of its own as OperationalError."""
+    if isinstance(error, psycopg.OperationalError) or (
+        isinstance(error, ApiError) and error.status == 503
+    ):
+        return "source_unavailable"
+    return "internal_error"
+
+
+@dataclass(slots=True)
+class Progress:
+    """What a verification has compared so far, kept when it fails half way so its
+    audit event counts the work done."""
+
+    checked: int = 0
+    found: list[tuple[UUID, Values, Values]] = field(default_factory=list)
+
+
+def _compare(
+    db: Any,
+    row: dict[str, Any],
+    only: list[UUID] | None,
+    progress: Progress,
+) -> None:
+    """Every comparison of one verification, from one repeatable-read snapshot."""
+    with db.connection() as connection:
+        rules = store.rule_set(connection, row["rule_set_id"])
+        assert rules is not None
+        connection.commit()
+    snapshot = psycopg.connect(db.dsn)
+    try:
+        snapshot.isolation_level = IsolationLevel.REPEATABLE_READ
+        snapshot.read_only = True
+        pass_row = snapshot.execute(
+            "SELECT max(as_of) FROM rfm.pass_run WHERE status = 'COMPLETED'"
+        ).fetchone()
+        last_pass = None if pass_row is None else pass_row[0]
+        after: UUID | None = None
+        while True:
+            customers = _universe(
+                snapshot, after, rules.window_days, row["as_of"], only
+            )
+            if not customers:
+                break
+            done, more = _batch(
+                snapshot,
+                customers,
+                rules,
+                row["rule_set_id"],
+                row["as_of"],
+                last_pass,
+            )
+            progress.checked += done
+            progress.found.extend(more)
+            after = customers[-1]
+    finally:
+        snapshot.close()
 
 
 def execute(
@@ -491,73 +622,102 @@ def execute(
     actor: tuple[str, str] | None,
     *,
     only: list[UUID] | None = None,
+    lock: psycopg.Connection | None = None,
+    correlation_id: str | None = None,
 ) -> dict[str, Any]:
     """Run a RUNNING verification to its end and return the finished row.
 
     `actor` is the administrator's `(user_id, role)`, or None for the schedule. `only`
     narrows the customers compared and is for tests and the acceptance evidence: the
-    operation and the schedule always verify everyone. A failure is recorded as FAILED
-    and audited, never lost.
+    operation and the schedule always verify everyone. `lock` is the session `begin`
+    took 299001 on; without one, this call takes it and waits for it. Either way it is
+    released when this returns. A failure is recorded as FAILED and audited; if even
+    that cannot be written, the row is left RUNNING with its lock free, for the reap.
     """
-    lock = psycopg.connect(db.dsn, autocommit=True)
+    if lock is None:
+        lock = psycopg.connect(db.dsn, autocommit=True)
+        try:
+            lock.execute("SELECT pg_advisory_lock(%s)", (LOCK_KEY,))
+        except BaseException:
+            lock.close()
+            raise
     try:
-        lock.execute("SELECT pg_advisory_lock(%s)", (LOCK_KEY,))
         with db.connection() as connection:
             row = one(connection, recalculation_id)
             connection.commit()
         if row["state"] != "RUNNING":
             return row
-        checked = different = 0
+        progress = Progress()
         failure: str | None = None
         try:
-            with db.connection() as connection:
-                rules = store.rule_set(connection, row["rule_set_id"])
-                assert rules is not None
-                connection.commit()
-            snapshot = psycopg.connect(db.dsn)
-            try:
-                snapshot.isolation_level = IsolationLevel.REPEATABLE_READ
-                snapshot.read_only = True
-                pass_row = snapshot.execute(
-                    "SELECT max(as_of) FROM rfm.pass_run WHERE status = 'COMPLETED'"
-                ).fetchone()
-                last_pass = None if pass_row is None else pass_row[0]
-                after: UUID | None = None
-                while True:
-                    customers = _universe(
-                        snapshot, after, rules.window_days, row["as_of"], only
-                    )
-                    if not customers:
-                        break
-                    done, found = _batch(
-                        snapshot, customers, rules, row["as_of"], last_pass
-                    )
-                    checked += done
-                    different += len(found)
-                    if found:
-                        with db.transaction() as write:
-                            _write(write, recalculation_id, found)
-                    after = customers[-1]
-            finally:
-                snapshot.close()
+            _compare(db, row, only, progress)
         except Exception as error:  # noqa: BLE001 - recorded, then reported
-            failure = (
-                "source_unavailable"
-                if isinstance(error, psycopg.OperationalError)
-                else "internal_error"
-            )
+            failure = _failure_code(error)
             LOGGER.exception("Verification %s failed", recalculation_id)
-        if failure:
-            _finish(db, row, actor, checked=None, different=None, failure=failure)
-        else:
-            _finish(db, row, actor, checked=checked, different=different, failure=None)
-        with db.connection() as connection:
-            finished = one(connection, recalculation_id)
-            connection.commit()
+        if not _record_end(
+            db, row, actor, progress.checked, progress.found, failure, correlation_id
+        ):
+            return row
+        try:
+            with db.connection() as connection:
+                finished = one(connection, recalculation_id)
+                connection.commit()
+        except Exception:  # noqa: BLE001 - it is recorded; only the read failed
+            LOGGER.exception(
+                "Verification %s ended and cannot be read", recalculation_id
+            )
+            return row
         _alert(finished)
         return finished
     finally:
         lock.close()
+
+
+def _record_end(
+    db: Any,
+    row: dict[str, Any],
+    actor: tuple[str, str] | None,
+    checked: int,
+    found: list[tuple[UUID, Values, Values]],
+    failure: str | None,
+    correlation_id: str | None,
+) -> bool:
+    """Write how the verification ended, retrying a database that is briefly away.
+    A completion that cannot be written is recorded as a failure instead. False when
+    nothing could be written: the row stays for the reap, and the alert says so."""
+    attempts: list[tuple[str | None, list[tuple[UUID, Values, Values]]]] = [
+        (failure, found)
+    ]
+    if failure is None:
+        attempts.append(("internal_error", []))
+    for code, differences in attempts:
+        for delay in (0.0, *FINISH_RETRIES):
+            if delay:
+                clock.sleep(delay)
+            try:
+                _finish(
+                    db,
+                    row,
+                    actor,
+                    checked=checked,
+                    different=len(found),
+                    failure=code,
+                    found=differences,
+                    correlation_id=correlation_id,
+                )
+                return True
+            except Exception as error:  # noqa: BLE001 - retried, then reported
+                LOGGER.exception(
+                    "The end of verification %s could not be recorded",
+                    row["recalculation_id"],
+                )
+                if _failure_code(error) != "source_unavailable":
+                    break  # not an outage: retrying writes the same refusal
+    LOGGER.error(
+        "rfm_verification_failed recalculation_id=%s failure_code=unrecorded",
+        row["recalculation_id"],
+    )
+    return False
 
 
 def _write(
@@ -605,23 +765,82 @@ def _alert(finished: dict[str, Any]) -> None:
         )
 
 
-def reap_orphans(db: Any) -> int:
-    """Mark FAILED a verification left RUNNING by an instance that stopped: while one
-    runs its instance holds the lock, so a lock that is free means nobody does."""
+def claim(db: Any) -> psycopg.Connection | None:
+    """Lock 299001 on a session of its own, or None when another process holds it,
+    which means a verification is running."""
     lock = psycopg.connect(db.dsn, autocommit=True)
     try:
         row = lock.execute("SELECT pg_try_advisory_lock(%s)", (LOCK_KEY,)).fetchone()
-        if row is None or not row[0]:
-            return 0
-        done = lock.execute(
+    except BaseException:
+        lock.close()
+        raise
+    if row is None or not row[0]:
+        lock.close()
+        return None
+    return lock
+
+
+def _reap(db: Any) -> int:
+    """Under lock 299001, every RUNNING row was left by a process that stopped: mark
+    it FAILED (`interrupted`), audit it as the system, and alert as for any failure."""
+    with db.transaction() as connection:
+        rows = connection.execute(
             "UPDATE rfm.recalculation SET state = 'FAILED',"
             " finished_at = greatest(clock_timestamp(), started_at),"
             " failure_code = 'interrupted' WHERE state = 'RUNNING'"
-            " RETURNING recalculation_id"
+            " RETURNING recalculation_id, trigger_kind, state, rule_set_id, as_of,"
+            " started_at, finished_at, started_by, customers_checked,"
+            " customers_different, failure_code"
         ).fetchall()
-        return len(done)
+        reaped = [_recalculation(row) for row in rows]
+        for row in reaped:
+            _audit(connection, row, None, "FAILED", 0, 0)
+    for row in reaped:
+        _alert(row)
+    return len(reaped)
+
+
+def reap_orphans(db: Any) -> int:
+    """Mark FAILED a verification left RUNNING by an instance that stopped: while one
+    runs its process holds the lock, so a lock that is free means nobody does."""
+    lock = claim(db)
+    if lock is None:
+        return 0
+    try:
+        return _reap(db)
     finally:
         lock.close()
+
+
+def begin(
+    db: Any,
+    *,
+    trigger: str,
+    started_by: str | None,
+    rule_set_id: int | None,
+    in_force: int,
+) -> tuple[dict[str, Any], psycopg.Connection]:
+    """Take lock 299001, clear what a stopped process left, and record a verification
+    RUNNING. Returns the row and the session that holds the lock, for `execute`: the
+    lock is held from before the row exists to its end, so no reap mistakes it for an
+    orphan. 409 when another verification holds the lock."""
+    lock = claim(db)
+    if lock is None:
+        raise in_progress()
+    try:
+        _reap(db)
+        with db.transaction() as connection:
+            row = start(
+                connection,
+                trigger=trigger,
+                started_by=started_by,
+                rule_set_id=rule_set_id,
+                in_force=in_force,
+            )
+    except BaseException:
+        lock.close()
+        raise
+    return row, lock
 
 
 def next_start(now: datetime, weekday: int, at: time) -> datetime:
@@ -635,35 +854,61 @@ def next_start(now: datetime, weekday: int, at: time) -> datetime:
 
 
 class WeeklyVerification(threading.Thread):
-    """Starts a verification each week on its weekday and time, as the system."""
+    """Starts a verification each week on its weekday and time, as the system. A
+    start that fails (the database away, another verification running) is retried
+    with a backoff, as the daily pass is, and not left to the next week."""
 
-    def __init__(self, db: Any, in_force: int, weekday: int, at: time) -> None:
+    def __init__(
+        self,
+        db: Any,
+        in_force: int,
+        weekday: int,
+        at: time,
+        retry_first: float = ageing.RETRY_FIRST,
+        retry_max: float = ageing.RETRY_MAX,
+    ) -> None:
         super().__init__(name="rfm-engine-verification", daemon=True)
         self.db = db
         self.in_force = in_force
         self.weekday = weekday
         self.at = at
+        self.retry_first = retry_first
+        self.retry_max = retry_max
         self.stopping = threading.Event()
 
     def stop(self) -> None:
         self.stopping.set()
 
-    def once(self) -> dict[str, Any] | None:
-        """One scheduled verification; None when one is already running."""
-        reap_orphans(self.db)
-        try:
-            with self.db.transaction() as connection:
-                row = start(
-                    connection,
-                    trigger="SCHEDULE",
-                    started_by=None,
-                    rule_set_id=None,
-                    in_force=self.in_force,
+    def once(self) -> dict[str, Any]:
+        """One scheduled verification, run to its end. Raises when it cannot start."""
+        row, lock = begin(
+            self.db,
+            trigger="SCHEDULE",
+            started_by=None,
+            rule_set_id=None,
+            in_force=self.in_force,
+        )
+        return execute(self.db, row["recalculation_id"], None, lock=lock)
+
+    def until_started(self) -> dict[str, Any] | None:
+        """`once`, retried until it starts or the thread stops."""
+        delay = self.retry_first
+        while not self.stopping.is_set():
+            try:
+                return self.once()
+            except Exception as error:  # noqa: BLE001 - alerted, then retried
+                code = error.code if isinstance(error, ApiError) else "internal_error"
+                LOGGER.error(
+                    "rfm_verification_failed recalculation_id=none"
+                    " failure_code=not_started code=%s retry_in=%s",
+                    code,
+                    delay,
+                    exc_info=not isinstance(error, ApiError),
                 )
-        except ApiError as error:
-            LOGGER.error("rfm_verification_not_started code=%s", error.code)
-            return None
-        return execute(self.db, row["recalculation_id"], None)
+            if self.stopping.wait(delay):
+                break
+            delay = min(delay * 2, self.retry_max)
+        return None
 
     def run(self) -> None:
         while not self.stopping.is_set():
@@ -671,7 +916,4 @@ class WeeklyVerification(threading.Thread):
             wait = (next_start(now, self.weekday, self.at) - now).total_seconds()
             if self.stopping.wait(wait):
                 break
-            try:
-                self.once()
-            except Exception:  # noqa: BLE001
-                LOGGER.exception("The scheduled verification could not run")
+            self.until_started()

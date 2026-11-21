@@ -25,13 +25,13 @@ from typing import Any
 from uuid import UUID
 
 import redis
-from flask import Flask, request
+from flask import Flask, g, request
 from mosaiq_kit import Kit, Page, Representation, configure_logging
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
-from . import ageing, recompute, rulesets, verification
+from . import ageing, recompute, rulesets, store, verification
 from .config import CONSENT_STREAM, RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
@@ -91,6 +91,19 @@ def create_app() -> Flask:
             info_key="page_info",
         )
 
+    def scoring(
+        connection: Any, stream: str, fields: dict[str, str], cause: str
+    ) -> tuple[int, recompute.Applying | None]:
+        """The rule set to score under and what to apply the result as. With no
+        version published the profile is still written and nothing is applied, so an
+        entry is never refused for it (ADR-0087)."""
+        version = recompute.in_force(connection, settings.rule_set_id)
+        if version is None:
+            return settings.rule_set_id, None
+        return version.rule_set_id, recompute.Applying(
+            version, cause, recompute.batch_of(stream, fields)
+        )
+
     def recompute_sale(
         stream: str, sale: str, fields: dict[str, str], cause: str
     ) -> None:
@@ -98,15 +111,8 @@ def create_app() -> Flask:
             LOGGER.warning("Entry of %s without a transaction id: %r", stream, fields)
             return
         with kit.db.transaction() as connection:
-            version = recompute.in_force(connection, settings.rule_set_id)
-            recompute.from_sale(
-                connection,
-                int(sale),
-                version.rule_set_id,
-                applying=recompute.Applying(
-                    version, cause, recompute.batch_of(stream, fields)
-                ),
-            )
+            rule_set_id, applying = scoring(connection, stream, fields, cause)
+            recompute.from_sale(connection, int(sale), rule_set_id, applying=applying)
 
     def author() -> dict[str, Any]:
         principal = kit.principal
@@ -162,14 +168,15 @@ def create_app() -> Flask:
     def create_recalculation() -> Representation:
         principal = author()
         body = kit.body or {}
-        with kit.db.transaction() as connection:
-            row = verification.start(
-                connection,
-                trigger="ON_DEMAND",
-                started_by=str(principal["sub"]),
-                rule_set_id=body.get("rule_set_id"),
-                in_force=settings.rule_set_id,
-            )
+        # The lock is taken before the row is recorded and handed to the thread, which
+        # holds it to the end; a RUNNING row left by a stopped process is reaped here.
+        row, lock = verification.begin(
+            kit.db,
+            trigger="ON_DEMAND",
+            started_by=str(principal["sub"]),
+            rule_set_id=body.get("rule_set_id"),
+            in_force=settings.rule_set_id,
+        )
         thread = threading.Thread(
             target=verification.execute,
             args=(
@@ -177,6 +184,10 @@ def create_app() -> Flask:
                 row["recalculation_id"],
                 (str(principal["sub"]), str(principal["role"])),
             ),
+            kwargs={
+                "lock": lock,
+                "correlation_id": getattr(g, "correlation_id", None),
+            },
             name=f"rfm-verification-{row['recalculation_id']}",
             daemon=True,
         )
@@ -190,13 +201,13 @@ def create_app() -> Flask:
 
     @kit.operation("listRfmRecalculations")
     def list_recalculations() -> Page:
-        rule_set = request.args.get("rule_set_id")
+        filters = verification.filters(request.args)
         with kit.db.connection() as connection:
             items, total = verification.listing(
                 connection,
-                state=request.args.get("state"),
-                trigger=request.args.get("trigger"),
-                rule_set_id=None if rule_set is None else int(rule_set),
+                state=filters["state"],
+                trigger=filters["trigger"],
+                rule_set_id=filters["rule_set_id"],
                 page=kit.page,
                 size=kit.size,
             )
@@ -267,17 +278,17 @@ def create_app() -> Flask:
             LOGGER.warning("Entry of %s without a customer: %r", CONSENT_STREAM, fields)
             return
         with kit.db.transaction() as connection:
-            version = recompute.in_force(connection, settings.rule_set_id)
-            recompute.customer(
+            # CONSENT_GRANTED only when PROFILING is granted now: an entry about
+            # another purpose that finds the customer overdue moves them for the
+            # clock, and a withdrawal is recorded as CONSENT_WITHDRAWN anyway.
+            granted = store.profiling_decision(connection, customer_id) == "GRANTED"
+            rule_set_id, applying = scoring(
                 connection,
-                customer_id,
-                version.rule_set_id,
-                applying=recompute.Applying(
-                    version,
-                    "CONSENT_GRANTED",
-                    recompute.batch_of(CONSENT_STREAM, fields),
-                ),
+                CONSENT_STREAM,
+                fields,
+                "CONSENT_GRANTED" if granted else "AGEING",
             )
+            recompute.customer(connection, customer_id, rule_set_id, applying=applying)
 
     app.extensions["rfm_handle_consent"] = handle_consent
     app.extensions["rfm_handle_sale"] = handle_sale

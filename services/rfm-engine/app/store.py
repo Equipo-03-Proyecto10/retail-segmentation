@@ -159,18 +159,31 @@ def current(connection: Connection, customer_id: UUID) -> tuple[object, ...] | N
     ).fetchone()
 
 
-def published_rule_version(
+def published_version(
     connection: Connection,
-) -> tuple[int, int | None, int] | None:
-    """The published rules version as (version_id, rule_set_id or None, window_days),
-    read from the registry's view and never its table (ADR-0063, ADR-0064). `None` when
-    no rules version is published: the view holds a row per method that has one, and a
-    published K-means version is not one rfm-engine can score."""
+) -> tuple[int, str, int | None, int] | None:
+    """The published version as (version_id, method, rule_set_id or None,
+    window_days), read from the registry's view and never its table (ADR-0063,
+    ADR-0064). One version is published at a time, whatever its method
+    (`model_version_one_published`); `None` when none is."""
     row = connection.execute(
-        "SELECT version_id, rule_set_id, window_days"
-        " FROM api_models.published_version_v1 WHERE method = 'RFM_RULES'"
+        "SELECT version_id, method, rule_set_id, window_days"
+        " FROM api_models.published_version_v1"
+        " ORDER BY published_at DESC, version_id DESC LIMIT 1"
     ).fetchone()
-    return None if row is None else (row[0], row[1], row[2])
+    return None if row is None else (row[0], row[1], row[2], row[3])
+
+
+def profiling_decision(connection: Connection, customer_id: UUID) -> str | None:
+    """The customer's current PROFILING decision, `GRANTED` or `WITHDRAWN`, or None
+    when they have none (api_preferences.consent_state_v1). A view rfm-engine cannot
+    read raises, so the entry is refused and redelivered (ADR-0087)."""
+    row = connection.execute(
+        "SELECT decision FROM api_preferences.consent_state_v1"
+        " WHERE customer_id = %s AND purpose = 'PROFILING'",
+        (customer_id,),
+    ).fetchone()
+    return None if row is None else str(row[0])
 
 
 def profiling_withdrawn(connection: Connection, customer_id: UUID) -> bool:
@@ -178,14 +191,10 @@ def profiling_withdrawn(connection: Connection, customer_id: UUID) -> bool:
 
     Only an explicit withdrawal excludes: a customer with no decision is segmented,
     because registration does not record consent yet and reading no row as a refusal
-    would stop segmenting everyone registered since (ADR-0087).
+    would stop segmenting everyone registered since (ADR-0087, which supersedes that
+    part of ADR-0066 for this consumer).
     """
-    row = connection.execute(
-        "SELECT decision FROM api_preferences.consent_state_v1"
-        " WHERE customer_id = %s AND purpose = 'PROFILING'",
-        (customer_id,),
-    ).fetchone()
-    return row is not None and row[0] == "WITHDRAWN"
+    return profiling_decision(connection, customer_id) == "WITHDRAWN"
 
 
 def apply_assignment(
@@ -196,7 +205,9 @@ def apply_assignment(
     last_purchase_at: datetime | None,
     cause: str,
     version_id: int,
+    method: str,
     window_days: int,
+    rule_set_id: int | None,
 ) -> str:
     """Apply the customer's result to the segment history, in the transaction that
     writes the profile (contracts/db/api_segments.apply_assignment.v1.md). Returns
@@ -205,7 +216,7 @@ def apply_assignment(
     row = connection.execute(
         "SELECT api_segments.apply_assignment_v1(%s::uuid, %s::uuid, %s::varchar,"
         " %s::smallint, %s::smallint, %s::smallint, %s::timestamptz, %s::integer,"
-        " %s::numeric, %s::text, %s::bigint, %s::text, %s::integer)",
+        " %s::numeric, %s::text, %s::bigint, %s::text, %s::integer, %s::bigint)",
         (
             batch_id,
             customer_id,
@@ -218,8 +229,9 @@ def apply_assignment(
             profile.m_total,
             cause,
             version_id,
-            "RFM_RULES",
+            method,
             window_days,
+            rule_set_id,
         ),
     ).fetchone()
     assert row is not None

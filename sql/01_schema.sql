@@ -484,10 +484,15 @@ DO $$ BEGIN IF NOT EXISTS (
 -- window is the one the scoring reads (web/db/segments.py): occurred_at in
 -- [now() - window_days, now()], now() being the run transaction's start, so
 -- the run's INSERT and the scoring see the same sales.
+-- It runs as definer_guard, whose only privilege on the sales is SELECT on these two
+-- columns (the E-13 pattern below), so a boundary that records a run, such as the
+-- segments function of F22-15, needs no privilege on another boundary's table.
 CREATE OR REPLACE FUNCTION fn_segmentation_window_origin(window_days INT)
 RETURNS VARCHAR(20)
 LANGUAGE sql
 STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
 AS $$
     SELECT CASE WHEN EXISTS (
         SELECT FROM public.transaction AS t
@@ -497,6 +502,8 @@ AS $$
     ) THEN 'SEEDED' ELSE 'OBSERVED' END::VARCHAR(20)
 $$;
 
+ALTER FUNCTION fn_segmentation_window_origin(INT) OWNER TO definer_guard;
+GRANT SELECT (data_origin, occurred_at) ON public.transaction TO definer_guard;
 REVOKE EXECUTE ON FUNCTION fn_segmentation_window_origin(INT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION fn_segmentation_window_origin(INT) TO retail_app;
 
@@ -2402,6 +2409,27 @@ CREATE TABLE IF NOT EXISTS segments_events.outbox (
 CREATE INDEX IF NOT EXISTS outbox_unrelayed
     ON segments_events.outbox (occurred_at) WHERE relayed_at IS NULL;
 
+-- Why a customer's row exists. FULL_RUN is every row written by a whole run, which is
+-- all that existed before api_segments.apply_assignment_v1 (F22-15, ADR-0087). CONSENT_WITHDRAWN is the unassigned
+-- result of a customer who withdrew PROFILING (ADR-0066), so it carries no label:
+-- the unassigned reason is read off it and is not a column of its own.
+ALTER TABLE public.customer_segment_history
+    ADD COLUMN IF NOT EXISTS cause varchar(20) NOT NULL DEFAULT 'FULL_RUN'
+        CONSTRAINT customer_segment_history_cause_valid CHECK (cause IN
+            ('FULL_RUN', 'SALE', 'REVERSAL', 'AGEING', 'VERSION_CHANGE',
+             'CONSENT_WITHDRAWN', 'CONSENT_GRANTED'));
+DO $constraint$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conrelid = 'public.customer_segment_history'::regclass
+                      AND conname = 'customer_segment_history_withdrawn_unassigned') THEN
+        ALTER TABLE public.customer_segment_history
+            ADD CONSTRAINT customer_segment_history_withdrawn_unassigned
+            CHECK (cause <> 'CONSENT_WITHDRAWN' OR label_code IS NULL);
+    END IF;
+END
+$constraint$;
+
 -- contracts/db/api_segments.current_label.v1.md: one row per customer, from
 -- the customer's open history row only, never an earlier row or a default.
 -- An open row with a label is assigned; one without is the run's own result
@@ -2417,7 +2445,14 @@ SELECT c.customer_id,
        END::text AS state,
        h.label_code,
        h.valid_from AS since,
-       h.run_id
+       h.run_id,
+       -- Appended (F22-15): why an unassigned result has no label. A function of the
+       -- open row's cause, never stored twice (ADR-0087).
+       CASE
+           WHEN h.history_id IS NULL OR h.label_code IS NOT NULL THEN NULL
+           WHEN h.cause = 'CONSENT_WITHDRAWN' THEN 'PROFILING_WITHDRAWN'
+           ELSE 'NO_PURCHASES'
+       END::text AS unassigned_reason
 FROM api_customers.customer_ref_v1 AS c
 LEFT JOIN public.customer_segment_history AS h
        ON h.customer_id = c.customer_id AND h.valid_to IS NULL;
@@ -2502,26 +2537,8 @@ ALTER TABLE public.segmentation_run
     ADD COLUMN IF NOT EXISTS scope varchar(12) NOT NULL DEFAULT 'FULL'
         CONSTRAINT segmentation_run_scope_valid CHECK (scope IN ('FULL', 'INCREMENTAL'));
 
--- Why a customer's row exists. FULL_RUN is every row written by a whole run, which is
--- all that existed before the function below. CONSENT_WITHDRAWN is the unassigned
--- result of a customer who withdrew PROFILING (ADR-0066), so it carries no label:
--- the unassigned reason is read off it and is not a column of its own.
-ALTER TABLE public.customer_segment_history
-    ADD COLUMN IF NOT EXISTS cause varchar(20) NOT NULL DEFAULT 'FULL_RUN'
-        CONSTRAINT customer_segment_history_cause_valid CHECK (cause IN
-            ('FULL_RUN', 'SALE', 'REVERSAL', 'AGEING', 'VERSION_CHANGE',
-             'CONSENT_WITHDRAWN', 'CONSENT_GRANTED'));
-DO $constraint$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_constraint
-                    WHERE conrelid = 'public.customer_segment_history'::regclass
-                      AND conname = 'customer_segment_history_withdrawn_unassigned') THEN
-        ALTER TABLE public.customer_segment_history
-            ADD CONSTRAINT customer_segment_history_withdrawn_unassigned
-            CHECK (cause <> 'CONSENT_WITHDRAWN' OR label_code IS NULL);
-    END IF;
-END
-$constraint$;
+-- Each history row's `cause` is added above, before api_segments.current_label_v1
+-- reads it.
 
 -- A batch of changes is one run, found again by the batch id the caller names, so a
 -- redelivered batch reuses its run (contracts/db/api_segments.apply_assignment.v1.md).
@@ -2531,8 +2548,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_segmentation_run_batch
 
 -- One more event with the existing capture: a customer's assignment changed
 -- (contracts/streams/segments.assignment_changed.v1.md). The row that is a
--- customer's first, or whose label differs from the row before it, announces the
--- customer and nothing else; NULL is a label state (RN-21). Any writer of the table
+-- customer's first, or whose label differs from the row before it, or whose
+-- unassigned reason does (no purchases, PROFILING withdrawn), announces the customer
+-- and nothing else; NULL is a label state (RN-21). Any writer of the table
 -- is captured, the function below and the web's run alike, in the writer's own
 -- transaction, so a rolled-back change announces nothing.
 CREATE OR REPLACE FUNCTION segments_events.capture_assignment_changed() RETURNS trigger
@@ -2543,9 +2561,10 @@ AS $capture$
 DECLARE
     previous_found boolean;
     previous_label varchar(40);
+    previous_cause varchar(20);
 BEGIN
-    SELECT true, h.label_code
-      INTO previous_found, previous_label
+    SELECT true, h.label_code, h.cause
+      INTO previous_found, previous_label, previous_cause
       FROM public.customer_segment_history AS h
      WHERE h.customer_id = NEW.customer_id
        AND h.history_id <> NEW.history_id
@@ -2553,7 +2572,10 @@ BEGIN
             OR (h.valid_from = NEW.valid_from AND h.history_id < NEW.history_id))
      ORDER BY h.valid_from DESC, h.history_id DESC
      LIMIT 1;
-    IF previous_found IS NULL OR previous_label IS DISTINCT FROM NEW.label_code THEN
+    IF previous_found IS NULL OR previous_label IS DISTINCT FROM NEW.label_code
+       OR (NEW.label_code IS NULL
+           AND (previous_cause = 'CONSENT_WITHDRAWN')
+               <> (NEW.cause = 'CONSENT_WITHDRAWN')) THEN
         INSERT INTO segments_events.outbox (stream, event_type, entity_id)
         VALUES ('stream:segments.v1.assignment_changed', TG_OP, NEW.customer_id::text);
         PERFORM pg_notify('segments_outbox', '');
@@ -2576,7 +2598,8 @@ FOR EACH ROW EXECUTE FUNCTION segments_events.capture_assignment_changed();
 -- profile. The unassigned state is the label NULL, split by one reason: a customer who
 -- withdrew PROFILING (cause CONSENT_WITHDRAWN, ADR-0066) is not the one with no
 -- purchases, so moving between the two is a change.
--- Serialized per customer on 300001 (contracts/db/advisory-locks.md).
+-- It waits for the web's run (285001, taken shared, so changes do not wait for each
+-- other) and is serialized per customer on 300001 (contracts/db/advisory-locks.md).
 CREATE OR REPLACE FUNCTION api_segments.apply_assignment_v1(
     p_batch_id uuid,
     p_customer_id uuid,
@@ -2590,7 +2613,8 @@ CREATE OR REPLACE FUNCTION api_segments.apply_assignment_v1(
     p_cause text,
     p_model_version_id bigint,
     p_method text,
-    p_window_days integer
+    p_window_days integer,
+    p_rule_set_id bigint
 ) RETURNS text
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -2622,6 +2646,10 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
+    -- The web's run takes 285001 for its whole transaction and closes every open row
+    -- at the instant it read after the lock; a change committed inside that run would
+    -- open a row that instant cannot close. Shared, so changes only wait for a run.
+    PERFORM pg_advisory_xact_lock_shared(285001);
     PERFORM pg_advisory_xact_lock(300001, hashtext(p_customer_id::text));
 
     IF NOT EXISTS (SELECT FROM api_customers.customer_ref_v1 AS c
@@ -2637,28 +2665,11 @@ BEGIN
 
     v_scope := CASE WHEN p_cause = 'VERSION_CHANGE' THEN 'FULL' ELSE 'INCREMENTAL' END;
 
-    -- The open-row index and the no-overlap constraint also guard against a writer
-    -- that does not take this lock (the web's run), which can commit between the read
-    -- and the insert below. The call then reads again and compares to what that
+    -- The open-row index and the no-overlap constraint still guard against a writer
+    -- that takes neither lock. The call then reads again and compares to what that
     -- writer wrote, as a call that waited would; the refusal is never surfaced.
     FOR v_attempt IN 1..5 LOOP
         BEGIN
-            -- The batch's run, when an earlier call created it: the calls agree on
-            -- what moved the customers and under what.
-            v_run := NULL;
-            SELECT r.* INTO v_run
-              FROM public.segmentation_run AS r
-             WHERE r.parameters ->> 'batch_id' = p_batch_id::text;
-            IF v_run.run_id IS NOT NULL
-               AND (v_run.parameters ->> 'cause' IS DISTINCT FROM p_cause
-                    OR (v_run.parameters ->> 'model_version_id')::bigint
-                           IS DISTINCT FROM p_model_version_id
-                    OR v_run.method IS DISTINCT FROM p_method
-                    OR v_run.window_days IS DISTINCT FROM p_window_days) THEN
-                RAISE EXCEPTION 'batch % disagrees with the call', p_batch_id
-                    USING ERRCODE = '23514', CONSTRAINT = 'batch_mismatch';
-            END IF;
-
             v_open := NULL;
             SELECT h.* INTO v_open
               FROM public.customer_segment_history AS h
@@ -2672,6 +2683,25 @@ BEGIN
                     OR (v_open.cause = 'CONSENT_WITHDRAWN')
                        = (p_cause = 'CONSENT_WITHDRAWN')) THEN
                 RETURN 'unchanged';
+            END IF;
+
+            -- The batch's run, when an earlier call created it: the calls agree on
+            -- what moved the customers and under what. Checked only for a change, so
+            -- an unchanged customer never depends on the batch.
+            v_run := NULL;
+            SELECT r.* INTO v_run
+              FROM public.segmentation_run AS r
+             WHERE r.parameters ->> 'batch_id' = p_batch_id::text;
+            IF v_run.run_id IS NOT NULL
+               AND (v_run.parameters ->> 'cause' IS DISTINCT FROM p_cause
+                    OR (v_run.parameters ->> 'model_version_id')::bigint
+                           IS DISTINCT FROM p_model_version_id
+                    OR (v_run.parameters ->> 'rule_set_id')::bigint
+                           IS DISTINCT FROM p_rule_set_id
+                    OR v_run.method IS DISTINCT FROM p_method
+                    OR v_run.window_days IS DISTINCT FROM p_window_days) THEN
+                RAISE EXCEPTION 'batch % disagrees with the call', p_batch_id
+                    USING ERRCODE = '23514', CONSTRAINT = 'batch_mismatch';
             END IF;
 
             -- One instant closes the old row and opens the new, and never an
@@ -2696,6 +2726,7 @@ BEGIN
                         jsonb_build_object('batch_id', p_batch_id,
                                            'cause', p_cause,
                                            'model_version_id', p_model_version_id,
+                                           'rule_set_id', p_rule_set_id,
                                            'method', p_method,
                                            'window_days', p_window_days),
                         0, NULL, public.fn_segmentation_window_origin(p_window_days),
@@ -2740,10 +2771,10 @@ BEGIN
 END
 $apply$;
 ALTER FUNCTION api_segments.apply_assignment_v1(uuid, uuid, varchar, smallint, smallint,
-    smallint, timestamptz, integer, numeric, text, bigint, text, integer)
+    smallint, timestamptz, integer, numeric, text, bigint, text, integer, bigint)
     OWNER TO definer_segments;
 REVOKE EXECUTE ON FUNCTION api_segments.apply_assignment_v1(uuid, uuid, varchar, smallint,
-    smallint, smallint, timestamptz, integer, numeric, text, bigint, text, integer)
+    smallint, smallint, timestamptz, integer, numeric, text, bigint, text, integer, bigint)
     FROM PUBLIC;
 
 -- svc_segments reads the web's segmentation tables and writes none of them.
@@ -2759,9 +2790,9 @@ GRANT USAGE ON SCHEMA api_segments TO svc_segments, svc_recommendations;
 GRANT SELECT ON api_segments.current_label_v1 TO svc_segments, svc_recommendations;
 
 -- The function's owner holds what its caller does not: it reads the vocabulary and the
--- customers, adds runs and history rows, closes a row and counts a run's rows. It
--- reads two columns of the sales for the origin guard on a run (ADR-0052), which runs
--- as the inserting role.
+-- customers, adds runs and history rows, closes a row and counts a run's rows. The
+-- origin of a run's window (ADR-0052) is read by fn_segmentation_window_origin, which
+-- runs as definer_guard (DATA ORIGIN), so this owner holds no privilege on the sales.
 GRANT SELECT ON public.segment_label, public.segmentation_run,
     public.customer_segment_history TO definer_segments;
 GRANT INSERT ON public.segmentation_run, public.customer_segment_history
@@ -2770,14 +2801,13 @@ GRANT UPDATE (customer_count) ON public.segmentation_run TO definer_segments;
 GRANT UPDATE (valid_to) ON public.customer_segment_history TO definer_segments;
 GRANT USAGE ON SCHEMA api_customers TO definer_segments;
 GRANT SELECT ON api_customers.customer_ref_v1 TO definer_segments;
-GRANT SELECT (data_origin, occurred_at) ON public.transaction TO definer_segments;
 GRANT EXECUTE ON FUNCTION public.fn_segmentation_window_origin(integer)
     TO definer_segments;
 
 -- rfm-engine applies a customer's change in the transaction that writes the profile.
 GRANT USAGE ON SCHEMA api_segments TO svc_rfm;
 GRANT EXECUTE ON FUNCTION api_segments.apply_assignment_v1(uuid, uuid, varchar, smallint,
-    smallint, smallint, timestamptz, integer, numeric, text, bigint, text, integer)
+    smallint, smallint, timestamptz, integer, numeric, text, bigint, text, integer, bigint)
     TO svc_rfm;
 -- END BOUNDARY segments
 
@@ -5474,7 +5504,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS pass_run_one_running
 -- STARTED by an administrator (ON_DEMAND, `started_by`) or by the system on a
 -- schedule (SCHEDULE, no `started_by`, RN-05). At most one is RUNNING at a time. The
 -- outcome is not a column: it is EQUIVALENT exactly when a COMPLETED row found no
--- difference. A finished row is final: only a RUNNING row may be updated.
+-- difference. A row is inserted RUNNING, and a finished row is final: only a RUNNING
+-- row may be updated or gain a difference.
 CREATE TABLE IF NOT EXISTS rfm.recalculation (
     recalculation_id    bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     trigger_kind        varchar(9) NOT NULL CHECK (trigger_kind IN ('SCHEDULE', 'ON_DEMAND')),
@@ -5535,7 +5566,20 @@ CREATE TABLE IF NOT EXISTS rfm.recalculation_difference (
 CREATE OR REPLACE FUNCTION rfm.fn_recalculation_is_final() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog, pg_temp AS $recalculation_final$
 BEGIN
-    IF TG_TABLE_NAME = 'recalculation' THEN
+    IF TG_OP = 'INSERT' THEN
+        -- A verification starts RUNNING (the shape check keeps it free of results),
+        -- and a difference belongs only to one still running, so a finished
+        -- verification never gains a row its counts do not include.
+        IF TG_TABLE_NAME = 'recalculation' THEN
+            IF NEW.state = 'RUNNING' THEN
+                RETURN NEW;
+            END IF;
+        ELSIF EXISTS (SELECT FROM rfm.recalculation AS r
+                       WHERE r.recalculation_id = NEW.recalculation_id
+                         AND r.state = 'RUNNING') THEN
+            RETURN NEW;
+        END IF;
+    ELSIF TG_TABLE_NAME = 'recalculation' THEN
         IF TG_OP = 'UPDATE' AND OLD.state = 'RUNNING' THEN
             RETURN NEW;
         END IF;
@@ -5551,11 +5595,11 @@ $recalculation_final$;
 
 DROP TRIGGER IF EXISTS trg_recalculation_final ON rfm.recalculation;
 CREATE TRIGGER trg_recalculation_final
-    BEFORE UPDATE OR DELETE ON rfm.recalculation
+    BEFORE INSERT OR UPDATE OR DELETE ON rfm.recalculation
     FOR EACH ROW EXECUTE FUNCTION rfm.fn_recalculation_is_final();
 DROP TRIGGER IF EXISTS trg_recalculation_difference_final ON rfm.recalculation_difference;
 CREATE TRIGGER trg_recalculation_difference_final
-    BEFORE UPDATE OR DELETE ON rfm.recalculation_difference
+    BEFORE INSERT OR UPDATE OR DELETE ON rfm.recalculation_difference
     FOR EACH ROW EXECUTE FUNCTION rfm.fn_recalculation_is_final();
 
 -- stream:rfm.v1.profile_changed (contracts/streams/rfm.profile_changed.v1.md).

@@ -83,23 +83,28 @@ def _begin(connection: Connection, rule_set_id: int) -> Run:
     return _run(row)
 
 
-def _due(connection: Connection, as_of: datetime, after: UUID | None) -> list[UUID]:
+def _due(
+    connection: Connection, as_of: datetime, window_days: int, after: UUID | None
+) -> list[UUID]:
     """The next customers whose instant has come, in key order so a batch never
-    returns to a customer it has seen."""
-    if after is None:
-        rows = connection.execute(
-            "SELECT customer_id FROM rfm.customer_profile"
-            " WHERE next_change_at IS NOT NULL AND next_change_at <= %s"
-            " ORDER BY customer_id LIMIT %s",
-            (as_of, BATCH),
-        ).fetchall()
-    else:
-        rows = connection.execute(
-            "SELECT customer_id FROM rfm.customer_profile"
-            " WHERE next_change_at IS NOT NULL AND next_change_at <= %s"
-            " AND customer_id > %s ORDER BY customer_id LIMIT %s",
-            (as_of, after, BATCH),
-        ).fetchall()
+    returns to a customer it has seen. A customer with a net purchase in the window
+    and no profile at all is due too: no event ever reached them (a seeded customer,
+    or a first sale whose event was lost), and the pass is what gives them one, so a
+    verification finds them `pending` only when the pass has not (ADR-0086)."""
+    rows = connection.execute(
+        "SELECT customer_id FROM ("
+        " SELECT customer_id FROM rfm.customer_profile"
+        "  WHERE next_change_at IS NOT NULL AND next_change_at <= %(as_of)s"
+        " UNION"
+        " SELECT n.customer_id FROM api_sales.net_purchase_line_v1 AS n"
+        "  WHERE n.occurred_at >= %(as_of)s - make_interval(days => %(days)s)"
+        "    AND n.occurred_at <= %(as_of)s"
+        "    AND NOT EXISTS (SELECT FROM rfm.customer_profile AS p"
+        "                     WHERE p.customer_id = n.customer_id)) AS due"
+        " WHERE (%(after)s::uuid IS NULL OR customer_id > %(after)s::uuid)"
+        " ORDER BY customer_id LIMIT %(limit)s",
+        {"as_of": as_of, "days": window_days, "after": after, "limit": BATCH},
+    ).fetchall()
     return [row[0] for row in rows]
 
 
@@ -124,7 +129,8 @@ def _refresh(
             "SELECT next_change_at FROM rfm.customer_profile WHERE customer_id = %s",
             (customer_id,),
         ).fetchone()
-        if row is None or row[0] is None or row[0] > run.as_of:
+        # No row at all is a customer with purchases the pass gives a first profile.
+        if row is not None and (row[0] is None or row[0] > run.as_of):
             return None
         before = store.current(connection, customer_id)
         result = recompute.customer(
@@ -170,6 +176,9 @@ def run_pass(
             recompute.require_published(work, rule_set_id)
             work.commit()
             run = _begin(work, rule_set_id)
+            measured = store.rule_set(work, run.rule_set_id)
+            assert measured is not None
+            work.commit()
         if version is not None and run.rule_set_id != version.rule_set_id:
             # A pass left RUNNING keeps the rule set it began under. The version now
             # published holds another, so what this pass writes is not scored under
@@ -186,7 +195,7 @@ def run_pass(
         failed = streak = 0
         while True:
             with db.connection() as work:
-                batch = _due(work, run.as_of, after)
+                batch = _due(work, run.as_of, measured.window_days, after)
             if not batch:
                 break
             for customer_id in batch:
@@ -267,6 +276,8 @@ class DailyPass(threading.Thread):
         with self.db.connection() as connection:
             version = recompute.in_force(connection, self.default_rule_set_id)
             connection.commit()
+        if version is None:
+            return self.default_rule_set_id, None
         return version.rule_set_id, version
 
     def _pass(self) -> None:

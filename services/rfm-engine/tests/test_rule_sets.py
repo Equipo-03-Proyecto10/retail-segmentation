@@ -706,7 +706,7 @@ def test_a_sale_event_is_refused_while_the_rule_set_in_force_is_a_draft(
     sale = shop.sale(customer, days_ago(now, 3))
     draft = _draft(owner)
     monkeypatch.setattr(
-        store, "published_rule_version", lambda connection: (1, draft, 90)
+        store, "published_version", lambda connection: (1, "RFM_RULES", draft, 90)
     )
     app = build_app()
     with pytest.raises(recompute.RuleSetNotPublished):

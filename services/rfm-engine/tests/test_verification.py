@@ -304,6 +304,7 @@ def test_a_reversal_whose_event_never_arrived_is_found(
 def test_a_customer_with_purchases_and_no_profile_is_pending_and_differs(
     shop: Shop, db: Database, owner: psycopg.Connection, now: datetime
 ) -> None:
+    _completed_pass(owner, days_ago(now, 30))
     customer = shop.customer()
     shop.sale(customer, days_ago(now, 4))
 
@@ -489,8 +490,9 @@ def admin(app: Flask, token: Callable[..., dict[str, str]]) -> Admin:
 
 
 def test_an_administrator_starts_a_verification_and_polls_it(
-    shop: Shop, events: Events, admin: Admin, now: datetime
+    shop: Shop, events: Events, admin: Admin, owner: psycopg.Connection, now: datetime
 ) -> None:
+    _completed_pass(owner, days_ago(now, 30))
     stale = shop.customer()
     shop.sale(stale, days_ago(now, 2))  # recorded, its event lost
 
@@ -534,15 +536,21 @@ def test_reads_belong_to_analyst_and_auditor_and_the_start_to_the_administrator(
 
 
 def test_one_verification_runs_at_a_time(
-    admin: Admin, owner: psycopg.Connection
+    admin: Admin, owner: psycopg.Connection, owner_url: str
 ) -> None:
+    """Another process runs one: it holds 299001 and its row is RUNNING."""
+    running = psycopg.connect(owner_url, autocommit=True)
+    running.execute("SELECT pg_advisory_lock(%s)", (verification.LOCK_KEY,))
     owner.execute(
         "INSERT INTO rfm.recalculation (trigger_kind, rule_set_id, as_of, started_by)"
         " VALUES ('SCHEDULE', %s, now(), NULL)",
         (RULE_SET,),
     )
 
-    refused = admin.call("POST", "/v1/rfm-recalculations", json={})
+    try:
+        refused = admin.call("POST", "/v1/rfm-recalculations", json={})
+    finally:
+        running.close()
 
     assert refused.status_code == 409
     assert refused.get_json()["code"] == "recalculation_in_progress"
@@ -594,6 +602,7 @@ def test_a_scheduled_verification_that_finds_a_difference_alerts_and_is_audited(
     now: datetime,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    _completed_pass(owner, days_ago(now, 30))
     stale = shop.customer()
     shop.sale(stale, days_ago(now, 2))  # recorded, its event lost
     weekly = verification.WeeklyVerification(db, RULE_SET, 6, clock(3, 0))
@@ -612,8 +621,8 @@ def test_a_scheduled_verification_that_finds_a_difference_alerts_and_is_audited(
     event = owner.execute(
         "SELECT kind, outcome, actor_type, actor_user_id, source, subject_type,"
         " details ->> 'status', (details ->> 'input_count')::int,"
-        " (details ->> 'output_count')::int FROM audit_events.domain_event"
-        " WHERE subject_id = %s",
+        " (details ->> 'output_count')::int, rule_set_version"
+        " FROM audit_events.domain_event WHERE subject_id = %s",
         (f"rfm-verification-{finished['recalculation_id']}",),
     ).fetchall()
     assert event == [
@@ -627,6 +636,7 @@ def test_a_scheduled_verification_that_finds_a_difference_alerts_and_is_audited(
             "COMPLETED",
             finished["customers_checked"],
             finished["customers_different"],
+            finished["rule_set_id"],
         )
     ]
 
@@ -694,7 +704,7 @@ def test_a_verification_that_fails_is_recorded_audited_and_alerted(
 
 
 def test_a_verification_left_running_by_a_dead_instance_is_marked_failed(
-    db: Database, owner: psycopg.Connection
+    db: Database, owner: psycopg.Connection, caplog: pytest.LogCaptureFixture
 ) -> None:
     owner.execute(
         "INSERT INTO rfm.recalculation (trigger_kind, rule_set_id, as_of, started_by)"
@@ -702,10 +712,21 @@ def test_a_verification_left_running_by_a_dead_instance_is_marked_failed(
         (RULE_SET,),
     )
 
-    assert verification.reap_orphans(db) == 1
+    with caplog.at_level(logging.WARNING, logger="app.verification"):
+        assert verification.reap_orphans(db) == 1
 
-    row = owner.execute("SELECT state, failure_code FROM rfm.recalculation").fetchone()
-    assert row == ("FAILED", "interrupted")
+    row = owner.execute(
+        "SELECT recalculation_id, state, failure_code FROM rfm.recalculation"
+    ).fetchone()
+    assert row is not None and row[1:] == ("FAILED", "interrupted")
+    alerts = [r for r in caplog.records if "rfm_verification_failed" in r.getMessage()]
+    assert len(alerts) == 1 and alerts[0].levelno == logging.ERROR
+    audited = owner.execute(
+        "SELECT actor_type, details ->> 'status' FROM audit_events.domain_event"
+        " WHERE subject_id = %s",
+        (f"rfm-verification-{row[0]}",),
+    ).fetchall()
+    assert audited == [("SYSTEM", "FAILED")]
 
 
 def test_the_week_starts_on_its_weekday_at_its_time() -> None:
@@ -734,6 +755,7 @@ def test_a_finished_verification_and_its_differences_are_never_changed(
     owner: psycopg.Connection,
     now: datetime,
 ) -> None:
+    _completed_pass(owner, days_ago(now, 30))
     customer = shop.customer()
     shop.sale(customer, days_ago(now, 3))
     finished = _verify(db, owner, [customer])
@@ -789,6 +811,7 @@ def test_the_reference_is_a_pure_function_of_the_net_purchases(
 def test_a_customers_removal_takes_their_differences_with_it(
     shop: Shop, db: Database, owner: psycopg.Connection, now: datetime
 ) -> None:
+    _completed_pass(owner, days_ago(now, 30))
     customer = shop.customer()
     shop.sale(customer, days_ago(now, 3))
     finished = _verify(db, owner, [customer])
@@ -801,3 +824,218 @@ def test_a_customers_removal_takes_their_differences_with_it(
         (customer,),
     ).fetchone()
     assert left == (0,)
+
+
+# ------------------------------------------------------ what the review of #1123 found
+
+
+def test_before_any_pass_a_customer_with_purchases_and_no_profile_is_the_passs(
+    shop: Shop, db: Database, owner: psycopg.Connection, now: datetime
+) -> None:
+    """No pass has given them the profile it owes them yet, so it is no defect of the
+    incremental update; nor is a due profile."""
+    customer = shop.customer()
+    shop.sale(customer, days_ago(now, 4))
+    aged = _aged_customer(shop, db, now)
+
+    finished = _verify(db, owner, [customer, aged])
+
+    assert finished["outcome"] == "EQUIVALENT"
+    assert finished["customers_checked"] == 0
+
+
+def test_a_profile_held_under_another_rule_set_is_not_compared(
+    shop: Shop, events: Events, db: Database, owner: psycopg.Connection, now: datetime
+) -> None:
+    customer = shop.customer()
+    events.recorded(shop.sale(customer, days_ago(now, 3)))
+    owner.execute(
+        "UPDATE rfm.customer_profile SET rule_set_id = 2, f_count = f_count + 5"
+        " WHERE customer_id = %s",
+        (customer,),
+    )
+
+    finished = _verify(db, owner, [customer])
+
+    assert finished["outcome"] == "EQUIVALENT"
+    assert finished["customers_checked"] == 0
+
+
+def test_a_profile_computed_after_the_instant_is_not_compared(
+    shop: Shop, events: Events, db: Database, owner: psycopg.Connection, now: datetime
+) -> None:
+    customer = shop.customer()
+    events.recorded(shop.sale(customer, days_ago(now, 3)))
+    owner.execute(
+        "UPDATE rfm.customer_profile SET computed_at = now() + interval '1 hour',"
+        " f_count = f_count + 5 WHERE customer_id = %s",
+        (customer,),
+    )
+
+    finished = _verify(db, owner, [customer])
+
+    assert finished["customers_checked"] == 0
+
+
+def test_a_reap_while_a_verification_starts_does_not_end_it(
+    shop: Shop, db: Database, owner: psycopg.Connection
+) -> None:
+    """The lock is held from before the row is recorded, so a reap by another
+    instance, or by the weekly thread, finds it held and leaves the row alone."""
+    row, lock = verification.begin(
+        db, trigger="SCHEDULE", started_by=None, rule_set_id=None, in_force=RULE_SET
+    )
+
+    assert verification.reap_orphans(db) == 0
+    state = owner.execute(
+        "SELECT state FROM rfm.recalculation WHERE recalculation_id = %s",
+        (row["recalculation_id"],),
+    ).fetchone()
+    assert state == ("RUNNING",)
+
+    finished = verification.execute(
+        db, row["recalculation_id"], None, only=[shop.customer()], lock=lock
+    )
+    assert finished["state"] == "COMPLETED"
+
+
+def test_a_start_reaps_what_a_stopped_process_left_and_runs(
+    admin: Admin, owner: psycopg.Connection
+) -> None:
+    owner.execute(
+        "INSERT INTO rfm.recalculation (trigger_kind, rule_set_id, as_of, started_by)"
+        " VALUES ('SCHEDULE', %s, now(), NULL)",
+        (RULE_SET,),
+    )
+
+    started = admin.call("POST", "/v1/rfm-recalculations", json={})
+
+    assert started.status_code == 201
+    left = owner.execute(
+        "SELECT state, failure_code FROM rfm.recalculation"
+        " WHERE recalculation_id < %s",
+        (started.get_json()["recalculation_id"],),
+    ).fetchall()
+    assert left == [("FAILED", "interrupted")]
+    admin.wait(started.get_json()["recalculation_id"])
+
+
+def test_a_verification_that_fails_half_way_keeps_no_differences(
+    shop: Shop,
+    db: Database,
+    owner: psycopg.Connection,
+    now: datetime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _completed_pass(owner, days_ago(now, 30))
+    first = shop.customer()
+    shop.sale(first, days_ago(now, 4))  # pending: a difference
+    original = verification._universe
+    calls: list[int] = []
+
+    def then_broken(*args: Any, **kwargs: Any) -> list[uuid.UUID]:
+        calls.append(1)
+        if len(calls) > 1:
+            raise RuntimeError("the second batch fails")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(verification, "_universe", then_broken)
+
+    finished = _verify(db, owner, [first])
+
+    assert finished["state"] == "FAILED"
+    assert finished["failure_code"] == "internal_error"
+    rows = owner.execute(
+        "SELECT count(*) FROM rfm.recalculation_difference WHERE recalculation_id = %s",
+        (finished["recalculation_id"],),
+    ).fetchone()
+    assert rows == (0,)
+    audited = owner.execute(
+        "SELECT (details ->> 'input_count')::int, (details ->> 'output_count')::int"
+        " FROM audit_events.domain_event WHERE subject_id = %s",
+        (f"rfm-verification-{finished['recalculation_id']}",),
+    ).fetchone()
+    assert audited == (1, 1), "the counts reached before it failed"
+
+
+def test_a_pool_that_cannot_reach_the_database_is_source_unavailable() -> None:
+    from mosaiq_kit import ApiError
+
+    assert (
+        verification._failure_code(ApiError(503, "database_unavailable", "away"))
+        == "source_unavailable"
+    )
+    assert verification._failure_code(RuntimeError("bug")) == "internal_error"
+
+
+def test_the_list_refuses_a_filter_the_contract_does_not_allow(admin: Admin) -> None:
+    for query, field in (
+        ("rule_set_id=abc", "rule_set_id"),
+        ("rule_set_id=0", "rule_set_id"),
+        ("rule_set_id=99999999999999999999", "rule_set_id"),
+        ("state=DONE", "state"),
+        ("trigger=CRON", "trigger"),
+    ):
+        answer = admin.call("GET", f"/v1/rfm-recalculations?{query}")
+        assert answer.status_code == 422, query
+        body = answer.get_json()
+        assert body["code"] == "invalid_query"
+        assert [d["field"] for d in body["details"]] == [field]
+
+
+def test_a_weekly_start_that_fails_is_retried_and_alerted(
+    shop: Shop,
+    db: Database,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from mosaiq_kit import ApiError
+
+    original = verification.begin
+    attempts: list[int] = []
+
+    def away_once(*args: Any, **kwargs: Any) -> Any:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise ApiError(503, "database_unavailable", "away")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(verification, "begin", away_once)
+    weekly = verification.WeeklyVerification(
+        db, RULE_SET, 6, clock(3, 0), retry_first=0.01, retry_max=0.02
+    )
+
+    with caplog.at_level(logging.ERROR, logger="app.verification"):
+        finished = weekly.until_started()
+
+    assert finished is not None and finished["state"] == "COMPLETED"
+    assert len(attempts) == 2
+    assert any(
+        "rfm_verification_failed" in r.getMessage() and "not_started" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_a_finished_verification_gains_no_difference(
+    shop: Shop, db: Database, owner: psycopg.Connection, service: psycopg.Connection
+) -> None:
+    finished = _verify(db, owner, [shop.customer()])
+    assert finished["outcome"] == "EQUIVALENT"
+
+    with pytest.raises(psycopg.errors.CheckViolation) as refused:
+        with service.transaction():
+            service.execute(
+                "INSERT INTO rfm.recalculation_difference (recalculation_id,"
+                " customer_id, inc_state, rec_state) VALUES (%s, %s, 'pending',"
+                " 'scored')",
+                (finished["recalculation_id"], shop.customer()),
+            )
+    assert refused.value.diag.constraint_name == "recalculation_is_final"
+    with pytest.raises(psycopg.errors.CheckViolation):
+        with service.transaction():
+            service.execute(
+                "INSERT INTO rfm.recalculation (trigger_kind, rule_set_id, as_of,"
+                " state, finished_at, customers_checked, customers_different)"
+                " VALUES ('SCHEDULE', %s, now(), 'COMPLETED', now(), 0, 0)",
+                (RULE_SET,),
+            )

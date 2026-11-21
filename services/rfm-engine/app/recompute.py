@@ -15,6 +15,8 @@ from . import profile, store
 
 LOGGER = logging.getLogger(__name__)
 _BATCHES = uuid5(NAMESPACE_URL, "https://mosaiq.example/rfm-engine/batch")
+RULES = "RFM_RULES"
+WITHDRAWN = "CONSENT_WITHDRAWN"
 
 
 class NoRuleSet(RuntimeError):
@@ -27,11 +29,6 @@ class RuleSetNotPublished(RuntimeError):
     after it was written; the entry is redelivered."""
 
 
-class NoPublishedVersion(RuntimeError):
-    """No rules version is published, so there is nothing to score under and nothing
-    to record an assignment against (ADR-0063); the entry is redelivered."""
-
-
 class ProfileRejected(RuntimeError):
     """The segments boundary refused the result: the label is not in the vocabulary
     or the customer does not exist. Nothing is written, the profile included, because
@@ -40,11 +37,17 @@ class ProfileRejected(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class Version:
-    """The version a change is scored under (api_models.published_version_v1)."""
+    """The published version a change is recorded against
+    (api_models.published_version_v1), and the rule set the profile is scored under:
+    the one a rules version names, else `RFM_RULE_SET_ID` (ADR-0087). A K-means version
+    labels by its centroids, which rfm-engine does not hold, so under one only a
+    withdrawal of PROFILING is applied, and its profile is still scored under the
+    default rule set."""
 
     version_id: int
     rule_set_id: int
     window_days: int
+    method: str = RULES
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,17 +73,32 @@ def pass_batch(pass_run_id: int) -> UUID:
     return uuid5(_BATCHES, f"pass:{pass_run_id}")
 
 
-def in_force(connection: Connection, default_rule_set_id: int) -> Version:
-    """The published rules version, or the reason there is none. A version that names
-    no rule set (one derived from a web run) is scored under `default_rule_set_id`."""
-    found = store.published_rule_version(connection)
+def effective_batch(applying: Applying, cause: str) -> UUID:
+    """The batch a call names. One event or one pass may record changes under more
+    than one cause (a customer who withdrew PROFILING inside a pass of ageing ones) or
+    more than one version (a pass resumed after a publication), and a run has exactly
+    one of each, so each pair is a batch of its own. Still a function of the entry or
+    the pass alone, so a redelivery finds the run it wrote (ADR-0087)."""
+    return uuid5(_BATCHES, f"{applying.batch_id}:{applying.version.version_id}:{cause}")
+
+
+def in_force(connection: Connection, default_rule_set_id: int) -> Version | None:
+    """The published version, or None when none is. A profile is written either way:
+    with None, or under a K-means version, it is scored under `default_rule_set_id`,
+    and only what the version can answer is applied (ADR-0087)."""
+    found = store.published_version(connection)
     if found is None:
-        raise NoPublishedVersion("no rules version is published")
-    version_id, rule_set_id, window_days = found
+        return None
+    version_id, method, rule_set_id, window_days = found
     return Version(
         version_id,
-        rule_set_id if rule_set_id is not None else default_rule_set_id,
+        (
+            rule_set_id
+            if method == RULES and rule_set_id is not None
+            else default_rule_set_id
+        ),
         window_days,
+        method,
     )
 
 
@@ -131,6 +149,7 @@ def customer(
             applying,
             withdrawn,
             rules.window_days,
+            rule_set_id,
         )
     return result
 
@@ -143,19 +162,28 @@ def apply(
     applying: Applying,
     withdrawn: bool,
     window_days: int,
+    rule_set_id: int,
 ) -> str:
-    """Hand the result to the segments boundary. Returns what it did."""
-    cause = "CONSENT_WITHDRAWN" if withdrawn else applying.cause
+    """Hand the result to the segments boundary. Returns what it did: `opened`,
+    `changed`, `unchanged`, or `not_applied` under a version these rules do not
+    answer for."""
+    version = applying.version
+    if version.method != RULES and not withdrawn:
+        # A K-means version labels by centroids; these rules are not its answer.
+        return "not_applied"
+    cause = WITHDRAWN if withdrawn else applying.cause
     try:
         return store.apply_assignment(
             connection,
-            applying.batch_id,
+            effective_batch(applying, cause),
             customer_id,
             result,
             last_purchase_at,
             cause,
-            applying.version.version_id,
-            window_days,
+            version.version_id,
+            version.method,
+            window_days if version.method == RULES else version.window_days,
+            rule_set_id,
         )
     except psycopg.errors.CheckViolation as refusal:
         name = refusal.diag.constraint_name

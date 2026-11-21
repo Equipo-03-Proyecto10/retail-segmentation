@@ -61,6 +61,37 @@ PUT_BUDGET = (
     "INSERT INTO campaigns.campaign_budget (campaign_id, total_amount,"
     " per_customer_cap) VALUES (%s, %s, %s)"
 )
+SPENDING = """
+WITH customer_spending AS (
+    SELECT line.customer_id,
+           sum((line.list_price - line.unit_price) * line.net_quantity)
+               AS spent_amount
+      FROM api_sales.promotion_line_v1 AS line
+      JOIN campaigns.promotion AS promotion
+        ON promotion.promotion_id = line.promotion_id
+     WHERE promotion.campaign_id = %(campaign)s
+     GROUP BY line.customer_id
+), summary AS (
+    SELECT coalesce(sum(spent_amount), 0) AS total_spent,
+           count(*) AS customer_total
+      FROM customer_spending
+), customer_page AS (
+    SELECT customer_id, spent_amount
+      FROM customer_spending
+     ORDER BY customer_id
+     LIMIT %(size)s OFFSET %(offset)s
+)
+SELECT statement_timestamp(), budget.total_amount, budget.per_customer_cap,
+       summary.total_spent, summary.customer_total,
+       customer_page.customer_id, customer_page.spent_amount
+  FROM public.campaign AS campaign
+  LEFT JOIN campaigns.campaign_budget AS budget
+    ON budget.campaign_id = campaign.campaign_id
+ CROSS JOIN summary
+  LEFT JOIN customer_page ON true
+ WHERE campaign.campaign_id = %(campaign)s
+ ORDER BY customer_page.customer_id
+"""
 GET_ELIGIBILITY = (
     "SELECT registered_on_or_before, min_purchases, purchase_window_days"
     " FROM campaigns.campaign_eligibility WHERE campaign_id = %s"
@@ -301,6 +332,54 @@ def get_budget(connection: Connection, campaign_id: int) -> dict[str, Any]:
         ):
             if value is not None:
                 body[field] = money(value)
+    return body
+
+
+def get_budget_spending(
+    connection: Connection,
+    campaign_id: int,
+    *,
+    page: int,
+    size: int,
+) -> dict[str, Any]:
+    """Report discounts from this campaign's promotions, net of reversals."""
+    rows = connection.execute(
+        SPENDING,
+        {
+            "campaign": campaign_id,
+            "size": size,
+            "offset": (page - 1) * size,
+        },
+    ).fetchall()
+    if not rows:
+        raise rules.campaign_not_found()
+
+    computed_at, total_budget, cap, total_spent, customer_total, _, _ = rows[0]
+    body: dict[str, Any] = {
+        "campaign_id": campaign_id,
+        "computed_at": instant(computed_at),
+    }
+    if total_budget is not None:
+        body["total_budget"] = money(total_budget)
+    body["total_spent"] = money(total_spent)
+    body["total_reached"] = total_budget is not None and total_spent >= total_budget
+
+    customers: list[dict[str, Any]] = []
+    total = 0
+    if cap is not None:
+        body["per_customer_cap"] = money(cap)
+        customers = [
+            {
+                "customer_id": str(customer_id),
+                "spent_amount": money(spent_amount),
+                "cap_reached": spent_amount >= cap,
+            }
+            for *_, customer_id, spent_amount in rows
+            if customer_id is not None
+        ]
+        total = int(customer_total)
+    body["customers"] = customers
+    body["page_info"] = {"page": page, "size": size, "total": total}
     return body
 
 

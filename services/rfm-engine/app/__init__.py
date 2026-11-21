@@ -88,9 +88,9 @@ def create_app() -> Flask:
             info_key="page_info",
         )
 
-    def recompute_sale(sale: str, fields: dict[str, str]) -> None:
+    def recompute_sale(stream: str, sale: str, fields: dict[str, str]) -> None:
         if not sale.isdigit():
-            LOGGER.warning("Entry without a transaction id: %r", fields)
+            LOGGER.warning("Entry of %s without a transaction id: %r", stream, fields)
             return
         with kit.db.transaction() as connection:
             recompute.from_sale(connection, int(sale), settings.rule_set_id)
@@ -148,7 +148,7 @@ def create_app() -> Flask:
         `entity_id` names the sale, never the customer. A failure raises, so the
         kit redelivers, up to five times.
         """
-        recompute_sale(fields.get("entity_id", ""), fields)
+        recompute_sale(RECORDED_STREAM, fields.get("entity_id", ""), fields)
 
     def handle_reversal(fields: dict[str, str]) -> None:
         """One entry of `stream:sales.v1.reversed`: recompute the reversed sale's
@@ -158,9 +158,11 @@ def create_app() -> Flask:
         stops counting and the customer is recomputed without it."""
         sale, _, reversal = fields.get("entity_id", "").partition(":")
         if not reversal.isdigit():
-            LOGGER.warning("Reversal entry without a reversal id: %r", fields)
+            LOGGER.warning(
+                "Entry of %s without a reversal id: %r", REVERSED_STREAM, fields
+            )
             return
-        recompute_sale(sale, fields)
+        recompute_sale(REVERSED_STREAM, sale, fields)
 
     app.extensions["rfm_handle_sale"] = handle_sale
     app.extensions["rfm_handle_reversal"] = handle_reversal

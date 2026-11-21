@@ -86,6 +86,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | state | `rfm:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
 | state | `stream:sales.v1.recorded` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
+| state | `stream:sales.v1.reversed` | the stream's `MAXLEN` | Consumer group `rfm-engine`: `XREADGROUP`, `XACK`, `XGROUP CREATE`, `XPENDING`, `XCLAIM` |
 | state | `stream:rfm.v1.profile_changed` | the stream's `MAXLEN` | `XADD` by the outbox relay |
 
 ## The rule sets
@@ -147,6 +148,10 @@ A profile moves with the clock alone when its oldest purchase leaves the window 
 - A customer that fails is logged and skipped, and stays due for the next pass. Five failures in a row stop the pass, which stays `RUNNING`, and it is retried with a backoff (60 s, doubling to 30 min) until it ends, not at the next day's time.
 - The lock is held on a connection of its own, outside the kit's pool of three, so a pass takes one pool connection at a time and leaves the rest to the stream consumers and the requests.
 - Two instances never run the pass at once: it holds `pg_try_advisory_lock(297001)` on a session of its own, and the instance that does not get it stands down. The unique index `pass_run_one_running` backs this in the data.
+
+## Deploying the reversal consumer
+
+A consumer group is created at the end of its stream (ADR-0044), so the first start of the version that reads `stream:sales.v1.reversed` (0.3.0) skips every entry already on it. A sale reversed while an earlier version ran, and not yet relayed to this group, never reaches the engine as an event: that customer's profile keeps the cancelled sale's R, F and M and its label until another sale of theirs arrives, or until the cancelled sale leaves the window and the daily pass moves them. Neither the event nor the pass catches it sooner. The verification of F22-08 reports every customer whose profile differs from a full recalculation, and is what finds such a customer; until it exists, an operator who deploys onto a database with reversals recorded since the engine first ran (`sales.sale_reversal`) knows these customers are stale.
 
 ## Failure behaviour
 

@@ -195,16 +195,11 @@ def test_a_reversal_is_a_late_event_that_still_gives_the_in_order_profile(
 
 
 def test_a_late_sale_counts_by_when_it_happened_not_when_it_arrived(
-    shop: Shop, app: Flask, owner: psycopg.Connection, now: datetime
+    shop: Shop, app: Flask, now: datetime
 ) -> None:
     customer = shop.customer()
     recent = shop.sale(customer, days_ago(now, 2), unit_price="10.00")
     _recorded(app, recent)
-    history_before = owner.execute(
-        "SELECT count(*) FROM public.customer_segment_history"
-        " WHERE customer_id = %s",
-        (customer,),
-    ).fetchone()
     # Recorded only now, dated three weeks ago: it is a late sale.
     late = shop.sale(customer, days_ago(now, 21), quantity=3, unit_price="10.00")
     _recorded(app, late)
@@ -212,15 +207,18 @@ def test_a_late_sale_counts_by_when_it_happened_not_when_it_arrived(
     row = _values(shop.profile(customer))
     assert row[2] == 2  # R is the newest sale's, not the late one's
     assert row[3:5] == (2, Decimal("40.00"))
-    # ADR-0017: it changes the current profile and never rewrites a closed run.
-    assert (
-        owner.execute(
-            "SELECT count(*) FROM public.customer_segment_history"
-            " WHERE customer_id = %s",
-            (customer,),
+
+
+def test_the_engine_cannot_rewrite_a_closed_run(owner: psycopg.Connection) -> None:
+    """ADR-0017 holds structurally: a late sale changes the current profile, and the
+    history of a closed run is `public.customer_segment_history`, which svc_rfm cannot
+    write, so no handler can rewrite it."""
+    for privilege in ("INSERT", "UPDATE", "DELETE"):
+        granted = owner.execute(
+            "SELECT has_table_privilege('svc_rfm', %s, %s)",
+            ("public.customer_segment_history", privilege),
         ).fetchone()
-        == history_before
-    )
+        assert granted == (False,), privilege
 
 
 def test_a_late_sale_older_than_the_window_changes_nothing(
@@ -252,9 +250,13 @@ def test_a_redelivered_reversal_changes_nothing_and_announces_nothing_twice(
     reversal = _reversal_of(owner, gone)
     event = str(uuid.uuid4())
     redis_connection.delete(REVERSED)
-    consumer = StreamConsumer(
-        redis_connection, REVERSED, app.extensions["rfm_handle_reversal"]
-    )
+    handled: list[dict[str, str]] = []
+
+    def counting(fields: dict[str, str]) -> None:
+        handled.append(fields)
+        app.extensions["rfm_handle_reversal"](fields)
+
+    consumer = StreamConsumer(redis_connection, REVERSED, counting)
     consumer._ensure_group()
     # The same entry twice (one event_id), and the producer's own duplicate (a new
     # event_id for the same reversal): three deliveries, one effect.
@@ -262,6 +264,12 @@ def test_a_redelivered_reversal_changes_nothing_and_announces_nothing_twice(
     redis_connection.xadd(REVERSED, _entry(gone, reversal, event))
     redis_connection.xadd(REVERSED, _entry(gone, reversal))
     assert consumer.run_once() == 3
+    # The kit drops the repeated event_id before the handler sees it; the producer's
+    # duplicate carries a new one, so the handler runs for it and recomputes to the
+    # same profile, and the trigger announces nothing for a recomputation that moves
+    # no captured value.
+    assert [f["event_id"] for f in handled].count(event) == 1
+    assert len(handled) == 2
 
     row = _values(shop.profile(customer))
     assert row[3:5] == (1, Decimal("20.00"))
@@ -352,3 +360,16 @@ def test_the_reversal_consumer_is_started_beside_the_sales_one(
         assert started[1][1] is enabled.extensions["rfm_handle_reversal"]
     finally:
         enabled.extensions["mosaiq_kit"].db.close()
+
+
+def test_a_malformed_entry_is_logged_with_the_stream_it_came_from(
+    app: Flask, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level("WARNING", logger="app"):
+        app.extensions["rfm_handle_reversal"](_entry(1, 0) | {"entity_id": "x:3"})
+        app.extensions["rfm_handle_reversal"](_entry(1, 0) | {"entity_id": "7:x"})
+        app.extensions["rfm_handle_sale"](_entry(1, 0) | {"entity_id": "x"})
+    messages = [r.getMessage() for r in caplog.records]
+    assert any(REVERSED in m and "transaction id" in m for m in messages)
+    assert any(REVERSED in m and "reversal id" in m for m in messages)
+    assert any(RECORDED in m and "transaction id" in m for m in messages)

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.4.0
+  version: 1.4.1
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -685,7 +685,6 @@ paths:
   /v1/campaigns/{campaign_id}/budget/spending:
     get:
       operationId: getCampaignBudgetSpending
-      x-mosaiq-status: planned
       summary: Report spending against a campaign's budget
       description: >-
         Reports the discounts granted by this campaign's promotions, computed

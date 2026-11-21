@@ -73,7 +73,11 @@ WITH customer_spending AS (
      GROUP BY line.customer_id
 ), summary AS (
     SELECT coalesce(sum(spent_amount), 0) AS total_spent,
-           count(*) AS customer_total
+           count(*) AS customer_total,
+           count(*) FILTER (WHERE spent_amount >= (
+               SELECT per_customer_cap FROM campaigns.campaign_budget
+                WHERE campaign_id = %(campaign)s
+           )) AS customers_at_cap
       FROM customer_spending
 ), customer_page AS (
     SELECT customer_id, spent_amount
@@ -82,7 +86,7 @@ WITH customer_spending AS (
      LIMIT %(size)s OFFSET %(offset)s
 )
 SELECT statement_timestamp(), budget.total_amount, budget.per_customer_cap,
-       summary.total_spent, summary.customer_total,
+       summary.total_spent, summary.customer_total, summary.customers_at_cap,
        customer_page.customer_id, customer_page.spent_amount
   FROM public.campaign AS campaign
   LEFT JOIN campaigns.campaign_budget AS budget
@@ -354,7 +358,7 @@ def get_budget_spending(
     if not rows:
         raise rules.campaign_not_found()
 
-    computed_at, total_budget, cap, total_spent, customer_total, _, _ = rows[0]
+    computed_at, total_budget, cap, total_spent, customer_total, at_cap, _, _ = rows[0]
     body: dict[str, Any] = {
         "campaign_id": campaign_id,
         "computed_at": instant(computed_at),
@@ -368,6 +372,7 @@ def get_budget_spending(
     total = 0
     if cap is not None:
         body["per_customer_cap"] = money(cap)
+        body["customers_at_cap"] = int(at_cap)
         customers = [
             {
                 "customer_id": str(customer_id),

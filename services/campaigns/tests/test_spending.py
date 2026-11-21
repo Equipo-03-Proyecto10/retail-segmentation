@@ -194,6 +194,7 @@ def test_spending_uses_sale_time_discount_and_only_units_left(
     assert body["total_spent"] == "70.00"
     assert body["total_reached"] is True
     assert body["per_customer_cap"] == "40.00"
+    assert body["customers_at_cap"] == 1
     assert body["customers"] == [
         {
             "customer_id": spending_world["customers"][0],
@@ -229,6 +230,8 @@ def test_customer_spending_is_paginated_in_customer_id_order(
         }
     ]
     assert body["page_info"] == {"page": 2, "size": 1, "total": 2}
+    # The customer at the cap is on page 1; page 2 still says one reached it.
+    assert body["customers_at_cap"] == 1
     invalid = _get(api, "?page=0")
     assert (invalid.status_code, invalid.get_json()["code"]) == (
         422,
@@ -249,8 +252,29 @@ def test_a_campaign_without_spend_reports_zero_against_its_limits(
     assert body["total_reached"] is False
     assert body["total_budget"] == "100.00"
     assert body["per_customer_cap"] == "10.00"
+    assert body["customers_at_cap"] == 0
     assert body["customers"] == []
     assert body["page_info"] == {"page": 1, "size": 20, "total": 0}
+
+
+def test_without_a_per_customer_cap_no_customer_is_reported(
+    api: Any,
+    owner: psycopg.Connection,
+    database: dict[str, str],
+    spending_world: dict[str, Any],
+) -> None:
+    _prepare_spending(owner, database, spending_world)
+    owner.execute(
+        "UPDATE campaigns.campaign_budget SET per_customer_cap = NULL"
+        " WHERE campaign_id = %s",
+        (CAMPAIGN,),
+    )
+    body = _get(api).get_json()
+    assert body["total_spent"] == "70.00"
+    assert "per_customer_cap" not in body
+    assert "customers_at_cap" not in body
+    assert body["customers"] == []
+    assert body["page_info"]["total"] == 0
 
 
 def test_unknown_campaign_is_404(api: Any) -> None:
@@ -302,6 +326,7 @@ def test_spending_is_the_same_schema_valid_report_in_xml(
     namespace = {"c": "https://mosaiq.maxthecoder.online/xml/campaigns/v1"}
     assert document.xpath("string(c:total_spent)", namespaces=namespace) == "70.00"
     assert document.xpath("count(c:customers)", namespaces=namespace) == 2.0
+    assert document.xpath("string(c:customers_at_cap)", namespaces=namespace) == "1"
 
 
 def test_the_contract_examples_validate_against_the_xsd() -> None:

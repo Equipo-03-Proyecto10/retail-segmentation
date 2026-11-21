@@ -76,12 +76,12 @@
     <string name="scan_no_store_message">A scan shows the stock of the store you are checked in at.</string>
     <string name="scan_pick_store">Pick a store</string>
     <string name="scan_store_caption">Store: %1$s</string>
-    <string name="scan_camera_description">Camera viewport for scanning a product QR code</string>
-    <string name="scan_hint">Point at a product QR code</string>
+    <string name="scan_camera_description">Camera viewport for scanning a product QR code or barcode</string>
+    <string name="scan_hint">Point at a product QR code or barcode</string>
     <string name="scan_start">Scan</string>
-    <string name="scan_start_help">Open the camera to read a product QR code.</string>
+    <string name="scan_start_help">Open the camera to read a product QR code or barcode.</string>
     <string name="scan_denied_title">The camera is off for this app</string>
-    <string name="scan_denied_message">The camera is needed only to read a product QR code. Allow it, or type the product number below instead.</string>
+    <string name="scan_denied_message">The camera is needed only to read a product QR code or barcode. Allow it, or type the product number below instead.</string>
     <string name="scan_open_settings">Open settings</string>
     <string name="scan_grant_access">Grant access</string>
     <string name="scan_camera_error_title">The camera could not start</string>
@@ -94,8 +94,12 @@
     <string name="scan_looking">Looking up the product…</string>
     <string name="scan_not_found_title">We could not find that product</string>
     <string name="scan_not_found_message">Check the number and try again, or scan another code.</string>
+    <string name="scan_barcode_not_found_title">No product has this barcode</string>
+    <string name="scan_barcode_not_found_message">Barcode %1$s is not in the catalog. Search for the product by name below, or scan another code.</string>
+    <string name="scan_barcode_invalid_title">That barcode could not be read</string>
+    <string name="scan_barcode_invalid_message">Its digits are not a product barcode. Scan it again, or search for the product by name below.</string>
     <string name="scan_not_a_product_title">That is not a product code</string>
-    <string name="scan_not_a_product_message">Point the camera at a product QR code.</string>
+    <string name="scan_not_a_product_message">Point the camera at a product QR code or barcode.</string>
     <string name="scan_offline">The store systems could not be reached. Check the connection and try again.</string>
     <string name="scan_scan_another">Scan another</string>
     <string name="scan_add_to_sale">Add to sale</string>
@@ -110,6 +114,22 @@
     </plurals>
     <string name="scan_none_at_store">None at %1$s</string>
     <string name="scan_not_stocked_message">%1$s does not hold this product.</string>
+    <!-- Catalog search and commercial status (F27-04, #858) -->
+    <string name="scan_discontinued">Discontinued</string>
+    <string name="scan_paused">Paused</string>
+    <string name="scan_discontinued_message">This product is discontinued. It cannot be added to a sale.</string>
+    <string name="scan_unsellable_message">This product is off sale for now. It cannot be added to a sale.</string>
+    <string name="scan_not_sellable">Not for sale</string>
+    <string name="scan_channel_not_enabled">Not sold in store</string>
+    <string name="scan_search_title">Search the catalog</string>
+    <string name="scan_search_label">Product name or SKU</string>
+    <string name="scan_search_help">Opening a product from the search does not count as a scan.</string>
+    <string name="scan_search">Search</string>
+    <string name="scan_searching">Searching the catalog…</string>
+    <string name="scan_search_empty_title">No products found</string>
+    <string name="scan_search_empty_message">Try another name or SKU.</string>
+    <string name="scan_search_row">SKU %1$s · %2$s</string>
+    <string name="scan_search_more">Showing %1$d of %2$d. Type more of the name to narrow it down.</string>
     <!-- Sale: customer -->
     <string name="sale_customer_title">Customer</string>
     <string name="sale_search_label">Name, email or phone</string>

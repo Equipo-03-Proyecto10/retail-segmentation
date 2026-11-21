@@ -51,8 +51,16 @@ interface ProductsApi {
     @GET(Services.PRODUCTS + "products")
     suspend fun listProductsByIds(@Query("ids") ids: String, @Query("size") size: Int = MAX_IDS): Response<ProductPage>
 
-    @GET(Services.PRODUCTS + "products/{product_id}")
-    suspend fun getProduct(@Path("product_id") productId: Int): Response<Product>
+    /**
+     * The product that carries a barcode: an exact match, so at most one (contracts/products
+     * 1.4.0, F27-04). A barcode outside the contract's pattern is 422 `invalid_query`.
+     */
+    @GET(Services.PRODUCTS + "products")
+    suspend fun listProductsByBarcode(@Query("barcode") barcode: String): Response<ProductPage>
+
+    /** The product with its commercial status; plain `getProduct` does not carry it (F21-09). */
+    @GET(Services.PRODUCTS + "products/{product_id}/details")
+    suspend fun getProductDetails(@Path("product_id") productId: Int): Response<ProductDetails>
 }
 
 interface CustomersApi {
@@ -156,6 +164,13 @@ interface SalesApi {
  * reflects the latest sale (contracts/stock/openapi.yaml).
  */
 interface StockApi {
+    /** The pair's availability, one row per channel, never cached (ADR-0061). */
+    @GET(Services.STOCK + "availabilities/{store_id}/{product_id}")
+    suspend fun getAvailability(
+        @Path("store_id") storeId: Int,
+        @Path("product_id") productId: Int
+    ): Response<AvailabilityPage>
+
     @GET(Services.STOCK + "stock-levels/{store_id}/{product_id}")
     suspend fun getStockLevel(@Path("store_id") storeId: Int, @Path("product_id") productId: Int): Response<StockLevel>
 }

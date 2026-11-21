@@ -59,8 +59,10 @@ object FloorAccess {
                 ),
             FloorSection.SCAN to
                 listOf(
-                    ServiceOperation("products", "getProduct"),
-                    ServiceOperation("stock", "getStockLevel"),
+                    ServiceOperation("products", "getProductDetails"),
+                    ServiceOperation("products", "listProducts"),
+                    ServiceOperation("stock", "getAvailability"),
+                    ServiceOperation("sales", "listChannels"),
                     ServiceOperation("engagement", "createEngagementEvent")
                 ),
             FloorSection.SALE to

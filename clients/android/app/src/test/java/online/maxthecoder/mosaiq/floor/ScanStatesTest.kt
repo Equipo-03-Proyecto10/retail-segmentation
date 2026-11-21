@@ -18,18 +18,26 @@ import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.google.mlkit.vision.barcode.common.Barcode
 import okhttp3.mockwebserver.MockWebServer
 import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.net.ApiError
+import online.maxthecoder.mosaiq.floor.net.Availability
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CameraPermission
+import online.maxthecoder.mosaiq.floor.ui.CatalogSearch
 import online.maxthecoder.mosaiq.floor.ui.ScanBody
 import online.maxthecoder.mosaiq.floor.ui.ScanResult
 import online.maxthecoder.mosaiq.floor.ui.ScanScreen
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
+import online.maxthecoder.mosaiq.floor.ui.scan.CatalogSearchSection
 import online.maxthecoder.mosaiq.floor.ui.scan.DecodeOnce
+import online.maxthecoder.mosaiq.floor.ui.scan.PRODUCT_BARCODE_FORMATS
+import online.maxthecoder.mosaiq.floor.ui.scan.codeKind
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -111,6 +119,99 @@ class ScanStatesTest {
     }
 
     @Test
+    fun aDiscontinuedProductSaysSoAndCannotBeAddedToASale() {
+        val retired = shirt.copy(isActive = false)
+        show(ScanResult.Shown(retired, "Coyoacan", 2, null, 1L, "discontinued", inStore("NOT_SELLABLE", 2)))
+        compose.onNodeWithText("Discontinued").assertExists()
+        compose.onNodeWithText("Not for sale").assertExists()
+        compose.onNodeWithText("This product is discontinued. It cannot be added to a sale.").assertExists()
+        compose.onNodeWithText("Add to sale").assertDoesNotExist()
+        compose.onNodeWithText("Scan another").assertExists()
+    }
+
+    @Test
+    fun aBarcodeNoProductCarriesSaysSoInPlainWords() {
+        show(ScanResult.BarcodeNotFound("7501031311309"))
+        compose.onNodeWithText("No product has this barcode").assertExists()
+        compose.onNodeWithText(
+            "Barcode 7501031311309 is not in the catalog. Search for the product by name below, or scan another code."
+        ).assertExists()
+        compose.onNodeWithText("Scan another").performScrollTo().performClick()
+        assertEquals(1, scanAnother)
+    }
+
+    @Test
+    fun aRefusedBarcodeShowsAHumanMessageNotAnErrorCode() {
+        show(ScanResult.InvalidBarcode)
+        compose.onNodeWithText("That barcode could not be read").assertExists()
+        compose.onNodeWithText(
+            "Its digits are not a product barcode. Scan it again, or search for the product by name below."
+        ).assertExists()
+        compose.onNodeWithText("invalid_query", substring = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun theCameraReportsAQrCodeAsAProductIdAndAnyOtherFormatAsABarcode() {
+        assertEquals(CodeKind.QR, codeKind(Barcode.FORMAT_QR_CODE))
+        for (format in PRODUCT_BARCODE_FORMATS) assertEquals(CodeKind.PRODUCT_BARCODE, codeKind(format))
+        assertEquals(
+            listOf(Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_EAN_13, Barcode.FORMAT_ITF),
+            PRODUCT_BARCODE_FORMATS.toList()
+        )
+        val decoded = mutableListOf<Decoded>()
+        val gate = DecodeOnce()
+        gate.offer(Decoded("4006381333931", CodeKind.PRODUCT_BARCODE), decoded::add)
+        gate.offer(Decoded("120"), decoded::add)
+        assertEquals(listOf(Decoded("4006381333931", CodeKind.PRODUCT_BARCODE)), decoded)
+    }
+
+    @Test
+    fun aPausedProductIsOffSaleAndCannotBeAdded() {
+        show(ScanResult.Shown(shirt.copy(isActive = false), "Coyoacan", 0, null, 1L, "paused", null))
+        compose.onNodeWithText("Paused").assertExists()
+        compose.onNodeWithText("Add to sale").assertDoesNotExist()
+    }
+
+    @Test
+    fun aStoreThatDoesNotSellInStoreSaysSoEvenWithStock() {
+        show(ScanResult.Shown(shirt, "Coyoacan", 41, null, 1L, "active", inStore("CHANNEL_NOT_ENABLED", 41)))
+        compose.onNodeWithText("Not sold in store").assertExists()
+        compose.onNodeWithText("41 units at Coyoacan").assertExists()
+        compose.onNodeWithText("Add to sale").assertExists()
+    }
+
+    private fun inStore(reason: String, quantity: Int?) = Availability(3, reason == "AVAILABLE", reason, quantity)
+
+    private fun showSearch(state: CatalogSearch, opened: MutableList<Int> = mutableListOf()) = compose.setContent {
+        MosaiqTheme { CatalogSearchSection(state, onSearch = {}, onOpen = { opened += it }) }
+    }
+
+    @Test
+    fun searchResultsListEachProductAndOpenOneByItsId() {
+        val opened = mutableListOf<Int>()
+        val found = CatalogSearch.Found("shirt", listOf(shirt, shirt.copy(productId = 121, isActive = false)), 45)
+        showSearch(found, opened)
+        compose.onNodeWithText("SKU SKU-120 · $12.50").assertExists()
+        compose.onNodeWithText("No longer sold").assertExists()
+        compose.onNodeWithText("Showing 2 of 45. Type more of the name to narrow it down.").assertExists()
+        compose.onNodeWithTag("catalog-product-120").performClick()
+        assertEquals(listOf(120), opened)
+    }
+
+    @Test
+    fun aSearchWithNoMatchesSaysSo() {
+        showSearch(CatalogSearch.Found("zzz", emptyList(), 0))
+        compose.onNodeWithTag("catalog-empty").assertExists()
+        compose.onNodeWithText("Try another name or SKU.").assertExists()
+    }
+
+    @Test
+    fun aSearchInFlightShowsALoadingLine() {
+        showSearch(CatalogSearch.Searching)
+        compose.onNodeWithText("Searching the catalog…").assertExists()
+    }
+
+    @Test
     fun zeroStockIsOutOfStockWithADangerBadge() {
         show(ScanResult.Shown(shirt, "Coyoacan", 0, null, 1L))
         compose.onNodeWithText("Out of stock").assertExists()
@@ -162,8 +263,10 @@ class ScanStatesTest {
     @Test
     fun theCameraViewportIsDescribedForTalkBackAndTheHintShows() {
         show(scanning = true)
-        compose.onNode(hasContentDescription("Camera viewport for scanning a product QR code")).assertExists()
-        compose.onNodeWithText("Point at a product QR code").assertExists()
+        compose.onNode(
+            hasContentDescription("Camera viewport for scanning a product QR code or barcode")
+        ).assertExists()
+        compose.onNodeWithText("Point at a product QR code or barcode").assertExists()
         compose.onNodeWithText("camera").assertExists()
     }
 

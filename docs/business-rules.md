@@ -1436,10 +1436,13 @@ commercial. It is not a claim that the campaign caused the sale.
 
 The holder is written by one SQL function, `experiments.attribute_experiment`
 (F25-12), only once every candidate's window has closed, over the exposures that
-exist then, so a later exposure cannot displace it. The amount attributed is the
+exist then, so a later exposure cannot displace it. Every treatment assignment
+whose window holds the sale counts, with an exposure yet or not, whichever
+experiment is attributed first, and a voided exposure never counts. The amount attributed is the
 sale's net amount read when it is shown (ADR-0062): a sale that is later reversed
 keeps its holder and stops counting, and the attributed revenue of all campaigns
-in a period never exceeds the period's net sales. Every figure carries the
+in a period never exceeds the period's net sales (`contracts/db/check_attribution.sql`,
+run by CI on the seed). Every figure carries the
 `ATTRIBUTION` label and the instant it was read.
 
 An effect, an incremental amount or an uplift is stated only as a treatment's

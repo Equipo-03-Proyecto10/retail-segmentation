@@ -108,8 +108,8 @@ SELECT count(*), count(*) FILTER (WHERE net.net > 0),
          WHERE n.transaction_id = s.sale_id) AS net
  WHERE a.experiment_id = %(experiment)s AND a.group_id = %(arm)s
 """
-# Treatment-arm conversions whose sale this experiment's campaign does not hold:
-# held by another campaign, or not held at all (no exposure before the sale).
+# Treatment-arm conversions that still count (a unit is left, ADR-0062) whose sale this
+# experiment's campaign does not hold: held by another campaign, or not held at all.
 UNATTRIBUTED = """
 SELECT count(DISTINCT c.transaction_id)
   FROM public.experiment_conversion AS c
@@ -117,6 +117,8 @@ SELECT count(DISTINCT c.transaction_id)
   JOIN public.experiment_group AS g
     ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
  WHERE a.experiment_id = %(experiment)s AND g.kind = 'TREATMENT'
+   AND EXISTS (SELECT FROM api_sales.net_purchase_line_v1 AS n
+                WHERE n.transaction_id = c.transaction_id)
    AND NOT EXISTS (
         SELECT FROM experiments.sale_attribution AS s
           JOIN public.experiment_assignment AS holder

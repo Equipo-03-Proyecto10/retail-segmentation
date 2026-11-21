@@ -6056,13 +6056,17 @@ BEGIN
       FROM experiment_exposure AS x WHERE x.exposure_id = NEW.exposure_id;
     SELECT min(t.occurred_at), min(t.customer_id::text)::uuid INTO v_sold, v_sale_cus
       FROM api_sales.purchase_line_v1 AS t WHERE t.transaction_id = NEW.sale_id;
-    IF v_exp_of IS DISTINCT FROM NEW.assignment_id OR v_exposed >= v_sold THEN
+    IF v_exp_of IS DISTINCT FROM NEW.assignment_id OR v_exposed >= v_sold
+       OR EXISTS (SELECT FROM experiments.exposure_notice AS v
+                   WHERE v.notice = 'VOIDED' AND v.source_event_id =
+                         (SELECT x.source_event_id FROM experiment_exposure AS x
+                           WHERE x.exposure_id = NEW.exposure_id)) THEN
         RAISE EXCEPTION 'Exposure % does not precede sale % for assignment %',
             NEW.exposure_id, NEW.sale_id, NEW.assignment_id
             USING ERRCODE = 'check_violation', CONSTRAINT = 'sale_attribution_exposure_before_sale';
     END IF;
-    IF v_sale_cus IS DISTINCT FROM v_customer
-       OR v_sold > v_assigned + make_interval(hours => 24 * v_window) THEN
+    IF v_sale_cus IS DISTINCT FROM v_customer OR v_sold < v_assigned
+       OR v_sold >= v_assigned + make_interval(hours => 24 * v_window) THEN
         RAISE EXCEPTION 'Sale % is not the customer''s sale inside the conversion window', NEW.sale_id
             USING ERRCODE = 'check_violation', CONSTRAINT = 'sale_attribution_sale_in_window';
     END IF;
@@ -6080,46 +6084,68 @@ FOR EACH ROW EXECUTE FUNCTION experiments.fn_plan_is_frozen();
 
 GRANT SELECT, INSERT ON experiments.sale_attribution TO svc_experiments;
 
--- The holder rule (ADR-0069, last touch), in one place. For every sale that is
--- a recorded conversion of a treatment assignment of this experiment, the
--- candidates are taken across all experiments: a recorded conversion of a
--- treatment assignment, with an exposure before the sale, inside the window,
--- of an experiment that has a campaign. The latest exposure holds the sale; a
--- tie goes to the lower assignment_id. A sale is written only once every
--- candidate's window has closed, so an exposure recorded later cannot displace
--- a holder already written. Repeating the run writes nothing new. Net amount is
--- read when reported, never here, so a cancelled sale keeps its holder.
+-- The holder rule (ADR-0069, last touch), in one place. The sales are those of this
+-- experiment's treated customers that are still a sale after reversals (the net
+-- view, as conversions are recorded). A sale is eligible for every treatment
+-- assignment of an experiment with a campaign whose window holds it, whether or
+-- not that experiment's conversions were evaluated yet, so the holder does not
+-- depend on which experiment is attributed first. The latest exposure before the
+-- sale, one no VOIDED notice removed, holds it; a tie goes to the lower
+-- assignment_id. A sale is written only once the window of every assignment it is
+-- eligible for has closed, also those without an exposure yet, so an exposure
+-- recorded later cannot displace a holder already written. Repeating the run writes
+-- nothing new. The net amount is read when reported, never here, so a cancelled sale
+-- keeps its holder.
 CREATE OR REPLACE FUNCTION experiments.attribute_experiment(p_experiment_id integer)
 RETURNS TABLE (attributed integer, already_attributed integer, pending integer)
 LANGUAGE plpgsql SET search_path = pg_catalog, public AS $attr$
 BEGIN
     RETURN QUERY
     WITH mine AS (
-        SELECT DISTINCT c.transaction_id AS sale_id
-          FROM experiment_conversion AS c
-          JOIN experiment_assignment AS a ON a.assignment_id = c.assignment_id
-          JOIN experiment_group AS g ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
-         WHERE a.experiment_id = p_experiment_id AND g.kind = 'TREATMENT'
-    ), cand AS (
-        SELECT c.transaction_id AS sale_id, a.assignment_id, x.exposure_id, x.exposed_at,
-               a.assigned_at + make_interval(hours => 24 * e.conversion_window_days) AS closes
+        SELECT DISTINCT n.transaction_id AS sale_id, n.customer_id, n.occurred_at
+          FROM api_sales.net_purchase_line_v1 AS n
+         WHERE n.customer_id IN (
+                SELECT a.customer_id
+                  FROM experiment_assignment AS a
+                  JOIN experiment_group AS g
+                    ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+                 WHERE a.experiment_id = p_experiment_id AND g.kind = 'TREATMENT')
+    ), elig AS (
+        SELECT m.sale_id, m.occurred_at, a.assignment_id, a.experiment_id,
+               a.assigned_at + make_interval(hours => 24 * e.conversion_window_days)
+                   AS closes
           FROM mine AS m
-          JOIN experiment_conversion AS c ON c.transaction_id = m.sale_id
-          JOIN experiment_assignment AS a ON a.assignment_id = c.assignment_id
-          JOIN experiment_group AS g ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+          JOIN experiment_assignment AS a ON a.customer_id = m.customer_id
+          JOIN experiment_group AS g
+            ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
           JOIN experiment AS e ON e.experiment_id = a.experiment_id
-          JOIN experiment_exposure AS x ON x.assignment_id = a.assignment_id
-          CROSS JOIN LATERAL (SELECT min(p.occurred_at) AS occurred_at
-                                FROM api_sales.purchase_line_v1 AS p
-                               WHERE p.transaction_id = c.transaction_id) AS t
          WHERE g.kind = 'TREATMENT' AND e.campaign_id IS NOT NULL
-           AND x.exposed_at < t.occurred_at
-           AND t.occurred_at <= a.assigned_at + make_interval(hours => 24 * e.conversion_window_days)
+           AND m.occurred_at >= a.assigned_at
+           AND m.occurred_at < a.assigned_at
+                               + make_interval(hours => 24 * e.conversion_window_days)
+    ), mine_only AS (
+        SELECT DISTINCT e.sale_id FROM elig AS e WHERE e.experiment_id = p_experiment_id
     ), state AS (
-        SELECT cand.sale_id, bool_and(cand.closes <= now()) AS closed FROM cand GROUP BY cand.sale_id
+        SELECT e.sale_id, bool_and(e.closes <= now()) AS closed
+          FROM elig AS e JOIN mine_only AS o ON o.sale_id = e.sale_id
+         GROUP BY e.sale_id
+    ), cand AS (
+        SELECT e.sale_id, e.assignment_id, x.exposure_id, x.exposed_at
+          FROM elig AS e
+          JOIN mine_only AS o ON o.sale_id = e.sale_id
+          CROSS JOIN LATERAL (
+                SELECT p.exposure_id, p.exposed_at
+                  FROM experiment_exposure AS p
+                 WHERE p.assignment_id = e.assignment_id
+                   AND p.exposed_at < e.occurred_at
+                   AND NOT EXISTS (SELECT FROM experiments.exposure_notice AS v
+                                    WHERE v.source_event_id = p.source_event_id
+                                      AND v.notice = 'VOIDED')
+                 ORDER BY p.exposed_at DESC, p.exposure_id DESC
+                 LIMIT 1) AS x
     ), best AS (
-        SELECT DISTINCT ON (cand.sale_id) cand.sale_id, cand.assignment_id, cand.exposure_id
-          FROM cand ORDER BY cand.sale_id, cand.exposed_at DESC, cand.assignment_id ASC
+        SELECT DISTINCT ON (c.sale_id) c.sale_id, c.assignment_id, c.exposure_id
+          FROM cand AS c ORDER BY c.sale_id, c.exposed_at DESC, c.assignment_id ASC
     ), ins AS (
         INSERT INTO experiments.sale_attribution (sale_id, assignment_id, exposure_id)
         SELECT b.sale_id, b.assignment_id, b.exposure_id
@@ -6129,8 +6155,9 @@ BEGIN
         RETURNING sale_id
     )
     SELECT (SELECT count(*) FROM ins)::integer,
-           (SELECT count(*) FROM state AS s WHERE s.closed
-               AND NOT EXISTS (SELECT 1 FROM ins WHERE ins.sale_id = s.sale_id))::integer,
+           (SELECT count(*) FROM best AS b JOIN state AS s ON s.sale_id = b.sale_id
+             WHERE s.closed
+               AND NOT EXISTS (SELECT 1 FROM ins WHERE ins.sale_id = b.sale_id))::integer,
            (SELECT count(*) FROM state AS s WHERE NOT s.closed)::integer;
 END
 $attr$;

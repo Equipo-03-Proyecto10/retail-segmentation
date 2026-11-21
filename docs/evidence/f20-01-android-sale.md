@@ -23,25 +23,32 @@ Governing decisions: [ADR-0008](../adr/0008-the-instance-keeps-the-demonstration
 
 Each of these must hold, and the record says when it was checked.
 
-1. **PR #989 (stock movements) is merged**, and if it was released, stock-service
-   is deployed at that release. The sale decrements the same `inventory` rows
-   that #989's movements write, so the "before" snapshot is taken after it.
-2. **Store assignments.** On `develop` at the time of writing, no service narrows
-   by store yet: `/v1/store-assignments/{user_id}` is `x-mosaiq-status: planned`
-   in `contracts/users/openapi.yaml`, and sales-service does not read
-   `api_users.store_assignment_v1`. If F19-05 to F19-07 (ADR-0060) have been
-   deployed by the time of the run, an assignment to the sale's store is also
-   needed (step 1.4), or the sale is 403 `forbidden_store`.
-3. **The instance answers.** Every service involved is ready through Cloudflare:
+1. **PR #989 (stock movements) is merged** (it was, on 2026-11-13), and stock-service
+   is deployed at a release that includes it. The sale decrements the same
+   `inventory` rows that #989's movements write, so the "before" snapshot is
+   taken after it.
+2. **Store assignments.** F19-07 (#757, ADR-0060) is on `develop`: sales-service
+   reads `api_users.store_assignment_v1` on every `recordSale`, and a
+   `STORE_MANAGER` with no assignment works in no store. Step 1.4 is therefore
+   required, not conditional. Without it the sale is 403 `forbidden_store`.
+3. **The instance is running.** Only the project owner can start
+   `mosaiq-deployment-vm`. Check it first:
 
    ```sh
-   for s in auth users stores products stock customers sales; do
+   gcloud compute instances describe mosaiq-deployment-vm \
+     --zone=northamerica-south1-a --format='value(status)'   # RUNNING
+   ```
+
+4. **The instance answers.** Every service involved is ready through Cloudflare:
+
+   ```sh
+   for s in auth users stores categories products stock customers sales; do
      printf '%-10s %s\n' "$s" "$(curl -s -o /dev/null -w '%{http_code}' \
        "https://mosaiq.maxthecoder.online/api/$s/health/ready")"
    done   # every line 204
    ```
 
-4. **Tools on the workstation:** Android SDK build-tools (`zipalign`,
+5. **Tools on the workstation:** Android SDK build-tools (`zipalign`,
    `apksigner`), the emulator with the system image
    `system-images;android-33;google_apis;x86_64` (not `google_apis_playstore`,
    which cannot be rooted), mitmproxy 10.1 or later, `jq`, and SSH
@@ -63,6 +70,7 @@ line or kept in a file.
 
 ```sh
 BASE=https://mosaiq.maxthecoder.online
+mkdir -p -m 700 ~/f20-01
 read -r  -p 'Administrator email: ' ADMIN_EMAIL
 read -rs -p 'Administrator password: ' ADMIN_PASSWORD; echo
 ADMIN_TOKEN=$(jq -n --arg e "$ADMIN_EMAIL" --arg p "$ADMIN_PASSWORD" \
@@ -76,17 +84,27 @@ unset ADMIN_PASSWORD
 MANAGER_PASSWORD=$(openssl rand -base64 18)
 read -r -p 'New store manager email: ' MANAGER_EMAIL
 
-# 1.3 The account (201, contracts/users/openapi.yaml createUser)
+# 1.3 The account (201, contracts/users/openapi.yaml createUser). The response
+# is kept in a file outside the repository so its user_id feeds step 1.4.
 jq -n --arg e "$MANAGER_EMAIL" --arg p "$MANAGER_PASSWORD" \
     '{name:"F20-01 Store Manager", email:$e, role_code:"STORE_MANAGER", password:$p}' |
-  curl -sS -i -X POST "$BASE/api/users/v1/users" \
+  curl -sS -D ~/f20-01/create-user.headers -o ~/f20-01/create-user.json \
+    -X POST "$BASE/api/users/v1/users" \
     -H "Authorization: Bearer $ADMIN_TOKEN" \
     -H 'Content-Type: application/json' -H 'Accept: application/json' \
     -H "X-Correlation-ID: f20-01-create-user" --data-binary @-
-```
+cat ~/f20-01/create-user.headers ~/f20-01/create-user.json
+MANAGER_ID=$(jq -r .user_id ~/f20-01/create-user.json)
 
-1.4 Only if store assignments are deployed (see above):
-`PUT /api/users/v1/store-assignments/{user_id}` with `{"store_ids": [<store>]}`.
+# 1.4 The store the sale is recorded in (replaceStoreAssignment, ADMIN only).
+# Required since F19-07; see "Before the run".
+read -r -p 'Store id for the sale: ' STORE_ID
+jq -n --argjson s "$STORE_ID" '{store_ids:[$s]}' |
+  curl -sS -i -X PUT "$BASE/api/users/v1/store-assignments/$MANAGER_ID" \
+    -H "Authorization: Bearer $ADMIN_TOKEN" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json' \
+    -H "X-Correlation-ID: f20-01-assign-store" --data-binary @-
+```
 
 1.5 Sign the administrator out:
 `curl -sS -X DELETE "$BASE/api/auth/v1/sessions/current" -H "Authorization: Bearer $ADMIN_TOKEN"`,
@@ -219,7 +237,7 @@ first), so neither writes. It exits 0 only when both refusals hold.
 Read-only:
 
 ```sh
-for s in auth users stores products stock customers sales; do
+for s in auth users stores categories products stock customers sales; do
   printf '%-10s %s  %s\n' "$s" \
     "$(readlink "/opt/mosaiq/services/$s/current")" \
     "$(curl -s "https://mosaiq.maxthecoder.online/api/$s/openapi.yaml" |
@@ -258,7 +276,7 @@ Add a row for every other service whose path appears in the HAR
 | Base URL compiled in | ‹fill: the `strings` line from step 2› |
 | Device | Android Emulator ‹fill: version›, `system-images;android-33;google_apis;x86_64`, `pkgFlags` without `DEBUGGABLE` |
 | Capture | mitmproxy ‹fill: version› as the emulator's HTTP proxy, its CA in `/system/etc/security/cacerts/` |
-| Account | ‹fill: email›, `STORE_MANAGER`, created by users-service at ‹fill: time› (correlation id `f20-01-create-user`) |
+| Account | ‹fill: email›, `STORE_MANAGER`, created by users-service at ‹fill: time› (correlation id `f20-01-create-user`), assigned to store ‹fill› (correlation id `f20-01-assign-store`) |
 | Approval | ‹fill: who approved the live run, and where› |
 
 ### 1. The account
@@ -347,6 +365,7 @@ in the sign-in response: ‹fill: yes/no›.
 | auth | ‹fill› | ‹fill› | ‹fill› | sign-in, sign-out |
 | users | ‹fill› | ‹fill› | ‹fill› | account, `users/me`, the 403 |
 | stores | ‹fill› | ‹fill› | ‹fill› | store picker |
+| categories | ‹fill› | ‹fill› | ‹fill› | category names in the product lookup, if the HAR shows it |
 | products | ‹fill› | ‹fill› | ‹fill› | product lookup |
 | stock | ‹fill› | ‹fill› | ‹fill› | stock level read; `api_stock.consume_v1` in the sale's transaction |
 | customers | ‹fill› | ‹fill› | ‹fill› | customer search |

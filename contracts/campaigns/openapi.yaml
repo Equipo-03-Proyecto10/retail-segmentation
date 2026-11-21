@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.3.1
+  version: 1.4.0
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -678,6 +678,67 @@ paths:
           $ref: '#/components/responses/UnsupportedMediaType'
         '422':
           $ref: '#/components/responses/PlanValidation'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/ProtectedDatabaseUnavailable'
+  /v1/campaigns/{campaign_id}/budget/spending:
+    get:
+      operationId: getCampaignBudgetSpending
+      x-mosaiq-status: planned
+      summary: Report spending against a campaign's budget
+      description: >-
+        Reports the discounts granted by this campaign's promotions, computed
+        at `computed_at`. Each counted sale line contributes its sale-time list
+        price minus its charged unit price, multiplied by the units left after
+        reversals (ADR-0062). Only phone sales carry that sale-time price and
+        promotion record; CSV and imported lines do not and therefore cannot
+        contribute. `total_budget` and `per_customer_cap` are absent when their
+        limits were not written. A missing limit is not reached. Customers are
+        returned in ascending `customer_id` order only when a per-customer cap
+        exists; they are customers with positive campaign spend, and pagination
+        applies to that list. `customers_at_cap` counts, over every page, the
+        customers whose spend reached the cap. Reaching either limit is reported only: it does
+        not refuse or alter a sale.
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CampaignId'
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          description: Campaign budget spending at one computation instant.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignBudgetSpending'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-budget-spending.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CampaignBudgetSpending'
+              examples:
+                example:
+                  externalValue: ./examples/campaign-budget-spending.xml
+        '401':
+          $ref: '#/components/responses/AuthenticationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenRole'
+        '404':
+          $ref: '#/components/responses/CampaignNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/ListValidation'
         '429':
           $ref: '#/components/responses/RateLimited'
         '503':
@@ -1633,6 +1694,65 @@ components:
           $ref: '#/components/schemas/Money'
       xml:
         name: CampaignBudget
+        namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
+    CustomerBudgetSpending:
+      type: object
+      additionalProperties: false
+      required:
+        - customer_id
+        - spent_amount
+        - cap_reached
+      properties:
+        customer_id:
+          $ref: '#/components/schemas/Uuid'
+        spent_amount:
+          $ref: '#/components/schemas/Money'
+        cap_reached:
+          type: boolean
+    CampaignBudgetSpending:
+      type: object
+      additionalProperties: false
+      required:
+        - campaign_id
+        - computed_at
+        - total_spent
+        - total_reached
+        - customers
+        - page_info
+      properties:
+        campaign_id:
+          $ref: '#/components/schemas/CampaignId'
+        computed_at:
+          type: string
+          format: date-time
+          readOnly: true
+        total_budget:
+          $ref: '#/components/schemas/Money'
+        total_spent:
+          $ref: '#/components/schemas/Money'
+        total_reached:
+          type: boolean
+        per_customer_cap:
+          $ref: '#/components/schemas/Money'
+        customers_at_cap:
+          type: integer
+          minimum: 0
+          description: >-
+            How many customers, over every page, have spent at least
+            `per_customer_cap`. Present only when a per-customer cap exists,
+            so a reader of one page knows whether any customer reached it.
+        customers:
+          type: array
+          description: >-
+            Page of customers with positive campaign spend when a
+            per-customer cap exists; empty when no such cap exists.
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/CustomerBudgetSpending'
+        page_info:
+          $ref: '#/components/schemas/PageInfo'
+      xml:
+        name: CampaignBudgetSpending
         namespace: https://mosaiq.maxthecoder.online/xml/campaigns/v1
     PutCampaignBudgetRequest:
       type: object

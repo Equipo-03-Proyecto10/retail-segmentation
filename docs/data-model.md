@@ -252,6 +252,20 @@ many runs — so the run's own attributes and each customer's per-run result
 are decomposed into two relations joined by `run_id`, the same shape as the
 `customer_preferred_channel` / `customer_interest_category` split above.
 
+F22-15 adds one fact to each of the two relations and none to a third. `segmentation_run.scope`
+(`FULL` or `INCREMENTAL`) says what the run re-scored, which is a fact about the run and
+depends on `run_id` alone; `customer_segment_history.cause` says why this customer's row
+exists, which depends on the row. A cause is not repeated on the run: a batch of one
+event has one, and a pass has one, but the history row is the unit the cause explains, and
+the run keeps the cause its batch agreed on in `parameters` for the function's own
+check. The reason a customer is unassigned (no purchases, or `PROFILING` withdrawn) is not
+stored: it is determined by `cause` and a `NULL` `label_code`, and a column of its own
+would state one fact twice and could contradict it (`customer_segment_history_withdrawn_unassigned`
+makes the one impossible combination, a label under `CONSENT_WITHDRAWN`, a violation). Both
+columns are in BCNF: each non-key attribute depends on the key and on nothing else.
+A run's version, method and window stay in `parameters` and are read through
+`api_models.run_version_v1` (ADR-0064) and are not copied to a column.
+
 `sales_load` and `sales_load_rejection` apply the same rule to an upload and
 its rejected lines. Keeping `filename`, the contract version, the reconciled
 counts and the actor on every rejection would repeat one load-level fact once

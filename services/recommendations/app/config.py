@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+ASSIGNMENT_STREAM = "stream:segments.v1.assignment_changed"
 # A change in any of these boundaries can change an answer
 # (docs/services/recommendations.md).
 STREAMS = (
@@ -16,6 +17,9 @@ STREAMS = (
     "stream:preferences.v1.consent_changed",
     "stream:sales.v1.recorded",
     "stream:segments.v1.run_recorded",
+    # A customer's label changed between runs (F22-15): their cached results name the
+    # old one.
+    ASSIGNMENT_STREAM,
 )
 CACHE_TTL_SECONDS = 120
 DEFAULT_LIMIT = 10

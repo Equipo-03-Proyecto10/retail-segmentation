@@ -224,6 +224,7 @@ Later runtime events must be preserved.
 | [0083](0083-rule-set-changes-are-critical-actions-and-the-audit-vocabulary-that-names-them-grows-by-accepted-record.md) | Rule-set changes are critical actions, and the audit vocabulary that names them grows by accepted record | Accepted |
 | [0084](0084-a-paused-or-discontinued-product-is-not-sellable-and-the-elsewhere-store-is-the-nearest-by-great-circle-distance.md) | A paused or discontinued product is not sellable, the elsewhere store is the nearest by great-circle distance, and a floor role's store is refused before it is looked up | Accepted |
 | [0085](0085-the-primary-result-of-an-experiment-is-stored-once-as-four-frozen-relations-and-read-from-them.md) | The primary result of an experiment is stored once, as four frozen relations, and read from them | Accepted |
+| [0087](0087-an-incremental-change-is-applied-to-the-segment-history-in-the-profile-transaction-under-the-published-version.md) | An incremental change is applied to the segment history in the profile's transaction, under the published version, and a withdrawn PROFILING is the unassigned result | Proposed |
 
 ## Writing one
 

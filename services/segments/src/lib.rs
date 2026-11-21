@@ -41,6 +41,9 @@ use uuid::Uuid;
 pub const SERVICE: &str = "segments";
 pub const SUFFIX: &str = "segments";
 pub const STREAM: &str = "stream:segments.v1.run_recorded";
+/// A customer's label changed (F22-15). Produced here and consumed by recommendations;
+/// this service reads no entry of it.
+pub const ASSIGNMENT_STREAM: &str = "stream:segments.v1.assignment_changed";
 const CACHE_SECONDS: u64 = 900;
 /// The run tracker before PostgreSQL has been asked.
 const RUN_UNSET: i64 = i64::MIN;
@@ -2099,13 +2102,14 @@ async fn redis_connection(
         .await
 }
 
-/// The outbox relay for `stream:segments.v1.run_recorded`. The first
+/// The outbox relay for `stream:segments.v1.run_recorded` and
+/// `stream:segments.v1.assignment_changed`. The first
 /// connection is retried every second, so the service comes up during a Redis
 /// outage; after that the kit rebuilds the connection after every outage.
 pub async fn run_relay(database_url: String, redis_url: String, password: Option<String>) {
     loop {
         if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
-            match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
+            match OutboxRelay::new(&database_url, SUFFIX, [STREAM, ASSIGNMENT_STREAM], redis) {
                 Ok(relay) => {
                     relay
                         .run_with_reconnect(|| {

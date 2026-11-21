@@ -103,7 +103,12 @@ def _due(connection: Connection, as_of: datetime, after: UUID | None) -> list[UU
     return [row[0] for row in rows]
 
 
-def _refresh(db: Any, run: Run, customer_id: UUID) -> bool | None:
+def _refresh(
+    db: Any,
+    run: Run,
+    customer_id: UUID,
+    version: recompute.Version | None = None,
+) -> bool | None:
     """Recompute one customer at the pass's instant and count it, in one
     transaction. Returns whether a captured value changed, or None when the customer
     was not due any more and was left alone."""
@@ -123,7 +128,17 @@ def _refresh(db: Any, run: Run, customer_id: UUID) -> bool | None:
             return None
         before = store.current(connection, customer_id)
         result = recompute.customer(
-            connection, customer_id, run.rule_set_id, as_of=run.as_of
+            connection,
+            customer_id,
+            run.rule_set_id,
+            as_of=run.as_of,
+            applying=(
+                None
+                if version is None
+                else recompute.Applying(
+                    version, "AGEING", recompute.pass_batch(run.pass_run_id)
+                )
+            ),
         )
         changed = before is None or tuple(before) != result.values()
         connection.execute(
@@ -134,7 +149,9 @@ def _refresh(db: Any, run: Run, customer_id: UUID) -> bool | None:
     return changed
 
 
-def run_pass(db: Any, rule_set_id: int) -> Run | None:
+def run_pass(
+    db: Any, rule_set_id: int, version: recompute.Version | None = None
+) -> Run | None:
     """Run one pass to its end, or resume the one an instance left RUNNING.
 
     Returns the finished run, or None when another instance holds the pass. The lock
@@ -153,6 +170,18 @@ def run_pass(db: Any, rule_set_id: int) -> Run | None:
             recompute.require_published(work, rule_set_id)
             work.commit()
             run = _begin(work, rule_set_id)
+        if version is not None and run.rule_set_id != version.rule_set_id:
+            # A pass left RUNNING keeps the rule set it began under. The version now
+            # published holds another, so what this pass writes is not scored under
+            # it, and it is no assignment under that version (ADR-0063).
+            LOGGER.warning(
+                "Pass %s measures under rule set %s, the published version holds %s:"
+                " its changes are not applied to the segment history",
+                run.pass_run_id,
+                run.rule_set_id,
+                version.rule_set_id,
+            )
+            version = None
         after: UUID | None = None
         failed = streak = 0
         while True:
@@ -162,7 +191,10 @@ def run_pass(db: Any, rule_set_id: int) -> Run | None:
                 break
             for customer_id in batch:
                 try:
-                    _refresh(db, run, customer_id)
+                    if version is None:
+                        _refresh(db, run, customer_id)
+                    else:
+                        _refresh(db, run, customer_id, version)
                     streak = 0
                 except Exception:  # noqa: BLE001 - one customer must not stop the pass
                     failed += 1
@@ -208,14 +240,16 @@ class DailyPass(threading.Thread):
     def __init__(
         self,
         db: Any,
-        rule_set_id: int,
+        rule_set_id: int | None,
         at: time,
         retry_first: float = RETRY_FIRST,
         retry_max: float = RETRY_MAX,
+        default_rule_set_id: int = 1,
     ):
         super().__init__(name="rfm-engine-daily-pass", daemon=True)
         self.db = db
         self.rule_set_id = rule_set_id
+        self.default_rule_set_id = default_rule_set_id
         self.at = at
         self.retry_first = retry_first
         self.retry_max = retry_max
@@ -224,6 +258,24 @@ class DailyPass(threading.Thread):
     def stop(self) -> None:
         self.stopping.set()
 
+    def _in_force(self) -> tuple[int, recompute.Version | None]:
+        """The rule set to measure under and, when it is the published version's, the
+        version to record the changes against. A pass built with a rule set of its
+        own measures under it and applies nothing."""
+        if self.rule_set_id is not None:
+            return self.rule_set_id, None
+        with self.db.connection() as connection:
+            version = recompute.in_force(connection, self.default_rule_set_id)
+            connection.commit()
+        return version.rule_set_id, version
+
+    def _pass(self) -> None:
+        rule_set_id, version = self._in_force()
+        if version is None:
+            run_pass(self.db, rule_set_id)
+        else:
+            run_pass(self.db, rule_set_id, version)
+
     def _attempt(self) -> bool:
         """One pass. True when it ended, or another instance has it; False when it
         failed."""
@@ -231,12 +283,12 @@ class DailyPass(threading.Thread):
             with self.db.connection() as connection:
                 resumed = _unfinished(connection) is not None
                 connection.commit()
-            run_pass(self.db, self.rule_set_id)
+            self._pass()
             if resumed:
                 # A resumed pass measures from the instant it began, perhaps hours
                 # ago, so what fell due since waits for the next day. One that starts
                 # now measures from now.
-                run_pass(self.db, self.rule_set_id)
+                self._pass()
             return True
         except Exception:  # noqa: BLE001
             LOGGER.exception("The scheduled pass failed; it is retried")

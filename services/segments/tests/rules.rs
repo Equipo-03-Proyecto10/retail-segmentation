@@ -103,7 +103,10 @@ async fn the_three_states_are_answers_and_never_filled_from_another_source() {
     assert!(result.label_code.is_none() && result.r_score.is_none());
     assert!(result.since.is_some() && result.run_id.is_some());
     let latest: i64 = owner
-        .query_one("SELECT max(run_id) FROM public.segmentation_run", &[])
+        .query_one(
+            "SELECT max(run_id) FROM public.segmentation_run WHERE scope = 'FULL'",
+            &[],
+        )
         .await
         .unwrap()
         .get(0);
@@ -217,6 +220,42 @@ async fn unknown_and_malformed_requests_are_refused() {
 }
 
 #[tokio::test]
+async fn an_incremental_run_never_stands_for_the_latest_run() {
+    // F22-15: an event or the clock moves a few customers in a run of their own.
+    // The list is the population's, so it stays on the latest whole run.
+    let _turn = TURN.lock().await;
+    let url = owner_url();
+    let owner = connect(&url).await;
+    let db = service_database(&url);
+    let before = read_list(&db).await.unwrap();
+    let incremental: i64 = owner
+        .query_one(
+            "INSERT INTO public.segmentation_run \
+             (method, window_days, parameters, customer_count, data_origin, scope) \
+             VALUES ('RFM_RULES', 180, jsonb_build_object('batch_id', gen_random_uuid()), \
+                     0, fn_segmentation_window_origin(180), 'INCREMENTAL') \
+             RETURNING run_id",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+
+    let after = read_list(&db).await;
+    owner
+        .execute(
+            "DELETE FROM public.segmentation_run WHERE run_id = $1",
+            &[&incremental],
+        )
+        .await
+        .unwrap();
+
+    let after = after.unwrap();
+    assert!(before.run_id.is_some_and(|run| run < incremental));
+    assert_eq!(after, before);
+}
+
+#[tokio::test]
 async fn sizes_come_from_the_latest_run_in_business_order() {
     let _turn = TURN.lock().await;
     let url = owner_url();
@@ -225,7 +264,10 @@ async fn sizes_come_from_the_latest_run_in_business_order() {
     let list = read_list(&db).await.unwrap();
 
     let latest: i64 = owner
-        .query_one("SELECT max(run_id) FROM public.segmentation_run", &[])
+        .query_one(
+            "SELECT max(run_id) FROM public.segmentation_run WHERE scope = 'FULL'",
+            &[],
+        )
         .await
         .unwrap()
         .get(0);

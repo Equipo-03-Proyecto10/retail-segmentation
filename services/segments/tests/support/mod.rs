@@ -185,7 +185,8 @@ impl TestCustomer {
         owner
             .execute(
                 "INSERT INTO public.customer_segment_history (customer_id, run_id) \
-                 SELECT $1, max(run_id) FROM public.segmentation_run",
+                 SELECT $1, max(run_id) FROM public.segmentation_run \
+                 WHERE scope = 'FULL'",
                 &[&customer.id],
             )
             .await
@@ -274,7 +275,8 @@ pub async fn expected_sizes(owner: &Client) -> Vec<(String, i64)> {
     owner
         .query(
             "SELECT label_code, count(*) FROM public.customer_segment_history \
-             WHERE run_id = (SELECT max(run_id) FROM public.segmentation_run) \
+             WHERE run_id = (SELECT max(run_id) FROM public.segmentation_run \
+                             WHERE scope = 'FULL') \
                AND label_code IS NOT NULL \
              GROUP BY label_code ORDER BY label_code",
             &[],

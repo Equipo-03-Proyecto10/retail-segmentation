@@ -13,7 +13,7 @@ import pytest
 from flask import Flask
 
 import redis
-from app.cache import INDEX, result_key
+from app.cache import INDEX, customer_index, result_key
 from app.config import STREAMS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -315,7 +315,11 @@ def test_a_changed_assignment_empties_that_customers_results_and_no_one_elses(
     other = result_key(stranger, 1, 10)
     redis_connection.set(other, "{}", ex=60)
     redis_connection.sadd(INDEX, other)
+    redis_connection.sadd(customer_index(stranger), other)
     assert redis_connection.exists(key)
+    assert redis_connection.sismember(
+        customer_index(CUSTOMER), key
+    ), "indexed by customer"
 
     redis_connection.xadd(
         "stream:segments.v1.assignment_changed",

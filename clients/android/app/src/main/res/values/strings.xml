@@ -183,7 +183,7 @@
     <string name="sale_total">Total</string>
     <string name="sale_record">Record sale</string>
     <string name="sale_another">Start another sale</string>
-    <string name="sale_saved">Sale saved. It will be sent when you are online.</string>
+    <string name="sale_saved">Sale kept as a draft on this phone, pending. The server checks it when you are online.</string>
     <string name="sale_blocker_store">Check in at your store to record a sale.</string>
     <string name="sale_blocker_customer">Choose a customer to record the sale.</string>
     <string name="sale_blocker_items">Add at least one item to record the sale.</string>
@@ -191,10 +191,10 @@
     <string name="sale_history_title">Sales on this phone</string>
     <string name="sale_history_empty">No sales recorded on this phone yet.</string>
     <string name="sale_history_row">Sale, %1$s</string>
-    <string name="sale_history_pending">Waiting for a connection.</string>
+    <string name="sale_history_pending">Draft, pending. The server checks it when the connection returns.</string>
     <string name="sale_history_recorded">Sale recorded.</string>
     <string name="sale_check_status">Check sale status</string>
-    <string name="sale_state_waiting">Waiting to send</string>
+    <string name="sale_state_waiting">Pending</string>
     <string name="sale_state_attention">Needs attention</string>
     <string name="sale_state_sent">Sent</string>
     <!-- Customer insights -->
@@ -488,7 +488,13 @@
     <string name="sale_receipt_id">Sale %1$s</string>
     <string name="sale_refused_title">The sale was not recorded</string>
     <string name="sale_refused_line">Line: %1$s</string>
-    <string name="sale_refused_kept">Your cart is kept as it was. Fix it and confirm again.</string>
+    <string name="sale_refused_kept">Your cart is kept as it was. Fix it and confirm again, or discard this sale.</string>
+    <string name="sale_discard">Discard sale</string>
+    <string name="sale_discard_row">Discard sale, %1$s</string>
+    <string name="sale_correct_row">Correct sale, %1$s</string>
+    <string name="sale_correct_open">The cart of this sale is open for correction. Fix it and confirm again.</string>
+    <string name="sale_correct_busy">Finish or clear the sale in progress to correct this one.</string>
+    <string name="sale_correct_gone">The cart of this sale is no longer on this phone, so it cannot be corrected. Start a new sale, or discard this one.</string>
     <string name="outbox_kind_cart_add">Added to cart</string>
     <string name="outbox_kind_cart_remove">Removed from cart</string>
     <!-- Accessibility (#731) -->

@@ -72,6 +72,7 @@ fun SalesScreen(
     val status by model.statusMessage.collectAsStateWithLifecycle()
     val statusError by model.statusError.collectAsStateWithLifecycle()
     val queued by model.queuedSale.collectAsStateWithLifecycle()
+    val kept by model.kept.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val saved = stringResource(R.string.sale_saved)
     val customerId = customer?.customerId
@@ -88,9 +89,8 @@ fun SalesScreen(
             promotions.load(customerId)
         }
     }
-    LaunchedEffect(sale.queuedRowId) {
-        if (sale.queuedRowId != null) snackbar.showSnackbar(saved)
-    }
+    // Only the tap that saves the sale says so; a restart brings the draft back silently.
+    LaunchedEffect(model) { model.saved.collect { snackbar.showSnackbar(saved) } }
 
     val ui =
         SaleUi(
@@ -103,7 +103,8 @@ fun SalesScreen(
             store = store,
             statusMessage = status,
             statusError = statusError,
-            queued = queued?.takeIf { it.id == sale.queuedRowId }
+            queued = queued?.takeIf { it.id == sale.queuedRowId },
+            kept = kept
         )
     val actions =
         SaleActions(
@@ -126,6 +127,8 @@ fun SalesScreen(
             onConfirm = { model.confirm() },
             onBackToCart = model::backToCart,
             onNewSale = model::newSale,
+            onCorrect = model::correct,
+            onDiscard = model::discard,
             onRefreshStatus = model::refreshStatus,
             onPickStore = onPickStore,
             rowStatus = model::status
@@ -172,7 +175,7 @@ fun SalesContent(
             verticalArrangement = Arrangement.spacedBy(Spacing.Xxl)
         ) {
             StoreLine(ui.store, actions.onPickStore)
-            SaleOutcome(ui)
+            SaleOutcome(ui, actions)
             CustomerSection(ui, actions, onNewCustomer = { onRegisteringChange(true) })
             if (ui.customer != null) insights()
             ItemsSection(ui, actions)

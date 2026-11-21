@@ -282,7 +282,7 @@ suite_golden() {
     python3 -m pytest tests/golden -rs -p no:cacheprovider --junitxml=test-results/golden.xml
   local out=/tmp/golden
   rm -rf "$out"
-  check golden capture bash -c "for s in sales recommendations users campaigns; do
+  check golden capture bash -c "for s in sales recommendations users campaigns model-registry; do
       python3 -m tests.golden.capture --service \$s --out $out || exit 1; done"
   check golden drift python3 -m tests.golden.compare "$out"
   unset DATABASE_URL

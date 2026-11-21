@@ -213,9 +213,10 @@ def test_the_planned_operations_answer_404_or_405(
     client: FlaskClient, token: Any
 ) -> None:
     for method, path in (
-        ("get", "/v1/model-trainings"),
-        ("post", "/v1/model-trainings"),
-        ("get", "/v1/model-trainings/1"),
+        ("get", "/v1/drift-reports"),
+        ("get", "/v1/drift-reports/1"),
+        ("get", "/v1/drift-alerts"),
+        ("get", "/v1/drift-alerts/1"),
     ):
         assert getattr(client, method)(path, headers=token()).status_code in (404, 405)
 

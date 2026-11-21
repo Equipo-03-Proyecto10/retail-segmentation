@@ -12,11 +12,15 @@ REQUIRED = {
     "VERSION",
     "app/__init__.py",
     "app/audit.py",
+    "app/kmeans.py",
+    "app/labels.py",
+    "app/training.py",
     "compose.yaml",
     "nginx/model-registry.conf",
     "pyproject.toml",
     "redis/model-registry.acl",
     "tests/__init__.py",
+    "tests/golden/model-registry.json",
     "uv.lock",
 }
 

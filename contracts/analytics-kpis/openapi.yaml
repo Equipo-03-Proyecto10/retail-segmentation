@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.1.2
+  version: 1.1.3
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -49,14 +49,15 @@ info:
     carries a customer identifier.
 
 
-    **Producer views.** Consumed and published: `api_segments.current_label_v1`.
+    **Producer views.** Consumed and published: `api_segments.current_label_v1`,
+    `api_segments.assignment_change_v1` (one row per change of a customer's label
+    between two consecutive assignments: customer, previous and new label code,
+    previous and new model version, instant, run and data origin) and
+    `api_models.run_version_v1`, which names the model version behind a label.
     Consumed and contracted by their producers' open contracts:
     `api_sales.net_purchase_line_v1` (which must also publish a `data_origin`
     column for ADR-0052) and `api_users.store_assignment_v1`. Required of their
-    producers and not yet contracted: `api_segments.assignment_change_v1` (one
-    row per change of a customer's assignment: customer, previous and new label
-    code, previous and new model version, instant),
-    `api_recommendations.interaction_v1` (one row per `RECO_IMPRESSION` and
+    producers and not yet contracted: `api_recommendations.interaction_v1` (one row per `RECO_IMPRESSION` and
     `RECO_CLICK` that is not voided: type, customer, store, instant, data origin),
     `api_experiments.exposure_v1` (one row per `CAMPAIGN_EXPOSURE` that is not
     voided: campaign, customer, store, instant, data origin),
@@ -75,7 +76,8 @@ info:
 
 
     **Implemented so far.** The stand-up story (F26-02) serves `getNetSalesReport`
-    and `listKpiDefinitions`, and F26-05 serves `getDemandCoverageReport`. Every other
+    and `listKpiDefinitions`, F26-05 serves `getDemandCoverageReport`, and F26-03
+    serves `getSpendReport`, `getRetentionReport` and `getMigrationReport`. Every other
     report is marked `x-mosaiq-status: planned` (ADR-0073) until its own story removes
     the marker.
 security:
@@ -160,9 +162,8 @@ paths:
     get:
       summary: Report spend per customer
       description: >-
-        Spend (`spend`, definition version 1): the net amount, the customers who bought and the average spend per customer, grouped by any of `segment`, `store`, `channel` and `period`. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`. A customer who bought in two stores is active once in each store and once in a total.
+        Spend (`spend`, definition version 1): the net amount, the customers who bought and the average spend per customer, grouped by any of `segment`, `store`, `channel` and `period`. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`, with `api_models.run_version_v1` through the label's run to name the model versions the labels come from: `data_origin.model_version_ids` lists them and `spans_model_versions` is true when there are two or more (ADR-0064). A customer who bought in two stores is active once in each store and once in a total. `average_spend` is absent from a row with no active customer.
       operationId: getSpendReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -218,9 +219,8 @@ paths:
     get:
       summary: Report cohort retention
       description: >-
-        Cohort retention (`retention`, definition version 1): for the customers whose first net purchase ever falls in a bucket, how many bought again in the next bucket. Rows are always cohorts, so `period` is always a dimension and `granularity` defaults to `month`. `store` and `channel` are those of the first purchase; the retained purchase may be anywhere. A cohort whose next bucket has not ended at `generated_at` reports no retained count and no rate. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`.
+        Cohort retention (`retention`, definition version 1): for the customers whose first net purchase ever falls in a bucket, how many bought again in the next bucket. Rows are always cohorts, so `period` is always a dimension and `granularity` defaults to `month`. `store` and `channel` are those of the first purchase; the retained purchase may be anywhere. A cohort whose next bucket has not ended at `generated_at` reports no retained count and no rate. Origin: `api_sales.net_purchase_line_v1`, and `api_segments.current_label_v1` for `segment`, with `api_models.run_version_v1` as in `spend`. A customer whose only purchase was reversed in full is in no cohort (ADR-0062).
       operationId: getRetentionReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -276,9 +276,8 @@ paths:
     get:
       summary: Report segment migrations
       description: >-
-        Segment migrations (`migrations`, definition version 1): changes of a customer's segment label within one model version. A change across two versions is methodological (ADR-0064): it is counted in `methodological_changes`, never in `customers_migrated`, and `data_origin.spans_model_versions` is true when the window holds one. A row never mixes versions. `store` and `channel` are not dimensions of a migration. `segment_code` filters on the label entered. Origin: `api_segments.assignment_change_v1`. Because a migration has no store, store-scoped roles do not read it.
+        Segment migrations (`migrations`, definition version 1): changes of a customer's segment label within one model version. A change across two versions is methodological (ADR-0064): it is counted in `methodological_changes`, never in `customers_migrated`, and `data_origin.spans_model_versions` is true when the window holds one. A row never mixes versions: it carries the model version entered (`model_version_id`, absent while that run is unlinked). `customers_migrated` counts the customers with a change inside one version; a customer with two changes in the window counts once but adds two `changes`. A change into or out of no label is reported with `segment_state` `unassigned_result` or a `from_segment_code` that is absent (RN-21). `store` and `channel` are not dimensions of a migration. `segment_code` filters on the label entered. Origin: `api_segments.assignment_change_v1`. Because a migration has no store, store-scoped roles do not read it.
       operationId: getMigrationReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

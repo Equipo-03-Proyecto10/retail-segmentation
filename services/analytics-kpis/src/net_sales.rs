@@ -196,7 +196,7 @@ pub async fn read(
     Ok(report)
 }
 
-fn measure(code: &str, unit: &str, value: &str) -> Value {
+pub(crate) fn measure(code: &str, unit: &str, value: &str) -> Value {
     Value::object([
         ("code", Value::from(code)),
         ("kind", Value::from("OBSERVED")),

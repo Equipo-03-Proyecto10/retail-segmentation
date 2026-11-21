@@ -15,7 +15,8 @@
   "data_origin": {
     "views": [
       "api_sales.net_purchase_line_v1",
-      "api_segments.current_label_v1"
+      "api_segments.current_label_v1",
+      "api_models.run_version_v1"
     ],
     "synthetic": false,
     "spans_model_versions": false,

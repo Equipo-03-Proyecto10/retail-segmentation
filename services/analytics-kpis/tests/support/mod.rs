@@ -202,3 +202,27 @@ pub async fn purge(owner: &Client) {
         .await
         .unwrap();
 }
+
+/// Open `label` for `customer` under the seeded `run_id`, as the web's run
+/// would, so the customer holds a current label and, through the run, a model
+/// version (seeded run 31 is version 1, seeded run 30 version 2).
+pub async fn assign(owner: &Client, customer: Uuid, run_id: i64, label: &str) {
+    owner
+        .execute(
+            "INSERT INTO public.customer_segment_history (customer_id, run_id, label_code) \
+             VALUES ($1, $2, $3)",
+            &[&customer, &run_id, &label],
+        )
+        .await
+        .unwrap();
+}
+
+/// The value of a row's measure, as the text the report carries.
+pub fn measure_value(row: &serde_json::Value, code: &str) -> Option<String> {
+    row["measures"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|measure| measure["code"] == code)
+        .map(|measure| measure["value"].as_str().unwrap().to_owned())
+}

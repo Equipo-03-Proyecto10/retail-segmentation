@@ -63,7 +63,9 @@ class Population:
 
     def load(self) -> None:
         connection = self.connection
-        connection.execute(f"SET LOCAL TIME ZONE '{self.spec['time_zone']}'")
+        connection.execute(
+            "SELECT set_config('TimeZone', %s, true)", (self.spec["time_zone"],)
+        )
         self.instant = self._one("SELECT now()")
         # The population is the fixture's alone: the seed's sales are removed for
         # this transaction, which is rolled back. The foreign keys are switched off

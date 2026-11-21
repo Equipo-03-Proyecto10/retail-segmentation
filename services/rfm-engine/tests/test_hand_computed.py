@@ -117,7 +117,7 @@ def test_every_customer_gets_the_hand_computed_r_f_m_and_scores(
     zone = ZoneInfo(spec["time_zone"])
     instant = datetime.fromisoformat(spec["instant"]).astimezone(zone)
     # The window is calendar days in the session's zone, so the zone is pinned.
-    service.execute(f"SET TIME ZONE '{spec['time_zone']}'")
+    service.execute("SELECT set_config('TimeZone', %s, false)", (spec["time_zone"],))
 
     customers: dict[str, uuid.UUID] = {}
     for customer in spec["customers"]:
@@ -168,7 +168,7 @@ def test_across_a_clock_change_r_counts_calendar_days_and_the_window_follows_the
     instant = datetime.fromisoformat(spec["instant"]).astimezone(
         ZoneInfo(spec["time_zone"])
     )
-    service.execute(f"SET TIME ZONE '{spec['time_zone']}'")
+    service.execute("SELECT set_config('TimeZone', %s, false)", (spec["time_zone"],))
     customer = next(c for c in spec["customers"] if c["key"] == "dst_boundary")
     who = shop.customer()
     for purchase in customer["purchases"]:

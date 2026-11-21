@@ -546,6 +546,8 @@ svc_experiments,experiments.experiment_result_comparison,SELECT
 svc_experiments,experiments.experiment_result_comparison,INSERT
 svc_experiments,experiments.experiment_result_balance,SELECT
 svc_experiments,experiments.experiment_result_balance,INSERT
+svc_experiments,experiments.sale_attribution,SELECT
+svc_experiments,experiments.sale_attribution,INSERT
 svc_experiments,api_segments,USAGE
 svc_experiments,api_segments.current_label_v1,SELECT
 svc_experiments,api_preferences,USAGE

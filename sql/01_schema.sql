@@ -6023,9 +6023,10 @@ CREATE INDEX IF NOT EXISTS sale_attribution_assignment_idx
 -- Refuses a holder ADR-0069 would not make eligible: a control assignment, an
 -- experiment with no campaign, an exposure of another assignment or not before
 -- the sale, a sale of another customer or past the conversion window. It runs
--- as the owner because svc_experiments reads sales only through api_sales views.
+-- as the writer and reads the sale through api_sales.purchase_line_v1, the only
+-- sales read svc_experiments holds (ADR-0044); it needs no definer rights.
 CREATE OR REPLACE FUNCTION experiments.fn_sale_attribution_eligible() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $elig$
+LANGUAGE plpgsql SET search_path = pg_catalog, public AS $elig$
 DECLARE
     v_kind     varchar(20);
     v_campaign integer;
@@ -6053,8 +6054,8 @@ BEGIN
     END IF;
     SELECT x.exposed_at, x.assignment_id INTO v_exposed, v_exp_of
       FROM experiment_exposure AS x WHERE x.exposure_id = NEW.exposure_id;
-    SELECT t.occurred_at, t.customer_id INTO v_sold, v_sale_cus
-      FROM transaction AS t WHERE t.transaction_id = NEW.sale_id;
+    SELECT min(t.occurred_at), min(t.customer_id::text)::uuid INTO v_sold, v_sale_cus
+      FROM api_sales.purchase_line_v1 AS t WHERE t.transaction_id = NEW.sale_id;
     IF v_exp_of IS DISTINCT FROM NEW.assignment_id OR v_exposed >= v_sold THEN
         RAISE EXCEPTION 'Exposure % does not precede sale % for assignment %',
             NEW.exposure_id, NEW.sale_id, NEW.assignment_id
@@ -6090,7 +6091,7 @@ GRANT SELECT, INSERT ON experiments.sale_attribution TO svc_experiments;
 -- read when reported, never here, so a cancelled sale keeps its holder.
 CREATE OR REPLACE FUNCTION experiments.attribute_experiment(p_experiment_id integer)
 RETURNS TABLE (attributed integer, already_attributed integer, pending integer)
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $attr$
+LANGUAGE plpgsql SET search_path = pg_catalog, public AS $attr$
 BEGIN
     RETURN QUERY
     WITH mine AS (
@@ -6108,7 +6109,9 @@ BEGIN
           JOIN experiment_group AS g ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
           JOIN experiment AS e ON e.experiment_id = a.experiment_id
           JOIN experiment_exposure AS x ON x.assignment_id = a.assignment_id
-          JOIN transaction AS t ON t.transaction_id = c.transaction_id
+          CROSS JOIN LATERAL (SELECT min(p.occurred_at) AS occurred_at
+                                FROM api_sales.purchase_line_v1 AS p
+                               WHERE p.transaction_id = c.transaction_id) AS t
          WHERE g.kind = 'TREATMENT' AND e.campaign_id IS NOT NULL
            AND x.exposed_at < t.occurred_at
            AND t.occurred_at <= a.assigned_at + make_interval(hours => 24 * e.conversion_window_days)

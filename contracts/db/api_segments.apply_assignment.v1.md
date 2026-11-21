@@ -9,8 +9,8 @@
 | Owning boundary | segments |
 | Producer | segments-service |
 | Consumer | rfm-engine |
-| Signature | `api_segments.apply_assignment_v1(uuid, uuid, varchar, smallint, smallint, smallint, timestamptz, int, numeric, text, bigint, text, int)` |
-| regprocedure | `api_segments.apply_assignment_v1(uuid,uuid,character varying,smallint,smallint,smallint,timestamp with time zone,integer,numeric,text,bigint,text,integer)` |
+| Signature | `api_segments.apply_assignment_v1(uuid, uuid, varchar, smallint, smallint, smallint, timestamptz, int, numeric, text, bigint, text, int, bigint)` |
+| regprocedure | `api_segments.apply_assignment_v1(uuid,uuid,character varying,smallint,smallint,smallint,timestamp with time zone,integer,numeric,text,bigint,text,integer,bigint)` |
 | Result | `text`: `opened`, `changed` or `unchanged` |
 
 It is the operation that applies a customer's segment change (ADR-0063). The
@@ -44,6 +44,10 @@ the caller's result.
 | 11 | `p_model_version_id` | `bigint` | The model version the result was scored under. Required. |
 | 12 | `p_method` | `text` | `RFM_RULES` or `KMEANS`. |
 | 13 | `p_window_days` | `integer` | The window the result measured, greater than 0. |
+| 14 | `p_rule_set_id` | `bigint` | The rule set the result was scored under, or `NULL` for a result no rule set scored (a withdrawal under a K-means version). A published version may name none, and then the caller's default rule set scored it, so the version alone does not say (ADR-0087). |
+
+The fourteenth argument was added in the review of F22-15, before any implementation of
+this contract had been deployed, so no caller of the thirteen-argument form ever existed.
 
 Callers cast the nullable and typed arguments:
 `SELECT api_segments.apply_assignment_v1($1::uuid, $2::uuid, $3::varchar, ...)`.
@@ -73,16 +77,22 @@ batch, with the scope the cause implies and the version of the call:
 | `VERSION_CHANGE` | `FULL` | A publication or rollback moved the customer (ADR-0064). |
 
 A run's `executed_by` is empty: automatic changes belong to the system (RN-05).
-The run records its `method`, `window_days`, `model_version_id`, `batch_id` and `cause` in
-its parameters, and `customer_count` is the number of rows the batch wrote. Calls
-of one batch must agree on cause, version, method and window; one that does not is
-refused. The new history row carries the run and the cause, `valid_from` set to the
+The run records its `method`, `window_days`, `model_version_id`, `rule_set_id`, `batch_id`
+and `cause` in its parameters, and `customer_count` is the number of rows the batch wrote.
+Calls of one batch that write must agree on cause, version, rule set, method and window;
+one that does not is refused. The check comes after the comparison, so an `unchanged`
+call never depends on its batch. A caller that records more than one cause or version
+for one event or pass names a batch for each (rfm-engine derives it from the entry or
+the pass, the version and the cause). The new history row carries the run and the cause, `valid_from` set to the
 call's transaction time (`now()`, or the open row's `valid_from` when that is later, so
 a row is never closed before it opened), and `valid_to` empty. A concurrent
 call for the same customer waits for the first and then compares against what it
 wrote; the function serializes them per customer, and a lock key it takes is
 registered in `advisory-locks.md` first (`300001`, two keys, the second the hash of the
-customer).
+customer). Before that it takes the web's run lock `285001` shared, so it waits for a
+web run in progress, which closes every open row at the instant it read after taking
+that lock, and a web run waits for the changes in flight; changes do not wait for each
+other on it.
 
 The row's insert raises `stream:segments.v1.assignment_changed` and the run's
 insert raises `stream:segments.v1.run_recorded`, both through the capture
@@ -95,7 +105,7 @@ triggers, in the same transaction.
 | 22023 | none | An argument is out of range: a required one is `NULL`, a score is outside 1 to 5, a count or total is negative, `p_window_days` is at most 0, `p_method` or `p_cause` is not listed, or a score is given with no label. Raised before any row is touched. | a defect of the caller; the profile is not written |
 | 23514 | `unknown_label` | `p_label_code` is not in the label vocabulary. | `profile_rejected` |
 | 23514 | `unknown_customer` | `p_customer_id` is not in `api_customers.customer_ref_v1`. | `profile_rejected` |
-| 23514 | `batch_mismatch` | A call of a batch disagrees with the batch's cause, version, method or window. | a defect of the caller |
+| 23514 | `batch_mismatch` | A call of a batch that writes disagrees with the batch's cause, version, rule set, method or window. | a defect of the caller |
 
 These are database outcomes. rfm-engine maps them to its own behaviour; the
 segments service never answers them over HTTP. A unique violation on the open-row

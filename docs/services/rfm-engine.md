@@ -97,19 +97,28 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 Every recomputation that comes from an event, from the daily pass or from a consent event
 writes the profile and then calls `api_segments.apply_assignment_v1` in the same
 transaction, so the profile and the assignment commit together or not at all. The call is
-named by a batch: one stream entry, or one pass. A redelivered entry names the same batch
-and finds the run it wrote.
+named by a batch: one stream entry, or one pass, together with the version and the cause it
+records, so a withdrawn customer inside a pass of ageing ones, or a pass resumed after a
+publication, is a run of its own. A redelivered entry names the same batch and finds the run it
+wrote. The run records the rule set the change was scored under.
 
 - **Under the published version.** The rule set is the one the published rules version
-  names, and the version's id is what the run records. With no rules version published
-  nothing is scored and the entry is redelivered (`NoPublishedVersion`). A pass left
-  RUNNING keeps the rule set it began under; when the published version holds another,
-  it writes its profiles and applies nothing, and says so.
-- **Cause.** `SALE`, `REVERSAL`, `AGEING` (the pass), `CONSENT_GRANTED` (a consent event).
+  names, else `RFM_RULE_SET_ID`, and the version's id is what the run records. One version
+  is published at a time: under a K-means one the profile is still written and only a
+  withdrawal is applied, under that version; with none published the profile is written
+  and nothing is applied. No entry is refused for the version. A pass left RUNNING keeps
+  the rule set it began under; when the published version holds another, it writes its
+  profiles and applies nothing, and says so.
+- **The web's run.** The function takes the web's run lock `285001` shared, so a change
+  waits for a web run in progress and never commits a row that run cannot close.
+- **Cause.** `SALE`, `REVERSAL`, `AGEING` (the pass, and a consent event for a customer whose
+  `PROFILING` is not granted), `CONSENT_GRANTED` (a consent event when it is).
   A customer who withdrew `PROFILING` is applied as `CONSENT_WITHDRAWN` whatever moved
   them: the profile is written unassigned with nothing measured, the open assignment is
-  closed, and later sales and passes leave it so. Only an explicit `WITHDRAWN` excludes
-  (ADR-0087).
+  closed, and later sales and passes leave it so. Only an explicit `WITHDRAWN` excludes,
+  a customer with no decision is segmented, and an unreadable consent view refuses the
+  entry (ADR-0087, which supersedes that part of ADR-0066). The reason is served as
+  `api_segments.current_label_v1.unassigned_reason`.
 - **Refusals.** `unknown_label` and `unknown_customer` raise `ProfileRejected` and roll
   the profile back; the kit redelivers up to five times. A 22023 is a defect and
   propagates.
@@ -170,6 +179,7 @@ The call to `api_segments.apply_assignment_v1` (ADR-0063) is a synchronous cross
 A profile moves with the clock alone when its oldest purchase leaves the window or its recency passes a boundary, and no event names such a customer (ADR-0063). `app/ageing.py` runs a pass every day at 02:00 UTC (`DAILY_PASS_AT_UTC`, off with `DAILY_PASS_ENABLED=false`):
 
 - It reads only the customers whose `next_change_at` has passed, through `customer_profile_due`, in key order and in batches, and recomputes each in a transaction of its own under the same per-customer lock as an event. A customer nobody names and whose instant has not come is not read.
+- It also gives a first profile to every customer with a net purchase in the window and no profile at all: no event reached them (a seeded customer, or a first sale whose event was lost). So a verification after a pass reports `pending` only for a customer neither the pass nor an event has reached (ADR-0086).
 - Every customer is measured from the pass's `as_of`, written to `rfm.pass_run` when the pass starts. A recomputed customer is no longer due, so a pass that stops and starts again finds only those left and writes what one uninterrupted pass would. The counts of customers examined and changed grow in the transaction of each customer. A customer whose captured values did not move is examined and not changed, and puts nothing in the outbox.
 - A pass left `RUNNING` by an instance that stopped is resumed, with its original start and `as_of`, at the next start of the service. When a resumed pass ends, a fresh one starts at once, because the resumed one measures from an instant that may be hours old.
 - A customer is recomputed by the pass only while the profile, read again under the customer's lock, is still due at the pass's `as_of`: an event that recomputed the customer after the batch was read is never written over, so `computed_at` does not go backwards and no spurious change reaches the outbox.
@@ -179,16 +189,16 @@ A profile moves with the clock alone when its oldest purchase leaves the window 
 
 ## Deploying the reversal consumer
 
-A consumer group is created at the end of its stream (ADR-0044), so the first start of the version that reads `stream:sales.v1.reversed` (0.3.0) skips every entry already on it. A sale reversed while an earlier version ran, and not yet relayed to this group, never reaches the engine as an event: that customer's profile keeps the cancelled sale's R, F and M and its label until another sale of theirs arrives, or until the cancelled sale leaves the window and the daily pass moves them. Neither the event nor the pass catches it sooner. The verification (F22-08) reports every customer whose profile differs from a full recalculation, and is what finds such a customer: an operator who deploys onto a database with reversals recorded since the engine first ran (`sales.sale_reversal`) starts one afterwards. It also reports, once, every customer with purchases and no profile (`pending`), such as the seeded ones before a first pass.
+A consumer group is created at the end of its stream (ADR-0044), so the first start of the version that reads `stream:sales.v1.reversed` (0.3.0) skips every entry already on it. A sale reversed while an earlier version ran, and not yet relayed to this group, never reaches the engine as an event: that customer's profile keeps the cancelled sale's R, F and M and its label until another sale of theirs arrives, or until the cancelled sale leaves the window and the daily pass moves them. Neither the event nor the pass catches it sooner. The verification (F22-08) reports every customer whose profile differs from a full recalculation, and is what finds such a customer: an operator who deploys onto a database with reversals recorded since the engine first ran (`sales.sale_reversal`) starts one afterwards. It also reports every customer with purchases and no profile (`pending`) that neither an event nor a completed pass has reached; the daily pass gives the seeded ones their first profile.
 
 ## The verification
 
 A verification (ADR-0063, [ADR-0086](../adr/0086-a-verification-compares-a-profile-as-the-incremental-design-promises-it-at-one-instant.md)) recomputes every customer with a profile or a net purchase in the window, under one rule set at one instant (`as_of`), from one repeatable-read snapshot, and writes no profile and no segment. It runs weekly (`VERIFICATION_WEEKDAY`, `VERIFICATION_AT_UTC`; Sunday 03:00 UTC by default, an hour after the daily pass; off with `VERIFICATION_ENABLED=false`) as the system, and on demand for an administrator (`POST /v1/rfm-recalculations`, 201 `RUNNING`, polled with `GET`).
 
-- **What is compared.** State, F, M, the three scores and the label, as they stand at `as_of`; and R measured to the profile's own `computed_at`, because R ages by itself and the profile is not rewritten for it. A profile that fell due after the last completed pass is the next pass's and is not compared; one that fell due at or before it, or a customer with purchases and no profile (`pending`), is a difference.
+- **What is compared.** State, F, M, the three scores and the label, as they stand at `as_of`; and R measured to the profile's own `computed_at`, because R ages by itself and the profile is not rewritten for it. A profile that fell due after the last completed pass is the next pass's and is not compared, and before any pass has completed every due profile is; one that fell due at or before it, or a customer with purchases and no profile (`pending`) once a pass has completed, is a difference. A profile held under another rule set than the verification's, or computed after `as_of`, is not compared. With no rule set named, the verification uses the one in force.
 - **What it records.** `rfm.recalculation` (rule set, `as_of`, who started it, customers compared and different, `failure_code`) and one `rfm.recalculation_difference` per differing customer, with both sets of values. The outcome is `EQUIVALENT` exactly when a completed verification found none; `fields` names what differs.
-- **Alert and audit.** Every verification is audited as a `CALCULATION_RUN` of `RFM` (subject `rfm-verification-<id>`, the compared and different counts as `input_count` and `output_count`), in the transaction that finishes it. A scheduled verification that finds a difference, or fails, logs an ERROR line an operator watches for: `rfm_verification_differences` or `rfm_verification_failed`, with the recalculation id. One an administrator asked for logs a warning, since the answer is in the response.
-- **One at a time.** A verification holds `pg_advisory_lock(299001)` on a session of its own while it runs, and the unique index `recalculation_one_running` allows one `RUNNING` row (a second start is 409 `recalculation_in_progress`). A row left `RUNNING` by an instance that stopped is marked `FAILED` (`interrupted`) at the next start.
+- **Alert and audit.** Every verification is audited as a `CALCULATION_RUN` of `RFM` (subject `rfm-verification-<id>`, the rule set as `rule_set_version`, the request's correlation id, and the counts reached as `input_count` and `output_count`), in the transaction that finishes it, which also writes its differences, so a failed one keeps none. Writing the end is retried while the database is away; a pool 503 is `source_unavailable`. A scheduled verification that finds a difference, or fails, logs an ERROR line an operator watches for: `rfm_verification_differences` or `rfm_verification_failed`, with the recalculation id. One an administrator asked for logs a warning, since the answer is in the response.
+- **One at a time.** Whoever starts a verification takes `pg_advisory_lock(299001)` on a session of its own before recording it `RUNNING`, and holds it to the end; the unique index `recalculation_one_running` allows one `RUNNING` row (a second start is 409 `recalculation_in_progress`). A row left `RUNNING` with its lock free was left by a process that stopped: the next start, or an instance that begins, marks it `FAILED` (`interrupted`), audits it and alerts. A weekly start that fails is retried with a backoff (60 s, doubling to 30 min) and logs `rfm_verification_failed ... failure_code=not_started`. `GET /v1/rfm-recalculations` answers 422 `invalid_query` for a `state`, `trigger` or `rule_set_id` the contract does not allow.
 
 ## Failure behaviour
 

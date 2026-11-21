@@ -592,10 +592,14 @@ paths:
         (ADR-0063); it records how many customers differ and which. Only ADMIN
         starts one on demand (RN-05); the weekly pass is started by the system and
         has no `started_by`. The body may name `rule_set_id`; without it, the
-        published rule set is used. The answer is 201 with the recalculation
+        rule set in force is used (the published version's, ADR-0087), else the
+        most recently published one. Only profiles held under that rule set are
+        compared (ADR-0086). The answer is 201 with the recalculation
         `RUNNING`; poll `GET /v1/rfm-recalculations/{recalculation_id}`. Two
         recalculations never run at once: while one runs, a new request is 409
-        `recalculation_in_progress`. With no `rule_set_id` and no published rule
+        `recalculation_in_progress`; one left `RUNNING` by a process that stopped
+        is marked `FAILED` (`interrupted`) when the next one starts. With no
+        `rule_set_id` and no published rule
         set, it is 409 `no_published_rule_set`. A named rule set that does not
         exist is 404 `rule_set_not_found`.
       operationId: createRfmRecalculation
@@ -669,11 +673,17 @@ paths:
       summary: Get one recalculation
       description: >-
         Returns one recalculation. While it runs, the counts and `outcome` are
-        null (omitted in XML). `EQUIVALENT` means that for every customer the raw
-        R, F and M and the label held incrementally equal the recomputation, with
-        the same rule set at the same instant; `DIFFERENT` means at least one
-        customer does not, and `GET .../differences` lists them. A failed
-        recalculation carries a `failure_code` and no outcome.
+        null (omitted in XML). `EQUIVALENT` means that every customer compared
+        holds incrementally what the recomputation at `as_of` gives, as ADR-0086
+        defines it: F, M, the scores and the label as they stand at `as_of`, and
+        R measured to the profile's own `computed_at`. A profile the daily pass
+        owns (due after the last completed pass, or due before any pass has
+        completed), one held under another rule set, and one computed after
+        `as_of` are not compared. A customer with purchases and no profile is
+        `pending` and differs once a pass has completed. `DIFFERENT` means at
+        least one customer compared does not match, and `GET .../differences`
+        lists them. A failed recalculation carries a `failure_code`, no outcome
+        and no differences.
       operationId: getRfmRecalculation
       x-mosaiq-roles:
         - ADMIN
@@ -1444,6 +1454,9 @@ components:
             - integer
             - 'null'
           minimum: 0
+          description: >-
+            The customers compared, null until the recalculation completes. Those
+            not compared (see `getRfmRecalculation`) are not counted.
         customers_different:
           type:
             - integer

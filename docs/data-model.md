@@ -258,8 +258,9 @@ depends on `run_id` alone; `customer_segment_history.cause` says why this custom
 exists, which depends on the row. A cause is not repeated on the run: a batch of one
 event has one, and a pass has one, but the history row is the unit the cause explains, and
 the run keeps the cause its batch agreed on in `parameters` for the function's own
-check. The reason a customer is unassigned (no purchases, or `PROFILING` withdrawn) is not
-stored: it is determined by `cause` and a `NULL` `label_code`, and a column of its own
+check, with the rule set the batch was scored under. The reason a customer is unassigned (no
+purchases, or `PROFILING` withdrawn) is not stored: `api_segments.current_label_v1` derives
+it as `unassigned_reason`, because it is determined by `cause` and a `NULL` `label_code`, and a column of its own
 would state one fact twice and could contradict it (`customer_segment_history_withdrawn_unassigned`
 makes the one impossible combination, a label under `CONSENT_WITHDRAWN`, a violation). Both
 columns are in BCNF: each non-key attribute depends on the key and on nothing else.

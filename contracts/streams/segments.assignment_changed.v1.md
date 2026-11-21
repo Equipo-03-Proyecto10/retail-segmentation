@@ -18,11 +18,14 @@ An AFTER INSERT row trigger on `customer_segment_history` writes one outbox row
 in the same transaction as the history row, so a rolled-back change publishes
 nothing. A change is a new row whose `label_code` differs from the label of the
 row it closes (a `NULL` label, the unassigned result of RN-21, is a state and
-differs from any label), or a first row for a customer with none. A row that
-re-states the same label, as a full run does for a customer who did not move,
-announces nothing. A change caused by a new model version is announced like any
+differs from any label), or a new unassigned row whose reason differs from the
+one it closes (no purchases, or `PROFILING` withdrawn: ADR-0087, read as
+`api_segments.current_label_v1.unassigned_reason`), or a first row for a customer
+with none. A row that re-states the same label, as a full run does for a customer
+who did not move, announces nothing. A change caused by a new model version is announced like any
 other, and the entry does not say why. A consumer that needs the cause reads it from the
-segments service (`cause` on `listVersionedSegmentAssignments`).
+segments service (`cause` on `listVersionedSegmentAssignments`, which serves it once
+that contract lists the F22-15 causes; until then it reports `NULL`).
 
 The stream is per customer, not per run. `stream:segments.v1.run_recorded`
 remains the signal that a run exists and is what flushes run-scoped caches; this
@@ -52,7 +55,7 @@ through the segments service's contract.
 
 | Group | Effect |
 |---|---|
-| `recommendations` | Invalidates its cache of that customer's current label, instead of every customer's, which is all `run_recorded` allows. An incremental change would otherwise flush the whole cache. Joined by F22-15; an entry that names no customer empties the cache as any other stream's does. |
+| `recommendations` | Deletes that customer's cached results, `/v1` and `/v2`, through a per-customer index, and no one else's. An incremental change also writes a run, so `run_recorded` still empties the whole cache; this entry is what drops the customer's keys when the change is the web's and is what a consumer that keeps no run-scoped cache needs. Joined by F22-15; an entry that names no customer empties the cache as any other stream's does. |
 | `analytics-kpis` | Invalidates its cached figures for the segments the customer left and entered, and for the migrations that include them (F26-03). |
 
 `analytics-kpis` joins when its contract and implementation land (F26-01); until

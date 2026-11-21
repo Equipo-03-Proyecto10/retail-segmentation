@@ -3,6 +3,11 @@ package online.maxthecoder.mosaiq.floor
 import android.app.Application
 import android.os.Build
 import androidx.work.WorkManager
+import online.maxthecoder.mosaiq.floor.alerts.Alerts
+import online.maxthecoder.mosaiq.floor.alerts.NotificationPollWorker
+import online.maxthecoder.mosaiq.floor.alerts.NotifiedItemDao
+import online.maxthecoder.mosaiq.floor.alerts.Notifier
+import online.maxthecoder.mosaiq.floor.alerts.SystemNotifier
 import online.maxthecoder.mosaiq.floor.auth.KeystoreTokenStore
 import online.maxthecoder.mosaiq.floor.auth.SessionEvents
 import online.maxthecoder.mosaiq.floor.auth.SessionRepository
@@ -14,7 +19,10 @@ import online.maxthecoder.mosaiq.floor.outbox.FloorDatabase
 import online.maxthecoder.mosaiq.floor.outbox.FloorWrites
 import online.maxthecoder.mosaiq.floor.outbox.InFlight
 import online.maxthecoder.mosaiq.floor.outbox.OutboxDao
+import online.maxthecoder.mosaiq.floor.session.InMemorySaleDraftStore
+import online.maxthecoder.mosaiq.floor.session.PrefsSaleDraftStore
 import online.maxthecoder.mosaiq.floor.session.PrefsSessionStore
+import online.maxthecoder.mosaiq.floor.session.SaleDraftStore
 import online.maxthecoder.mosaiq.floor.session.SessionStore
 
 /** Everything the screens and the floor-write queue share, built once. */
@@ -27,13 +35,22 @@ class AppGraph(
     val location: LocationSource,
     schedule: () -> Unit,
     deviceLabel: String,
-    sendNow: () -> Unit = schedule
+    sendNow: () -> Unit = schedule,
+    notified: NotifiedItemDao,
+    notifier: Notifier = Notifier.NONE,
+    schedulePoll: () -> Unit = {},
+    cancelPoll: () -> Unit = {},
+    /** The sale being built, kept across process death (F27-05). */
+    val drafts: SaleDraftStore = InMemorySaleDraftStore()
 ) {
     val writes = FloorWrites(outbox, session, schedule)
 
+    /** Notifications (ADR-0071): the periodic pull, capture errors and their incident reports. */
+    val alerts = Alerts(network, tokens, session, notified, writes, notifier, schedulePoll, cancelPoll)
+
     /** Which queued rows are being sent right now, for the outbox's "Sending" badge. */
     val inFlight = InFlight()
-    val sessions = SessionRepository(network, tokens, deviceLabel, session)
+    val sessions = SessionRepository(network, tokens, deviceLabel, session) { alerts.signedOut(it) }
 
     /** Resends whatever the signed-in user left queued. */
     val kick: () -> Unit = schedule
@@ -58,17 +75,24 @@ class FloorApplication :
         AppText.install(this)
         val tokens = KeystoreTokenStore(this)
         val events = SessionEvents()
+        val database = FloorDatabase.open(this)
+        val work = WorkManager.getInstance(this)
         graph =
             AppGraph(
                 tokens = tokens,
                 session = PrefsSessionStore(this),
                 events = events,
                 network = Network(BuildConfig.BASE_URL, tokens, events),
-                outbox = FloorDatabase.open(this).outbox(),
+                outbox = database.outbox(),
                 location = FusedLocationSource(this),
-                schedule = FloorWrites.scheduler(WorkManager.getInstance(this)),
-                sendNow = FloorWrites.immediate(WorkManager.getInstance(this)),
-                deviceLabel = "Android ${Build.MANUFACTURER} ${Build.MODEL}".take(DEVICE_LABEL_MAX)
+                schedule = FloorWrites.scheduler(work),
+                sendNow = FloorWrites.immediate(work),
+                deviceLabel = "Android ${Build.MANUFACTURER} ${Build.MODEL}".take(DEVICE_LABEL_MAX),
+                notified = database.notified(),
+                notifier = SystemNotifier(this),
+                schedulePoll = NotificationPollWorker.scheduler(work),
+                cancelPoll = NotificationPollWorker.canceller(work),
+                drafts = PrefsSaleDraftStore(this)
             )
         // Rows left from before a restart go out once the network is back.
         graph.kick()

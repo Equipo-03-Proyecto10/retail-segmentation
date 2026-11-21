@@ -1,7 +1,10 @@
 package online.maxthecoder.mosaiq.floor.auth
 
-/** The four root sections of the floor shell, whoever may open them. */
-enum class FloorSection { CHECK_IN, SCAN, SALE, OUTBOX }
+/**
+ * The sections of the floor shell, whoever may open them. Each is a root of the bottom bar except
+ * [CUSTOMER_RECORD], which lives inside Customer: it has no bar entry and is reached from there.
+ */
+enum class FloorSection { CHECK_IN, SCAN, SALE, INDICATORS, OUTBOX, CUSTOMER, CUSTOMER_RECORD }
 
 /** One operation of a service contract, as `operationId` in `contracts/<service>/openapi.yaml`. */
 data class ServiceOperation(
@@ -20,20 +23,30 @@ data class ServiceOperation(
  * [profiles] gets nothing, and nothing is the answer for a code this build does not know
  * (ADR-0076).
  *
- * Today the seller does not hold Sale: customers-service, segments-service and
- * recommendations-service do not yet list `SALES_ASSOCIATE` for the customer reads that
- * flow needs (F21-13). When they do, the contract test fails and Sale moves into the
- * seller's row here.
+ * Today the seller does not hold Sale: that flow reads the full customer directory, the
+ * full current assignment with its R, F and M scores and the preference profile with its
+ * preferred channels, none of which ADR-0060 gives a seller. The seller's and the loyalty
+ * officer's view of a customer is Customer: the floor view of the customer, of their segment
+ * (`getFloorCurrentAssignment`, F21-26) and of their interests and restrictions (F27-03).
  */
 object FloorAccess {
-    private val EVERYTHING = listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.OUTBOX)
+    private val EVERYTHING =
+        listOf(
+            FloorSection.CHECK_IN,
+            FloorSection.SCAN,
+            FloorSection.SALE,
+            FloorSection.INDICATORS,
+            FloorSection.OUTBOX
+        )
 
     /** The profile of each role, in the order its bottom bar shows; the first is where it opens. */
     val profiles: Map<String, List<FloorSection>> =
         mapOf(
-            "SALES_ASSOCIATE" to listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.OUTBOX),
+            "SALES_ASSOCIATE" to
+                listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             "STORE_MANAGER" to EVERYTHING,
-            "LOYALTY_OFFICER" to listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX),
+            "LOYALTY_OFFICER" to
+                listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.CUSTOMER_RECORD, FloorSection.OUTBOX),
             "COMMERCIAL_SUPERVISOR" to listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX),
             // Not confined to stores, and holds every operation the floor calls (ADR-0060).
             "ADMIN" to EVERYTHING
@@ -52,8 +65,10 @@ object FloorAccess {
                 ),
             FloorSection.SCAN to
                 listOf(
-                    ServiceOperation("products", "getProduct"),
-                    ServiceOperation("stock", "getStockLevel"),
+                    ServiceOperation("products", "getProductDetails"),
+                    ServiceOperation("products", "listProducts"),
+                    ServiceOperation("stock", "getAvailability"),
+                    ServiceOperation("sales", "listChannels"),
                     ServiceOperation("engagement", "createEngagementEvent")
                 ),
             FloorSection.SALE to
@@ -69,15 +84,111 @@ object FloorAccess {
                     ServiceOperation("sales", "getSale"),
                     ServiceOperation("segments", "getCurrentAssignment"),
                     ServiceOperation("recommendations", "getRecommendations"),
-                    ServiceOperation("engagement", "createEngagementEvent")
+                    ServiceOperation("campaigns", "listPromotions"),
+                    ServiceOperation("experimentation", "getCurrentAssignment"),
+                    ServiceOperation("engagement", "createEngagementEventV2")
                 ),
-            FloorSection.OUTBOX to emptyList()
+            // The store's own figures (F27-08): aggregate reports, its active promotions, and category names.
+            FloorSection.INDICATORS to
+                listOf(
+                    ServiceOperation("analytics-kpis", "getNetSalesReport"),
+                    ServiceOperation("analytics-kpis", "getConversionReport"),
+                    ServiceOperation("analytics-kpis", "getSpendReport"),
+                    ServiceOperation("analytics-kpis", "getDemandCoverageReport"),
+                    ServiceOperation("analytics-kpis", "listKpiDefinitions"),
+                    ServiceOperation("campaigns", "listPromotions"),
+                    ServiceOperation("categories", "listCategories")
+                ),
+            FloorSection.OUTBOX to emptyList(),
+            // Identifying a customer by loyalty card or by a floor search (F27-02), their
+            // permitted commercial profile: segment, interests and restrictions (F27-03), and
+            // the recommendations judged at the checked-in store, with the names they need (F27-06).
+            FloorSection.CUSTOMER to
+                listOf(
+                    ServiceOperation("customers", "lookupLoyaltyCard"),
+                    ServiceOperation("customers", "searchFloorCustomers"),
+                    ServiceOperation("customers", "getFloorCustomer"),
+                    ServiceOperation("segments", "getFloorCurrentAssignment"),
+                    ServiceOperation("customer-preferences", "getInterestProfile"),
+                    ServiceOperation("customer-preferences", "getRestrictionProfile"),
+                    ServiceOperation("categories", "listCategories"),
+                    ServiceOperation("sales", "listChannels"),
+                    ServiceOperation("recommendations", "getRecommendationsV2"),
+                    ServiceOperation("products", "listProducts"),
+                    ServiceOperation("stores", "listStores")
+                ),
+            // Registering a customer with their consent, and their record: consent, preferences and
+            // history (F27-09). It opens from the Customer section, so it calls that section's
+            // operations too, and only a role that can reach a customer there holds it.
+            FloorSection.CUSTOMER_RECORD to
+                listOf(
+                    ServiceOperation("customers", "lookupLoyaltyCard"),
+                    ServiceOperation("customers", "searchFloorCustomers"),
+                    ServiceOperation("customers", "getFloorCustomer"),
+                    ServiceOperation("customers", "registerCustomer"),
+                    ServiceOperation("sales", "listChannels"),
+                    ServiceOperation("categories", "listCategories"),
+                    ServiceOperation("customer-preferences", "getConsentState"),
+                    ServiceOperation("customer-preferences", "recordConsentDecisions"),
+                    ServiceOperation("customer-preferences", "listConsentDecisions"),
+                    ServiceOperation("customer-preferences", "getPreferenceProfile"),
+                    ServiceOperation("customer-preferences", "replacePreferredChannels"),
+                    ServiceOperation("customer-preferences", "replaceInterestCategories"),
+                    ServiceOperation("customer-preferences", "listPreferenceChanges")
+                )
         )
+
+    /**
+     * What a section records through the outbox on top of what it reads, and only for a role
+     * that holds the section and every one of these operations. A role that holds the section
+     * but not these still reads it and records nothing: a loyalty officer sees the customer's
+     * recommendations, but engagement records only a seller's impressions and taps (F27-06).
+     * `FloorAccessContractTest` checks [records] against the contracts, as for [operations].
+     */
+    val recordings: Map<FloorSection, List<ServiceOperation>> =
+        mapOf(
+            FloorSection.CUSTOMER to
+                listOf(
+                    ServiceOperation("engagement", "createEngagementEventV2")
+                )
+        )
+
+    /** The roles that record what [recordings] names for a section, beyond holding it. */
+    private val recorders: Map<FloorSection, Set<String>> =
+        mapOf(FloorSection.CUSTOMER to setOf("SALES_ASSOCIATE"))
+
+    /** The notification poll's campaign read (ADR-0071). */
+    val PROMOTIONS_POLL = ServiceOperation("campaigns", "listPromotions")
+
+    /** The notification poll's incident read, for the commercial supervisor (ADR-0060, ADR-0071). */
+    val INCIDENTS_POLL = ServiceOperation("engagement", "listCaptureIncidents")
+
+    /** The report a finally refused write queues (ADR-0071). */
+    val INCIDENT_REPORT = ServiceOperation("engagement", "reportCaptureIncident")
+
+    /**
+     * What runs outside any section, and for which floor roles: the notification poll's reads and the
+     * capture-incident report. `FloorAccessContractTest` checks each set against the operation's
+     * `x-mosaiq-roles`.
+     */
+    val background: Map<ServiceOperation, Set<String>> =
+        mapOf(
+            PROMOTIONS_POLL to profiles.keys,
+            INCIDENTS_POLL to setOf("COMMERCIAL_SUPERVISOR", "ADMIN"),
+            INCIDENT_REPORT to profiles.keys
+        )
+
+    /** Whether [role] runs [operation] in the background. */
+    fun runs(role: String?, operation: ServiceOperation): Boolean = role in background[operation].orEmpty()
 
     /** The sections [role] gets; empty for a role the floor app is not for. */
     fun sections(role: String?): List<FloorSection> = profiles[role].orEmpty()
 
     fun holds(role: String?, section: FloorSection): Boolean = section in sections(role)
+
+    /** Whether [role], in [section], records the section's [recordings] as well as reading it. */
+    fun records(role: String?, section: FloorSection): Boolean =
+        holds(role, section) && role in recorders[section].orEmpty()
 
     /** Where [role] opens, or `null` for a role that gets nothing. */
     fun start(role: String?): FloorSection? = sections(role).firstOrNull()

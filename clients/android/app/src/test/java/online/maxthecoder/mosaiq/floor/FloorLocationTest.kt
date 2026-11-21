@@ -13,10 +13,15 @@ class FloorLocationTest {
             FloorLocation.CheckIn,
             FloorLocation.Scan,
             FloorLocation.Sale,
+            FloorLocation.Indicators,
             FloorLocation.Outbox,
             FloorLocation.StorePicker,
             FloorLocation.RegisterCustomer,
-            FloorLocation.ProductFromRecommendation(42)
+            FloorLocation.ProductFromRecommendation(42),
+            FloorLocation.Customer,
+            FloorLocation.CustomerProfile("7b3ad781-c5de-4f40-ae50-1fa825ce2b25"),
+            FloorLocation.NewCustomer,
+            FloorLocation.CustomerRecord("7b3ad781-c5de-4f40-ae50-1fa825ce2b25")
         )
 
     @Test
@@ -32,6 +37,8 @@ class FloorLocationTest {
     fun anUnreadableSavedValueLandsOnTheStartOrScan() {
         assertEquals(FloorLocation.CheckIn, FloorLocationSaver.restore("nonsense"))
         assertEquals(FloorLocation.Scan, FloorLocationSaver.restore("product:x"))
+        assertEquals(FloorLocation.Customer, FloorLocationSaver.restore("customer: "))
+        assertEquals(FloorLocation.Customer, FloorLocationSaver.restore("record:"))
     }
 
     @Test
@@ -39,11 +46,21 @@ class FloorLocationTest {
         assertEquals(FloorLocation.CheckIn, FloorLocation.StorePicker.back)
         assertEquals(FloorLocation.Sale, FloorLocation.RegisterCustomer.back)
         assertEquals(FloorLocation.Scan, FloorLocation.ProductFromRecommendation(7).back)
+        assertEquals(FloorLocation.Customer, FloorLocation.CustomerProfile("c").back)
+        assertEquals(FloorLocation.Customer, FloorLocation.NewCustomer.back)
+        // The record returns to the profile it was opened from.
+        assertEquals(FloorLocation.CustomerProfile("c"), FloorLocation.CustomerRecord("c").back)
     }
 
     @Test
     fun aRootOtherThanCheckInBacksOutToCheckIn() {
-        listOf(FloorLocation.Scan, FloorLocation.Sale, FloorLocation.Outbox).forEach {
+        listOf(
+            FloorLocation.Scan,
+            FloorLocation.Sale,
+            FloorLocation.Indicators,
+            FloorLocation.Outbox,
+            FloorLocation.Customer
+        ).forEach {
             assertEquals(FloorLocation.CheckIn, it.back)
         }
     }

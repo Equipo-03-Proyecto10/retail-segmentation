@@ -10,6 +10,10 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import online.maxthecoder.mosaiq.floor.alerts.CaptureIncidents
+import online.maxthecoder.mosaiq.floor.net.CampaignExposureRequest
+import online.maxthecoder.mosaiq.floor.net.CaptureIncidentRequest
+import online.maxthecoder.mosaiq.floor.net.CartEventRequest
 import online.maxthecoder.mosaiq.floor.net.CheckInRequest
 import online.maxthecoder.mosaiq.floor.net.EngagementEventRequest
 import online.maxthecoder.mosaiq.floor.net.SaleLineRequest
@@ -95,9 +99,10 @@ class FloorWrites(
     }
 
     /**
-     * Queues one RECO_CLICK for a tapped recommendation (F17-05). The client
-     * event id is generated here, once, at the tap: a retry resends it, and a
-     * second tap on the same item is a second click with a new id.
+     * Queues one RECO_CLICK for a tapped recommendation (F17-05) through engagement v2,
+     * beside the RECO_IMPRESSION it follows: v2 keeps RECO_CLICK's fields and meaning, and
+     * `/v1` is frozen. The client event id is generated here, once, at the tap: a retry
+     * resends it, and a second tap on the same item is a second click with a new id.
      */
     suspend fun queueRecoClick(
         customerId: String,
@@ -124,11 +129,154 @@ class FloorWrites(
             outbox.insert(
                 OutboxRow(
                     operation = Operation.RECO_CLICK,
-                    path = Services.ENGAGEMENT + "engagement-events",
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
                     body = json.encodeToString(EngagementEventRequest.serializer(), request),
                     clientId = request.clientEventId,
                     userId = userId,
                     createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues one RECO_IMPRESSION through engagement v2 (F27-06): a recommendation really shown
+     * on screen, before any tap. The caller decides when an item counts as shown and asks once;
+     * the client event id is generated here, so a resend is the same impression.
+     */
+    suspend fun queueRecoImpression(
+        customerId: String,
+        storeId: Int,
+        productId: Int,
+        labelCode: String,
+        rank: Int,
+        now: Instant = Instant.now()
+    ): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        require(rank >= 1) { "A rank is 1-based." }
+        val request =
+            EngagementEventRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = "RECO_IMPRESSION",
+                storeId = storeId,
+                productId = productId,
+                occurredAt = now.toString(),
+                customerId = customerId,
+                labelCode = labelCode,
+                rank = rank
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.RECO_IMPRESSION,
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
+                    body = json.encodeToString(EngagementEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues one CAMPAIGN_EXPOSURE (F27-07): the seller has shown this campaign's offer to the customer.
+     * Only that tap records one; loading or reading promotions never does. The client event id is
+     * generated here, once, so every resend is the same exposure and engagement records it once.
+     */
+    suspend fun queueCampaignExposure(
+        customerId: String,
+        storeId: Int,
+        campaignId: Int,
+        now: Instant = Instant.now()
+    ): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        val request =
+            CampaignExposureRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = "CAMPAIGN_EXPOSURE",
+                storeId = storeId,
+                campaignId = campaignId,
+                customerId = customerId,
+                occurredAt = now.toString()
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.CAMPAIGN_EXPOSURE,
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
+                    body = json.encodeToString(CampaignExposureRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues one `CART_ADD` or `CART_REMOVE` through engagement v2 (F27-05): a cart line added,
+     * raised, lowered or removed. It is intent, never a sale, and it never reaches `POST /v1/sales`.
+     * The client event id is generated here, once, at the tap.
+     */
+    suspend fun queueCartEvent(
+        operation: Operation,
+        storeId: Int,
+        productId: Int,
+        quantity: Int,
+        customerId: String? = null,
+        now: Instant = Instant.now()
+    ): Long {
+        require(operation == Operation.CART_ADD || operation == Operation.CART_REMOVE) { "Not a cart event." }
+        require(quantity in 1..MAX_CART_QUANTITY) { "A cart event moves 1 to $MAX_CART_QUANTITY units." }
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        val request =
+            CartEventRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = operation.name,
+                storeId = storeId,
+                productId = productId,
+                quantity = quantity,
+                occurredAt = now.toString(),
+                customerId = customerId
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = operation,
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
+                    body = json.encodeToString(CartEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues the one report of a finally refused write (ADR-0071), under the user who made it. Its id is the
+     * UUIDv5 of the refused write's own key, so it is fixed by that row, never generated per attempt, and a
+     * second call for the same row queues nothing. Returns `null` when nothing was queued.
+     */
+    suspend fun queueCaptureIncident(refused: OutboxRow, now: Instant = Instant.now()): Long? {
+        val report = CaptureIncidents.reportOf(refused) ?: return null
+        if (outbox.countWith(Operation.CAPTURE_INCIDENT, report.clientIncidentId) > 0) return null
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.CAPTURE_INCIDENT,
+                    path = Services.ENGAGEMENT + "capture-incidents",
+                    body = json.encodeToString(CaptureIncidentRequest.serializer(), report),
+                    clientId = report.clientIncidentId,
+                    userId = refused.userId,
+                    createdAt = now.toEpochMilli(),
+                    // Sent in the report's own X-Correlation-ID, so both requests share one id in the logs.
+                    correlationId = report.sourceCorrelationId
                 )
             )
         schedule()
@@ -167,6 +315,9 @@ class FloorWrites(
 
     companion object {
         const val WORK_NAME = "floor-writes"
+
+        /** `quantity` maximum of a cart event in contracts/engagement v2. */
+        const val MAX_CART_QUANTITY = 1000
 
         /** One chain at a time, only when a network is connected, with backoff. */
         fun scheduler(workManager: WorkManager): () -> Unit = {

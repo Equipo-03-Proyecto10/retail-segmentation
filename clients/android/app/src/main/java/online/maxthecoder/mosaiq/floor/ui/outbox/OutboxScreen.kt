@@ -42,6 +42,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqEmptyState
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.components.MqListRow
+import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
 import online.maxthecoder.mosaiq.floor.ui.formatClock
 import online.maxthecoder.mosaiq.floor.ui.formatMediumDay
@@ -64,10 +65,13 @@ fun OutboxList(model: FloorViewModel) {
     OutboxContent(rows, userId, names, onDismiss = model::dismiss, sending = sending, onSendNow = model::sendNow)
 }
 
-/** The outbox: stateless, so previews and tests can drive every state. */
+/**
+ * The outbox: stateless, so previews and tests can drive every state. [rows] is null until the queue
+ * on this phone has been read once.
+ */
 @Composable
 fun OutboxContent(
-    rows: List<OutboxRow>,
+    rows: List<OutboxRow>?,
     currentUserId: String?,
     storeNames: Map<Int, String>,
     onDismiss: (OutboxRow) -> Unit,
@@ -76,6 +80,10 @@ fun OutboxContent(
     sending: Set<Long> = emptySet(),
     onSendNow: (() -> Unit)? = null
 ) {
+    if (rows == null) {
+        MqLoading(stringResource(R.string.outbox_loading), fillArea = true)
+        return
+    }
     if (rows.isEmpty()) {
         MqEmptyState(
             icon = R.drawable.ic_lucide_circle_check,
@@ -222,6 +230,11 @@ private fun kindIcon(operation: Operation): Int = when (operation) {
     Operation.SALE -> R.drawable.ic_lucide_shopping_cart
     Operation.QR_SCAN -> R.drawable.ic_lucide_scan_line
     Operation.RECO_CLICK -> R.drawable.ic_lucide_package
+    Operation.CAMPAIGN_EXPOSURE -> R.drawable.ic_lucide_eye
+    Operation.CAPTURE_INCIDENT -> R.drawable.ic_lucide_triangle_alert
+    Operation.CART_ADD -> R.drawable.ic_lucide_plus
+    Operation.CART_REMOVE -> R.drawable.ic_lucide_trash_2
+    Operation.RECO_IMPRESSION -> R.drawable.ic_lucide_eye
 }
 
 @Composable
@@ -243,6 +256,11 @@ private fun title(row: OutboxRow, storeNames: Map<Int, String>): String = when (
     Operation.SALE -> stringResource(R.string.outbox_kind_sale)
     Operation.QR_SCAN -> stringResource(R.string.outbox_kind_scan)
     Operation.RECO_CLICK -> stringResource(R.string.outbox_kind_reco)
+    Operation.CAMPAIGN_EXPOSURE -> stringResource(R.string.outbox_kind_exposure)
+    Operation.CAPTURE_INCIDENT -> stringResource(R.string.outbox_kind_incident)
+    Operation.CART_ADD -> stringResource(R.string.outbox_kind_cart_add)
+    Operation.CART_REMOVE -> stringResource(R.string.outbox_kind_cart_remove)
+    Operation.RECO_IMPRESSION -> stringResource(R.string.outbox_kind_reco_impression)
 }
 
 /** "Today, 14:32", "Yesterday, 14:32", or the date and time for anything older. */
@@ -276,7 +294,7 @@ private fun sample(id: Long, operation: Operation, state: RowState, attempts: In
 )
 
 @Composable
-private fun OutboxPreview(dark: Boolean, rows: List<OutboxRow>) = MosaiqTheme(darkTheme = dark) {
+private fun OutboxPreview(dark: Boolean, rows: List<OutboxRow>?) = MosaiqTheme(darkTheme = dark) {
     Surface {
         Column(Modifier.fillMaxSize().padding(Spacing.Lg)) {
             OutboxContent(rows, "A", emptyMap(), {}, PreviewNow, ZoneId.of("UTC"), sending = setOf(3L), onSendNow = {})
@@ -314,3 +332,11 @@ private fun EmptyLight() = OutboxPreview(false, emptyList())
 @Preview(name = "Outbox empty, dark", widthDp = 375, heightDp = 640, showBackground = true)
 @Composable
 private fun EmptyDark() = OutboxPreview(true, emptyList())
+
+@Preview(name = "Outbox loading, light", widthDp = 375, heightDp = 640, showBackground = true)
+@Composable
+private fun LoadingLight() = OutboxPreview(false, null)
+
+@Preview(name = "Outbox loading, dark", widthDp = 375, heightDp = 640, showBackground = true)
+@Composable
+private fun LoadingDark() = OutboxPreview(true, null)

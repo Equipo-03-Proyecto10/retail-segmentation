@@ -39,10 +39,10 @@ class SourceGuardTest {
                 owners[service!!] = match.groupValues[1].split(",").map { it.trim() }.toSet()
             }
         }
-        val calls = Regex("""Services\.([A-Z_]+) \+ "([a-z0-9.-]+)""")
+        val calls = Regex("""Services\.([A-Z_0-9]+) \+ "([a-z0-9.-]+)""")
         val services = File(main, "online/maxthecoder/mosaiq/floor/net/Services.kt").readText()
         val prefixes =
-            Regex("""const val ([A-Z_]+) = "api/([a-z-]+)/v1/"""")
+            Regex("""const val ([A-Z_0-9]+) = "api/([a-z-]+)/v[0-9]+/"""")
                 .findAll(services)
                 .associate { it.groupValues[1] to it.groupValues[2] }
         val found = sources.flatMap { calls.findAll(it.readText()).toList() }
@@ -76,6 +76,7 @@ class SourceGuardTest {
             "ui/outbox/OutboxScreen.kt",
             "ui/SalesScreen.kt",
             "ui/CustomerInsights.kt",
+            "ui/Promotions.kt",
             "ui/ScanScreen.kt"
         )) {
             assertTrue("$path uses collectAsState", ".collectAsState()" !in File(floor, path).readText())
@@ -87,6 +88,7 @@ class SourceGuardTest {
             "ui/checkin/StorePicker.kt",
             "ui/outbox/OutboxScreen.kt",
             "ui/CustomerInsights.kt",
+            "ui/Promotions.kt",
             "net/TokenAuthenticator.kt",
             "outbox/OutboxWorker.kt"
         )) {

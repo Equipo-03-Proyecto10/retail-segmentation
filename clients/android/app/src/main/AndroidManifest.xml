@@ -10,6 +10,9 @@
          typing the product id. A phone without a camera can still install. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Local notifications from a periodic pull (ADR-0071): asked on Android 13+
+         when the first one is due; declined, the updates screen shows the same. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- The session never leaves the device: backups and device transfer
          exclude the token file (also kept in noBackupFilesDir). -->

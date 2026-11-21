@@ -3,6 +3,8 @@ package online.maxthecoder.mosaiq.floor
 import java.io.File
 import online.maxthecoder.mosaiq.floor.auth.FloorAccess
 import online.maxthecoder.mosaiq.floor.auth.FloorSection
+import online.maxthecoder.mosaiq.floor.auth.RecordPart
+import online.maxthecoder.mosaiq.floor.auth.RecordWriters
 import online.maxthecoder.mosaiq.floor.auth.SessionRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -68,8 +70,42 @@ class FloorAccessContractTest {
     }
 
     @Test
+    fun theNotificationPollAndTheIncidentReportRunForExactlyTheRolesTheirContractsList() {
+        FloorAccess.background.forEach { (operation, roles) ->
+            assertEquals(
+                "${operation.service}/${operation.operationId}",
+                SessionRepository.FLOOR_ROLES.intersect(rolesOf(operation.service, operation.operationId)),
+                roles
+            )
+        }
+        assertEquals(
+            setOf("COMMERCIAL_SUPERVISOR", "ADMIN"),
+            SessionRepository.FLOOR_ROLES.filter { FloorAccess.runs(it, FloorAccess.INCIDENTS_POLL) }.toSet()
+        )
+    }
+
+    @Test
     fun everyOperationASectionCallsExistsInItsContract() {
         FloorAccess.operations.values.flatten().forEach { rolesOf(it.service, it.operationId) }
+        FloorAccess.recordings.values.flatten().forEach { rolesOf(it.service, it.operationId) }
+    }
+
+    @Test
+    fun aSectionIsRecordedExactlyWhenItIsHeldAndItsRecordingsAllListTheRole() {
+        SessionRepository.FLOOR_ROLES.forEach { role ->
+            FloorSection.entries.forEach { section ->
+                val recordings = FloorAccess.recordings[section].orEmpty()
+                val allowed = recordings.isNotEmpty() && recordings.all { role in rolesOf(it.service, it.operationId) }
+                assertEquals(
+                    "$role records $section",
+                    FloorAccess.holds(role, section) && allowed,
+                    FloorAccess.records(role, section)
+                )
+            }
+        }
+        // F27-06: the seller records what was shown and tapped; the loyalty officer only reads.
+        assertTrue(FloorAccess.records("SALES_ASSOCIATE", FloorSection.CUSTOMER))
+        assertTrue(!FloorAccess.records("LOYALTY_OFFICER", FloorSection.CUSTOMER))
     }
 
     @Test
@@ -82,14 +118,66 @@ class FloorAccessContractTest {
 
     @Test
     fun eachStoreProfileGetsItsOwnNavigation() {
+        val everything =
+            listOf(
+                FloorSection.CHECK_IN,
+                FloorSection.SCAN,
+                FloorSection.SALE,
+                FloorSection.INDICATORS,
+                FloorSection.OUTBOX
+            )
         assertEquals(
-            listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.OUTBOX),
+            listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             FloorAccess.sections("SALES_ASSOCIATE")
         )
-        assertEquals(FloorSection.entries, FloorAccess.sections("STORE_MANAGER"))
-        assertEquals(listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX), FloorAccess.sections("LOYALTY_OFFICER"))
+        assertEquals(everything, FloorAccess.sections("STORE_MANAGER"))
+        assertEquals(
+            listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.CUSTOMER_RECORD, FloorSection.OUTBOX),
+            FloorAccess.sections("LOYALTY_OFFICER")
+        )
         assertEquals(listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX), FloorAccess.sections("COMMERCIAL_SUPERVISOR"))
-        assertEquals(FloorSection.entries, FloorAccess.sections("ADMIN"))
+        // The floor search and floor view are the store profiles' reads: the administrator does not hold them.
+        assertEquals(everything, FloorAccess.sections("ADMIN"))
+    }
+
+    @Test
+    fun onlyTheLoyaltyOfficerReachesTheCustomerRecordAndTheSellerIsRefusedItsWrites() {
+        assertEquals(
+            setOf("LOYALTY_OFFICER"),
+            FloorAccess.profiles.filterValues { FloorSection.CUSTOMER_RECORD in it }.keys
+        )
+        // The record opens from Customer, so whoever holds it holds Customer too.
+        FloorAccess.profiles.values.filter { FloorSection.CUSTOMER_RECORD in it }
+            .forEach { assertTrue(FloorSection.CUSTOMER in it) }
+        // F27-09: the seller reaches a customer, but the contracts refuse it every write of the record.
+        listOf(
+            "customers" to "registerCustomer",
+            "customer-preferences" to "recordConsentDecisions",
+            "customer-preferences" to "replacePreferredChannels",
+            "customer-preferences" to "replaceInterestCategories"
+        ).forEach { (service, id) ->
+            assertTrue("$service/$id refuses the seller", "SALES_ASSOCIATE" !in rolesOf(service, id))
+            assertTrue("$service/$id admits the officer", "LOYALTY_OFFICER" in rolesOf(service, id))
+        }
+        assertTrue(!FloorAccess.holds("SALES_ASSOCIATE", FloorSection.CUSTOMER_RECORD))
+    }
+
+    @Test
+    fun whoMayChangeEachPartOfTheRecordIsWhatItsWriteLists() {
+        RecordWriters.writers.forEach { (part, writer) ->
+            assertEquals(
+                "$part: ${writer.operation.service}/${writer.operation.operationId}",
+                rolesOf(writer.operation.service, writer.operation.operationId),
+                writer.roles.toSet()
+            )
+        }
+        assertEquals(RecordPart.entries.toSet(), RecordWriters.writers.keys)
+    }
+
+    @Test
+    fun onlyTheStoreManagerAndTheAdministratorReadTheStoreIndicators() {
+        val holders = SessionRepository.FLOOR_ROLES.filter { FloorAccess.holds(it, FloorSection.INDICATORS) }
+        assertEquals(setOf("STORE_MANAGER", "ADMIN"), holders.toSet())
     }
 
     @Test

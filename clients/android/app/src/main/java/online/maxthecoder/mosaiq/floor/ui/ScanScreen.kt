@@ -38,6 +38,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.scan.CodeKind
+import online.maxthecoder.mosaiq.floor.scan.Decoded
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
@@ -47,6 +49,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqIcon
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.scan.CameraPreview
 import online.maxthecoder.mosaiq.floor.ui.scan.CameraViewport
+import online.maxthecoder.mosaiq.floor.ui.scan.CatalogSearchSection
 import online.maxthecoder.mosaiq.floor.ui.scan.ScanAnswer
 import online.maxthecoder.mosaiq.floor.ui.scan.ViewportStart
 import online.maxthecoder.mosaiq.floor.ui.scan.openAppSettings
@@ -152,10 +155,13 @@ fun ScanContent(
     onGrantAccess: () -> Unit = {},
     cameraError: Boolean = false,
     onRetryCamera: () -> Unit = {},
-    camera: @Composable (onDecoded: (String) -> Unit) -> Unit
+    camera: @Composable (onDecoded: (Decoded) -> Unit) -> Unit
 ) {
     var lastCode by rememberSaveable { mutableStateOf("") }
+    // A retry looks the code up as what it was read as: a barcode stays a barcode.
+    var lastKind by rememberSaveable { mutableStateOf(CodeKind.QR) }
     val result by model.result.collectAsStateWithLifecycle()
+    val search by model.search.collectAsStateWithLifecycle()
     ScanBody(
         store = store,
         permission = permission,
@@ -167,9 +173,12 @@ fun ScanContent(
             model.scanAgain()
             onScan()
         },
-        onRetryLookup = { if (lastCode.isEmpty()) model.scanAgain() else model.onManualEntry(lastCode) },
+        onRetryLookup = {
+            if (lastCode.isEmpty()) model.scanAgain() else model.onManualEntry(Decoded(lastCode, lastKind))
+        },
         onLookUp = {
             lastCode = it
+            lastKind = CodeKind.QR
             model.onManualEntry(it)
         },
         onAddProduct = onAddProduct,
@@ -177,10 +186,12 @@ fun ScanContent(
         onGrantAccess = onGrantAccess,
         cameraError = cameraError,
         onRetryCamera = onRetryCamera,
+        search = { CatalogSearchSection(search, model::searchCatalog, model::showProduct) },
         camera = {
-            camera { raw ->
-                lastCode = raw
-                model.onDecoded(raw)
+            camera { decoded ->
+                lastCode = decoded.raw
+                lastKind = decoded.kind
+                model.onDecoded(decoded)
             }
         }
     )
@@ -203,10 +214,16 @@ fun ScanBody(
     onGrantAccess: () -> Unit,
     cameraError: Boolean,
     onRetryCamera: () -> Unit,
+    search: @Composable () -> Unit = {},
     camera: @Composable () -> Unit
 ) {
+    val scroll = rememberScrollState()
+    // A product opened from the search below shows at the top: bring it into view.
+    LaunchedEffect(result) {
+        if (result == ScanResult.Looking) scroll.scrollTo(0)
+    }
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        modifier = Modifier.fillMaxSize().verticalScroll(scroll),
         verticalArrangement = Arrangement.spacedBy(Spacing.Lg)
     ) {
         if (store == null) {
@@ -233,6 +250,7 @@ fun ScanBody(
         }
         ScanAnswer(result, onScanAnother, onRetryLookup, onPickStore, onAddProduct)
         ManualEntry(onLookUp)
+        search()
     }
 }
 

@@ -1,10 +1,10 @@
 # ADR-0067 — A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded
 
-**Status:** Accepted (2026-11-04)
+**Status:** Partially superseded by ADR-0084 (the `inactive` row of the exclusion-reason table, and condition 2 of "available" for a store that enables no channel when none is given)
 **Owner:** Maximiliano
 **Issue:** #825
 **Supersedes:** — *(it restates RN-40's eligibility test; it does not edit accepted ADRs. The register entry E-17 and `docs/services/recommendations.md` are updated by the stories listed under "What must now be true elsewhere")*
-**Superseded by:** —
+**Superseded by:** in part [ADR-0084](0084-a-paused-or-discontinued-product-is-not-sellable-and-the-elsewhere-store-is-the-nearest-by-great-circle-distance.md)
 
 ---
 

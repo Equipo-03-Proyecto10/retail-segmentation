@@ -206,7 +206,7 @@ Later runtime events must be preserved.
 | [0064](0064-a-model-version-is-immutable-and-a-change-of-version-is-never-reported-as-behaviour.md) | A model version is immutable, and a change of version is never reported as behaviour | Accepted |
 | [0065](0065-drift-is-claimed-in-three-separate-kinds-and-concept-drift-only-from-a-predictive-outcome.md) | Drift is claimed in three separate kinds, and concept drift only from a predictive outcome | Accepted |
 | [0066](0066-consent-is-an-append-only-record-by-purpose-and-anonymization-replaces-deletion.md) | Consent is an append-only record by purpose, an objection narrows what is done with a customer, and anonymization replaces deletion | Accepted |
-| [0067](0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md) | A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded | Accepted |
+| [0067](0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md) | A recommendation is judged at a reference store and channel, offers a declared alternative when unavailable, and its explanation is recorded | Partially superseded by [0084](0084-a-paused-or-discontinued-product-is-not-sellable-and-the-elsewhere-store-is-the-nearest-by-great-circle-distance.md) (the `inactive` exclusion row, and a store that enables no channel) |
 | [0068](0068-an-experiment-is-planned-and-frozen-before-assignment-and-claims-an-effect-only-against-a-control.md) | An experiment is planned and frozen before assignment, and claims an effect only against a control | Accepted |
 | [0069](0069-a-sale-is-attributed-to-one-campaign-at-most-and-only-the-difference-against-control-is-incremental.md) | A sale is attributed to one campaign at most, and only the difference against control is called incremental | Accepted |
 | [0070](0070-a-sales-import-reaches-sales-service-as-numbered-row-chunks-under-the-64-kib-cap-and-is-processed-by-a-worker.md) | A sales import reaches sales-service as numbered chunks of rows under the 64 KiB cap, and a worker processes it row by row, resumable and safe to repeat | Accepted |
@@ -221,6 +221,7 @@ Later runtime events must be preserved.
 | [0080](0080-the-nightly-chain-and-the-emulator-pull-service-images-keyed-by-their-build-context.md) | The nightly chain and the emulator pull service images keyed by their build context, and build only what is missing | Accepted |
 | [0081](0081-the-domain-event-table-is-owned-by-the-schema-owner-and-a-subject-is-named-once-in-the-common-fields.md) | The domain-event table is owned by the schema owner, and a subject is named once, in the common fields | Accepted |
 | [0082](0082-audited-entity-names-grow-inside-v1-by-the-same-accepted-record-rule-as-role-codes.md) | Audited entity names grow inside v1 by the same accepted-record rule as role codes | Accepted |
+| [0084](0084-a-paused-or-discontinued-product-is-not-sellable-and-the-elsewhere-store-is-the-nearest-by-great-circle-distance.md) | A paused or discontinued product is not sellable, the elsewhere store is the nearest by great-circle distance, and a floor role's store is refused before it is looked up | Accepted |
 
 ## Writing one
 

@@ -4782,28 +4782,70 @@ CREATE TABLE IF NOT EXISTS rfm.rule_set (
                AND monetary_boundaries[3] >= monetary_boundaries[4]
                AND monetary_boundaries[4] >= 0),
     fallback_label_code  varchar(40) NOT NULL CHECK (length(fallback_label_code) >= 1),
-    -- How a sale that was cancelled, or had units returned, counts (ADR-0062):
-    -- DEDUCT leaves it out of the net purchases, KEEP counts it as sold.
-    cancelled_sales      varchar(6) NOT NULL DEFAULT 'DEDUCT'
-        CHECK (cancelled_sales IN ('DEDUCT', 'KEEP')),
-    returned_sales       varchar(6) NOT NULL DEFAULT 'DEDUCT'
-        CHECK (returned_sales IN ('DEDUCT', 'KEEP')),
-    state                varchar(9) NOT NULL DEFAULT 'DRAFT'
-        CHECK (state IN ('DRAFT', 'PUBLISHED')),
-    version_no           integer NOT NULL DEFAULT 1 CHECK (version_no >= 1),
-    parent_rule_set_id   bigint REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
-    published_at         timestamptz,
     created_at           timestamptz NOT NULL DEFAULT now(),
-    created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
-    -- The sales contract publishes net lines and does not say which of a
-    -- cancellation or a return took a unit away, so the two cannot count
-    -- differently yet.
-    CONSTRAINT rule_set_treatment_supported CHECK (cancelled_sales = returned_sales),
-    CONSTRAINT rule_set_state_shape CHECK ((state = 'PUBLISHED') = (published_at IS NOT NULL)),
-    CONSTRAINT rule_set_lineage CHECK (
-        (parent_rule_set_id IS NULL) = (version_no = 1)
-        AND parent_rule_set_id IS DISTINCT FROM rule_set_id)
+    created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT
 );
+
+-- F22-09 governance, added to a table that may already exist in a live database
+-- (ADR-0040: an operator applies this section before the service deploys), so every
+-- statement is repeatable. CREATE TABLE IF NOT EXISTS above does nothing over an
+-- existing table, which is why the columns, the constraints and the state of the rows
+-- already there are written here and not inside it.
+--
+-- How a sale that was cancelled, or had units returned, counts (ADR-0062). DEDUCT
+-- leaves it out of the net purchases, as every reader of accepted sales does, and it
+-- is the only value: a rule set that counted such a sale as sold needs an accepted
+-- record that supersedes ADR-0062 (the contract's SaleTreatment, ADR-0073).
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS cancelled_sales varchar(6) NOT NULL DEFAULT 'DEDUCT';
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS returned_sales varchar(6) NOT NULL DEFAULT 'DEDUCT';
+-- A rule set already in the table was in force before there was a state to hold, and
+-- profiles were scored against it: it is PUBLISHED. The column is added with that
+-- default, so the rows already there take it, and the default then becomes DRAFT for
+-- every rule set from now on. The second statement is repeatable.
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS state varchar(9) NOT NULL DEFAULT 'PUBLISHED';
+ALTER TABLE rfm.rule_set ALTER COLUMN state SET DEFAULT 'DRAFT';
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS version_no integer NOT NULL DEFAULT 1;
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS parent_rule_set_id bigint
+    REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT;
+ALTER TABLE rfm.rule_set ADD COLUMN IF NOT EXISTS published_at timestamptz;
+-- A PUBLISHED row is published at some instant; for one that predates the column it
+-- is the instant it was created. Matches nothing once every PUBLISHED row has one.
+UPDATE rfm.rule_set SET published_at = created_at
+ WHERE state = 'PUBLISHED' AND published_at IS NULL;
+
+-- The sales contract publishes net lines and does not say which of a cancellation or
+-- a return took a unit away, so only DEDUCT exists and the two cannot differ. An
+-- earlier shape of these constraints allowed KEEP; it is dropped, and the narrower
+-- one is added only when it is not there already.
+ALTER TABLE rfm.rule_set DROP CONSTRAINT IF EXISTS rule_set_cancelled_sales_check;
+ALTER TABLE rfm.rule_set DROP CONSTRAINT IF EXISTS rule_set_returned_sales_check;
+ALTER TABLE rfm.rule_set DROP CONSTRAINT IF EXISTS rule_set_treatment_supported;
+DO $rule_set_constraints$
+DECLARE
+    wanted record;
+BEGIN
+    FOR wanted IN
+        SELECT * FROM (VALUES
+            ('rule_set_cancelled_sales_deduct', 'CHECK (cancelled_sales = ''DEDUCT'')'),
+            ('rule_set_returned_sales_deduct', 'CHECK (returned_sales = ''DEDUCT'')'),
+            ('rule_set_state_check', 'CHECK (state IN (''DRAFT'', ''PUBLISHED''))'),
+            ('rule_set_version_no_check', 'CHECK (version_no >= 1)'),
+            ('rule_set_state_shape',
+             'CHECK ((state = ''PUBLISHED'') = (published_at IS NOT NULL))'),
+            ('rule_set_lineage',
+             'CHECK ((parent_rule_set_id IS NULL) = (version_no = 1)'
+             ' AND parent_rule_set_id IS DISTINCT FROM rule_set_id)')
+        ) AS c (name, definition)
+    LOOP
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                        WHERE conrelid = 'rfm.rule_set'::regclass
+                          AND conname = wanted.name) THEN
+            EXECUTE format('ALTER TABLE rfm.rule_set ADD CONSTRAINT %I %s',
+                           wanted.name, wanted.definition);
+        END IF;
+    END LOOP;
+END
+$rule_set_constraints$;
 -- A version has at most one successor, so a lineage is a line and not a tree.
 CREATE UNIQUE INDEX IF NOT EXISTS rule_set_one_successor
     ON rfm.rule_set (parent_rule_set_id) WHERE parent_rule_set_id IS NOT NULL;

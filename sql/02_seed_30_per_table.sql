@@ -1341,6 +1341,21 @@ BEGIN
     UPDATE models.model_version
        SET state = 'PUBLISHED', published_at = created_at
      WHERE method = 'RFM_RULES';
+
+    -- The one drift report the seed can state honestly (F23-09): the seeded
+    -- data holds thirty customers, below the 200 a comparison needs, so the
+    -- first window of the published version is INSUFFICIENT_DATA and carries
+    -- no statistic. The variables, statistics, bins and alerts the monitor
+    -- writes are not seeded: a figure here would not come from any window.
+    INSERT INTO models.drift_report
+        (version_id, kind, comparison, window_start, window_end, customer_count, computed_at)
+    SELECT v.version_id, 'DATA_DRIFT', 'INSUFFICIENT_DATA',
+           w.window_end - interval '30 days', w.window_end,
+           (v.reference_distribution ->> 'sample_size')::int, v.created_at
+    FROM models.model_version AS v
+    CROSS JOIN LATERAL (SELECT date_trunc('day', v.created_at AT TIME ZONE 'UTC')
+                               AT TIME ZONE 'UTC' + interval '3 hours' AS window_end) AS w
+    WHERE v.state = 'PUBLISHED';
 END
 $seed_models$;
 

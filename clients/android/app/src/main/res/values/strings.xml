@@ -495,6 +495,46 @@
     <string name="sale_correct_open">The cart of this sale is open for correction. Fix it and confirm again.</string>
     <string name="sale_correct_busy">Finish or clear the sale in progress to correct this one.</string>
     <string name="sale_correct_gone">The cart of this sale is no longer on this phone, so it cannot be corrected. Start a new sale, or discard this one.</string>
+    <!-- Review: the commercial supervisor's incidents, syncs and promotions shown (F27-14) -->
+    <string name="nav_review">Review</string>
+    <string name="review_title">Review</string>
+    <string name="review_refresh">Refresh</string>
+    <string name="review_incidents_title">Capture incidents</string>
+    <string name="review_incidents_loading">Loading incidents…</string>
+    <string name="review_incidents_none">No capture incidents for your stores.</string>
+    <string name="review_incidents_more">Showing the newest %1$d of %2$d.</string>
+    <string name="review_group">%1$s (%2$d)</string>
+    <string name="review_state_open">Open</string>
+    <string name="review_state_acknowledged">Acknowledged</string>
+    <string name="review_state_resolved">Resolved</string>
+    <string name="review_store_fallback">Store %1$d</string>
+    <string name="review_incident_headline">%1$s · %2$s refused</string>
+    <string name="review_incident_reason">Reason: %1$s</string>
+    <plurals name="review_attempts">
+        <item quantity="one">%1$d attempt</item>
+        <item quantity="other">%1$d attempts</item>
+    </plurals>
+    <string name="review_history_entry">%1$s on %2$s</string>
+    <string name="review_note_label">Note (optional, up to 200 characters)</string>
+    <string name="review_acknowledge">Acknowledge</string>
+    <string name="review_resolve">Resolve</string>
+    <string name="review_error_moved">Someone has already moved this incident, so nothing was changed. The list shows where it stands now.</string>
+    <string name="review_error_forbidden_store">This incident belongs to a store that is not yours, so it was not changed.</string>
+    <string name="review_error_forbidden_role">Your role cannot review incidents, so nothing was changed.</string>
+    <string name="review_error_gone">This incident is no longer there. Refresh the list.</string>
+    <string name="review_syncs_title">Syncs on this phone</string>
+    <string name="review_syncs_none">Nothing is waiting to send and nothing was refused on this phone.</string>
+    <string name="review_promotions_title">Promotions shown, by store</string>
+    <string name="review_promotions_window">The last 7 days, from %1$s.</string>
+    <string name="review_promotions_note">Each count is a seller recording a promotion as shown to a customer. No customer is named. Sales do not say which promotion they used, so promotions applied cannot be totalled here.</string>
+    <string name="review_promotions_loading">Counting promotions shown…</string>
+    <string name="review_promotions_none">No promotion was recorded as shown in this period.</string>
+    <string name="review_promotions_counted">Counted %1$d of %2$d records, the newest first.</string>
+    <string name="review_campaign_fallback">Campaign %1$d</string>
+    <plurals name="review_times_shown">
+        <item quantity="one">Shown %1$d time</item>
+        <item quantity="other">Shown %1$d times</item>
+    </plurals>
     <string name="outbox_kind_cart_add">Added to cart</string>
     <string name="outbox_kind_cart_remove">Removed from cart</string>
     <!-- Accessibility (#731) -->

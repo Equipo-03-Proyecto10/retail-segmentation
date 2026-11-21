@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | stores |
 | Producer | stores-service |
-| Consumers | stock, campaigns, sales |
+| Consumers | stock, campaigns, sales, recommendations |
 | Supersedes | nothing: [`api_stores.store_directory_v1`](api_stores.store_directory.v1.md) stays for check-ins and engagement |
 
 This is a new version, not a new view. It publishes everything v1 does, with
@@ -69,4 +69,7 @@ one.
 
 `contracts/db/grants.csv` carries `USAGE` on `api_stores` and `SELECT` on this
 view for the producer and for the consumers above (F21-12, #786), added with the
-DDL that creates the view and the tables behind it.
+DDL that creates the view and the tables behind it. recommendations' rows are
+added in its own boundary of `sql/01_schema.sql` (#827, #830): it reads
+`is_active`, `status` and `channel_ids` to judge the reference store, and the
+coordinates to find the nearest store for an `elsewhere` entry (ADR-0084).

@@ -1,6 +1,6 @@
 # recommendations
 
-> **Status:** `/v1` implemented (phase 14, core; F14-22, #477). The `/v2` contract is published (F24-03, #826, ADR-0067); its implementation is F24-04 to F24-07, so the rows and sections below that describe it are marked *planned*. The decision record is implemented (F24-05, #828): every `/v1` answer is recorded in schema `recommendations`, and `/v2` will record into the same tables. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** `/v1` implemented (phase 14, core; F14-22, #477). `GET /v2/recommendations` implemented (F24-04 #827 and F24-07 #830, ADR-0067, ADR-0084, service 0.3.0); the two `recommendation-decisions` reads are still *planned*. The decision record is implemented (F24-05, #828): every `/v1` and `/v2` answer is recorded in schema `recommendations`. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** Recommend only products that are available at the reference store and channel (the one the caller names, else the customer's usual store), not already bought and matching a stated signal, with reasons, marking any alternative and recording and reading back the explanation of each decision, or report why nothing qualifies (RN-40, ADR-0067)
 
 ## Summary
@@ -24,11 +24,11 @@
 - When nothing qualifies, the response says why: `no_open_assignment`, `unassigned_result` or `no_usual_store`. A customer who withdrew personalization (or has no decision recorded) gets `none_match` with no items and no segment, history or interest read; `/v1` is frozen and cannot name the reason, which `/v2` states as `PERSONALIZATION_WITHDRAWN` (F24-06). Items carry ids; clients fetch product names with `GET /v1/products?ids=`.
 - `/v1` reads no table of its own, but since F24-05 it records each answer it computes (see below). Its result cache lasts 120 s, and parity with the web's rule is proven by golden fixtures for the default path of all seeded customers (E-17).
 
-### Since ADR-0067 (`/v2`, contract published in F24-03, implementation planned in F24-04 to F24-07)
+### Since ADR-0067 (`/v2`, contract published in F24-03, implemented in F24-04 and F24-07)
 
-- **Reference store and channel.** `GET /v2/recommendations` takes an optional `store_id` and `channel_id`. The reference store is the one named, else the customer's usual store (`store_source` says which); the channel is never defaulted. A floor role naming a store it is not assigned to gets 403 `forbidden_store` (ADR-0060); with no `store_id` it is not narrowed. A customer with no usual store and no `store_id` gets `no_usual_store`.
-- **Available** means: the commercial status allows the sale, the store's status permits sales, the store enables the channel when one is given (and some channel when none is, ADR-0084), and on-hand is above zero. Opening hours are not part of it. A product that matches a signal and fails is excluded for exactly one reason, in this order: `already_bought`, `inactive`, `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`, `PERSONALIZATION_WITHDRAWN`. The response counts them (`exclusions`) and never lists them.
-- **Each item** has a `kind` (`primary`, `alternative`, `elsewhere`), a `position`, its `factors` (the figures RN-40 orders by), its `availability` (store, channel and the quantity used, E-06) and its `reasons`. An `alternative` is one product related to an unavailable one by a declared substitute relation and itself available; it names the product it replaces (`alternative_for`) and why that was unavailable. An `elsewhere` entry reports another store holding the product and is never a recommendation for the reference store.
+- **Reference store and channel.** `GET /v2/recommendations` takes an optional `store_id` and `channel_id`. The reference store is the one named, else the customer's usual store (`store_source` says which); the channel is never defaulted. A floor role (`SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER`) naming a store it is not assigned to gets 403 `forbidden_store` (ADR-0060), read from `api_users.store_assignment_v1` on every such request; with no `store_id` it is not narrowed. The refusals come in this order: `invalid_query`, `forbidden_store`, `unknown_store`, `unknown_channel`, `unknown_customer` (ADR-0084), so a floor role is never told which store ids exist. A customer with no usual store and no `store_id` gets `no_usual_store`.
+- **Available** means: the commercial status allows the sale, the store's status permits sales, the store enables the channel when one is given (and some channel when none is, ADR-0084), and on-hand is above zero. Opening hours are not part of it. It is read from `api_stock.availability_v1`, stock's own definition; `api_stores.store_directory_v2` tells a store that does not sell from a channel it does not enable, which the availability view reports alike. A paused or discontinued product (`is_active` false) is `not_sellable`, and nothing is `inactive` while products publishes no other flag (ADR-0084). A product that matches a signal and fails is excluded for exactly one reason, in this order: `already_bought`, `inactive`, `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`, `PERSONALIZATION_WITHDRAWN`. The response counts them (`exclusions`) and never lists them.
+- **Each item** has a `kind` (`primary`, `alternative`, `elsewhere`), a `position`, its `factors` (the figures RN-40 orders by), its `availability` (store, channel and the quantity used, E-06) and its `reasons`. An `alternative` is one product related to an unavailable one by a declared substitute relation (`api_products.product_relation_v1`, the lowest id that qualifies) and itself available; it names the product it replaces (`alternative_for`) and why that was unavailable. An `elsewhere` entry, offered only when no substitute qualifies, reports the nearest other store selling the product on the channel, by great-circle distance from the stores' coordinates, ties to the lowest `store_id`, stores without coordinates skipped (ADR-0084); it is never a recommendation for the reference store. Both only fill the places the primary items leave. `model_version_id` is the run's, from `api_models.run_version_v1`, null while the run has none.
 - **The explanation is recorded.** Every answer carries a `decision_id`. The decision (ids, figures and codes only, never a name, email, phone, SKU, price or free text) is kept for 90 days, subject to F21-15, and is read back with `GET /v2/recommendation-decisions/{decision_id}`.
 
 ### The decision record (F24-05, implemented)
@@ -40,7 +40,7 @@
 - **A cached answer is still attributable.** The cache entry carries the `decision_id` recorded for it; a hit writes nothing, serves the same answer and logs `Served cached decision <id>`. An entry without a decision id (written before F24-05) is a miss, so nothing is served that no stored decision explains. Recomputing within the cache window does not record twice, and a recording of the same `decision_id` writes nothing.
 - **Retention.** The service's own job deletes the decisions computed more than 90 days ago, with their exclusions, items and reasons, every hour (`RETENTION_ENABLED`, default on). Each worker runs it; two runs delete the same rows once.
 - **Anonymization.** The customer id is removed from every decision about the customer and the figures stay (F21-19): by the foreign key `ON DELETE SET NULL` when the customer row goes, and by `decision_store.clear_customer` when the customer is anonymized in place. F21-19 chooses what calls it.
-- **Consent.** A customer who objected to personalization gets `PERSONALIZATION_WITHDRAWN` with no items, and no segment, history or interest is read for them. Implemented in `/v1` (F24-06) as `none_match`, since `/v1` is frozen and cannot name the reason; `/v2` states it when F24-04 builds it. A missing decision, or a consent view that cannot be read, is treated as withdrawn. The decision is read on every request, before the result cache, so a withdrawal is seen by the next read and the cache serves nothing older (ADR-0066 section 2). The answer is still recorded: a decision with the status `PERSONALIZATION_WITHDRAWN`, no items and no signals (ADR-0067, Consent), which `/v1` can only send as `none_match`.
+- **Consent.** A customer who objected to personalization gets `PERSONALIZATION_WITHDRAWN` with no items, and no segment, history or interest is read for them. Implemented in `/v1` (F24-06) as `none_match`, since `/v1` is frozen and cannot name the reason; `/v2` states it, and records the store and channel the caller named. A missing decision, or a consent view that cannot be read, is treated as withdrawn. The decision is read on every request, before the result cache, so a withdrawal is seen by the next read and the cache serves nothing older (ADR-0066 section 2). The answer is still recorded: a decision with the status `PERSONALIZATION_WITHDRAWN`, no items and no signals (ADR-0067, Consent), which `/v1` can only send as `none_match`.
 - **Restrictions.** A category the customer restricted (`api_preferences.restriction_v1`, kind `INTEREST_CATEGORY`) and every category below it never appears, whatever signal matched, whether the interest was declared or not. The restricted ids are part of the cache key (F24-06).
 - **Default path.** With no store, no channel and every product active and sellable, the answer is what the web returns, which the golden fixtures keep pinning; every other behaviour above is outside the parity claim (E-17).
 
@@ -49,7 +49,7 @@
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
 | GET | `/v1/recommendations?customer_id=&limit=` | Recommendations with reasons, or why none (`limit` 1 to 50, default 10). Frozen: judged at the usual store | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
-| GET | `/v2/recommendations?customer_id=&limit=&store_id=&channel_id=` | *Planned.* Judged at a reference store and channel, with factors, availability, marked alternatives and a `decision_id` | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER (ADR-0060) |
+| GET | `/v2/recommendations?customer_id=&limit=&store_id=&channel_id=` | Judged at a reference store and channel, with factors, availability, marked alternatives and a `decision_id` | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR, SALES_ASSOCIATE, LOYALTY_OFFICER (ADR-0060) |
 | GET | `/v2/recommendation-decisions?customer_id=&store_id=&status=&from=&to=&page=&size=` | *Planned.* Recorded decisions as summaries | ADMIN, ANALYST, AUDITOR, STORE_MANAGER (narrowed to its assigned stores) |
 | GET | `/v2/recommendation-decisions/{decision_id}` | *Planned.* One recorded decision: what was offered, what was excluded and why | ADMIN, ANALYST, AUDITOR, STORE_MANAGER (narrowed to its assigned stores) |
 
@@ -61,7 +61,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Object | Kind | Access | Notes |
 |---|---|---|---|
-| PostgreSQL | — | reads | SELECT on nine published views only; a result cache in `redis-cache` |
+| PostgreSQL | — | reads | SELECT on published views only (nine for `/v1`, six more for `/v2`); a result cache in `redis-cache` |
 | PostgreSQL, schema `recommendations` | `recommendation_decision`, `recommendation_exclusion`, `recommendation_item`, `recommendation_reason` | S (F24-05) | The decision record (ADR-0067, ADR-0046): per decision the customer id, the reference store and channel, the status, the segmentation run and model version and the computation time; per exclusion reason its count; per item its product, kind, position, quantity and `alternative_for`; one row per reason. Ids, figures and codes only. Retained 90 days; anonymization clears the customer id. No `api_*` view: the decisions are published by this service's own `recommendation-decisions` resource. Grants in `contracts/db/grants.csv`, 30 or more seed rows each |
 
 ## Database contracts
@@ -78,7 +78,11 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_preferences.consent_state_v1` | customer-preferences (`PERSONALIZATION` only, F24-06) |
 | Consumes | `api_preferences.restriction_v1` | customer-preferences (`INTEREST_CATEGORY` only, F24-06) |
 | Consumes (`/v2`; the view and its SELECT exist since F21-07) | `api_stock.availability_v1` | stock |
-| Consumes (*planned*, `/v2`) | The commercial-status and substitute-relation views of products (F21-09, F21-10) and the status and channel views of stores (F21-11, F21-12); names fixed by those stories | products, stores |
+| Consumes (`/v2`) | `api_products.product_relation_v1` (`substitute` only) | products |
+| Consumes (`/v2`, #827) | `api_stores.store_directory_v2` | stores |
+| Consumes (`/v2`, #827) | `api_sales.channel_v1` | sales |
+| Consumes (`/v2`, #827) | `api_users.store_assignment_v1` | users (a floor caller's stores, per request, ADR-0060) |
+| Consumes (`/v2`, #827) | `api_models.run_version_v1` | model-registry (`model_version_id`) |
 
 ## Events
 
@@ -96,7 +100,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Instance | Key pattern | TTL | Purpose |
 |---|---|---|---|
-| cache | `recommendations:cache:{customer_id}:{run_id}:{limit}` | 120 s | `/v1` result cache, each entry carrying the `decision_id` recorded for it; the staleness bound is stated in the contract. For `/v2` the key also carries the store and the channel (ADR-0067), or a seller's result would be served to another store |
+| cache | `recommendations:cache:{customer_id}:{run_id}:{limit}` | 120 s | `/v1` result cache, each entry carrying the `decision_id` recorded for it; the staleness bound is stated in the contract |
+| cache | `recommendations:cache:v2:{customer_id}:{run_id}:{model_version_id}:{limit}:s{store_id or usual}:c{channel_id or any}` | 120 s | `/v2` result cache: the key carries the store and the channel (ADR-0067), so a seller's result is never served to another store, and the entry the `decision_id` recorded for it |
 | state | `recommendations:rl:*` | the limit's window | Per-service request rate limit |
 | state | `pub:auth:v1:live:{sid}` | — | `EXISTS` only, to check that the caller's session is live |
 
@@ -126,7 +131,7 @@ Each is registered, with its justification and guard, in [`README.md`](./README.
 
 ### E-07 — recommendations depends on seven published contracts
 
-- **What:** One service reads seven boundaries: products, categories, stock, customers, preferences, sales and segments. For `/v2` it also reads stock's `availability_v1`, the products and stores views of commercial status, substitute relations, store status and channels, and the customer restriction view (ADR-0067).
+- **What:** One service reads seven boundaries: products, categories, stock, customers, preferences, sales and segments. For `/v2` it also reads stock's `availability_v1`, products' `product_relation_v1`, stores' `store_directory_v2`, sales' `channel_v1`, users' `store_assignment_v1` (a floor caller's stores, ADR-0060) and model-registry's `run_version_v1`, and the customer restriction view (ADR-0067, ADR-0084). That adds stores, users and model-registry to the boundaries `/v2` reads, each through one published view and its grant.
 - **Why it is acceptable:** RN-40 is a rule over all of them. Splitting it would put one rule in several services, or copy seven datasets into projections that drift. The number is a consequence of the rule, not a reason to split it.
 - **Guard:** It reads versioned `api_*` views only, never a base table, and names the columns it reads. A breaking change ships `_v2` beside `_v1`, and the old object is dropped only when `grants.csv` shows no consumer.
 - **Decided in:** [ADR-0044](../adr/0044-boundaries-meet-only-through-versioned-database-contracts-and-redis-streams.md) (Reads: the published database contracts). Register: [E-07](./README.md#e-07--recommendations-depends-on-seven-published-contracts).

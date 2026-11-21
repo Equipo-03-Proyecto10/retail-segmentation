@@ -8,12 +8,14 @@
 | Kind | PostgreSQL view |
 | Owning boundary | model-registry |
 | Producer | model-registry |
-| Consumers | segments |
+| Consumers | segments, recommendations |
 
 The view publishes the immutable model-version link for every segmentation run
 that model-registry has linked. A run can be temporarily absent while its stream
 event is pending; consumers preserve that absence as an unknown version and do
-not substitute the currently published version.
+not substitute the currently published version. recommendations reads it for
+the `model_version_id` of a `/v2` decision, and answers null for a run with no
+row (#827, ADR-0067).
 
 ## Columns
 

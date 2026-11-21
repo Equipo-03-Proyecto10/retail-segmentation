@@ -33,6 +33,13 @@ VIEWS = {
     "api_preferences.restriction_v1",
     "api_sales.purchase_line_v1",
     "api_segments.current_label_v1",
+    # /v2 (ADR-0067, ADR-0084)
+    "api_stock.availability_v1",
+    "api_products.product_relation_v1",
+    "api_stores.store_directory_v2",
+    "api_sales.channel_v1",
+    "api_users.store_assignment_v1",
+    "api_models.run_version_v1",
 }
 
 
@@ -122,7 +129,7 @@ def test_xml_validates_against_the_contract(
 # ---------- static guards over app/ ----------
 
 
-def test_the_code_names_only_the_nine_views() -> None:
+def test_the_code_names_only_the_published_views_it_is_granted() -> None:
     found = subprocess.run(
         ["grep", "-rhoE", r"\b(public|api_[a-z]+)\.[a-z0-9_]+", str(APP)],
         capture_output=True,

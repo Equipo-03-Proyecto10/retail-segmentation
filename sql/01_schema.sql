@@ -5640,6 +5640,20 @@ GRANT SELECT, INSERT, DELETE ON recommendations.recommendation_decision,
     recommendations.recommendation_exclusion, recommendations.recommendation_item,
     recommendations.recommendation_reason TO svc_recommendations;
 GRANT UPDATE (customer_id) ON recommendations.recommendation_decision TO svc_recommendations;
+
+-- What /v2/recommendations reads beyond the views granted in their producers'
+-- sections (F24-04, F24-07, ADR-0067, ADR-0084): the store directory, to tell a
+-- store that is not selling from a channel it does not enable and to find the
+-- nearest store for an `elsewhere` entry; the channel ids, for 422
+-- unknown_channel; a floor caller's stores, re-read per request (ADR-0060); and
+-- the model version a run was scored under. Each is a row of
+-- contracts/db/grants.csv. Every view is created above, so a clean run keeps
+-- its order, and each statement is idempotent.
+GRANT USAGE ON SCHEMA api_stores, api_sales, api_users, api_models TO svc_recommendations;
+GRANT SELECT ON api_stores.store_directory_v2 TO svc_recommendations;
+GRANT SELECT ON api_sales.channel_v1 TO svc_recommendations;
+GRANT SELECT ON api_users.store_assignment_v1 TO svc_recommendations;
+GRANT SELECT ON api_models.run_version_v1 TO svc_recommendations;
 -- END BOUNDARY recommendations
 
 -- BEGIN BOUNDARY analytics-kpis

@@ -691,7 +691,7 @@ frozen like the plan:
 
 Both are exempt from the 30-row minimum, like the other tables written only by an operation
 (`sql/seed-exempt.txt`). `public.experiment_assignment` itself gains triggers rather than columns:
-no role may UPDATE or DELETE a row (RN-42), and the web may not INSERT into a planned experiment.
+no role may UPDATE, DELETE or TRUNCATE a row (RN-42), and the web may not INSERT into a planned experiment.
 
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:

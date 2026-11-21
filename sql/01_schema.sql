@@ -6064,6 +6064,11 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
+    IF TG_OP = 'TRUNCATE' THEN
+        RAISE EXCEPTION 'An assignment is never rewritten: TRUNCATE is refused'
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'experiment_assignment_never_rewritten';
+    END IF;
     RAISE EXCEPTION 'An assignment is never rewritten: % of customer % in experiment % '
         'is refused', TG_OP, OLD.customer_id, OLD.experiment_id
         USING ERRCODE = 'check_violation',
@@ -6087,6 +6092,9 @@ EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
 CREATE OR REPLACE TRIGGER trg_experiment_assignment_never_deleted
 BEFORE DELETE ON public.experiment_assignment
 FOR EACH ROW EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
+CREATE OR REPLACE TRIGGER trg_experiment_assignment_never_truncated
+BEFORE TRUNCATE ON public.experiment_assignment
+FOR EACH STATEMENT EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry

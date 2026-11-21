@@ -43,7 +43,10 @@ def shop(owner: psycopg.Connection, world: dict, role_subjects: dict):
         " WHERE store_id = %s",
         (store,),
     ).fetchone()
-    today = owner.execute("SELECT CURRENT_DATE").fetchone()[0]
+    # The service defaults SALES_TIMEZONE to UTC. Do not derive these windows
+    # from the database session's date: in the evening in Mexico City it is
+    # already the next sale day in UTC, which would make "not yet begun" active.
+    today = datetime.now(UTC).date()
     owner.execute(
         "UPDATE public.product SET list_price = %s WHERE product_id = %s",
         (LIST_PRICE, product),
@@ -388,7 +391,7 @@ def test_the_sales_day_is_read_in_the_business_time_zone_not_the_databases(
     )
 
     assert response.status_code == 201, response.get_json()
-    database_today = shop["today"]
+    database_today = owner.execute("SELECT CURRENT_DATE").fetchone()[0]
     if database_today != local_today:
         other = promotion(owner, shop, starts=database_today, ends=database_today)
         refused = post(

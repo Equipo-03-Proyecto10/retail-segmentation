@@ -219,12 +219,12 @@ paths:
         Recency boundaries are non-decreasing days and frequency and monetary
         boundaries are non-increasing, listed in the order of the scores 5, 4, 3
         and 2. A violation is 422 `invalid_body` with a detail code
-        `not_monotonic`, `band_range`, `bands_overlap`, `bands_gap` or
-        `treatment_unsupported`. A name already used is 409 `rule_set_name_taken`.
+        `not_monotonic`, `band_range`, `bands_overlap` or `bands_gap`; a sale
+        treatment other than `DEDUCT` is `not_allowed`. A name already used is
+        409 `rule_set_name_taken`.
         The change is a domain event naming its author (ADR-0072). Creating one
         publishes nothing.
       operationId: createRfmRuleSet
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -291,7 +291,6 @@ paths:
         Returns one rule set with its boundaries and bands: frozen once its
         `state` is `PUBLISHED`.
       operationId: getRfmRuleSet
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -341,7 +340,6 @@ paths:
         as a new version, `POST /v1/rfm-rule-sets/{rule_set_id}/versions`. The
         edit is a domain event naming its author (ADR-0072).
       operationId: updateRfmRuleSet
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -417,7 +415,6 @@ paths:
         must be new. The change is a domain event naming its author
         (ADR-0072).
       operationId: createRfmRuleSetVersion
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:
@@ -495,7 +492,6 @@ paths:
         rule set is in force is model-registry's decision (ADR-0064). The
         change is a domain event naming its author (ADR-0072).
       operationId: publishRfmRuleSet
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
       parameters:

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
   <code>invalid_body</code>
-  <message>Each band must be ordered and no two bands may overlap.</message>
+  <message>The bands must partition the score space: no two may overlap and none may leave a triple out.</message>
   <correlation_id>corr-invalid-body</correlation_id>
   <details>
     <field>bands</field>

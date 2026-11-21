@@ -363,13 +363,13 @@ class AccessibilityGuardTest {
 
     // A refused sale in the history, with what the seller can do about it (F27-13).
     // Lazy: `row` reads `now`, which is declared with the outbox states below.
-    private val refusedSale by lazy { row(3, Operation.SALE, RowState.REFUSED) }
+    private val refusedNeedsAttention by lazy { row(3, Operation.SALE, RowState.REFUSED) }
 
     private val refusedHistory by lazy {
         SaleUi(
             store = ChosenStore(1, "Centro"),
             registration = ready,
-            history = listOf(row(4, Operation.SALE, RowState.PENDING), refusedSale),
+            history = listOf(row(4, Operation.SALE, RowState.PENDING), refusedNeedsAttention),
             kept = setOf("client-3")
         )
     }
@@ -386,8 +386,8 @@ class AccessibilityGuardTest {
     @Test fun saleRefusedOnScreenCanBeDiscarded() = sale(
         full.copy(
             sale = full.sale.copy(queuedRowId = 3),
-            queued = refusedSale,
-            history = listOf(refusedSale),
+            queued = refusedNeedsAttention,
+            history = listOf(refusedNeedsAttention),
             kept = setOf("client-3")
         )
     )

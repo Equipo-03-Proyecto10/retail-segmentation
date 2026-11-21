@@ -42,6 +42,7 @@ import online.maxthecoder.mosaiq.floor.ui.CheckInState
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorApp
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.RegistrationState
 import online.maxthecoder.mosaiq.floor.ui.SalesContent
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
@@ -83,6 +84,7 @@ class RestorationTest {
     private lateinit var scan: ScanViewModel
     private lateinit var sales: SalesViewModel
     private lateinit var insights: CustomerInsightsViewModel
+    private val identify by lazy { IdentifyViewModel(app.graph) }
 
     @Before
     fun start() {
@@ -123,6 +125,7 @@ class RestorationTest {
             scan = scan,
             sales = sales,
             insights = insights,
+            identify = identify,
             onSignOut = {}
         )
     }

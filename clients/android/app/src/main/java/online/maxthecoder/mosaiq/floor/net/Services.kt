@@ -24,7 +24,7 @@ object Services {
     /** stock owns `stock-levels`. */
     const val STOCK = "api/stock/v1/"
 
-    /** customers owns `customers`. */
+    /** customers owns `customers` and `loyalty-cards`. */
     const val CUSTOMERS = "api/customers/v1/"
 
     /** customer-preferences owns `preference-profiles`. */

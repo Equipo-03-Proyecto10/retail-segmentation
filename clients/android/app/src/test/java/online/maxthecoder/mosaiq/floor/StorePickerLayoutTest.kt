@@ -15,6 +15,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
@@ -58,6 +59,7 @@ class StorePickerLayoutTest {
                     scan = ScanViewModel(graph),
                     sales = SalesViewModel(graph),
                     insights = CustomerInsightsViewModel(graph),
+                    identify = IdentifyViewModel(graph),
                     onSignOut = {}
                 )
             }

@@ -73,15 +73,18 @@ private fun ViewportBox(modifier: Modifier = Modifier, content: @Composable () -
 
 /** The live camera with its framing overlay, and the hint under it. */
 @Composable
-fun CameraViewport(content: @Composable () -> Unit) {
-    val description = stringResource(R.string.scan_camera_description)
+fun CameraViewport(
+    content: @Composable () -> Unit,
+    description: String = stringResource(R.string.scan_camera_description),
+    hint: String = stringResource(R.string.scan_hint)
+) {
     Column(verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
         ViewportBox(Modifier.semantics { contentDescription = description }) {
             content()
             FramingOverlay()
         }
         Text(
-            stringResource(R.string.scan_hint),
+            hint,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -92,7 +95,7 @@ fun CameraViewport(content: @Composable () -> Unit) {
 
 /** The viewport before the camera is on: the same size, with the one action that turns it on. */
 @Composable
-fun ViewportStart(onScan: () -> Unit) {
+fun ViewportStart(onScan: () -> Unit, help: String = stringResource(R.string.scan_start_help)) {
     ViewportBox {
         Column(
             modifier = Modifier.padding(Spacing.Lg),
@@ -106,7 +109,7 @@ fun ViewportStart(onScan: () -> Unit) {
                 size = Spacing.X3l
             )
             Text(
-                stringResource(R.string.scan_start_help),
+                help,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center

@@ -132,6 +132,29 @@ data class Customer(
 @Serializable
 data class CustomerPage(val customers: List<Customer>, @SerialName("page_info") val pageInfo: PageInfo)
 
+/** `FloorCustomer` of contracts/customers: `email` and `phone` are absent for a seller (F21-13). */
+@Serializable
+data class FloorCustomer(
+    @SerialName("customer_id") val customerId: String,
+    val name: String,
+    val email: String? = null,
+    val phone: String? = null
+)
+
+@Serializable
+data class FloorCustomerPage(val customers: List<FloorCustomer>, @SerialName("page_info") val pageInfo: PageInfo)
+
+/** The scanned code travels in the body only, never in a URL (contracts/customers `lookupLoyaltyCard`). */
+@Serializable
+data class LookupLoyaltyCardRequest(val code: String)
+
+/** Two identifiers and no personal data. */
+@Serializable
+data class LoyaltyCardLookup(
+    @SerialName("card_id") val cardId: String,
+    @SerialName("customer_id") val customerId: String
+)
+
 @Serializable
 data class RegisterCustomerRequest(
     val name: String,

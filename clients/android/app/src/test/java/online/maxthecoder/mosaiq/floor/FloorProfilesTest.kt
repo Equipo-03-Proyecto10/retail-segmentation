@@ -21,6 +21,7 @@ import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
@@ -45,6 +46,7 @@ class FloorProfilesTest {
     private lateinit var scan: ScanViewModel
     private lateinit var sales: SalesViewModel
     private lateinit var insights: CustomerInsightsViewModel
+    private val identify by lazy { IdentifyViewModel(app.graph) }
     private var role by mutableStateOf("STORE_MANAGER")
 
     private val tags =
@@ -52,7 +54,8 @@ class FloorProfilesTest {
             FloorSection.CHECK_IN to "nav-check-in",
             FloorSection.SCAN to "nav-scan",
             FloorSection.SALE to "nav-sale",
-            FloorSection.OUTBOX to "nav-outbox"
+            FloorSection.OUTBOX to "nav-outbox",
+            FloorSection.CUSTOMER to "nav-customer"
         )
 
     @Before
@@ -81,6 +84,7 @@ class FloorProfilesTest {
             scan = scan,
             sales = sales,
             insights = insights,
+            identify = identify,
             onSignOut = {}
         )
     }

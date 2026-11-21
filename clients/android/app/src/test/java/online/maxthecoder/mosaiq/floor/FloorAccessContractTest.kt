@@ -82,14 +82,19 @@ class FloorAccessContractTest {
 
     @Test
     fun eachStoreProfileGetsItsOwnNavigation() {
+        val everything = listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.SALE, FloorSection.OUTBOX)
         assertEquals(
-            listOf(FloorSection.CHECK_IN, FloorSection.SCAN, FloorSection.OUTBOX),
+            listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.SCAN, FloorSection.OUTBOX),
             FloorAccess.sections("SALES_ASSOCIATE")
         )
-        assertEquals(FloorSection.entries, FloorAccess.sections("STORE_MANAGER"))
-        assertEquals(listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX), FloorAccess.sections("LOYALTY_OFFICER"))
+        assertEquals(everything, FloorAccess.sections("STORE_MANAGER"))
+        assertEquals(
+            listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.OUTBOX),
+            FloorAccess.sections("LOYALTY_OFFICER")
+        )
         assertEquals(listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX), FloorAccess.sections("COMMERCIAL_SUPERVISOR"))
-        assertEquals(FloorSection.entries, FloorAccess.sections("ADMIN"))
+        // The floor search and floor view are the store profiles' reads: the administrator does not hold them.
+        assertEquals(everything, FloorAccess.sections("ADMIN"))
     }
 
     @Test

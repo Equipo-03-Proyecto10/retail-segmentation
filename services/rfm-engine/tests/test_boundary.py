@@ -27,6 +27,14 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
         f"rfm.pass_run({column})"
         for column in "status finished_at customers_examined customers_changed".split()
     }
+    rule_set_updates = {
+        f"rfm.rule_set({column})"
+        for column in (
+            "name window_days recency_boundaries frequency_boundaries"
+            " monetary_boundaries fallback_label_code cancelled_sales"
+            " returned_sales state published_at"
+        ).split()
+    }
     assert {(r["object"], r["privilege"]) for r in rows} == {
         ("rfm", "USAGE"),
         ("rfm_events", "USAGE"),
@@ -34,8 +42,17 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
         ("api_sales", "USAGE"),
         ("api_sales.purchase_line_v1", "SELECT"),
         ("api_sales.net_purchase_line_v1", "SELECT"),
+        ("api_audit", "USAGE"),
+        (
+            "api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,"
+            "uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",
+            "EXECUTE",
+        ),
         ("rfm.rule_set", "SELECT"),
+        ("rfm.rule_set", "INSERT"),
         ("rfm.rule_set_band", "SELECT"),
+        ("rfm.rule_set_band", "INSERT"),
+        ("rfm.rule_set_band", "DELETE"),
         ("rfm.customer_profile", "SELECT"),
         ("rfm.customer_profile", "INSERT"),
         ("rfm.pass_run", "SELECT"),
@@ -43,7 +60,7 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
         ("rfm_events.outbox", "SELECT"),
         ("rfm_events.outbox", "DELETE"),
         ("rfm_events.outbox(relayed_at)", "UPDATE"),
-    } | {(column, "UPDATE") for column in updates | pass_updates}
+    } | {(column, "UPDATE") for column in updates | pass_updates | rule_set_updates}
 
 
 @pytest.mark.postgres

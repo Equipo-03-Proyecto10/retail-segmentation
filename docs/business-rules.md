@@ -232,9 +232,16 @@ because ADR-0018 forbids a null label for anyone scored; the run reports how man
 did as "Matched no rule", separately from customers with no sales in the window
 (RN-21), who stay unassigned.
 
+A rule set of rfm-engine goes further than the web's retuned bands: its bands must
+partition the 125 triples, so it is refused when a triple sits in none or in more than
+one (F22-09), and a rule set is frozen once published, so the partition it was
+validated with is the one every profile was scored under.
+
 **Enforced:** the fallback join in `web.db.segments` and the `via_fallback` flag it
-returns. **Verified** — `tests/test_seed_segment_rules.py` (partition, every label
+returns; for rfm-engine, `rfm.rule_set_partition`, checked when a rule set is created,
+edited or published, and `trg_rule_set_guard`. **Verified** — `tests/test_seed_segment_rules.py` (partition, every label
 and every segment reachable), `tests/test_segmentation_pipeline.py`,
+`services/rfm-engine/tests/test_rule_sets.py`,
 [`evidence/f345-segment-rule-bands.md`](evidence/f345-segment-rule-bands.md).
 
 ### RN-51 — A quintile boundary is computed once per distinct value, so equal measures get equal scores

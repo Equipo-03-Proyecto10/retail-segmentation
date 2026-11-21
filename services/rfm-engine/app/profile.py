@@ -36,6 +36,9 @@ class RuleSet:
     monetary: tuple[Decimal, Decimal, Decimal, Decimal]
     bands: tuple[Band, ...]
     fallback_label: str
+    # The rule set counts a cancelled or returned sale as sold (`KEEP`) instead of
+    # leaving it out of the net purchases (`DEDUCT`, ADR-0062).
+    keep_reversed: bool = False
 
 
 @dataclass(frozen=True, slots=True)

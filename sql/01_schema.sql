@@ -4522,7 +4522,9 @@ BEGIN
         WHEN 'CRITICAL_ACTION' THEN
             RETURN audit_events.str_in(d, 'action', ARRAY[
                     'SALE_REVERSED', 'STOCK_ADJUSTED', 'CUSTOMER_ANONYMIZED',
-                    'AUDIT_PAYLOAD_REDACTED', 'EXPERIMENT_FROZEN', 'CAMPAIGN_ACTIVATED'])
+                    'AUDIT_PAYLOAD_REDACTED', 'EXPERIMENT_FROZEN', 'CAMPAIGN_ACTIVATED',
+                    'RULE_SET_CREATED', 'RULE_SET_EDITED', 'RULE_SET_VERSIONED',
+                    'RULE_SET_PUBLISHED'])
                AND (NOT d ? 'reason_code' OR audit_events.str_like(d, 'reason_code', reason));
         WHEN 'HISTORY_READ' THEN
             RETURN audit_events.str_in(d, 'history', ARRAY['CONSENT', 'SEGMENT', 'SALES']);
@@ -4576,7 +4578,8 @@ DECLARE
     r audit_events.domain_event;
     subjects text[] := ARRAY[
         'user', 'customer', 'model_version', 'calculation', 'sale', 'sale_reversal',
-        'stock_level', 'campaign', 'experiment', 'audit_entry', 'domain_event'];
+        'stock_level', 'campaign', 'experiment', 'rule_set', 'audit_entry',
+        'domain_event'];
 BEGIN
     -- 1. The kind is in the closed list and mapped to the recording role.
     writers := CASE p_kind
@@ -4585,7 +4588,7 @@ BEGIN
         WHEN 'MODEL_ROLLED_BACK' THEN ARRAY['svc_models']
         WHEN 'PERMISSION_CHANGED' THEN ARRAY['svc_users']
         WHEN 'CRITICAL_ACTION' THEN ARRAY['svc_sales', 'svc_stock', 'svc_customers',
-                                          'svc_experiments', 'svc_campaigns']
+                                          'svc_experiments', 'svc_campaigns', 'svc_rfm']
         WHEN 'HISTORY_READ' THEN ARRAY['svc_preferences', 'svc_segments', 'svc_sales']
         WHEN 'AUDIT_READ' THEN ARRAY['svc_audit_trail']
     END;
@@ -4748,11 +4751,14 @@ REVOKE ALL ON SCHEMA api_rfm FROM PUBLIC;
 GRANT USAGE ON SCHEMA rfm, rfm_events, api_rfm TO svc_rfm;
 
 -- A rule set: the window and the boundaries a customer is scored against, frozen
--- when it is created (ADR-0063). The scores are read off the boundaries: recency
--- 5, 4, 3 and 2 hold up to the first four recency values, frequency and monetary
--- from the first four values up; anything beyond scores 1. The seed holds the one
--- rule set of the web's published version; F22-09 creates the others, and
--- model-registry publishes the version that names one.
+-- when it is published (ADR-0063), and how a cancelled or a returned sale counts.
+-- The scores are read off the boundaries: recency 5, 4, 3 and 2 hold up to the
+-- first four recency values, frequency and monetary from the first four values up;
+-- anything beyond scores 1. A rule set is a DRAFT until it is published and
+-- immutable after (F22-09): a change to a published one is a new version, a row
+-- of its own whose parent is the version it changes. The seed holds the rule set
+-- of the web's published version; model-registry publishes the version that names
+-- one.
 CREATE TABLE IF NOT EXISTS rfm.rule_set (
     rule_set_id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name                 varchar(80) NOT NULL UNIQUE CHECK (length(name) >= 1),
@@ -4776,14 +4782,37 @@ CREATE TABLE IF NOT EXISTS rfm.rule_set (
                AND monetary_boundaries[3] >= monetary_boundaries[4]
                AND monetary_boundaries[4] >= 0),
     fallback_label_code  varchar(40) NOT NULL CHECK (length(fallback_label_code) >= 1),
+    -- How a sale that was cancelled, or had units returned, counts (ADR-0062):
+    -- DEDUCT leaves it out of the net purchases, KEEP counts it as sold.
+    cancelled_sales      varchar(6) NOT NULL DEFAULT 'DEDUCT'
+        CHECK (cancelled_sales IN ('DEDUCT', 'KEEP')),
+    returned_sales       varchar(6) NOT NULL DEFAULT 'DEDUCT'
+        CHECK (returned_sales IN ('DEDUCT', 'KEEP')),
+    state                varchar(9) NOT NULL DEFAULT 'DRAFT'
+        CHECK (state IN ('DRAFT', 'PUBLISHED')),
+    version_no           integer NOT NULL DEFAULT 1 CHECK (version_no >= 1),
+    parent_rule_set_id   bigint REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
+    published_at         timestamptz,
     created_at           timestamptz NOT NULL DEFAULT now(),
-    created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT
+    created_by           uuid REFERENCES public.app_user (user_id) ON DELETE RESTRICT,
+    -- The sales contract publishes net lines and does not say which of a
+    -- cancellation or a return took a unit away, so the two cannot count
+    -- differently yet.
+    CONSTRAINT rule_set_treatment_supported CHECK (cancelled_sales = returned_sales),
+    CONSTRAINT rule_set_state_shape CHECK ((state = 'PUBLISHED') = (published_at IS NOT NULL)),
+    CONSTRAINT rule_set_lineage CHECK (
+        (parent_rule_set_id IS NULL) = (version_no = 1)
+        AND parent_rule_set_id IS DISTINCT FROM rule_set_id)
 );
+-- A version has at most one successor, so a lineage is a line and not a tree.
+CREATE UNIQUE INDEX IF NOT EXISTS rule_set_one_successor
+    ON rfm.rule_set (parent_rule_set_id) WHERE parent_rule_set_id IS NOT NULL;
 
 -- The boxes of scores that map to a label, one row per box: a repeated group is a
--- table of its own (4NF). No two boxes of one rule set overlap (RN-46), which
--- F22-09 checks when it creates one; the lowest band_no wins in any case, as the
--- lowest segment_id does in the web.
+-- table of its own (4NF). The boxes of one rule set partition the 125 triples of
+-- scores (RN-46): rfm.rule_set_partition counts the triples no box and more than
+-- one box holds, F22-09 refuses a rule set with either, and the lowest band_no wins
+-- in any case, as the lowest segment_id does in the web.
 CREATE TABLE IF NOT EXISTS rfm.rule_set_band (
     rule_set_id bigint NOT NULL REFERENCES rfm.rule_set (rule_set_id) ON DELETE RESTRICT,
     band_no     smallint NOT NULL CHECK (band_no >= 1),
@@ -4797,6 +4826,94 @@ CREATE TABLE IF NOT EXISTS rfm.rule_set_band (
     PRIMARY KEY (rule_set_id, band_no),
     CHECK (r_min <= r_max AND f_min <= f_max AND m_min <= m_max)
 );
+
+-- RN-46: how many of the 125 (R, F, M) triples no band holds, and how many more
+-- than one holds. A rule set partitions the score space when both are zero.
+CREATE OR REPLACE FUNCTION rfm.rule_set_partition(p_rule_set_id bigint)
+RETURNS TABLE (uncovered integer, overlapped integer)
+LANGUAGE sql STABLE
+AS $partition$
+    SELECT count(*) FILTER (WHERE t.n = 0)::integer,
+           count(*) FILTER (WHERE t.n > 1)::integer
+    FROM (
+        SELECT (SELECT count(*) FROM rfm.rule_set_band AS b
+                 WHERE b.rule_set_id = p_rule_set_id
+                   AND r BETWEEN b.r_min AND b.r_max
+                   AND f BETWEEN b.f_min AND b.f_max
+                   AND m BETWEEN b.m_min AND b.m_max) AS n
+        FROM generate_series(1, 5) AS r
+        CROSS JOIN generate_series(1, 5) AS f
+        CROSS JOIN generate_series(1, 5) AS m
+    ) AS t
+$partition$;
+
+-- A published rule set is immutable, for every role including the owner (ADR-0064,
+-- F22-09): the only change a draft has to make into a published one is the move,
+-- and the move is refused unless its bands partition the score space. A draft's
+-- identity and lineage never change; a published rule set is never deleted.
+CREATE OR REPLACE FUNCTION rfm.fn_rule_set_guard() RETURNS trigger
+LANGUAGE plpgsql
+AS $guard$
+DECLARE
+    gaps record;
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.state = 'PUBLISHED' THEN
+            RAISE EXCEPTION 'a published rule set is never deleted'
+                USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.state = 'PUBLISHED' THEN
+        RAISE EXCEPTION 'a published rule set is never edited; make a new version'
+            USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';
+    END IF;
+    IF NEW.rule_set_id <> OLD.rule_set_id OR NEW.version_no <> OLD.version_no
+       OR NEW.parent_rule_set_id IS DISTINCT FROM OLD.parent_rule_set_id
+       OR NEW.created_at <> OLD.created_at
+       OR NEW.created_by IS DISTINCT FROM OLD.created_by THEN
+        RAISE EXCEPTION 'a rule set keeps its identity, lineage and author'
+            USING ERRCODE = '23514', CONSTRAINT = 'rule_set_lineage_immutable';
+    END IF;
+    IF NEW.state = 'PUBLISHED' THEN
+        SELECT * INTO gaps FROM rfm.rule_set_partition(NEW.rule_set_id);
+        IF gaps.uncovered > 0 OR gaps.overlapped > 0 THEN
+            RAISE EXCEPTION 'the bands of rule set % do not partition the score space',
+                NEW.rule_set_id
+                USING ERRCODE = '23514', CONSTRAINT = 'rule_set_bands_partition';
+        END IF;
+    END IF;
+    RETURN NEW;
+END
+$guard$;
+
+DROP TRIGGER IF EXISTS trg_rule_set_guard ON rfm.rule_set;
+CREATE TRIGGER trg_rule_set_guard
+BEFORE UPDATE OR DELETE ON rfm.rule_set
+FOR EACH ROW EXECUTE FUNCTION rfm.fn_rule_set_guard();
+
+-- The bands of a published rule set are as frozen as the rule set.
+CREATE OR REPLACE FUNCTION rfm.fn_rule_set_band_guard() RETURNS trigger
+LANGUAGE plpgsql
+AS $band_guard$
+DECLARE
+    owner_state varchar(9);
+BEGIN
+    SELECT state INTO owner_state FROM rfm.rule_set
+     WHERE rule_set_id = CASE WHEN TG_OP = 'DELETE' THEN OLD.rule_set_id
+                              ELSE NEW.rule_set_id END;
+    IF owner_state = 'PUBLISHED' THEN
+        RAISE EXCEPTION 'the bands of a published rule set are never edited'
+            USING ERRCODE = '23514', CONSTRAINT = 'rule_set_published_immutable';
+    END IF;
+    RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+END
+$band_guard$;
+
+DROP TRIGGER IF EXISTS trg_rule_set_band_guard ON rfm.rule_set_band;
+CREATE TRIGGER trg_rule_set_band_guard
+BEFORE INSERT OR UPDATE OR DELETE ON rfm.rule_set_band
+FOR EACH ROW EXECUTE FUNCTION rfm.fn_rule_set_band_guard();
 
 -- One row per customer who has been processed; a customer with no row is `pending`
 -- in the contract view. `scored` holds a customer with a net purchase in the window,
@@ -4924,12 +5041,23 @@ LEFT JOIN rfm.customer_profile AS p ON p.customer_id = c.customer_id;
 REVOKE ALL ON api_rfm.current_profile_v1 FROM PUBLIC;
 
 -- svc_rfm reads sales only through api_sales (ADR-0044) and writes its own
--- profile and the record of each daily pass; it reads rule sets and creates none yet
--- (F22-09). A profile's
--- customer_id never changes. Each is a row of contracts/db/grants.csv.
+-- profile, the record of each daily pass, and its rule sets (F22-09): it creates the
+-- rule sets, edits a draft and moves it to published, and never deletes one; a draft's
+-- bands are replaced, never updated. A profile's customer_id never changes. Each is a
+-- row of contracts/db/grants.csv.
 GRANT USAGE ON SCHEMA api_sales TO svc_rfm;
 GRANT SELECT ON api_sales.purchase_line_v1, api_sales.net_purchase_line_v1 TO svc_rfm;
-GRANT SELECT ON rfm.rule_set, rfm.rule_set_band TO svc_rfm;
+GRANT SELECT, INSERT ON rfm.rule_set TO svc_rfm;
+GRANT UPDATE (name, window_days, recency_boundaries, frequency_boundaries,
+              monetary_boundaries, fallback_label_code, cancelled_sales, returned_sales,
+              state, published_at)
+    ON rfm.rule_set TO svc_rfm;
+GRANT SELECT, INSERT, DELETE ON rfm.rule_set_band TO svc_rfm;
+-- A change to a rule set is a critical action, recorded in its transaction
+-- (ADR-0072, contracts/db/api_audit.record_event.v1.md).
+GRANT USAGE ON SCHEMA api_audit TO svc_rfm;
+GRANT EXECUTE ON FUNCTION api_audit.record_event_v1(uuid, text, text, timestamptz, text, uuid,
+    text, smallint, text, text, bigint, bigint, text, jsonb) TO svc_rfm;
 GRANT SELECT, INSERT ON rfm.customer_profile TO svc_rfm;
 GRANT SELECT, INSERT ON rfm.pass_run TO svc_rfm;
 GRANT UPDATE (status, finished_at, customers_examined, customers_changed)

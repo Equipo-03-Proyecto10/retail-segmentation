@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>discount_without_promotion</code>
+  <message>A line is charged below its list price without naming a promotion.</message>
+  <correlation_id>corr-discount-without-promotion</correlation_id>
+  <details>
+    <field>lines[0].unit_price</field>
+    <code>below_list_price</code>
+  </details>
+</Error>

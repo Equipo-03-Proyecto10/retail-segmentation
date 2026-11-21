@@ -257,7 +257,8 @@ class SalesViewModelTest {
         model.confirm()
         settle { !model.sale.value.confirming }
         assertEquals("check_in_required", model.sale.value.error!!.code)
-        assertTrue(runBlocking { graph.outbox.pendingFor("A").isEmpty() })
+        // The cart's own CART_ADD is queued (F27-05); no sale is.
+        assertTrue(runBlocking { graph.outbox.pendingFor("A").none { it.operation == Operation.SALE } })
     }
 
     @Test

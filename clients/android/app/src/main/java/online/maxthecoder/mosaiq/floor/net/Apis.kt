@@ -36,6 +36,10 @@ interface StoresApi {
         @Query("page") page: Int = 1,
         @Query("size") size: Int = 20
     ): Response<StorePage>
+
+    /** The store's `max_discount_percent`, null when it sets no cap (contracts/stores). */
+    @GET(Services.STORES + "stores/{store_id}/commercial-rules")
+    suspend fun getCommercialRules(@Path("store_id") storeId: Int): Response<StoreCommercialRules>
 }
 
 /** products-service's catalog read (contracts/products/openapi.yaml). */

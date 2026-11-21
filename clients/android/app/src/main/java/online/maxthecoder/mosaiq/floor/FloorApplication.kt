@@ -19,7 +19,10 @@ import online.maxthecoder.mosaiq.floor.outbox.FloorDatabase
 import online.maxthecoder.mosaiq.floor.outbox.FloorWrites
 import online.maxthecoder.mosaiq.floor.outbox.InFlight
 import online.maxthecoder.mosaiq.floor.outbox.OutboxDao
+import online.maxthecoder.mosaiq.floor.session.InMemorySaleDraftStore
+import online.maxthecoder.mosaiq.floor.session.PrefsSaleDraftStore
 import online.maxthecoder.mosaiq.floor.session.PrefsSessionStore
+import online.maxthecoder.mosaiq.floor.session.SaleDraftStore
 import online.maxthecoder.mosaiq.floor.session.SessionStore
 
 /** Everything the screens and the floor-write queue share, built once. */
@@ -36,7 +39,9 @@ class AppGraph(
     notified: NotifiedItemDao,
     notifier: Notifier = Notifier.NONE,
     schedulePoll: () -> Unit = {},
-    cancelPoll: () -> Unit = {}
+    cancelPoll: () -> Unit = {},
+    /** The sale being built, kept across process death (F27-05). */
+    val drafts: SaleDraftStore = InMemorySaleDraftStore()
 ) {
     val writes = FloorWrites(outbox, session, schedule)
 
@@ -86,7 +91,8 @@ class FloorApplication :
                 notified = database.notified(),
                 notifier = SystemNotifier(this),
                 schedulePoll = NotificationPollWorker.scheduler(work),
-                cancelPoll = NotificationPollWorker.canceller(work)
+                cancelPoll = NotificationPollWorker.canceller(work),
+                drafts = PrefsSaleDraftStore(this)
             )
         // Rows left from before a restart go out once the network is back.
         graph.kick()

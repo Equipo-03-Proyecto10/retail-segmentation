@@ -203,7 +203,7 @@ private fun FloorProfile(
                             scan,
                             chosen,
                             onPickStore = { go(FloorLocation.CheckIn) },
-                            onAddProduct = if (canSell) sales::addProduct else null
+                            onAddProduct = if (canSell) { product -> sales.addProduct(product) } else null
                         )
                     FloorLocation.Sale, FloorLocation.RegisterCustomer ->
                         SalesScreen(

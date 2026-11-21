@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import online.maxthecoder.mosaiq.floor.alerts.CaptureIncidents
 import online.maxthecoder.mosaiq.floor.net.CampaignExposureRequest
 import online.maxthecoder.mosaiq.floor.net.CaptureIncidentRequest
+import online.maxthecoder.mosaiq.floor.net.CartEventRequest
 import online.maxthecoder.mosaiq.floor.net.CheckInRequest
 import online.maxthecoder.mosaiq.floor.net.EngagementEventRequest
 import online.maxthecoder.mosaiq.floor.net.SaleLineRequest
@@ -175,6 +176,47 @@ class FloorWrites(
     }
 
     /**
+     * Queues one `CART_ADD` or `CART_REMOVE` through engagement v2 (F27-05): a cart line added,
+     * raised, lowered or removed. It is intent, never a sale, and it never reaches `POST /v1/sales`.
+     * The client event id is generated here, once, at the tap.
+     */
+    suspend fun queueCartEvent(
+        operation: Operation,
+        storeId: Int,
+        productId: Int,
+        quantity: Int,
+        customerId: String? = null,
+        now: Instant = Instant.now()
+    ): Long {
+        require(operation == Operation.CART_ADD || operation == Operation.CART_REMOVE) { "Not a cart event." }
+        require(quantity in 1..MAX_CART_QUANTITY) { "A cart event moves 1 to $MAX_CART_QUANTITY units." }
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        val request =
+            CartEventRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = operation.name,
+                storeId = storeId,
+                productId = productId,
+                quantity = quantity,
+                occurredAt = now.toString(),
+                customerId = customerId
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = operation,
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
+                    body = json.encodeToString(CartEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
      * Queues the one report of a finally refused write (ADR-0071), under the user who made it. Its id is the
      * UUIDv5 of the refused write's own key, so it is fixed by that row, never generated per attempt, and a
      * second call for the same row queues nothing. Returns `null` when nothing was queued.
@@ -231,6 +273,9 @@ class FloorWrites(
 
     companion object {
         const val WORK_NAME = "floor-writes"
+
+        /** `quantity` maximum of a cart event in contracts/engagement v2. */
+        const val MAX_CART_QUANTITY = 1000
 
         /** One chain at a time, only when a network is connected, with backoff. */
         fun scheduler(workManager: WorkManager): () -> Unit = {

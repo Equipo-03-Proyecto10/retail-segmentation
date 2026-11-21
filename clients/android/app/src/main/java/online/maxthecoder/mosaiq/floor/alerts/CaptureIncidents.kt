@@ -32,7 +32,11 @@ object CaptureIncidents {
     fun sourceType(operation: Operation): String? = when (operation) {
         Operation.SALE -> "SALE"
         Operation.CHECK_IN -> "CHECK_IN"
-        Operation.QR_SCAN, Operation.RECO_CLICK, Operation.CAMPAIGN_EXPOSURE -> "ENGAGEMENT_EVENT"
+        Operation.QR_SCAN,
+        Operation.RECO_CLICK,
+        Operation.CAMPAIGN_EXPOSURE,
+        Operation.CART_ADD,
+        Operation.CART_REMOVE -> "ENGAGEMENT_EVENT"
         Operation.CAPTURE_INCIDENT -> null
     }
 

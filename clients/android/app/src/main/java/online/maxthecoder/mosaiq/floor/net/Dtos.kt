@@ -260,11 +260,16 @@ data class PreferenceChanges(
     @SerialName("page_info") val pageInfo: PageInfo
 )
 
+/**
+ * `SaleLineInput` of contracts/sales 1.9.0: `unitPrice` is the price actually charged, and
+ * `promotionId` names the one promotion a discounted line relies on. A null is left out of the body.
+ */
 @Serializable
 data class SaleLineRequest(
     @SerialName("product_id") val productId: Int,
     val quantity: Int,
-    @SerialName("unit_price") val unitPrice: String
+    @SerialName("unit_price") val unitPrice: String,
+    @SerialName("promotion_id") val promotionId: Int? = null
 )
 
 @Serializable
@@ -289,6 +294,28 @@ data class Sale(
 
 @Serializable
 data class SalePage(val sales: List<Sale>, @SerialName("page_info") val pageInfo: PageInfo)
+
+/** `StoreCommercialRules` of contracts/stores: a null cap means the store imposes none of its own. */
+@Serializable
+data class StoreCommercialRules(
+    @SerialName("max_discount_percent") val maxDiscountPercent: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null
+)
+
+/**
+ * A `CART_ADD` or `CART_REMOVE` of engagement v2 (`CartAddRequestV2`, `CartRemoveRequestV2`): intent,
+ * never a sale. The client event id is fixed at the tap, so every resend is the same event.
+ */
+@Serializable
+data class CartEventRequest(
+    @SerialName("client_event_id") val clientEventId: String,
+    val type: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("product_id") val productId: Int,
+    val quantity: Int,
+    @SerialName("occurred_at") val occurredAt: String,
+    @SerialName("customer_id") val customerId: String? = null
+)
 
 @Serializable
 data class StockLevel(

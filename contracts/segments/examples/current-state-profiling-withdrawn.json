@@ -1,0 +1,11 @@
+{
+  "customer_id": "3c9f1b0e-6a42-4d8a-9b1e-2f7d5c8a4e10",
+  "state": "unassigned_result",
+  "label_code": null,
+  "r_score": null,
+  "f_score": null,
+  "m_score": null,
+  "since": "2026-10-12T03:00:00Z",
+  "run_id": 42,
+  "unassigned_reason": "PROFILING_WITHDRAWN"
+}

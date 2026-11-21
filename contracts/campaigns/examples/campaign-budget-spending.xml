@@ -6,6 +6,7 @@
   <total_spent>500.00</total_spent>
   <total_reached>true</total_reached>
   <per_customer_cap>250.00</per_customer_cap>
+  <customers_at_cap>1</customers_at_cap>
   <customers>
     <customer_id>11111111-1111-1111-1111-000000000001</customer_id>
     <spent_amount>300.00</spent_amount>

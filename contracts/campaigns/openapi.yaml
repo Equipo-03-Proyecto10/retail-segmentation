@@ -697,7 +697,8 @@ paths:
         limits were not written. A missing limit is not reached. Customers are
         returned in ascending `customer_id` order only when a per-customer cap
         exists; they are customers with positive campaign spend, and pagination
-        applies to that list. Reaching either limit is reported only: it does
+        applies to that list. `customers_at_cap` counts, over every page, the
+        customers whose spend reached the cap. Reaching either limit is reported only: it does
         not refuse or alter a sale.
       x-mosaiq-roles:
         - ADMIN
@@ -1733,6 +1734,13 @@ components:
           type: boolean
         per_customer_cap:
           $ref: '#/components/schemas/Money'
+        customers_at_cap:
+          type: integer
+          minimum: 0
+          description: >-
+            How many customers, over every page, have spent at least
+            `per_customer_cap`. Present only when a per-customer cap exists,
+            so a reader of one page knows whether any customer reached it.
         customers:
           type: array
           description: >-

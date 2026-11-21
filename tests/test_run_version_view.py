@@ -67,12 +67,12 @@ def test_the_view_is_the_registrys_link_row_for_row(database) -> None:
     )
 
 
-def test_segments_and_recommendations_read_it_and_no_other_service_does(
-    database,
-) -> None:
+def test_its_three_consumers_read_it_and_no_other_service_does(database) -> None:
     assert _read_as(database, "svc_segments")
     # recommendations reads the model version of a /v2 decision (#827).
     assert _read_as(database, "svc_recommendations")
+    # analytics-kpis names the versions behind a figure grouped by segment (F26-03).
+    assert _read_as(database, "svc_kpis")
     for role in ("svc_sales", "svc_experiments", "retail_app"):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             _read_as(database, role)

@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | campaigns |
 | Producer | campaigns-service |
-| Consumers | sales |
+| Consumers | none yet: sales reads [`api_campaigns.promotion_window_v1`](api_campaigns.promotion_window.v1.md) |
 
 The view publishes the promotions a sale may rely on today. It holds one row
 for each store and channel of each active promotion, so a promotion that applies
@@ -19,9 +19,11 @@ promotion of a DRAFT, FINISHED or CANCELLED campaign has no row, and neither
 does one whose validity has not begun or has passed. The date test is made by
 the view when it is read, so no job has to retire a row.
 
-Sales reads the view to validate a discount (F25-05): a sale at a store and
-through a channel may grant a discount only up to the `discount_percent` of a
-row for that pair. The view does not say how overlapping promotions combine,
+`CURRENT_DATE` is the database session's date, in its time zone. Because a sale
+may be dated before the day it reaches the service (an offline queue), sales
+validates a discount against `api_campaigns.promotion_window_v1`, which has no
+date test, and judges the sale's own day itself. This view remains for a
+reader that wants what is valid now. The view does not say how overlapping promotions combine,
 nor whether the store's own cap (`max_discount_percent` in
 `api_stores.store_directory_v2`) is lower. Both are the consumer's decision.
 Consumers name only the columns they read. The view carries no customer: an

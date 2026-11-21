@@ -870,6 +870,35 @@ INSERT INTO campaigns.campaign_excluded_label (campaign_id, label_code)
 SELECT n, (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n+1)%6)]
 FROM generate_series(1,30) n;
 
+-- ---------- campaigns.promotion, promotion_store, promotion_channel (30 each, #1104) ----------
+-- One promotion per seeded campaign, valid inside its campaign's dates (RN-71):
+-- it starts up to four days after the campaign and ends up to two days before.
+-- The identity allocates promotion_id 1 to 30 in campaign order. Promotion n
+-- applies at store n and on channel 1 + (n - 1) % 5. The seeded campaigns are
+-- dated in early 2026, so none of these is in api_campaigns.active_promotion_v1
+-- today; an active one is made by the campaigns flow, not by the seed.
+INSERT INTO campaigns.promotion (campaign_id, name, discount_percent, starts_on, ends_on)
+SELECT c.campaign_id, 'Promotion ' || c.campaign_id,
+       (5 + (c.campaign_id % 6) * 5)::numeric(5,2),
+       c.starts_on + (c.campaign_id % 5),
+       c.ends_on - (c.campaign_id % 3)
+FROM campaign AS c
+ORDER BY c.campaign_id;
+
+INSERT INTO campaigns.promotion_store (promotion_id, store_id)
+SELECT p.promotion_id, s.store_id
+FROM campaigns.promotion AS p
+JOIN store AS s
+  ON s.store_id = (SELECT store_id FROM store ORDER BY store_id
+                   OFFSET (p.promotion_id - 1) % (SELECT count(*) FROM store) LIMIT 1);
+
+INSERT INTO campaigns.promotion_channel (promotion_id, channel_id)
+SELECT p.promotion_id, ch.channel_id
+FROM campaigns.promotion AS p
+JOIN channel AS ch
+  ON ch.channel_id = (SELECT channel_id FROM channel ORDER BY channel_id
+                      OFFSET (p.promotion_id - 1) % (SELECT count(*) FROM channel) LIMIT 1);
+
 -- ---------- checkins.customer_visit (30, consent-authorized customers) ----------
 -- Every seeded customer has a latest PROFILING decision of GRANTED above.
 -- Visit n uses that customer and store n, and even visits name campaign n.

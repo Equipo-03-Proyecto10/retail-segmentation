@@ -230,10 +230,14 @@ def test_a_sale_in_an_open_window_stays_pending(
     api: Any, world: World, owner: psycopg.Connection
 ) -> None:
     now = datetime.now(UTC)
+    # Moving an assignment in time is a test's setup, which RN-42's guard (#839) refuses
+    # to everyone but a session that has the triggers off.
+    owner.execute("SET session_replication_role = replica")
     owner.execute(
         "UPDATE experiment_assignment SET assigned_at = %s WHERE assignment_id = %s",
         (now - timedelta(hours=3), world.assignment["first"]),
     )
+    owner.execute("SET session_replication_role = origin")
     owner.execute(
         "UPDATE transaction SET occurred_at = %s WHERE transaction_id = %s",
         (now - timedelta(hours=1), world.sale),

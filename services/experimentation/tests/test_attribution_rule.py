@@ -91,11 +91,14 @@ def test_a_competitor_whose_window_is_open_keeps_the_sale_pending_even_unexposed
             " WHERE experiment_id = %s",
             (days, scene.experiment),
         )
+        # Setup that RN-42's guard (#839) refuses to a session with the triggers on.
+        owner.execute("SET session_replication_role = replica")
         owner.execute(
             "UPDATE experiment_assignment SET assigned_at = %s"
             " WHERE assignment_id = %s",
             (now - timedelta(days=10), world.assignment[name]),
         )
+        owner.execute("SET session_replication_role = origin")
     owner.execute(
         "UPDATE transaction SET occurred_at = %s WHERE transaction_id = %s",
         (now - timedelta(days=9), world.sale),

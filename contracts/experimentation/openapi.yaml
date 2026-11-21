@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: experimentation-service
-  version: 1.0.5
+  version: 1.0.6
   description: >-
     Plans experiments, assigns customers to their arms, evaluates conversions, credits sales to campaigns
     and reports results (RN-67). An experiment's frame and arms are fixed before measurement, assignment,

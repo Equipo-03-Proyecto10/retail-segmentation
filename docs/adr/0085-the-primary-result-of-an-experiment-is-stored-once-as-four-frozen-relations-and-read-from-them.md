@@ -1,6 +1,6 @@
 # ADR-0085 — The primary result of an experiment is stored once, as four frozen relations, and read from them
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-20)
 **Owner:** Estefanía
 **Issue:** #844
 **Supersedes:** —

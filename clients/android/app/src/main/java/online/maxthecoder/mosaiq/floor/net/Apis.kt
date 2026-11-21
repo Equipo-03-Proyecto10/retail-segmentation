@@ -202,6 +202,14 @@ interface RecommendationsApi {
         @Query("customer_id") customerId: String,
         @Query("limit") limit: Int = 10
     ): Response<RecommendationResult>
+
+    /** Judged at the checked-in store (F27-06); the channel is never defaulted, so none is sent. */
+    @GET(Services.RECOMMENDATIONS_V2 + "recommendations")
+    suspend fun getRecommendationsV2(
+        @Query("customer_id") customerId: String,
+        @Query("store_id") storeId: Int,
+        @Query("limit") limit: Int = 10
+    ): Response<RecommendationV2>
 }
 
 /** engagement-service's event list (contracts/engagement/openapi.yaml). */

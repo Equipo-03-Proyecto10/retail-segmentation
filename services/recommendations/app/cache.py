@@ -1,15 +1,18 @@
 """The result cache on redis-cache (ADR-0037), invalidated through a key index.
 
-A result lives at ``recommendations:cache:{customer_id}:{run_id}:{limit}`` for
-120 s, keyed by the run behind the customer's open label, so a new run is a new
-key. The entry carries the id of the decision recorded for it, so a cached answer
-is still attributable to a stored decision (ADR-0067). Each key is also added to
-an index set under the same prefix. An event on any of the seven streams renames
-the index away and deletes what it named, so no SCAN, KEYS or RANDOMKEY is ever
-needed (the ACL forbids them). Any Redis failure is a miss: the result is
-recomputed from the views. Each entry carries
-its pre-computation generation; invalidation replaces the generation even when
-the index was evicted, so an in-flight old result cannot become a fresh hit.
+A `/v1` result lives at ``recommendations:cache:{customer_id}:{run_id}:{limit}``
+for 120 s, keyed by the run behind the customer's open label, so a new run is a
+new key. A `/v2` result lives at ``recommendations:cache:v2:{customer_id}:
+{run_id}:{model_version_id}:{limit}:s{store}:c{channel}``, so an answer judged
+at one store or channel is never served for another. The entry carries the id
+of the decision recorded for it, so a cached answer is still attributable to a
+stored decision (ADR-0067). Each key is also added to an index set under the
+same prefix. An event on any of the seven streams renames the index away and
+deletes what it named, so no SCAN, KEYS or RANDOMKEY is ever needed (the ACL
+forbids them). Any Redis failure is a miss: the result is recomputed from the
+views. Each entry carries its pre-computation generation; invalidation replaces
+the generation even when the index was evicted, so an in-flight old result
+cannot become a fresh hit.
 Consent is read before the cache on every request, so a withdrawal is never
 answered from an old result.
 """
@@ -39,6 +42,29 @@ def result_key(
     restricted: Collection[int] = (),
 ) -> str:
     key = f"{PREFIX}{customer_id}:{'none' if run_id is None else run_id}:{limit}"
+    if restricted:
+        key += ":r" + "-".join(str(c) for c in sorted(restricted))
+    return key
+
+
+def result_key_v2(
+    customer_id: str,
+    run_id: int | None,
+    model_version_id: int | None,
+    limit: int,
+    store_id: int | None,
+    channel_id: int | None,
+    restricted: Collection[int] = (),
+) -> str:
+    """A `/v2` result is keyed by the store and channel it was judged at too,
+    or a seller's result would be served to another store (ADR-0067). `usual`
+    and `any` stand for a store and a channel the caller did not name. `/v1`
+    keeps its own keys, so neither is ever served the other's shape."""
+    run = "none" if run_id is None else str(run_id)
+    version = "none" if model_version_id is None else str(model_version_id)
+    store = "usual" if store_id is None else str(store_id)
+    channel = "any" if channel_id is None else str(channel_id)
+    key = f"{PREFIX}v2:{customer_id}:{run}:{version}:{limit}:s{store}:c{channel}"
     if restricted:
         key += ":r" + "-".join(str(c) for c in sorted(restricted))
     return key

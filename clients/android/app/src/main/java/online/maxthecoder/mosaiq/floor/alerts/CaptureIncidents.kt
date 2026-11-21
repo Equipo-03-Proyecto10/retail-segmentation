@@ -34,6 +34,7 @@ object CaptureIncidents {
         Operation.CHECK_IN -> "CHECK_IN"
         Operation.QR_SCAN,
         Operation.RECO_CLICK,
+        Operation.RECO_IMPRESSION,
         Operation.CAMPAIGN_EXPOSURE,
         Operation.CART_ADD,
         Operation.CART_REMOVE -> "ENGAGEMENT_EVENT"

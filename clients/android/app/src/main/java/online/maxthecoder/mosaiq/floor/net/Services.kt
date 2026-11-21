@@ -45,11 +45,14 @@ object Services {
     /** recommendations owns `recommendations`. */
     const val RECOMMENDATIONS = "api/recommendations/v1/"
 
-    /** engagement's `/v2`, the version that records a `CAMPAIGN_EXPOSURE`, a `CART_ADD` and a `CART_REMOVE`. */
+    /** engagement's `/v2`, the version that records a `CAMPAIGN_EXPOSURE`, a `CART_ADD`, a `CART_REMOVE` and a `RECO_IMPRESSION`. */
     const val ENGAGEMENT_V2 = "api/engagement/v2/"
 
     /** campaigns owns `campaigns` and `promotions`. */
     const val CAMPAIGNS = "api/campaigns/v1/"
+
+    /** recommendations' `/v2`: judged at a reference store, with alternatives and a decision id. */
+    const val RECOMMENDATIONS_V2 = "api/recommendations/v2/"
 
     /** experimentation owns `experiments`, `experiment-assignments`, `experiment-results`, `sale-attributions`. */
     const val EXPERIMENTATION = "api/experimentation/v1/"

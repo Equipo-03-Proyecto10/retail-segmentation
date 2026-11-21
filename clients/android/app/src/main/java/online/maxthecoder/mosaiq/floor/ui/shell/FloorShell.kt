@@ -254,7 +254,11 @@ private fun FloorProfile(
                                     identify,
                                     profileId = (here as? FloorLocation.CustomerProfile)?.customerId,
                                     onOpenProfile = { go(FloorLocation.CustomerProfile(it)) },
-                                    onBack = { go(FloorLocation.Customer) }
+                                    onBack = { go(FloorLocation.Customer) },
+                                    onOpenProduct = { productId ->
+                                        scan.showProduct(productId)
+                                        go(FloorLocation.ProductFromRecommendation(productId))
+                                    }
                                 )
                             }
                         }

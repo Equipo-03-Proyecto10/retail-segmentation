@@ -226,6 +226,7 @@ private fun kindIcon(operation: Operation): Int = when (operation) {
     Operation.CAPTURE_INCIDENT -> R.drawable.ic_lucide_triangle_alert
     Operation.CART_ADD -> R.drawable.ic_lucide_plus
     Operation.CART_REMOVE -> R.drawable.ic_lucide_trash_2
+    Operation.RECO_IMPRESSION -> R.drawable.ic_lucide_eye
 }
 
 @Composable
@@ -251,6 +252,7 @@ private fun title(row: OutboxRow, storeNames: Map<Int, String>): String = when (
     Operation.CAPTURE_INCIDENT -> stringResource(R.string.outbox_kind_incident)
     Operation.CART_ADD -> stringResource(R.string.outbox_kind_cart_add)
     Operation.CART_REMOVE -> stringResource(R.string.outbox_kind_cart_remove)
+    Operation.RECO_IMPRESSION -> stringResource(R.string.outbox_kind_reco_impression)
 }
 
 /** "Today, 14:32", "Yesterday, 14:32", or the date and time for anything older. */

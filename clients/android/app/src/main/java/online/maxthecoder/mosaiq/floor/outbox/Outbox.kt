@@ -23,7 +23,8 @@ enum class Operation {
     CAMPAIGN_EXPOSURE,
     CAPTURE_INCIDENT,
     CART_ADD,
-    CART_REMOVE
+    CART_REMOVE,
+    RECO_IMPRESSION
 }
 
 /** Where a write stands. A refused one is kept until the user dismisses it. */

@@ -8,7 +8,7 @@
 | Kind | PostgreSQL view |
 | Owning boundary | users |
 | Producer | users-service |
-| Consumers | sales, check-ins, engagement, analytics-kpis |
+| Consumers | sales, check-ins, engagement, analytics-kpis, recommendations |
 
 The view publishes one row for each store a user is assigned to, for the users
 whose assignment currently counts. It exists so that a service can narrow a

@@ -99,9 +99,10 @@ class FloorWrites(
     }
 
     /**
-     * Queues one RECO_CLICK for a tapped recommendation (F17-05). The client
-     * event id is generated here, once, at the tap: a retry resends it, and a
-     * second tap on the same item is a second click with a new id.
+     * Queues one RECO_CLICK for a tapped recommendation (F17-05) through engagement v2,
+     * beside the RECO_IMPRESSION it follows: v2 keeps RECO_CLICK's fields and meaning, and
+     * `/v1` is frozen. The client event id is generated here, once, at the tap: a retry
+     * resends it, and a second tap on the same item is a second click with a new id.
      */
     suspend fun queueRecoClick(
         customerId: String,
@@ -128,7 +129,48 @@ class FloorWrites(
             outbox.insert(
                 OutboxRow(
                     operation = Operation.RECO_CLICK,
-                    path = Services.ENGAGEMENT + "engagement-events",
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
+                    body = json.encodeToString(EngagementEventRequest.serializer(), request),
+                    clientId = request.clientEventId,
+                    userId = userId,
+                    createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues one RECO_IMPRESSION through engagement v2 (F27-06): a recommendation really shown
+     * on screen, before any tap. The caller decides when an item counts as shown and asks once;
+     * the client event id is generated here, so a resend is the same impression.
+     */
+    suspend fun queueRecoImpression(
+        customerId: String,
+        storeId: Int,
+        productId: Int,
+        labelCode: String,
+        rank: Int,
+        now: Instant = Instant.now()
+    ): Long {
+        val userId = checkNotNull(session.userId.value) { "No user is signed in." }
+        require(rank >= 1) { "A rank is 1-based." }
+        val request =
+            EngagementEventRequest(
+                clientEventId = UUID.randomUUID().toString(),
+                type = "RECO_IMPRESSION",
+                storeId = storeId,
+                productId = productId,
+                occurredAt = now.toString(),
+                customerId = customerId,
+                labelCode = labelCode,
+                rank = rank
+            )
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.RECO_IMPRESSION,
+                    path = Services.ENGAGEMENT_V2 + "engagement-events",
                     body = json.encodeToString(EngagementEventRequest.serializer(), request),
                     clientId = request.clientEventId,
                     userId = userId,

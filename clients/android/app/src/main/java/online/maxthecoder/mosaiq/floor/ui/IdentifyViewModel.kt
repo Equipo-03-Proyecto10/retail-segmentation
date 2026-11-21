@@ -98,6 +98,9 @@ class IdentifyViewModel(
     val card = MutableStateFlow<CardRead>(CardRead.Idle)
     val search = MutableStateFlow(FloorSearchState())
     val profile = MutableStateFlow(FloorProfileState())
+
+    /** The customer's recommendations at the checked-in store, and what was shown of them (F27-06). */
+    val recommendations = ExplainedRecommendations(graph, viewModelScope)
     private var owner = graph.session.userId.value
     private var searchJob: Job? = null
     private var profileJob: Job? = null
@@ -114,6 +117,7 @@ class IdentifyViewModel(
                     card.value = CardRead.Idle
                     search.value = FloorSearchState()
                     profile.value = FloorProfileState()
+                    recommendations.clear()
                 }
             }
         }
@@ -202,6 +206,7 @@ class IdentifyViewModel(
                         customer = (answer as Answer.Body).value,
                         commercial = commercial
                     )
+                recommendations.load(customerId)
             }
     }
 

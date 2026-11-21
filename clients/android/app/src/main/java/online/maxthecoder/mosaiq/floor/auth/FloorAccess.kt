@@ -78,7 +78,6 @@ object FloorAccess {
                     ServiceOperation("sales", "getSale"),
                     ServiceOperation("segments", "getCurrentAssignment"),
                     ServiceOperation("recommendations", "getRecommendations"),
-                    ServiceOperation("engagement", "createEngagementEvent"),
                     ServiceOperation("campaigns", "listPromotions"),
                     ServiceOperation("experimentation", "getCurrentAssignment"),
                     ServiceOperation("engagement", "createEngagementEventV2")
@@ -95,8 +94,9 @@ object FloorAccess {
                     ServiceOperation("categories", "listCategories")
                 ),
             FloorSection.OUTBOX to emptyList(),
-            // Identifying a customer by loyalty card or by a floor search (F27-02), and their
-            // permitted commercial profile: segment, interests and restrictions (F27-03).
+            // Identifying a customer by loyalty card or by a floor search (F27-02), their
+            // permitted commercial profile: segment, interests and restrictions (F27-03), and
+            // the recommendations judged at the checked-in store, with the names they need (F27-06).
             FloorSection.CUSTOMER to
                 listOf(
                     ServiceOperation("customers", "lookupLoyaltyCard"),
@@ -106,7 +106,10 @@ object FloorAccess {
                     ServiceOperation("customer-preferences", "getInterestProfile"),
                     ServiceOperation("customer-preferences", "getRestrictionProfile"),
                     ServiceOperation("categories", "listCategories"),
-                    ServiceOperation("sales", "listChannels")
+                    ServiceOperation("sales", "listChannels"),
+                    ServiceOperation("recommendations", "getRecommendationsV2"),
+                    ServiceOperation("products", "listProducts"),
+                    ServiceOperation("stores", "listStores")
                 ),
             // Registering a customer with their consent, and their record: consent, preferences and
             // history (F27-09). It opens from the Customer section, so it calls that section's
@@ -128,6 +131,25 @@ object FloorAccess {
                     ServiceOperation("customer-preferences", "listPreferenceChanges")
                 )
         )
+
+    /**
+     * What a section records through the outbox on top of what it reads, and only for a role
+     * that holds the section and every one of these operations. A role that holds the section
+     * but not these still reads it and records nothing: a loyalty officer sees the customer's
+     * recommendations, but engagement records only a seller's impressions and taps (F27-06).
+     * `FloorAccessContractTest` checks [records] against the contracts, as for [operations].
+     */
+    val recordings: Map<FloorSection, List<ServiceOperation>> =
+        mapOf(
+            FloorSection.CUSTOMER to
+                listOf(
+                    ServiceOperation("engagement", "createEngagementEventV2")
+                )
+        )
+
+    /** The roles that record what [recordings] names for a section, beyond holding it. */
+    private val recorders: Map<FloorSection, Set<String>> =
+        mapOf(FloorSection.CUSTOMER to setOf("SALES_ASSOCIATE"))
 
     /** The notification poll's campaign read (ADR-0071). */
     val PROMOTIONS_POLL = ServiceOperation("campaigns", "listPromotions")
@@ -157,6 +179,10 @@ object FloorAccess {
     fun sections(role: String?): List<FloorSection> = profiles[role].orEmpty()
 
     fun holds(role: String?, section: FloorSection): Boolean = section in sections(role)
+
+    /** Whether [role], in [section], records the section's [recordings] as well as reading it. */
+    fun records(role: String?, section: FloorSection): Boolean =
+        holds(role, section) && role in recorders[section].orEmpty()
 
     /** Where [role] opens, or `null` for a role that gets nothing. */
     fun start(role: String?): FloorSection? = sections(role).firstOrNull()

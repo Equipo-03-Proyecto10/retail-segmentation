@@ -464,6 +464,47 @@ data class RecommendationResult(
     val items: List<RecommendationItem> = emptyList()
 )
 
+/** Where an item is available, and the stock figure the decision used (contracts/recommendations, `/v2`). */
+@Serializable
+data class ItemAvailability(
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("channel_id") val channelId: Int? = null,
+    @SerialName("quantity_on_hand") val quantityOnHand: Int
+)
+
+/**
+ * One `/v2` item: `primary` (a recommendation available here), `alternative` (stands in for
+ * [alternativeFor], unavailable for [unavailableReason]) or `elsewhere` (the product itself, held
+ * by the store in [availability]). Ids and figures only; names come from their owners.
+ */
+@Serializable
+data class RecommendationItemV2(
+    @SerialName("product_id") val productId: Int,
+    @SerialName("category_id") val categoryId: Int,
+    val kind: String,
+    val position: Int,
+    val availability: ItemAvailability,
+    @SerialName("alternative_for") val alternativeFor: Int? = null,
+    @SerialName("unavailable_reason") val unavailableReason: String? = null,
+    val reasons: List<RecommendationReason>
+)
+
+@Serializable
+data class RecommendationExclusion(val reason: String, val count: Int)
+
+/** recommendations' `/v2` answer, the elements this client reads. */
+@Serializable
+data class RecommendationV2(
+    @SerialName("decision_id") val decisionId: String,
+    @SerialName("customer_id") val customerId: String,
+    val status: String,
+    @SerialName("label_code") val labelCode: String? = null,
+    @SerialName("store_id") val storeId: Int? = null,
+    @SerialName("channel_id") val channelId: Int? = null,
+    val exclusions: List<RecommendationExclusion> = emptyList(),
+    val items: List<RecommendationItemV2> = emptyList()
+)
+
 @Serializable
 data class EngagementEvent(
     @SerialName("event_id") val eventId: String,

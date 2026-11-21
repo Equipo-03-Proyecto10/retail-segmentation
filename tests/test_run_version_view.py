@@ -22,7 +22,7 @@ pytestmark = pytest.mark.postgres
 def test_the_contract_names_its_object_producer_consumer_and_columns() -> None:
     assert "| Object | `api_models.run_version_v1` |" in CONTRACT
     assert "| Producer | model-registry |" in CONTRACT
-    assert "| Consumers | segments |" in CONTRACT
+    assert "| Consumers | segments, recommendations |" in CONTRACT
     table = CONTRACT.split("## Columns", 1)[1].split("## Compatibility", 1)[0]
     assert re.findall(r"^\| `(\w+)` \|", table, re.M) == [
         "run_id",
@@ -67,9 +67,13 @@ def test_the_view_is_the_registrys_link_row_for_row(database) -> None:
     )
 
 
-def test_segments_reads_it_and_no_other_service_does(database) -> None:
+def test_segments_and_recommendations_read_it_and_no_other_service_does(
+    database,
+) -> None:
     assert _read_as(database, "svc_segments")
-    for role in ("svc_recommendations", "svc_sales", "svc_experiments", "retail_app"):
+    # recommendations reads the model version of a /v2 decision (#827).
+    assert _read_as(database, "svc_recommendations")
+    for role in ("svc_sales", "svc_experiments", "retail_app"):
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
             _read_as(database, role)
 

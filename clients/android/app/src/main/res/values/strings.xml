@@ -337,9 +337,16 @@
     </plurals>
     <string name="signout_confirm">Sign out anyway</string>
     <string name="signout_stay">Stay signed in</string>
-    <string name="error_answered">The service answered %1$d.</string>
+    <string name="error_answered">The service did not accept the request (code %1$d). Try again. If it keeps happening, give support the code under Details.</string>
     <string name="error_unexpected">Something went wrong. Try again.</string>
-    <string name="error_unreachable">The service could not be reached. Check the connection and try again.</string>
+    <string name="error_unreachable">No connection. Anything you already saved is kept on this phone and sent when you are back online. Check Wi-Fi or mobile data, then try again.</string>
+    <string name="error_unavailable">The service is not answering right now. Anything you already saved is kept on this phone and sent when it answers. Try again in a moment.</string>
+    <string name="error_server">The service had a problem and could not finish. Try again in a moment. If it keeps happening, give support the code under Details.</string>
+    <string name="error_rate_limited">Too many requests at once. Wait a few seconds, then try again.</string>
+    <plurals name="error_rate_limited_after">
+        <item quantity="one">Too many requests at once. Wait %1$d second, then try again.</item>
+        <item quantity="other">Too many requests at once. Wait %1$d seconds, then try again.</item>
+    </plurals>
     <plurals name="auth_rate_limited">
         <item quantity="one">Too many attempts. Try again in %1$d second.</item>
         <item quantity="other">Too many attempts. Try again in %1$d seconds.</item>

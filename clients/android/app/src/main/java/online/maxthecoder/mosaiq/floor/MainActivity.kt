@@ -14,6 +14,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorApp
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
@@ -46,6 +47,8 @@ class MainActivity : ComponentActivity() {
                 viewModel(factory = viewModelFactory { initializer { IdentifyViewModel(graph) } })
             val record: CustomerRecordViewModel =
                 viewModel(factory = viewModelFactory { initializer { CustomerRecordViewModel(graph) } })
+            val promotions: PromotionsViewModel =
+                viewModel(factory = viewModelFactory { initializer { PromotionsViewModel(graph) } })
             val state = model.state.collectAsStateWithLifecycle()
             // Signing in again lets this user's queued writes go out.
             LaunchedEffect(state.value is SessionState.SignedIn) {
@@ -65,6 +68,7 @@ class MainActivity : ComponentActivity() {
                         insights,
                         identify,
                         record,
+                        promotions,
                         model::signOut
                     )
                 },

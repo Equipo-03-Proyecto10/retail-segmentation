@@ -54,6 +54,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesScreen
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanScreen
@@ -84,12 +85,13 @@ fun FloorHome(
     insights: CustomerInsightsViewModel,
     identify: IdentifyViewModel,
     record: CustomerRecordViewModel,
+    promotions: PromotionsViewModel,
     onSignOut: () -> Unit
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, identify, record, onSignOut)
+        FloorProfile(signedIn, model, scan, sales, insights, identify, record, promotions, onSignOut)
     }
 }
 
@@ -117,6 +119,7 @@ private fun FloorProfile(
     insights: CustomerInsightsViewModel,
     identify: IdentifyViewModel,
     record: CustomerRecordViewModel,
+    promotions: PromotionsViewModel,
     onSignOut: () -> Unit
 ) {
     val role = signedIn.role
@@ -187,7 +190,8 @@ private fun FloorProfile(
                             onOpenProduct = { productId ->
                                 scan.showProduct(productId)
                                 go(FloorLocation.ProductFromRecommendation(productId))
-                            }
+                            },
+                            promotions = promotions
                         )
                     FloorLocation.Outbox -> OutboxList(model)
                     FloorLocation.Customer, is FloorLocation.CustomerProfile ->

@@ -34,6 +34,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
@@ -107,6 +108,7 @@ class PermissionDeniedInstrumentedTest {
                 insights = CustomerInsightsViewModel(graph),
                 identify = IdentifyViewModel(graph),
                 record = CustomerRecordViewModel(graph),
+                promotions = PromotionsViewModel(graph),
                 onSignOut = {}
             )
         }

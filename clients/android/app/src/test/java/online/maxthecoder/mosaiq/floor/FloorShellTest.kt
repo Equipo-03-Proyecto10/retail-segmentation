@@ -32,6 +32,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
 import online.maxthecoder.mosaiq.floor.ui.InsightsState
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
@@ -96,6 +97,7 @@ class FloorShellTest {
             insights = insights,
             identify = identify,
             record = record,
+            promotions = PromotionsViewModel(app.graph),
             onSignOut = { signedOut = true }
         )
     }

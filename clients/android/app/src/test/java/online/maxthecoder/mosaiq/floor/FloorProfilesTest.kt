@@ -23,6 +23,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
 import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
@@ -88,6 +89,7 @@ class FloorProfilesTest {
             insights = insights,
             identify = identify,
             record = record,
+            promotions = PromotionsViewModel(app.graph),
             onSignOut = {}
         )
     }

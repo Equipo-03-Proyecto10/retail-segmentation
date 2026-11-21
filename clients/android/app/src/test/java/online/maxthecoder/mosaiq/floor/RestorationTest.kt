@@ -44,6 +44,7 @@ import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorApp
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
 import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.RegistrationState
 import online.maxthecoder.mosaiq.floor.ui.SalesContent
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
@@ -129,6 +130,7 @@ class RestorationTest {
             insights = insights,
             identify = identify,
             record = record,
+            promotions = PromotionsViewModel(app.graph),
             onSignOut = {}
         )
     }

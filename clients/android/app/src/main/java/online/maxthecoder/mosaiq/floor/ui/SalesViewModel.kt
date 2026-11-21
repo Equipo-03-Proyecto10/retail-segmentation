@@ -8,11 +8,16 @@ import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -39,6 +44,7 @@ import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.DraftLine
+import online.maxthecoder.mosaiq.floor.session.KeptCart
 import online.maxthecoder.mosaiq.floor.session.SaleDraft
 import online.maxthecoder.mosaiq.floor.ui.sale.applicablePromotions
 import online.maxthecoder.mosaiq.floor.ui.sale.saleLines
@@ -99,7 +105,9 @@ data class SaleBuilderState(
     val queuedRowId: Long? = null,
     val discounts: DiscountState = DiscountState(),
     /** The summary is open: lines, discount and total, waiting for "Confirm sale". */
-    val reviewing: Boolean = false
+    val reviewing: Boolean = false,
+    /** The refused sales' client ids this cart is a correction of; they leave the list once it is recorded. */
+    val corrects: List<String> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -115,6 +123,14 @@ class SalesViewModel(
     val sale = MutableStateFlow(SaleBuilderState())
     val statusMessage = MutableStateFlow<String?>(null)
     val statusError = MutableStateFlow<ApiError?>(null)
+
+    /** The refused sales whose cart is still kept on this phone, so "Correct" can put it back (F27-13). */
+    val kept = MutableStateFlow<Set<String>>(emptySet())
+
+    private val savedEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** One event each time a confirming tap puts the sale in the queue, never on a restart. */
+    val saved: SharedFlow<Unit> = savedEvents.asSharedFlow()
     private var interestJob: Job? = null
     private var discountJob: Job? = null
     private var owner = graph.session.userId.value
@@ -132,6 +148,19 @@ class SalesViewModel(
     init {
         restoreDraft()
         viewModelScope.launch {
+            graph.session.userId.flatMapLatest { user ->
+                if (user == null) emptyFlow() else graph.outbox.observeSales(user).map { user to it }
+            }.collect { (user, rows) -> settle(user, rows) }
+        }
+        viewModelScope.launch {
+            // A queued sale whose row is gone was discarded elsewhere (the outbox screen): its cart goes too.
+            sale.map { it.queuedRowId }.distinctUntilChanged().flatMapLatest { id ->
+                if (id == null) emptyFlow() else graph.outbox.observe(id).map { id to it }
+            }.collect { (id, row) ->
+                if (row == null && sale.value.queuedRowId == id) newSale()
+            }
+        }
+        viewModelScope.launch {
             graph.session.userId.collect { user ->
                 if (owner != user) {
                     owner = user
@@ -143,9 +172,10 @@ class SalesViewModel(
                     interests.value = InterestsState()
                     sale.value = SaleBuilderState()
                     confirmKey = null
+                    kept.value = emptySet()
                     statusMessage.value = null
                     statusError.value = null
-                    // A signed-out phone keeps no customer or cart behind.
+                    // A signed-out phone keeps no customer or cart behind, nor the carts of refused sales.
                     graph.drafts.clear()
                 }
             }
@@ -164,7 +194,8 @@ class SalesViewModel(
         sale.value =
             SaleBuilderState(
                 lines = draft.lines.map { SaleLine(it.product, it.quantity, it.promotion) },
-                queuedRowId = draft.queuedRowId
+                queuedRowId = draft.queuedRowId,
+                corrects = draft.corrects
             )
         confirmKey = draft.confirmKey
         draft.customer?.customerId?.let(::loadInterests)
@@ -191,9 +222,32 @@ class SalesViewModel(
                 customer = selectedCustomer.value,
                 lines = sale.value.lines.map { DraftLine(it.product, it.quantity, it.promotion) },
                 confirmKey = confirmKey,
-                queuedRowId = sale.value.queuedRowId
+                queuedRowId = sale.value.queuedRowId,
+                corrects = sale.value.corrects
             )
         )
+    }
+
+    /**
+     * Keeps [kept] to the refused sales whose cart is still on the phone, and finishes what a recorded sale
+     * promises: the refused sales it corrects are done with, and its own kept cart is no longer needed. Only a
+     * sale that was recorded forgets a cart here; a row that is not in the list yet may be queued a moment
+     * from now.
+     */
+    private suspend fun settle(user: String, rows: List<OutboxRow>) {
+        if (user != graph.session.userId.value) return
+        val done = mutableSetOf<String>()
+        for (row in rows.filter { it.state == RowState.DONE }) {
+            val cart = graph.drafts.kept(user, row.clientId) ?: continue
+            cart.corrects.forEach { old ->
+                val refused = rows.firstOrNull { it.clientId == old && it.state == RowState.REFUSED }
+                if (refused != null && graph.outbox.dismiss(refused.id) > 0) done += refused.clientId
+            }
+            done += row.clientId
+        }
+        graph.drafts.forget(user, done)
+        val held = graph.drafts.keptIds(user)
+        kept.value = rows.filter { it.state == RowState.REFUSED && it.clientId in held }.map { it.clientId }.toSet()
     }
 
     val queuedSale: StateFlow<OutboxRow?> =
@@ -574,11 +628,28 @@ class SalesViewModel(
                 key = id.toString().lowercase()
                 confirmKey = key
                 saveDraft()
+                // The sale body holds no product name and no list price: keep the cart it was made from.
+                graph.drafts.keep(
+                    user,
+                    key,
+                    KeptCart(
+                        customer,
+                        sale.value.lines.map { DraftLine(it.product, it.quantity, it.promotion) },
+                        sale.value.corrects
+                    )
+                )
                 val rowId =
                     graph.writes.queueSale(customer.customerId, store.storeId, channel.channelId, lines, now) { id }
                 if (graph.session.userId.value == user) {
-                    sale.value = sale.value.copy(queuedRowId = rowId, confirming = false, reviewing = false)
+                    sale.value =
+                        sale.value.copy(
+                            queuedRowId = rowId,
+                            confirming = false,
+                            reviewing = false,
+                            corrects = emptyList()
+                        )
                     saveDraft()
+                    savedEvents.tryEmit(Unit)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -586,8 +657,16 @@ class SalesViewModel(
                 // Only a key whose row is not in the queue may be dropped: nothing was ever sent with it.
                 val queued = key?.let { runCatching { graph.outbox.findByClientId(it) }.getOrNull() }
                 if (queued != null) {
-                    sale.value = sale.value.copy(queuedRowId = queued.id, confirming = false, reviewing = false)
+                    sale.value =
+                        sale.value.copy(
+                            queuedRowId = queued.id,
+                            confirming = false,
+                            reviewing = false,
+                            corrects = emptyList()
+                        )
+                    savedEvents.tryEmit(Unit)
                 } else {
+                    key?.let { graph.drafts.forget(user, listOf(it)) }
                     confirmKey = null
                     sale.value = sale.value.copy(
                         confirming = false,
@@ -604,10 +683,69 @@ class SalesViewModel(
      * is a new request with a new client id; the refused one stays in the history.
      */
     fun backToCart() {
-        if (queuedSale.value?.state != RowState.REFUSED) return
+        val refused = queuedSale.value?.takeIf { it.state == RowState.REFUSED } ?: return
+        val user = graph.session.userId.value ?: return
         confirmKey = null
-        sale.value = sale.value.copy(queuedRowId = null, reviewing = false, error = null)
+        sale.value =
+            sale.value.copy(
+                queuedRowId = null,
+                reviewing = false,
+                error = null,
+                corrects = correctionChain(user, refused)
+            )
         saveDraft()
+    }
+
+    /** This refused sale and every one it was itself the correction of, so a recorded fix clears them all. */
+    private fun correctionChain(user: String, refused: OutboxRow): List<String> =
+        (listOf(refused.clientId) + graph.drafts.kept(user, refused.clientId)?.corrects.orEmpty()).distinct()
+
+    /**
+     * "Correct" on a refused sale of the history: its cart comes back to be fixed and confirmed again, as
+     * a new request with a new client id. It never replaces a sale in progress: the seller finishes or
+     * clears that one first. The refused row stays until the corrected sale is recorded or it is discarded.
+     */
+    fun correct(row: OutboxRow) {
+        val user = graph.session.userId.value ?: return
+        if (row.operation != Operation.SALE || row.state != RowState.REFUSED || row.userId != user) return
+        if (row.id == sale.value.queuedRowId) return backToCart()
+        val state = sale.value
+        if (state.lines.isNotEmpty() || state.queuedRowId != null || state.confirming || state.reviewing) return
+        val cart = graph.drafts.kept(user, row.clientId) ?: return
+        selectedCustomer.value = cart.customer
+        confirmKey = null
+        sale.value =
+            SaleBuilderState(
+                lines = cart.lines.map { SaleLine(it.product, it.quantity, it.promotion) },
+                discounts = state.discounts,
+                corrects = correctionChain(user, row)
+            )
+        statusMessage.value = null
+        statusError.value = null
+        saveDraft()
+        cart.customer?.customerId?.let(::loadInterests)
+        loadPromotions(force = true)
+    }
+
+    /**
+     * Throws a refused sale away, from the history or from its own refusal card: the row and its kept cart
+     * go. The refusal was already reported once, when it arrived (a capture incident and a notification), and
+     * nothing here reports it again.
+     */
+    fun discard(row: OutboxRow) {
+        val user = graph.session.userId.value ?: return
+        if (row.operation != Operation.SALE || row.state != RowState.REFUSED || row.userId != user) return
+        viewModelScope.launch {
+            graph.drafts.forget(user, listOf(row.clientId))
+            graph.outbox.dismiss(row.id)
+            if (graph.session.userId.value != user) return@launch
+            if (row.id == sale.value.queuedRowId) {
+                newSale()
+            } else if (row.clientId in sale.value.corrects) {
+                sale.value = sale.value.copy(corrects = sale.value.corrects - row.clientId)
+                saveDraft()
+            }
+        }
     }
 
     fun newSale() {

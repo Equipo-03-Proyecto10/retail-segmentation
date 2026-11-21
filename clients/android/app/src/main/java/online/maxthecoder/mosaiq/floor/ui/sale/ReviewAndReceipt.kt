@@ -115,12 +115,12 @@ private fun SummaryLine(line: SaleLine, unitPrice: String, cap: String?) {
  * why in plain words and which line, with the cart kept for a fix. Nothing while it waits to send.
  */
 @Composable
-fun SaleOutcome(ui: SaleUi) {
+fun SaleOutcome(ui: SaleUi, actions: SaleActions = SaleActions()) {
     val receipt = receiptOf(ui.queued, ui.sale.lines)
     val refusal = refusalOf(ui.queued, ui.sale.lines)
     when {
         receipt != null -> ReceiptCard(receipt)
-        refusal != null -> RefusalCard(refusal)
+        refusal != null -> RefusalCard(refusal, onDiscard = { ui.queued?.let(actions.onDiscard) })
     }
 }
 
@@ -179,7 +179,7 @@ private fun ReceiptCard(receipt: Receipt) {
 }
 
 @Composable
-private fun RefusalCard(refusal: SaleRefusal) {
+private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit) {
     Column(Modifier.fillMaxWidth().testTag("sale-refused"), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
         Text(
             stringResource(R.string.sale_refused_title),
@@ -192,5 +192,12 @@ private fun RefusalCard(refusal: SaleRefusal) {
         }
         // "Back to cart" sits in the bar below, always in reach.
         Text(stringResource(R.string.sale_refused_kept), style = MaterialTheme.typography.bodyMedium)
+        MqButton(
+            stringResource(R.string.sale_discard),
+            onDiscard,
+            variant = MqButtonVariant.Quiet,
+            fullWidth = true,
+            modifier = Modifier.testTag("discard-sale")
+        )
     }
 }

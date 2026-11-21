@@ -1,6 +1,6 @@
 # segments
 
-> **Status:** Implemented (phase 14, core; F14-20, #461). Version-aware migrations were implemented by F22-16 (#812); per-version assignment listing remains planned. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-20, #461). Version-aware migrations were implemented by F22-16 (#812); per-version assignment listing remains planned. The floor view of a customer's current segment was implemented by F21-26 (#1095). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer has at most one current segment, named by its stable label code, unassigned states are reported as they are, a migration compares one customer's labels within one model version, and a comparison across versions is marked methodological (RN-20, RN-21, RN-39, RN-59, RN-60)
 
 ## Summary
@@ -33,6 +33,7 @@
 | GET | `/v1/segments` | Label vocabulary in business order, with sizes from the latest run | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segments/{label_code}` | One label | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-assignments/current?customer_id=` | Label, RFM scores, `since` and `run_id`, or the unassigned state | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-assignments/floor-view?customer_id=` | The floor roles' read (ADR-0060): `customer_id`, `state`, `label_code` and `since` only; no R, F, M scores and no `run_id`, absent rather than null. 404 `customer_not_found`, 422 `invalid_query` | SALES_ASSOCIATE, LOYALTY_OFFICER |
 | GET | `/v1/segment-assignments` | One customer's history, or one label's members (`customer_id` or `label_code`, `open`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-assignments/versioned` | Assignment rows with the model version and cause of each (`model_version_id`, `customer_id`, `label_code`, `open`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-migrations/matrix` | The migration matrix between two instants: totals with entries and exits per state, cells, and whether it is methodological (`from`, `to`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |

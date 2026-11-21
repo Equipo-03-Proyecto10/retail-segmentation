@@ -22,6 +22,12 @@
 
 mod support;
 
+use std::time::Duration;
+
+use analytics_kpis::query::parse_retention_query;
+use analytics_kpis::scope::Scope;
+use chrono::{TimeZone, Utc};
+use mosaiq_kit::Database;
 use serde_json::{json, Value};
 use support::http::{assert_valid_xml, send, Stack, NET_SALES_ROLES, ROLES, TURN};
 use support::{
@@ -291,71 +297,52 @@ async fn a_cohort_whose_next_bucket_has_not_ended_reports_no_retained_count() {
     let Some(stack) = Stack::start().await else {
         return;
     };
-    let owner = connect(&stack.database).await;
-    purge(&owner).await;
-    let tag = tag();
-    let buyer = customer(&owner).await;
-    let (now,): (String,) = {
-        let row = owner
-            .query_one("SELECT (now() - interval '1 hour')::text", &[])
-            .await
-            .unwrap();
-        (row.get(0),)
+    let fixture = Fixture::record(&stack.database).await;
+    let query = parse_retention_query(WINDOW).unwrap();
+    let scope = Scope {
+        restricted: false,
+        store_ids: Vec::new(),
+        named: None,
     };
-    sale(
-        &owner,
-        &tag,
-        Spec::new(buyer, 1, 1, &now.replace(' ', "T"), "OBSERVED"),
-        &[Line {
-            product: 1,
-            quantity: 1,
-            cents: 1000,
-        }],
-    )
-    .await;
-    let today: String = owner
-        .query_one("SELECT (now() AT TIME ZONE 'UTC')::date::text", &[])
-        .await
-        .unwrap()
-        .get(0);
-    let yesterday: String = owner
-        .query_one("SELECT ((now() AT TIME ZONE 'UTC')::date - 1)::text", &[])
-        .await
-        .unwrap()
-        .get(0);
-
-    // The buyer's bucket is this month (or last, in the first hour of a month):
-    // its next bucket is still running, so no retained count and no rate, and the
-    // cohort is not read as lost.
-    let (status, report) = json(
-        &stack,
-        &format!("{RETENTION}?from={yesterday}&to={today}&granularity=month"),
-    )
-    .await;
-    assert_eq!(status, 200, "{report}");
-    let rows = report["rows"].as_array().unwrap();
-    assert!(!rows.is_empty(), "{report}");
-    for row in rows {
-        assert!(measure_value(row, "cohort_customers").is_some(), "{row}");
-        assert_eq!(measure_value(row, "retained_customers"), None, "{row}");
-        assert_eq!(measure_value(row, "retention_rate"), None, "{row}");
-    }
-    let (_, xml) = {
-        let token = stack.token("ADMIN");
-        send(
-            &stack.app,
-            "GET",
-            &format!("{RETENTION}?from={yesterday}&to={today}"),
-            Some(&token),
-            "application/xml",
-        )
-        .await
+    let database = Database::new(
+        Some(&support::service_url(&stack.database)),
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    );
+    let read = |generated_at| {
+        analytics_kpis::retention::read(&database, &query, &scope, generated_at, 1, 100)
     };
-    assert_valid_xml(&xml);
-    assert!(!xml.contains("retention_rate"), "{xml}");
 
-    remove_sales(&owner, &tag).await;
-    remove_customer(&owner, buyer).await;
+    // April, the next bucket of the March cohort, ends on 2020-05-01 00:00 UTC. At
+    // an instant inside it there is no retained count and no rate, so a bucket
+    // still running is never read as a loss. The instant is a parameter: no wall
+    // clock takes part in the proof.
+    let running = Utc.with_ymd_and_hms(2020, 4, 15, 12, 0, 0).unwrap();
+    let report = read(running).await.unwrap();
+    assert_eq!(report.rows.len(), 1, "{report:?}");
+    let row = &report.rows[0];
+    assert_eq!(row.cohort_customers, "4");
+    assert_eq!(
+        (&row.retained_customers, &row.retention_rate),
+        (&None, &None)
+    );
+    let mosaiq_kit::Value::Object(members) = row.wire() else {
+        panic!("a row is an object");
+    };
+    let Some(mosaiq_kit::Value::List(measures)) = members.get("measures") else {
+        panic!("a row has measures");
+    };
+    assert_eq!(measures.len(), 1, "only the cohort size is reported");
+
+    // The same cohort one second after April ends is judged: 3 of 4 bought again.
+    let ended = Utc.with_ymd_and_hms(2020, 5, 1, 0, 0, 1).unwrap();
+    let report = read(ended).await.unwrap();
+    let row = &report.rows[0];
+    assert_eq!(row.cohort_customers, "4");
+    assert_eq!(row.retained_customers.as_deref(), Some("3"));
+    assert_eq!(row.retention_rate.as_deref(), Some("0.7500"));
+
+    fixture.remove().await;
     stack.finish().await;
 }
 

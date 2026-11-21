@@ -124,6 +124,7 @@
     <definition>A migration is a change of a customer's segment label between two consecutive assignments within one model version. A change across two model versions is methodological, not behaviour (ADR-0064), so it is counted apart and never in customers_migrated. A row never mixes versions. A change has no store or channel, so only segment and period group it: segment means the pair of the label left and the label entered.</definition>
     <window>A change falls in the window when the instant it was recorded lies in [from 00:00 UTC, to + 1 day 00:00 UTC).</window>
     <origin_views>api_segments.assignment_change_v1</origin_views>
+    <origin_views>api_models.run_version_v1</origin_views>
     <dimensions>segment</dimensions>
     <dimensions>period</dimensions>
     <store_attributable>false</store_attributable>

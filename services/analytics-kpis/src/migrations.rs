@@ -2,7 +2,8 @@
 //! customer's segment label within one model version (F26-03).
 //!
 //! It reads `api_segments.assignment_change_v1`, one row per change of label
-//! between two consecutive assignments. A change whose two sides belong to two
+//! between two consecutive assignments, and the model version of each side's run
+//! through `api_models.run_version_v1` (ADR-0064). A change whose two sides belong to two
 //! model versions, or to a version nobody has linked, is methodological: the
 //! model moved, not necessarily the customer, so it is counted in
 //! `methodological_changes` and never in `changes` or `customers_migrated`
@@ -74,13 +75,16 @@ pub async fn read(
         .query(
             "WITH changes AS ( \
                  SELECT c.customer_id, c.previous_label_code, c.new_label_code, \
-                        c.previous_version_id, c.new_version_id, c.changed_at, c.data_origin, \
-                        (c.previous_version_id IS NULL OR c.new_version_id IS NULL \
-                         OR c.previous_version_id <> c.new_version_id) AS methodological \
+                        p.version_id AS previous_version_id, n.version_id AS new_version_id, \
+                        c.changed_at, c.data_origin, \
+                        (p.version_id IS NULL OR n.version_id IS NULL \
+                         OR p.version_id <> n.version_id) AS methodological \
                  FROM api_segments.assignment_change_v1 AS c \
+                 LEFT JOIN api_models.run_version_v1 AS p ON p.run_id = c.previous_run_id \
+                 LEFT JOIN api_models.run_version_v1 AS n ON n.run_id = c.run_id \
                  WHERE c.changed_at >= $1 AND c.changed_at < $2 \
                    AND ($3::text IS NULL OR c.new_label_code = $3::text) \
-                   AND ($4::bigint IS NULL OR c.new_version_id = $4::bigint)), \
+                   AND ($4::bigint IS NULL OR n.version_id = $4::bigint)), \
              aggregated AS ( \
                  SELECT CASE WHEN $5::boolean \
                              THEN date_trunc($6::text, changed_at AT TIME ZONE 'UTC')::date \

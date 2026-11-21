@@ -154,7 +154,10 @@ async fn within_one_version_the_figures_match_the_migration_matrix() {
         assert_eq!(report["data_origin"]["model_version_ids"], json!([1]));
         assert_eq!(
             report["data_origin"]["views"],
-            json!(["api_segments.assignment_change_v1"])
+            json!([
+                "api_segments.assignment_change_v1",
+                "api_models.run_version_v1"
+            ])
         );
         for row in report["rows"].as_array().unwrap() {
             assert_eq!(row["model_version_id"], 1);

@@ -45,7 +45,7 @@ BALANCE_FLAGGED = "BALANCE_FLAGGED"
 
 # contracts/db/advisory-locks.md: two keys, this and the experiment. One reader at a
 # time computes and stores the primary look, so it is stored exactly once.
-LOCK_KEY = 297_001
+LOCK_KEY = 298_001
 LOCK = "SELECT pg_advisory_xact_lock(%s, %s)"
 NOW = conversions.NOW
 

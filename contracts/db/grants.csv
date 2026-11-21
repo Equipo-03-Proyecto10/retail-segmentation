@@ -406,7 +406,22 @@ svc_rfm,api_sales,USAGE
 svc_rfm,api_sales.purchase_line_v1,SELECT
 svc_rfm,api_sales.net_purchase_line_v1,SELECT
 svc_rfm,rfm.rule_set,SELECT
+svc_rfm,rfm.rule_set,INSERT
+svc_rfm,rfm.rule_set(name),UPDATE
+svc_rfm,rfm.rule_set(window_days),UPDATE
+svc_rfm,rfm.rule_set(recency_boundaries),UPDATE
+svc_rfm,rfm.rule_set(frequency_boundaries),UPDATE
+svc_rfm,rfm.rule_set(monetary_boundaries),UPDATE
+svc_rfm,rfm.rule_set(fallback_label_code),UPDATE
+svc_rfm,rfm.rule_set(cancelled_sales),UPDATE
+svc_rfm,rfm.rule_set(returned_sales),UPDATE
+svc_rfm,rfm.rule_set(state),UPDATE
+svc_rfm,rfm.rule_set(published_at),UPDATE
 svc_rfm,rfm.rule_set_band,SELECT
+svc_rfm,rfm.rule_set_band,INSERT
+svc_rfm,rfm.rule_set_band,DELETE
+svc_rfm,api_audit,USAGE
+svc_rfm,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_rfm,rfm.customer_profile,SELECT
 svc_rfm,rfm.customer_profile,INSERT
 svc_rfm,rfm.customer_profile(state),UPDATE
@@ -421,6 +436,12 @@ svc_rfm,rfm.customer_profile(label_code),UPDATE
 svc_rfm,rfm.customer_profile(via_fallback),UPDATE
 svc_rfm,rfm.customer_profile(computed_at),UPDATE
 svc_rfm,rfm.customer_profile(next_change_at),UPDATE
+svc_rfm,rfm.pass_run,SELECT
+svc_rfm,rfm.pass_run,INSERT
+svc_rfm,rfm.pass_run(status),UPDATE
+svc_rfm,rfm.pass_run(finished_at),UPDATE
+svc_rfm,rfm.pass_run(customers_examined),UPDATE
+svc_rfm,rfm.pass_run(customers_changed),UPDATE
 svc_rfm,rfm_events.outbox,SELECT
 svc_rfm,rfm_events.outbox,DELETE
 svc_rfm,rfm_events.outbox(relayed_at),UPDATE

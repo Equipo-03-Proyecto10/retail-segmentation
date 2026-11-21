@@ -87,6 +87,12 @@ function bandOf(b: BandXml): RfmBandView {
   };
 }
 
+// One rule set answers as its governed record (F22-09), which carries the fields of the listed
+// rule set and more; an older service answers the listed form.
+function recordOf(data: Record<string, unknown> | undefined): RuleSetXml {
+  return (data?.RfmRuleSetDetail ?? data?.RfmRuleSet) as RuleSetXml;
+}
+
 export function ruleSetOf(x: RuleSetXml): RfmRuleSetView {
   return {
     rule_set_id: Number(x.rule_set_id),
@@ -195,7 +201,7 @@ export class RfmRules {
       const rid = id(ruleSetId, MAX_ID, 'The rule set');
       const res = await this.office.authed({ method: 'GET', path: `/v1/rfm-rule-sets/${rid}` });
       if (!res.ok) return failed(res);
-      return { ok: true, value: ruleSetOf(res.data?.RfmRuleSet as RuleSetXml) };
+      return { ok: true, value: ruleSetOf(recordOf(res.data)) };
     });
   }
 
@@ -282,7 +288,7 @@ export class RfmRules {
         body: { root: 'RfmRuleSetRequest', fields: fieldsOf(parsed) },
       });
       if (!res.ok) return failed(res);
-      return { ok: true, value: ruleSetOf(res.data?.RfmRuleSet as RuleSetXml) };
+      return { ok: true, value: ruleSetOf(recordOf(res.data)) };
     });
   }
 }

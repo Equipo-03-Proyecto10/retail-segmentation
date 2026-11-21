@@ -141,14 +141,19 @@ models.model_training_cluster
 # fill it as the service writes profiles.
 rfm_events.outbox
 
+# rfm.pass_run: one row per daily pass, written as the service runs. A seeded history
+# of passes would claim runs that never happened (F22-07).
+rfm.pass_run
+
 # model-registry's publication outbox is runtime relay state under ADR-0044;
 # committed publications create it and relayed rows are purged after seven days.
 models_events.outbox
 
-# rfm.rule_set: the one rule set rfm-engine starts with, the scoring the published
-# version of the web's last rule-based run froze (F22-05). A rule set is a
-# deliberate, immutable act of creation (F22-09), not a population: padding it
-# with invented rule sets would fake a history of boundaries nobody chose.
+# rfm.rule_set: the published rule set rfm-engine starts with, the scoring the
+# published version of the web's last rule-based run froze (F22-05), and a draft
+# version 2 of it that an analyst edits and publishes (F22-09). A rule set is a
+# deliberate act of an analyst, not a population: padding it with invented rule
+# sets would fake a history of boundaries nobody chose.
 rfm.rule_set
 
 # rfm.customer_profile: runtime state, empty at the seed. The first sale event, or

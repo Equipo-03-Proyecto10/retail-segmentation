@@ -60,7 +60,7 @@ Callers cast the store id and pass every argument positionally:
 | `CALCULATION_RUN` | `svc_rfm`, `svc_segments`, `svc_kpis` | `calculation` or none | `calculation` (`RFM`, `SEGMENTATION`, `KPI`), `status` (`COMPLETED`, `FAILED`), `input_count`, `output_count`; *`parameters_digest`*, *`window_from`*, *`window_to`*, *`data_origin`* (`OBSERVED` or `SEEDED`, as ADR-0052 defines them: `SEEDED` when any sale the calculation read is seeded) |
 | `MODEL_PUBLISHED`, `MODEL_ROLLED_BACK` | `svc_models` | `model_version`, with `model_version_id` not null | `previous_version_id` (integer or null), `reason_code` |
 | `PERMISSION_CHANGED` | `svc_users` | `user`, required | `change`; *`from_role`*, *`to_role`*, *`store_ids`* |
-| `CRITICAL_ACTION` | `svc_sales`, `svc_stock`, `svc_customers`, `svc_experiments`, `svc_campaigns` | required | `action` (`SALE_REVERSED`, `STOCK_ADJUSTED`, `CUSTOMER_ANONYMIZED`, `AUDIT_PAYLOAD_REDACTED`, `EXPERIMENT_FROZEN`, `CAMPAIGN_ACTIVATED`); *`reason_code`* |
+| `CRITICAL_ACTION` | `svc_sales`, `svc_stock`, `svc_customers`, `svc_experiments`, `svc_campaigns`, `svc_rfm` | required | `action` (`SALE_REVERSED`, `STOCK_ADJUSTED`, `CUSTOMER_ANONYMIZED`, `AUDIT_PAYLOAD_REDACTED`, `EXPERIMENT_FROZEN`, `CAMPAIGN_ACTIVATED`, `RULE_SET_CREATED`, `RULE_SET_EDITED`, `RULE_SET_VERSIONED`, `RULE_SET_PUBLISHED`); *`reason_code`* |
 | `HISTORY_READ` | `svc_preferences`, `svc_segments`, `svc_sales` | `customer`, required | `history` (`CONSENT`, `SEGMENT`, `SALES`) |
 | `AUDIT_READ` | `svc_audit_trail` | `domain_event` or `audit_entry` for a read of one, none for a list | `resource` (`AUDIT_ENTRIES`, `DOMAIN_EVENTS`, `DOMAIN_EVENT_VERIFICATION`), `filters` (array of filter names, possibly empty) |
 

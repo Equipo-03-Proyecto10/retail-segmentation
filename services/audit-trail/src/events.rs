@@ -25,7 +25,7 @@ pub const KINDS: [&str; 7] = [
     "AUDIT_READ",
 ];
 pub const OUTCOMES: [&str; 2] = ["SUCCESS", "REFUSED"];
-pub const SUBJECT_TYPES: [&str; 11] = [
+pub const SUBJECT_TYPES: [&str; 12] = [
     "user",
     "customer",
     "model_version",
@@ -35,6 +35,7 @@ pub const SUBJECT_TYPES: [&str; 11] = [
     "stock_level",
     "campaign",
     "experiment",
+    "rule_set",
     "audit_entry",
     "domain_event",
 ];

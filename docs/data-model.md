@@ -1149,6 +1149,34 @@ decision that matters is how a product's many-valued facts are split:
   `api_models.run_version_v1` is its read-only projection for segments-service;
   it exposes the same key, version and link time without duplicating a fact or
   granting the consumer access to model-registry's table.
+- **`models.drift_report`** is the fact "one pass of the monitor judged this
+  version over this window" (F23-09, ADR-0065, ADR-0088), keyed `report_id`, with
+  `(version_id, kind, window_end)` unique, which is also what makes a repeated pass a
+  no-op. Its other columns (comparison, reason, window start, customer count, the report
+  before it, the time it ran) depend on the key and on nothing else, so it is in BCNF.
+  The reference's sample size and capture time are the version's own frozen column and
+  are read through `version_id`, not copied; the window's length is the constant 30 days
+  of ADR-0065. CHECKs tie the reason to `NOT_COMPARED`, and refuse `COMPARED` below 200
+  customers and `INSUFFICIENT_DATA` at or above it.
+- **`models.drift_variable`** is the fact "this variable had this state in this report",
+  keyed `(report_id, variable)`; **`models.drift_statistic`** is the multivalued fact
+  "this variable of this report was measured by this statistic", keyed `(report_id,
+  variable, statistic)`; **`models.drift_bin`** is the multivalued fact "this bin of this
+  variable held these shares", keyed `(report_id, variable, position)`. The statistics
+  and the bins are two independent facts about a variable, each in its own table, so
+  neither repeats the other (4NF): one table with a row per statistic and bin would give a
+  variable with two statistics and five bins ten rows and an update anomaly. The
+  thresholds are a function of the statistic's name and are constants of ADR-0065; a bin's
+  contribution is a function of its two shares; neither is stored, so no row can disagree
+  with its rule (BCNF). The shares are stored as observed, and the floor of 0.0005 is
+  applied where the logarithm is taken.
+- **`models.drift_alert`** is the fact "this variable's alarm held in this report and in
+  the report before it", keyed `alert_id`, with `(report_id, variable)` unique and a
+  foreign key to the variable. Its kind, version, window and reference are the report's;
+  its statistics and bins are the variable's rows; its text is a function of the bins and
+  the review code, so none is stored. The claim is constrained to `DISTRIBUTION_CHANGE`:
+  a data-drift alert cannot make the claim only an outcome test may (ADR-0065).
+  All five tables are insert-only, by trigger, and nothing is deleted.
 
 ---
 

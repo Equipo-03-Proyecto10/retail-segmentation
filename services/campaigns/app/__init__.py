@@ -41,8 +41,13 @@ def create_app() -> Flask:
         with holder["kit"].db.connection() as connection:
             row = connection.execute(
                 "SELECT to_regclass(%s) IS NOT NULL AND EXISTS ("
-                " SELECT FROM pg_trigger WHERE tgname = %s AND NOT tgisinternal)",
-                ("public.campaign", "trg_campaign_activation_guard"),
+                " SELECT FROM pg_trigger WHERE tgname = %s AND NOT tgisinternal)"
+                " AND to_regclass(%s) IS NOT NULL",
+                (
+                    "public.campaign",
+                    "trg_campaign_activation_guard",
+                    "api_sales.promotion_line_v1",
+                ),
             ).fetchone()
         return bool(row and row[0])
 
@@ -161,6 +166,17 @@ def create_app() -> Flask:
             return Representation(
                 "CampaignBudget", limits.get_budget(connection, campaign_id)
             )
+
+    @kit.operation("getCampaignBudgetSpending")
+    def get_budget_spending(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            spending = limits.get_budget_spending(
+                connection,
+                campaign_id,
+                page=kit.page,
+                size=kit.size,
+            )
+        return Representation("CampaignBudgetSpending", spending)
 
     @kit.operation("putCampaignBudget")
     def put_budget(campaign_id: int) -> Representation:

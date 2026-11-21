@@ -387,6 +387,7 @@ svc_campaigns,api_customers,USAGE
 svc_campaigns,api_customers.customer_ref_v1,SELECT
 svc_campaigns,api_sales,USAGE
 svc_campaigns,api_sales.net_purchase_line_v1,SELECT
+svc_campaigns,api_sales.promotion_line_v1,SELECT
 svc_customers,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_customers,api_audit,USAGE
 svc_preferences,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE

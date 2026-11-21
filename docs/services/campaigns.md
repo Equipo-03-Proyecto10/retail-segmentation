@@ -1,6 +1,6 @@
 # campaigns
 
-> **Status:** Implemented (phase 14, second wave; F14-28, #481). The audience, budget, eligibility and exclusions (F25-04, #835) are implemented too; the promotions stay planned (F25-05). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, second wave; F14-28, #481). The audience, budget, eligibility and exclusions (F25-04, #835), and budget spending (F25-15, #1048) are implemented too; the promotion HTTP operations stay planned (F25-05), while their tables and sales integration are present. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A campaign moves only DRAFT→ACTIVE/CANCELLED and ACTIVE→FINISHED/CANCELLED, is edited only in DRAFT, never ends before it starts, and is activated only before it has ended and while every attached experiment is ready (RN-15, RN-16, RN-22, RN-24 (activation), RN-31, RN-32, RN-49 (activation))
 
 ## Summary
@@ -26,7 +26,7 @@
 
 - A campaign's limits are four resources, each one fact of the campaign: `audience` (the cap `max_customers`), `budget`, `eligibility-rules` and `exclusions`. A resource that was never written is simply absent, and a `PUT` with an empty body removes it. Every `PUT` is allowed only in DRAFT: it locks the campaign row (`FOR UPDATE`), the same lock the web takes, so a web activation and a `PUT` cannot both win (409 `campaign_not_draft`).
 - The audience is computed per request, as of the instant the response reports, and nothing about it is stored. Its eight reasons are applied in the contract's order and each customer is counted once. The cap removes the last customers by `customer_id`, after every other reason.
-- The budget is stored and validated only (`per_customer_cap` no greater than `total_amount`). Spending is not reported yet: no table records a discount until F25-05, so the contract has no spent field.
+- The budget keeps `per_customer_cap` no greater than `total_amount`. Its separate spending report leaves the closed v1 budget response unchanged and sums each promotion line's sale-time list price minus its charged price over the units left after reversals. Reaching a limit is reported only and never refuses a sale. CSV and imported lines cannot contribute because they carry no `sales.sale_line_price` row.
 - `anonymized` is a column of `customer_ref_v1` since F21-19 (#797), and `not_in_customer_reference` counts a holder the reference does not list or flags anonymized, so an anonymized customer is never in an audience, whatever consent rows it keeps.
 
 ## Endpoints
@@ -41,6 +41,7 @@
 | GET, PUT | `/v1/campaigns/{campaign_id}/audience` | Audience: optional `max_customers` and the computed `audience_size` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET | `/v1/campaigns/{campaign_id}/audience/breakdown` | The audience with the customers it leaves out counted by reason (not in the customer reference or anonymized, `PERSONALIZATION` or `MARKETING_CONTACT` not granted, excluded by id, excluded by label, registered after the cutoff, too few net purchases, over the cap), each customer under the first reason that applies, so label holders equal the reasons' counts plus `audience_size` | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET, PUT | `/v1/campaigns/{campaign_id}/budget` | Budget: `total_amount`, `per_customer_cap` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
+| GET | `/v1/campaigns/{campaign_id}/budget/spending` | Total and paginated per-customer promotion discount spend, net of reversals, with reached flags | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET, PUT | `/v1/campaigns/{campaign_id}/eligibility-rules` | Eligibility: `registered_on_or_before`, `min_purchases` net purchases (ADR-0062: a sale with a zero net amount does not count) within `purchase_window_days` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET, PUT | `/v1/campaigns/{campaign_id}/exclusions` | Exclusions: `customer_ids`, `label_codes` (PUT only in DRAFT) | GET: ADMIN, ANALYST, MARKETING, AUDITOR; PUT: ADMIN, MARKETING |
 | GET | `/v1/promotions` | List (`campaign_id`, `store_id`, `channel_id`, `active`, `page`, `size`); floor roles see active promotions of their assigned stores only | ADMIN, ANALYST, MARKETING, AUDITOR, and the four floor roles (ADR-0060) |
@@ -74,7 +75,7 @@ Published: [`api_campaigns.promotion_window_v1`](../../contracts/db/api_campaign
 
 Published for experimentation's frame (ADR-0068 section 1, #1051): [`api_campaigns.campaign_target_v1`](../../contracts/db/api_campaigns.campaign_target.v1.md) (target label, status and eligibility rules, one row per campaign), [`api_campaigns.campaign_excluded_customer_v1`](../../contracts/db/api_campaigns.campaign_excluded_customer.v1.md) and [`api_campaigns.campaign_excluded_label_v1`](../../contracts/db/api_campaigns.campaign_excluded_label.v1.md) (one row per exclusion). None carries a budget, a cap, a promotion or a channel.
 
-Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`, and the anonymized flag ADR-0066 section 3 adds), `api_preferences.consent_state_v1` (the `PERSONALIZATION` and `MARKETING_CONTACT` a customer's audience membership needs, ADR-0066 section 2: a purpose not granted, or that cannot be read, excludes them), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
+Consumed, by name: `api_segments.current_label_v1` (audience size, label exclusions), `api_customers.customer_ref_v1` (customer ids, `registered_on`, and the anonymized flag ADR-0066 section 3 adds), `api_preferences.consent_state_v1` (the `PERSONALIZATION` and `MARKETING_CONTACT` a customer's audience membership needs, ADR-0066 section 2: a purpose not granted, or that cannot be read, excludes them), `api_sales.net_purchase_line_v1` (net purchase-count eligibility, ADR-0062), [`api_sales.promotion_line_v1`](../../contracts/db/api_sales.promotion_line.v1.md) (sale-time prices and promotion ids for campaign spending, net of reversals), `api_stores.store_directory_v2` (store and channel ids of a promotion), and `api_users.store_assignment_v1` (the stores a floor role may read promotions of).
 
 ## Events
 

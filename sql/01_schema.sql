@@ -1802,7 +1802,7 @@ GRANT UPDATE (resolution, resolved_by, resolved_at, note)
 -- discount can be reported against the price of that day rather than today's.
 -- One row per line of a phone sale, keyed by the line itself and written with
 -- it; a CSV or imported line has none. promotion_id is campaigns' identifier,
--- checked against api_campaigns.active_promotion_v1 when the line is written,
+-- checked against api_campaigns.promotion_window_v1 when the line is written,
 -- with no foreign key into the campaigns boundary (ADR-0044). Append-only, like
 -- the line. docs/data-model.md holds the normal-form note.
 CREATE TABLE IF NOT EXISTS sales.sale_line_price (

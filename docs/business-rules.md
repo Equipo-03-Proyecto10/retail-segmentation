@@ -611,7 +611,13 @@ run.
   dimension, is carried on the same 25 cells rather than binned a third time: each
   cell shows its customers' mean spend in the run's window, in MXN, as a second
   heatmap beside the count, with the 25 cells also listed as a table (#537).
-* **Migration flow** is the previous run, by `run_at`, compared to this one on
+* **A run here is a FULL run** (ADR-0063, F22-17). An `INCREMENTAL` run records
+  only the customers an event or the clock moved, so it is never the newest run
+  the dashboard opens, never the previous run of a migration and never a run the
+  run pickers offer; asking for one by id is refused with the reason. The run
+  history lists full runs by default, says which scope each run has, and lists the
+  incremental ones on request.
+* **Migration flow** is the previous full run, by `run_at`, compared to this one on
   label code (RN-39), whichever methods produced either run. A customer only one of
   the two runs scored is a change in population, not a move between labels, and is
   reported as a count beside the chart rather than as a flow between labels.

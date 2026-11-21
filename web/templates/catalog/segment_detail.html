@@ -25,6 +25,10 @@
     </div>
   </section>
 
+  {% if unplaced %}
+    <div class="mq-alert mq-alert--info" id="unplaced-note" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">Not listed here</span><span class="mq-alert__text">{{ count_label(unplaced, "customer") }} currently {{ "holds" if unplaced == 1 else "hold" }} this segment's label through an incremental change, which names a label and no segment. {{ "That customer is" if unplaced == 1 else "Those customers are" }} not in the list below; the customer list shows them under that label, as the segments API does.</span></div></div>
+  {% endif %}
+
   {% if members %}
     <section class="mq-panel mq-panel--table mq-density-compact">
       <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} in this segment</span><span class="mq-caption">Current rule-based assignments; a K-means assignment carries a label and no segment</span></div>

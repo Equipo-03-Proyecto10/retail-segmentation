@@ -50,6 +50,10 @@ class HistoryEntry:
     assignment: RunAssignment
     # The run's origin (ADR-0052): what marks this row Synthetic.
     data_origin: str
+    # FULL or INCREMENTAL (ADR-0063): a change of one customer's label is a row
+    # of an incremental run, and the report says so rather than calling it a run
+    # of the population (F22-17).
+    scope: str = "FULL"
 
 
 def list_history_entries(
@@ -78,7 +82,7 @@ def list_history_entries(
                    h.customer_id, c.name, h.segment_id, h.label_code, sl.name,
                    h.r_score, h.f_score, h.m_score,
                    h.recency_last_purchase_at, h.frequency_count, h.monetary_total,
-                   r.data_origin
+                   r.data_origin, r.scope
             FROM customer_segment_history AS h
             JOIN customer AS c ON c.customer_id = h.customer_id
             JOIN segmentation_run AS r ON r.run_id = h.run_id
@@ -123,6 +127,7 @@ def list_history_entries(
             frequency,
             monetary,
             data_origin,
+            scope,
         ) = row
         entries.append(
             HistoryEntry(
@@ -147,6 +152,7 @@ def list_history_entries(
                     monetary_total=monetary,
                 ),
                 data_origin=data_origin,
+                scope=scope,
             )
         )
     return entries

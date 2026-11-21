@@ -17,6 +17,14 @@
           {% for code in methods %}<option value="{{ code }}" {{ 'selected' if filters.method == code }}>{{ code }}</option>{% endfor %}
         </select>
       </div>
+      <div class="mq-filterbar__group">
+        <label class="mq-field__label" for="scope">Runs</label>
+        <select class="mq-select" id="scope" name="scope">
+          <option value="" {{ 'selected' if shown_scope == 'FULL' and not filters.scope }}>Full runs (snapshots)</option>
+          <option value="INCREMENTAL" {{ 'selected' if shown_scope == 'INCREMENTAL' }}>Incremental changes</option>
+          <option value="ALL" {{ 'selected' if shown_scope == 'ALL' }}>All runs</option>
+        </select>
+      </div>
       <div class="mq-filterbar__group mq-filterbar__group--search">
         <label class="mq-field__label" for="q">Executed by</label>
         <input class="mq-input" type="search" id="q" name="q" value="{{ filters.q }}" placeholder="Name of the person who ran it">
@@ -30,16 +38,22 @@
 
   {% if runs %}
     {{ synthetic_banner(synthetic, "Runs marked Synthetic scored demonstration data, not observed business activity.") }}
+    <p class="mq-caption" id="run-scope-note" role="status">
+      {% if shown_scope == "FULL" %}Showing full runs: each one scored every customer. Incremental changes, which record only the customers an event or the clock moved, are listed under “Incremental changes”.
+      {% elif shown_scope == "INCREMENTAL" %}Showing incremental changes: each run lists only the customers it changed, so it is not a snapshot of the population.
+      {% else %}Showing every run. A full run scored every customer; an incremental run records only the customers it changed.{% endif %}
+    </p>
     <section class="mq-panel mq-panel--table mq-density-compact">
       <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "run") }}</span><span class="mq-caption">Most recent first</span></div>
       <div class="mq-table-wrap">
         <table class="mq-table">
-          <thead><tr><th scope="col">Run</th><th scope="col">Method</th><th scope="col">Window</th><th scope="col">K</th><th scope="col">Seed</th><th scope="col">Customers</th><th scope="col">Executed by</th><th scope="col">Run at</th></tr></thead>
+          <thead><tr><th scope="col">Run</th><th scope="col">Method</th><th scope="col">Scope</th><th scope="col">Window</th><th scope="col">K</th><th scope="col">Seed</th><th scope="col">Customers</th><th scope="col">Executed by</th><th scope="col">Run at</th></tr></thead>
           <tbody>
             {% for run in runs %}
               <tr>
                 <td class="mq-mono"><a class="mq-table__link" href="{{ url_for('run_history.detail', run_id=run.run_id) }}">#{{ run.run_id }}</a> {{ synthetic_pill(runs_synthetic(run)) }}</td>
                 <td>{{ run.method }}</td>
+                <td>{{ "Full" if run.scope == "FULL" else "Incremental" }}</td>
                 <td class="mq-mono">{{ run.window_days }} days</td>
                 <td class="mq-mono">{{ run.parameters.get("k", "—") }}</td>
                 <td class="mq-mono">{{ run.parameters.get("seed", "—") }}</td>

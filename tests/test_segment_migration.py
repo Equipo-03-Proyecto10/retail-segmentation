@@ -196,6 +196,9 @@ def test_reversed_arguments_give_the_same_result(
         lambda _c, run_id: run_ats[run_id],
     )
     monkeypatch.setattr(
+        "web.services.segment_migration.get_run_scope", lambda _c, _id: "FULL"
+    )
+    monkeypatch.setattr(
         "web.services.segment_migration.list_run_labels",
         lambda _c, run_id: labels[run_id],
     )

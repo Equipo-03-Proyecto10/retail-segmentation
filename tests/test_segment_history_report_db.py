@@ -59,6 +59,7 @@ def _row(**overrides) -> tuple:
         frequency_count=6,
         monetary_total=Decimal("400.00"),
         data_origin="SEEDED",
+        scope="INCREMENTAL",
     )
     values = {**defaults, **overrides}
     return tuple(values.values())
@@ -205,6 +206,8 @@ def test_a_row_carries_everything_the_explanation_needs() -> None:
     assert entry.assignment.monetary_total == Decimal("400.00")
     # ADR-0052: the run's origin travels with the row that marks it.
     assert entry.data_origin == "SEEDED"
+    # F22-17: a change of one customer's label says it is not a run of everyone.
+    assert entry.scope == "INCREMENTAL"
     statement = _cursor(connection).execute.call_args.args[0]
     assert "r.data_origin" in statement
 

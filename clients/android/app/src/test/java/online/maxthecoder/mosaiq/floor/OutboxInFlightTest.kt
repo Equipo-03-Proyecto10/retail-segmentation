@@ -116,7 +116,8 @@ class OutboxInFlightTest {
             graph.location,
             { chained++ },
             "JVM",
-            { kicked++ }
+            { kicked++ },
+            notified = app.database.notified()
         )
 
         FloorViewModel(kicking).sendNow()

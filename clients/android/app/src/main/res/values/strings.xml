@@ -389,4 +389,49 @@
         <item quantity="one">%1$d write waiting to send</item>
         <item quantity="other">%1$d writes waiting to send</item>
     </plurals>
+
+    <!-- Notifications (ADR-0071): no personal data in either version. -->
+    <string name="channel_campaigns">Campaign alerts</string>
+    <string name="channel_incidents">Capture incidents</string>
+    <string name="channel_errors">Capture errors</string>
+    <string name="channel_session">Session</string>
+    <string name="notification_title">MOSAIQ</string>
+    <string name="notification_public_text">New updates are available.</string>
+    <string name="notification_campaign_started">Campaign started: %1$s</string>
+    <string name="notification_campaign_ending">Campaign ends soon: %1$s</string>
+    <string name="notification_session_ended">Sign in to keep receiving updates</string>
+    <plurals name="notification_capture_incidents">
+        <item quantity="one">%1$d new capture incident</item>
+        <item quantity="other">%1$d new capture incidents</item>
+    </plurals>
+    <plurals name="notification_capture_errors">
+        <item quantity="one">%1$d queued item was refused</item>
+        <item quantity="other">%1$d queued items were refused</item>
+    </plurals>
+
+    <!-- The updates screen: the same facts the notifications carry. -->
+    <string name="inbox_title">Updates</string>
+    <string name="inbox_open">Open updates</string>
+    <string name="inbox_notifications_off">Notifications are off for this app. New updates still appear here.</string>
+    <string name="inbox_check_now">Check now</string>
+    <string name="inbox_checking">Checking…</string>
+    <string name="inbox_open_outbox">Open the outbox</string>
+    <string name="inbox_campaigns">Active campaigns</string>
+    <string name="inbox_no_campaigns">No campaign is active for your stores today.</string>
+    <string name="inbox_not_checked">Not checked yet. Tap Check now.</string>
+    <string name="inbox_incidents">Open capture incidents</string>
+    <string name="inbox_no_incidents">No new capture incident for your stores.</string>
+    <string name="inbox_incident_headline">Store %1$d · %2$s refused</string>
+    <string name="inbox_incident_supporting">Reason: %1$s · %2$s</string>
+    <string name="inbox_new">New</string>
+    <string name="inbox_ends_soon">Ends soon</string>
+    <plurals name="inbox_refused">
+        <item quantity="one">%1$d item queued on this phone was refused</item>
+        <item quantity="other">%1$d items queued on this phone were refused</item>
+    </plurals>
+    <plurals name="a11y_inbox_unread">
+        <item quantity="one">Updates, %1$d new</item>
+        <item quantity="other">Updates, %1$d new</item>
+    </plurals>
+    <string name="outbox_kind_incident">Incident report</string>
 </resources>

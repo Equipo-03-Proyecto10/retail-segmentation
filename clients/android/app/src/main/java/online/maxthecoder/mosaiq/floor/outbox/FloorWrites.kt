@@ -10,7 +10,9 @@ import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import online.maxthecoder.mosaiq.floor.alerts.CaptureIncidents
 import online.maxthecoder.mosaiq.floor.net.CampaignExposureRequest
+import online.maxthecoder.mosaiq.floor.net.CaptureIncidentRequest
 import online.maxthecoder.mosaiq.floor.net.CheckInRequest
 import online.maxthecoder.mosaiq.floor.net.EngagementEventRequest
 import online.maxthecoder.mosaiq.floor.net.SaleLineRequest
@@ -166,6 +168,31 @@ class FloorWrites(
                     clientId = request.clientEventId,
                     userId = userId,
                     createdAt = now.toEpochMilli()
+                )
+            )
+        schedule()
+        return id
+    }
+
+    /**
+     * Queues the one report of a finally refused write (ADR-0071), under the user who made it. Its id is the
+     * UUIDv5 of the refused write's own key, so it is fixed by that row, never generated per attempt, and a
+     * second call for the same row queues nothing. Returns `null` when nothing was queued.
+     */
+    suspend fun queueCaptureIncident(refused: OutboxRow, now: Instant = Instant.now()): Long? {
+        val report = CaptureIncidents.reportOf(refused) ?: return null
+        if (outbox.countWith(Operation.CAPTURE_INCIDENT, report.clientIncidentId) > 0) return null
+        val id =
+            outbox.insert(
+                OutboxRow(
+                    operation = Operation.CAPTURE_INCIDENT,
+                    path = Services.ENGAGEMENT + "capture-incidents",
+                    body = json.encodeToString(CaptureIncidentRequest.serializer(), report),
+                    clientId = report.clientIncidentId,
+                    userId = refused.userId,
+                    createdAt = now.toEpochMilli(),
+                    // Sent in the report's own X-Correlation-ID, so both requests share one id in the logs.
+                    correlationId = report.sourceCorrelationId
                 )
             )
         schedule()

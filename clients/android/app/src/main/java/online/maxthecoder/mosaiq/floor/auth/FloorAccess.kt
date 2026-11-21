@@ -115,6 +115,30 @@ object FloorAccess {
                 )
         )
 
+    /** The notification poll's campaign read (ADR-0071). */
+    val PROMOTIONS_POLL = ServiceOperation("campaigns", "listPromotions")
+
+    /** The notification poll's incident read, for the commercial supervisor (ADR-0060, ADR-0071). */
+    val INCIDENTS_POLL = ServiceOperation("engagement", "listCaptureIncidents")
+
+    /** The report a finally refused write queues (ADR-0071). */
+    val INCIDENT_REPORT = ServiceOperation("engagement", "reportCaptureIncident")
+
+    /**
+     * What runs outside any section, and for which floor roles: the notification poll's reads and the
+     * capture-incident report. `FloorAccessContractTest` checks each set against the operation's
+     * `x-mosaiq-roles`.
+     */
+    val background: Map<ServiceOperation, Set<String>> =
+        mapOf(
+            PROMOTIONS_POLL to profiles.keys,
+            INCIDENTS_POLL to setOf("COMMERCIAL_SUPERVISOR", "ADMIN"),
+            INCIDENT_REPORT to profiles.keys
+        )
+
+    /** Whether [role] runs [operation] in the background. */
+    fun runs(role: String?, operation: ServiceOperation): Boolean = role in background[operation].orEmpty()
+
     /** The sections [role] gets; empty for a role the floor app is not for. */
     fun sections(role: String?): List<FloorSection> = profiles[role].orEmpty()
 

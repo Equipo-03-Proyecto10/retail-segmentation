@@ -36,7 +36,7 @@ object Services {
     /** sales owns `sales` and `channels`. */
     const val SALES = "api/sales/v1/"
 
-    /** engagement owns `engagement-events` and `engagement-summaries`. */
+    /** engagement owns `engagement-events`, `engagement-summaries` and `capture-incidents` (ADR-0071). */
     const val ENGAGEMENT = "api/engagement/v1/"
 
     /** segments owns `segments` and `segment-assignments`. */

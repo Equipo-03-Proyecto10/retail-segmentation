@@ -96,7 +96,8 @@ class PermissionDeniedInstrumentedTest {
                 database.outbox(),
                 { null },
                 {},
-                "Test"
+                "Test",
+                notified = database.notified()
             )
         app.graph = graph
         compose.setContent {

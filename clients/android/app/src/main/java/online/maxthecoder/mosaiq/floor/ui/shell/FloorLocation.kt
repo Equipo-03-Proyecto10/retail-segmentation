@@ -70,6 +70,16 @@ sealed interface FloorLocation {
             get() = CustomerProfile(customerId)
     }
 
+    /**
+     * The updates screen (ADR-0071), opened from the top bar or a notification. [focus] is what a notification
+     * pointed at (`campaign:<id>` or `incident:<id>`). It hangs off the Outbox, which every role holds, so
+     * Back returns there.
+     */
+    data class Inbox(val focus: String? = null) : FloorLocation {
+        override val root: Root
+            get() = Outbox
+    }
+
     /** A product opened from a recommendation; part of Scan. */
     data class ProductFromRecommendation(val productId: Int) : FloorLocation {
         override val root: Root
@@ -122,6 +132,8 @@ fun FloorLocation.backFor(role: String?): FloorLocation? = back?.allowedFor(role
 private const val PRODUCT_PREFIX = "product:"
 private const val CUSTOMER_PREFIX = "customer:"
 private const val RECORD_PREFIX = "record:"
+private const val INBOX = "inbox"
+private const val INBOX_PREFIX = "inbox:"
 
 /** Saved as a short string: the name of the location, plus the product or customer id where it has one. */
 val FloorLocationSaver: Saver<FloorLocation, String> =
@@ -139,6 +151,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 is FloorLocation.CustomerProfile -> CUSTOMER_PREFIX + location.customerId
                 FloorLocation.NewCustomer -> "new_customer"
                 is FloorLocation.CustomerRecord -> RECORD_PREFIX + location.customerId
+                is FloorLocation.Inbox -> location.focus?.let { INBOX_PREFIX + it } ?: INBOX
             }
         },
         restore = { saved ->
@@ -149,6 +162,8 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 saved == "customer" -> FloorLocation.Customer
                 saved == "store_picker" -> FloorLocation.StorePicker
                 saved == "register_customer" -> FloorLocation.RegisterCustomer
+                saved == INBOX -> FloorLocation.Inbox()
+                saved.startsWith(INBOX_PREFIX) -> FloorLocation.Inbox(saved.removePrefix(INBOX_PREFIX))
                 saved.startsWith(PRODUCT_PREFIX) ->
                     saved.removePrefix(PRODUCT_PREFIX).toIntOrNull()?.let {
                         FloorLocation.ProductFromRecommendation(it)

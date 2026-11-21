@@ -194,10 +194,31 @@ interface EngagementApi {
         @Query("page") page: Int = 1,
         @Query("size") size: Int = 20
     ): Response<EngagementEventPage>
+
+    /** The supervisor's open incidents since a server time (ADR-0071's poll). */
+    @GET(Services.ENGAGEMENT + "capture-incidents")
+    suspend fun listCaptureIncidents(
+        @Query("status") status: String = "OPEN",
+        @Query("recorded_since") recordedSince: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = POLL_PAGE_SIZE
+    ): Response<CaptureIncidentPage>
 }
+
+/** ADR-0071: each poll request asks for 50 items or fewer. */
+const val POLL_PAGE_SIZE = 50
 
 /** campaigns-service's promotions; a floor role reads active ones of its own stores only (contracts/campaigns). */
 interface CampaignsApi {
+    /** The poll's read (ADR-0071): active promotions of one store, or of every store the caller is assigned. */
+    @GET(Services.CAMPAIGNS + "promotions")
+    suspend fun listActivePromotions(
+        @Query("store_id") storeId: Int?,
+        @Query("active") active: Boolean = true,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = POLL_PAGE_SIZE
+    ): Response<PromotionPage>
+
     @GET(Services.CAMPAIGNS + "promotions")
     suspend fun listPromotions(
         @Query("store_id") storeId: Int,

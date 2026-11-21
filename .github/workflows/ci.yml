@@ -273,6 +273,17 @@ jobs:
           fi
           echo "Seed satisfies ADR-0017, ADR-0018, ADR-0019, ADR-0020, ADR-0052 and ADR-0053."
 
+      # ADR-0069 (F25-12): a sale has one holder, and for any period the revenue the
+      # campaigns are credited with never exceeds the period's net sales.
+      - name: Attribution holds one campaign per sale and never exceeds net sales
+        run: |
+          violations="$(psql -X -At -v ON_ERROR_STOP=1 -d retail -f contracts/db/check_attribution.sql)"
+          if [ -n "$violations" ]; then
+            printf '%s\n' "$violations"
+            exit 1
+          fi
+          echo "Attribution satisfies ADR-0069."
+
       - name: Application role can write data but cannot drop a table
         env:
           PGUSER: retail_app

@@ -26,6 +26,7 @@ from decimal import Decimal
 
 import pytest
 
+from tests.parity import stack
 from tests.parity.compare import RfmDifference, diff_rfm
 from tests.parity.stack import occurred_at, poll, web_rfm
 
@@ -80,13 +81,18 @@ def test_every_customer_has_the_same_raw_r_f_and_m(db, web, rfm, differences) ->
 
 
 def _products(db) -> tuple[int, list[tuple[int, str]]]:
-    """A store with two active priced products that each hold stock."""
+    """A store the service path's user is assigned to (a floor role records sales
+    only there) with two active priced products that each hold the six units the
+    case sells at most."""
 
     rows = db(
         "SELECT i.store_id, p.product_id, p.list_price::text "
         "FROM inventory AS i JOIN product AS p USING (product_id) "
-        "WHERE p.is_active AND p.list_price > 0 AND i.quantity_on_hand >= 20 "
-        "ORDER BY i.store_id, i.product_id"
+        "JOIN api_users.store_assignment_v1 AS a ON a.store_id = i.store_id "
+        "WHERE a.user_id = (SELECT user_id FROM app_user WHERE email = %s) "
+        "AND p.is_active AND p.list_price > 0 AND i.quantity_on_hand >= 6 "
+        "ORDER BY i.store_id, i.product_id",
+        (stack.env("PARITY_SERVICE_EMAIL"),),
     )
     by_store: dict[int, list[tuple[int, str]]] = {}
     for store, product, price in rows:
@@ -94,7 +100,7 @@ def _products(db) -> tuple[int, list[tuple[int, str]]]:
     for store, found in by_store.items():
         if len(found) >= 2:
             return store, found[:2]
-    pytest.skip("no store has two products with 20 units")
+    pytest.skip("no assigned store has two products with 6 units")
 
 
 def _sale(customer, channel, store, lines, minutes_ago) -> dict:

@@ -161,6 +161,17 @@ interface SalesApi {
         @Query("page") page: Int = 1,
         @Query("size") size: Int = 20
     ): Response<SalePage>
+
+    /**
+     * The promotions applied in sales, per store and promotion, over `[from, to)`, net of reversals and with no
+     * customer named (F27-16, contracts/sales). A floor role is totalled over its own stores only.
+     */
+    @GET(Services.SALES + "sale-promotion-totals")
+    suspend fun listSalePromotionTotals(
+        @Query("from") from: String,
+        @Query("to") to: String,
+        @Query("store_id") storeId: Int? = null
+    ): Response<SalePromotionTotals>
 }
 
 /**

@@ -59,6 +59,9 @@ class ReviewViewModelTest {
     private var extraIncidents = 0
     private var reviewAnswer: ((String, String) -> MockResponse?)? = null
     private var eventsAnswer: (Int) -> MockResponse = { ok(200, exposures(listOf(3 to 12), total = 1)) }
+    private var totalsAnswer: () -> MockResponse = {
+        ok(200, contract("sales/examples/list-sale-promotion-totals.json"))
+    }
 
     private val open get() = held.first { it.status == OPEN }.incidentId
 
@@ -80,6 +83,7 @@ class ReviewViewModelTest {
                                 ?: error(404, "incident_not_found")
                         path == "/api/engagement/v2/engagement-events" ->
                             eventsAnswer(url.queryParameter("page")!!.toInt())
+                        path == "/api/sales/v1/sale-promotion-totals" -> totalsAnswer()
                         path == "/api/campaigns/v1/promotions" -> ok(200, PROMOTIONS)
                         path == "/api/stores/v1/stores" -> ok(200, STORES)
                         else -> MockResponse().setResponseCode(404)
@@ -144,7 +148,7 @@ class ReviewViewModelTest {
 
     private fun loaded(): ReviewViewModel = ReviewViewModel(graph, clock).also {
         it.load()
-        settle { !it.incidents.value.loading && !it.promotions.value.loading }
+        settle { !it.incidents.value.loading && !it.promotions.value.loading && !it.applied.value.loading }
     }
 
     private fun requestsTo(path: String) = requests.filter { it.requestUrl!!.encodedPath == path }
@@ -356,6 +360,66 @@ class ReviewViewModelTest {
         assertNull(model.promotions.value.error)
     }
 
+    // F27-16 (#1143): the promotions applied in sales, as sales-service totals them.
+
+    @Test
+    fun appliedPromotionsComeTotalledFromSalesInOneRequestOverTheSameSevenDays() {
+        val model = loaded()
+        val state = model.applied.value
+
+        // The contract's own example: store 3 has promotions 12 and 15, store 7 has 12.
+        assertEquals(
+            listOf(Triple(3, 12, 4), Triple(3, 15, 2), Triple(7, 12, 1)),
+            state.rows.map { Triple(it.storeId, it.promotionId, it.lines) }
+        )
+        assertEquals(listOf(9, 3, 2), state.rows.map { it.units })
+        assertEquals(listOf("22.50", "12.00", "5.00"), state.rows.map { it.discount })
+        assertEquals(LocalDate.parse("2026-11-15"), state.since)
+        assertEquals(mapOf(3 to "Coyoacan", 5 to "Centro"), state.storeNames)
+        assertNull(state.error)
+        val asked = requestsTo("/api/sales/v1/sale-promotion-totals")
+        assertEquals("the phone counts nothing: one request", 1, asked.size)
+        val url = asked.single().requestUrl!!
+        assertEquals("2026-11-15T00:00:00Z", url.queryParameter("from"))
+        assertEquals("today is in the window", "2026-11-22T00:00:00Z", url.queryParameter("to"))
+        assertNull("the service narrows to the caller's stores", url.queryParameter("store_id"))
+    }
+
+    @Test
+    fun anAppliedPromotionIsNamedWhenItIsActiveAndKeepsItsNumberOtherwise() {
+        totalsAnswer = {
+            ok(
+                200,
+                """{"from":"2026-11-15T00:00:00Z","to":"2026-11-22T00:00:00Z","totals":[""" +
+                    """{"store_id":3,"promotion_id":38,"lines":2,"units":3,"discount":"7.50"},""" +
+                    """{"store_id":3,"promotion_id":41,"lines":1,"units":1,"discount":"2.00"}]}"""
+            )
+        }
+        val rows = loaded().applied.value.rows
+
+        assertEquals("Loyal customers", rows.first { it.promotionId == 38 }.name)
+        assertNull(rows.first { it.promotionId == 41 }.name)
+    }
+
+    @Test
+    fun noPromotionAppliedIsAnEmptyListNotAnError() {
+        totalsAnswer = { ok(200, contract("sales/examples/list-sale-promotion-totals-empty.json")) }
+        val state = loaded().applied.value
+        assertTrue(state.rows.isEmpty())
+        assertNull(state.error)
+    }
+
+    @Test
+    fun aRefusedTotalIsShownAsTheRefusalAndTheOtherPartsStillLoad() {
+        totalsAnswer = { ok(403, contract("sales/examples/forbidden-role.json")) }
+        val model = loaded()
+
+        assertEquals("forbidden_role", model.applied.value.error?.code)
+        assertTrue(model.applied.value.rows.isEmpty())
+        assertNull(model.promotions.value.error)
+        assertTrue(model.incidents.value.incidents.isNotEmpty())
+    }
+
     @Test
     fun anotherUsersIncidentsNeverStayOnScreen() {
         val model = loaded()
@@ -364,6 +428,7 @@ class ReviewViewModelTest {
         idle()
         assertTrue(model.incidents.value.incidents.isEmpty())
         assertTrue(model.promotions.value.rows.isEmpty())
+        assertTrue(model.applied.value.rows.isEmpty())
     }
 
     private fun exposures(

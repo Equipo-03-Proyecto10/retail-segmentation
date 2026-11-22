@@ -26,6 +26,8 @@ import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.ui.review.ACKNOWLEDGED
+import online.maxthecoder.mosaiq.floor.ui.review.AppliedPromotion
+import online.maxthecoder.mosaiq.floor.ui.review.AppliedPromotionsState
 import online.maxthecoder.mosaiq.floor.ui.review.IncidentsState
 import online.maxthecoder.mosaiq.floor.ui.review.OPEN
 import online.maxthecoder.mosaiq.floor.ui.review.PromotionsShownState
@@ -73,7 +75,9 @@ class ReviewContentTest {
         incidents: IncidentsState = IncidentsState(loading = false, incidents = this.incidents, total = 2),
         promotions: PromotionsShownState = PromotionsShownState(loading = false),
         syncs: List<OutboxRow>? = emptyList(),
-        dismissed: MutableList<Long> = mutableListOf()
+        dismissed: MutableList<Long> = mutableListOf(),
+        applied: AppliedPromotionsState = AppliedPromotionsState(loading = false),
+        appliedRetries: MutableList<Unit> = mutableListOf()
     ) = compose.setContent {
         MosaiqTheme(darkTheme = false) {
             ReviewContent(
@@ -88,7 +92,9 @@ class ReviewContentTest {
                 onDismiss = { dismissed += it.id },
                 onSendNow = {},
                 now = now,
-                zone = ZoneId.of("UTC")
+                zone = ZoneId.of("UTC"),
+                applied = applied,
+                onRetryApplied = { appliedRetries += Unit }
             )
         }
     }
@@ -248,7 +254,8 @@ class ReviewContentTest {
         compose.onNodeWithText("Shown 2 times").performScrollTo().assertExists()
         compose.onNodeWithText("Campaign 14").performScrollTo().assertExists()
         compose.onNodeWithText("The last 7 days, from 15 Nov 2026.").assertExists()
-        compose.onNodeWithText("promotions applied cannot be totalled", substring = true).assertExists()
+        // F27-16: the applied promotions are totalled now, so the screen no longer says they cannot be.
+        compose.onNodeWithText("cannot be totalled", substring = true).assertDoesNotExist()
         compose.onNodeWithText("No customer is named.", substring = true).assertExists()
         compose.onNodeWithTag("review-promotions-cut").assertDoesNotExist()
     }
@@ -283,5 +290,56 @@ class ReviewContentTest {
             )
         )
         compose.onNodeWithText("Retry").performScrollTo().assertExists()
+    }
+
+    // F27-16 (#1143): the promotions applied in sales, totalled by sales-service per store and promotion.
+
+    @Test
+    fun appliedPromotionsAreListedByStoreWithLinesUnitsAndDiscount() {
+        show(
+            applied =
+            AppliedPromotionsState(
+                loading = false,
+                rows =
+                listOf(
+                    AppliedPromotion(3, 38, "Loyal customers", 4, 9, "1234.50"),
+                    AppliedPromotion(3, 41, null, 1, 1, "5.00"),
+                    AppliedPromotion(5, 38, "Loyal customers", 1, 2, "10.00")
+                ),
+                since = LocalDate.parse("2026-11-15"),
+                storeNames = mapOf(3 to "Coyoacan", 5 to "Centro")
+            )
+        )
+        compose.onNodeWithTag("review-applied-store-3").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("review-applied-store-5").performScrollTo().assertExists()
+        compose.onNodeWithText("4 sale lines · 9 units · $1,234.50 discount").performScrollTo().assertExists()
+        compose.onNodeWithText("1 sale line · 1 unit · $5.00 discount").performScrollTo().assertExists()
+        compose.onNodeWithText("Promotion 41").performScrollTo().assertExists()
+        compose.onNodeWithText("after returns and cancellations", substring = true).assertExists()
+        compose.onNodeWithText("no sale or customer is named", substring = true).assertExists()
+        compose.onNodeWithTag("review-applied-none").assertDoesNotExist()
+    }
+
+    @Test
+    fun noPromotionAppliedSaysSo() {
+        show(applied = AppliedPromotionsState(loading = false, since = LocalDate.parse("2026-11-15")))
+        compose.onNodeWithTag("review-applied-none").performScrollTo().assertExists()
+        compose.onNodeWithText("No sale used a promotion in this period.").assertExists()
+    }
+
+    @Test
+    fun appliedPromotionsRefusedShowTheRefusalAndRetry() {
+        val retries = mutableListOf<Unit>()
+        show(
+            applied =
+            AppliedPromotionsState(
+                loading = false,
+                error = ApiError(403, "forbidden_store", "The caller is not assigned to this store.", "c")
+            ),
+            appliedRetries = retries
+        )
+        compose.onNodeWithTag("review-applied").performScrollTo().assertExists()
+        compose.onAllNodesWithText("Retry")[0].performScrollTo().performClick()
+        assertEquals(1, retries.size)
     }
 }

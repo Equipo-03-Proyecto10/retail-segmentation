@@ -41,6 +41,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqSection
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
 import online.maxthecoder.mosaiq.floor.ui.formatDate
+import online.maxthecoder.mosaiq.floor.ui.formatMoney
 import online.maxthecoder.mosaiq.floor.ui.humanize
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxItem
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxSummary
@@ -48,7 +49,7 @@ import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 /**
  * What went wrong on the floor (F27-14): the capture incidents of the supervisor's stores, this phone's pending
- * and refused syncs, and the promotions shown by store. The syncs are the outbox's own rows, so the state
+ * and refused syncs, the promotions applied in sales by store (F27-16), and the promotions shown by store. The syncs are the outbox's own rows, so the state
  * and the reason read as they do there.
  */
 @Composable
@@ -56,6 +57,7 @@ fun ReviewScreen(model: ReviewViewModel, floor: FloorViewModel) {
     LaunchedEffect(model) { model.load() }
     val incidents by model.incidents.collectAsStateWithLifecycle()
     val promotions by model.promotions.collectAsStateWithLifecycle()
+    val applied by model.applied.collectAsStateWithLifecycle()
     val rows by floor.open.collectAsStateWithLifecycle()
     val userId by floor.userId.collectAsStateWithLifecycle()
     val sending by floor.sending.collectAsStateWithLifecycle()
@@ -69,7 +71,9 @@ fun ReviewScreen(model: ReviewViewModel, floor: FloorViewModel) {
         onRetryIncidents = model::loadIncidents,
         onRetryPromotions = model::loadPromotions,
         onDismiss = floor::dismiss,
-        onSendNow = floor::sendNow
+        onSendNow = floor::sendNow,
+        applied = applied,
+        onRetryApplied = model::loadApplied
     )
 }
 
@@ -87,7 +91,9 @@ fun ReviewContent(
     onDismiss: (OutboxRow) -> Unit,
     onSendNow: () -> Unit,
     now: Instant = Instant.now(),
-    zone: ZoneId = ZoneId.systemDefault()
+    zone: ZoneId = ZoneId.systemDefault(),
+    applied: AppliedPromotionsState = AppliedPromotionsState(loading = false),
+    onRetryApplied: () -> Unit = {}
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("review"),
@@ -100,6 +106,7 @@ fun ReviewContent(
         )
         IncidentsPart(incidents, promotions.storeNames, onReview, onRetryIncidents)
         SyncsPart(syncs, currentUserId, sending, promotions.storeNames, onDismiss, onSendNow, now, zone)
+        AppliedPart(applied, onRetryApplied)
         PromotionsPart(promotions, onRetryPromotions)
     }
 }
@@ -290,6 +297,58 @@ private fun SyncsPart(
                 )
                 syncs.forEach { row ->
                     OutboxItem(row, row.userId != currentUserId, row.id in sending, storeNames, onDismiss, now, zone)
+                }
+            }
+        }
+    }
+}
+
+/** The promotions applied in sales, as sales-service totals them: lines, units and discount, net. */
+@Composable
+private fun AppliedPart(state: AppliedPromotionsState, onRetry: () -> Unit) {
+    MqSection(stringResource(R.string.review_applied_title), Modifier.testTag("review-applied")) {
+        val error = state.error
+        state.since?.let {
+            Text(
+                stringResource(R.string.review_promotions_window, formatDate(it.toString())),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
+        Text(
+            stringResource(R.string.review_applied_note),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        when {
+            state.loading -> MqLoading(stringResource(R.string.review_applied_loading))
+            error != null -> MqErrorPanel(error, onRetry = onRetry)
+            state.rows.isEmpty() ->
+                Text(
+                    stringResource(R.string.review_applied_none),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.testTag("review-applied-none")
+                )
+        }
+        if (!state.loading && error == null) {
+            state.rows.groupBy { it.storeId }.forEach { (storeId, rows) ->
+                Text(
+                    state.storeNames[storeId] ?: stringResource(R.string.review_store_fallback, storeId),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.semantics { heading() }.testTag("review-applied-store-$storeId")
+                )
+                rows.forEach { row ->
+                    MqListRow(
+                        headline = row.name ?: stringResource(R.string.review_promotion_fallback, row.promotionId),
+                        supporting =
+                        listOf(
+                            pluralStringResource(R.plurals.review_applied_lines, row.lines, row.lines),
+                            pluralStringResource(R.plurals.review_applied_units, row.units, row.units),
+                            stringResource(R.string.review_applied_discount, formatMoney(row.discount))
+                        ).joinToString(" · "),
+                        horizontalPadding = Spacing.None,
+                        divider = true,
+                        modifier = Modifier.testTag("review-applied-$storeId-${row.promotionId}")
+                    )
                 }
             }
         }

@@ -196,3 +196,28 @@ def list_customers_in_segment(
         total = cursor.fetchone()[0]
 
     return [Customer(*row) for row in rows], total
+
+
+def count_label_holders_outside_segment(connection: Connection, segment_id: int) -> int:
+    """How many customers currently hold the label this segment carries without
+    being listed under the segment (F22-17, ADR-0087).
+
+    A change rfm-engine applies names no segment, only a label, so
+    list_customers_in_segment cannot show it. Several segments can carry one
+    label, so a customer whose open row names another segment is not counted:
+    only a row naming none is, which is exactly what an incremental change
+    writes. The count is what the segment's page says it does not list.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT count(*)
+            FROM customer_segment_history AS h
+            JOIN segment AS s ON s.label_code = h.label_code
+            WHERE s.segment_id = %s
+              AND h.valid_to IS NULL
+              AND h.segment_id IS NULL
+            """,
+            (segment_id,),
+        )
+        return cursor.fetchone()[0]

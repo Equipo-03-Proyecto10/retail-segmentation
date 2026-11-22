@@ -23,6 +23,7 @@ from web.db import segment_history_report as report_db
 from web.db.segment_history_report import (
     UNASSIGNED,
     count_history_entries,
+    get_previous_history_assignment,
     list_history_entries,
 )
 
@@ -59,6 +60,7 @@ def _row(**overrides) -> tuple:
         frequency_count=6,
         monetary_total=Decimal("400.00"),
         data_origin="SEEDED",
+        scope="INCREMENTAL",
     )
     values = {**defaults, **overrides}
     return tuple(values.values())
@@ -205,6 +207,8 @@ def test_a_row_carries_everything_the_explanation_needs() -> None:
     assert entry.assignment.monetary_total == Decimal("400.00")
     # ADR-0052: the run's origin travels with the row that marks it.
     assert entry.data_origin == "SEEDED"
+    # F22-17: a change of one customer's label says it is not a run of everyone.
+    assert entry.scope == "INCREMENTAL"
     statement = _cursor(connection).execute.call_args.args[0]
     assert "r.data_origin" in statement
 
@@ -242,6 +246,40 @@ def test_an_unassigned_row_carries_no_label_and_no_measurements() -> None:
 
     assert entry.assignment.label_code is None
     assert entry.label_name is None
+
+
+def test_the_previous_assignment_is_the_customers_immediately_preceding_row() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchone.return_value = (
+        "00000000-0000-0000-0000-000000000001",
+        "Ada Lovelace",
+        None,
+        "CHAMPION",
+        5,
+        4,
+        5,
+        datetime(2026, 8, 1, tzinfo=UTC),
+        8,
+        Decimal("500.00"),
+        "OBSERVED",
+    )
+
+    previous = get_previous_history_assignment(connection, 42)
+
+    assert previous is not None
+    assert previous.assignment.label_code == "CHAMPION"
+    assert previous.data_origin == "OBSERVED"
+    statement, parameters = _statement(connection)
+    assert parameters == (42,)
+    assert "previous.customer_id = current.customer_id" in statement
+    assert "previous.valid_from DESC, previous.history_id DESC" in statement
+
+
+def test_a_first_history_row_has_no_previous_assignment() -> None:
+    connection = MagicMock()
+    _cursor(connection).fetchone.return_value = None
+
+    assert get_previous_history_assignment(connection, 1) is None
 
 
 def test_the_two_statements_filter_identically() -> None:

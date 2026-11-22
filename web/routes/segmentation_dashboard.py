@@ -32,6 +32,7 @@ from web.db.segments import get_run, list_runs
 from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
 from web.services.provenance import SYNTHETIC_LABEL
+from web.services.segment_migration import NotASnapshot
 from web.services.segmentation_dashboard import (
     Dashboard,
     NoRuns,
@@ -149,7 +150,9 @@ def _chart_payload(dashboard: Dashboard) -> dict:
 def index() -> Response | tuple[Response, int]:
     """Render the dashboard for one run: the run named in `?run=`, or the
     newest run there is. A run id that is not a whole number is a 400; one
-    that does not exist is a 404; no run at all yet is a 200 that says so.
+    that does not exist is a 404; no run at all yet is a 200 that says so. The
+    newest run means the newest full run, and an incremental run, which records
+    only the customers it changed, is a 400 that says so (RN-41, F22-17).
     """
     connection = get_connection()
 
@@ -172,6 +175,16 @@ def index() -> Response | tuple[Response, int]:
 
     try:
         dashboard = build_dashboard(connection, run_id)
+    except NotASnapshot as refusal:
+        return (
+            render_template(
+                "segmentation_dashboard/index.html",
+                dashboard=None,
+                runs=[],
+                error=str(refusal),
+            ),
+            400,
+        )
     except NoRuns:
         return render_template(
             "segmentation_dashboard/index.html",
@@ -180,7 +193,7 @@ def index() -> Response | tuple[Response, int]:
             error=None,
         )
 
-    runs, _total = list_runs(connection, page=1, per_page=_RUN_OPTIONS)
+    runs, _total = list_runs(connection, page=1, per_page=_RUN_OPTIONS, scope="FULL")
     if dashboard.run.run_id not in {run.run_id for run in runs}:
         runs.append(dashboard.run)
 

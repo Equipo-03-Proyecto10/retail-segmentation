@@ -342,11 +342,22 @@ class Checked:
         self.rec.facts["forbidden X-Correlation-ID"] = s.get("correlation_id")
 
 
+def refuse_tokens(electron: Path) -> None:
+    """Stop before reading a client directory that holds a token anywhere.
+
+    That includes `bodies/`, the exact bytes kept for xmllint, which the
+    client's own check also covers but which this collector does not trust.
+    """
+    files = [electron / "result.json", electron / "exchanges.json"]
+    files += sorted((electron / "bodies").glob("*"))
+    for path in files:
+        if JWT.search(path.read_text(encoding="utf-8")):
+            raise SystemExit(f"{path} holds a token; refusing to read it.")
+
+
 def run(args: argparse.Namespace) -> int:
     electron = Path(args.electron)
-    for name in ("result.json", "exchanges.json"):
-        if JWT.search((electron / name).read_text()):
-            raise SystemExit(f"{electron / name} holds a token; refusing to read it.")
+    refuse_tokens(electron)
     rec = Recorder(
         Path(args.out), "F20-02 Electron reads the sale and writes a draft", "f20-02"
     )

@@ -164,3 +164,23 @@ def test_f20_02_validates_an_error_against_common_xsd_and_a_body_against_its_own
         (examples / "campaign.xml").read_text().replace("DRAFT", "PAUSED", 1)
     )
     assert not xmllint(broken, "campaigns")[0]
+
+
+def test_f20_02_refuses_a_client_directory_that_holds_a_token_in_any_file(
+    tmp_path,
+) -> None:
+    from tests.acceptance.f20_02 import refuse_tokens
+
+    token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdGFmZiJ9.c2lnbmF0dXJl"
+    (tmp_path / "bodies").mkdir()
+    (tmp_path / "result.json").write_text("{}")
+    (tmp_path / "exchanges.json").write_text("[]")
+    (tmp_path / "bodies" / "003-staff-response.xml").write_text("<Sale/>")
+    refuse_tokens(tmp_path)
+    for name in ("result.json", "exchanges.json", "bodies/003-staff-response.xml"):
+        path = tmp_path / name
+        clean = path.read_text()
+        path.write_text(f"{clean}{token}")
+        with pytest.raises(SystemExit, match="holds a token"):
+            refuse_tokens(tmp_path)
+        path.write_text(clean)

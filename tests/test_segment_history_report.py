@@ -2,10 +2,9 @@
 
 `build_report` orchestrates the paginated, filtered read (F12-02's own) and,
 for each row, the per-customer explanation F7-06 already built and tested
-(`explain_migration`, from the customer's previous run, found the same way
-F12-01's dashboard finds a run's previous run). Nothing here recomputes a
-score or reads how a run was produced; it reuses what F7 and F9 already gave
-the app.
+(`explain_migration`, from the customer's immediately preceding stored
+assignment). Nothing here recomputes a score or reads how a run was produced;
+it reuses what F7 and F9 already gave the app.
 """
 
 from __future__ import annotations
@@ -17,8 +16,12 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from web.db.segment_history_report import UNASSIGNED, HistoryEntry
-from web.db.segments import RunAssignment, SegmentationRun
+from web.db.segment_history_report import (
+    UNASSIGNED,
+    HistoryEntry,
+    PreviousHistoryAssignment,
+)
+from web.db.segments import RunAssignment
 from web.services import segment_history_report as service
 from web.services.segment_history_report import InvalidPeriod, build_report
 
@@ -58,21 +61,6 @@ def _entry(**overrides) -> HistoryEntry:
     return HistoryEntry(**{**defaults, **overrides})
 
 
-def _run(run_id: int, **overrides) -> SegmentationRun:
-    defaults = dict(
-        run_id=run_id,
-        method="RFM_RULES",
-        window_days=180,
-        parameters={},
-        customer_count=3,
-        executed_by=None,
-        executed_by_name=None,
-        run_at=_WHEN,
-        data_origin="SEEDED",
-    )
-    return SegmentationRun(**{**defaults, **overrides})
-
-
 _UNSET = object()
 
 
@@ -81,29 +69,30 @@ def _wire(
     *,
     entries=_UNSET,
     total=1,
-    previous=_UNSET,
     previous_assignment=_UNSET,
+    previous_origin="SEEDED",
 ) -> Mock:
     manager = Mock()
     manager.list_history_entries = Mock(
         return_value=[_entry()] if entries is _UNSET else entries
     )
     manager.count_history_entries = Mock(return_value=total)
-    manager.get_previous_run = Mock(
-        return_value=_run(30) if previous is _UNSET else previous
+    assignment = (
+        _assignment(label_code="CHAMPION", r_score=5, f_score=4, m_score=5)
+        if previous_assignment is _UNSET
+        else previous_assignment
     )
-    manager.get_customer_assignment_for_run = Mock(
+    manager.get_previous_history_assignment = Mock(
         return_value=(
-            _assignment(label_code="CHAMPION", r_score=5, f_score=4, m_score=5)
-            if previous_assignment is _UNSET
-            else previous_assignment
+            PreviousHistoryAssignment(assignment, previous_origin)
+            if assignment is not None
+            else None
         )
     )
     for name in (
         "list_history_entries",
         "count_history_entries",
-        "get_previous_run",
-        "get_customer_assignment_for_run",
+        "get_previous_history_assignment",
     ):
         monkeypatch.setattr(service, name, getattr(manager, name))
     return manager
@@ -164,7 +153,7 @@ def test_a_period_with_the_start_after_the_end_is_refused(
 # ---------- the per-row explanation ----------
 
 
-def test_a_row_carries_the_explanation_from_its_customers_previous_run(
+def test_a_row_carries_the_explanation_from_its_previous_assignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager = _wire(monkeypatch)
@@ -175,18 +164,15 @@ def test_a_row_carries_the_explanation_from_its_customers_previous_run(
     assert row.explanation is not None
     assert row.explanation.label_before == "CHAMPION"
     assert row.explanation.label_after == "LOYAL"
-    manager.get_customer_assignment_for_run.assert_called_once()
-    assert manager.get_customer_assignment_for_run.call_args.args[1:] == (
-        30,
-        "00000000-0000-0000-0000-000000000001",
-    )
+    manager.get_previous_history_assignment.assert_called_once()
+    assert manager.get_previous_history_assignment.call_args.args[1:] == (2,)
 
 
 def test_an_observed_row_explained_against_a_seeded_run_is_synthetic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """#560, ADR-0052: the explanation reads both runs, so either marks it."""
-    _wire(monkeypatch, previous=_run(30, data_origin="SEEDED"))
+    _wire(monkeypatch, previous_origin="SEEDED")
 
     report = build_report(MagicMock(), page=1)
 
@@ -199,7 +185,7 @@ def test_an_observed_row_explained_against_a_seeded_run_is_synthetic(
 def test_an_observed_row_against_an_observed_run_is_not_synthetic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _wire(monkeypatch, previous=_run(30, data_origin="OBSERVED"))
+    _wire(monkeypatch, previous_origin="OBSERVED")
 
     report = build_report(MagicMock(), page=1)
 
@@ -209,23 +195,30 @@ def test_an_observed_row_against_an_observed_run_is_not_synthetic(
 def test_a_customers_first_ever_row_has_no_explanation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The row's own run has no previous run, so there is nothing to compare
-    it with -- not an error, and not a customer who is absent."""
-    manager = _wire(monkeypatch, previous=None)
+    """The first stored assignment has nothing to compare with."""
+    _wire(monkeypatch, previous_assignment=None)
 
     report = build_report(MagicMock(), page=1)
 
     assert report.rows[0].explanation is None
-    manager.get_customer_assignment_for_run.assert_not_called()
 
 
-def test_a_customer_the_previous_run_did_not_score_still_has_no_explanation(
+def test_an_unassigned_previous_row_is_not_confused_with_no_previous_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every run scores every customer (RN-21), so in practice this should
-    not happen -- but the explanation machinery already handles a missing
-    side (F7-06), and the report must not crash if it ever does."""
-    _wire(monkeypatch, previous_assignment=None)
+    _wire(
+        monkeypatch,
+        previous_assignment=_assignment(
+            segment_id=None,
+            label_code=None,
+            r_score=None,
+            f_score=None,
+            m_score=None,
+            recency_last_purchase_at=None,
+            frequency_count=None,
+            monetary_total=None,
+        ),
+    )
 
     report = build_report(MagicMock(), page=1)
 
@@ -233,11 +226,9 @@ def test_a_customer_the_previous_run_did_not_score_still_has_no_explanation(
     assert report.rows[0].explanation.label_before is None
 
 
-def test_two_rows_from_the_same_run_share_one_previous_run_lookup(
+def test_each_row_looks_up_that_customers_previous_assignment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """25 rows on a page are typically only a handful of distinct runs; the
-    previous-run lookup is not repeated once per row."""
     manager = _wire(
         monkeypatch,
         entries=[
@@ -248,10 +239,13 @@ def test_two_rows_from_the_same_run_share_one_previous_run_lookup(
 
     build_report(MagicMock(), page=1)
 
-    manager.get_previous_run.assert_called_once()
+    assert manager.get_previous_history_assignment.call_count == 2
+    assert [
+        call.args[1] for call in manager.get_previous_history_assignment.call_args_list
+    ] == [1, 2]
 
 
-def test_rows_from_different_runs_each_look_up_their_own_previous_run(
+def test_rows_from_different_runs_still_use_each_rows_history_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager = _wire(
@@ -264,7 +258,7 @@ def test_rows_from_different_runs_each_look_up_their_own_previous_run(
 
     build_report(MagicMock(), page=1)
 
-    assert manager.get_previous_run.call_count == 2
+    assert manager.get_previous_history_assignment.call_count == 2
 
 
 # ---------- pagination ----------
@@ -301,7 +295,7 @@ def test_no_rows_is_an_empty_report_not_an_error(
     report = build_report(MagicMock(), run_id=999, page=1)
 
     assert report.rows == () and report.total == 0
-    manager.get_previous_run.assert_not_called()
+    manager.get_previous_history_assignment.assert_not_called()
 
 
 # ---------- method independence ----------

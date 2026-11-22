@@ -69,6 +69,7 @@ from web.services.recommendations import recommend
 from web.services.segment_migration import (
     CustomerMigration,
     MigrationCategory,
+    NotASnapshot,
     compute_migration,
 )
 
@@ -277,14 +278,21 @@ class Dashboard:
 
 
 def build_dashboard(connection: Any, run_id: int | None) -> Dashboard:
-    """Build every chart for one run: the named run, or the newest run there
-    is when `run_id` is None. Raises NoRuns when there is none at all.
+    """Build every chart for one run: the named run, or the newest full run
+    there is when `run_id` is None. Raises NoRuns when there is none at all,
+    and NotASnapshot for a run that recorded only some customers' changes: the
+    dashboard is a snapshot of the population (RN-41, ADR-0063).
     """
     if run_id is None:
-        runs, _total = list_runs(connection, page=1, per_page=1)
+        runs, _total = list_runs(connection, page=1, per_page=1, scope="FULL")
         run = runs[0] if runs else None
     else:
         run = get_run(connection, run_id)
+        if run is not None and run.scope != "FULL":
+            raise NotASnapshot(
+                f"Run {run.run_id} is an incremental change of {run.customer_count} "
+                "customer(s), not a snapshot of the population. Choose a full run."
+            )
     if run is None:
         raise NoRuns("There is no segmentation run to build a dashboard from.")
 

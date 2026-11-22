@@ -90,6 +90,7 @@ _PREVIOUS_RUN = RUN_COLUMNS + """
             WHERE (r.run_at, r.run_id) < (
                 SELECT run_at, run_id FROM segmentation_run WHERE run_id = %s
             )
+              AND r.scope = 'FULL'
             ORDER BY r.run_at DESC, r.run_id DESC
             LIMIT 1
 """
@@ -98,9 +99,10 @@ _PREVIOUS_RUN = RUN_COLUMNS + """
 def get_previous_run(
     connection: Connection[Any], run_id: int
 ) -> SegmentationRun | None:
-    """The run immediately before this one by run_at (tie-broken by run_id),
-    whichever method produced either of them (ADR-0018). None for the
-    earliest run there is."""
+    """The full run immediately before this one by run_at (tie-broken by run_id),
+    whichever method produced either of them (ADR-0018). An incremental run is
+    a batch of changes, not a population to migrate from (ADR-0063). None for
+    the earliest full run there is."""
     with connection.cursor() as cursor:
         cursor.execute(_PREVIOUS_RUN, (run_id,))
         row = cursor.fetchone()

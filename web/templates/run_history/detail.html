@@ -6,11 +6,15 @@
 
 {% block content %}
   {% from "macros/ui.html" import count_label, empty_state, page_header, pagination, synthetic_banner, synthetic_pill %}
-  {% call page_header("Run #" ~ run.run_id, "Every customer this run scored, with the label and raw values it produced.", "Segmentation run") %}
+  {% call page_header("Run #" ~ run.run_id, ("Every customer this run scored, with the label and raw values it produced." if run.scope == "FULL" else "Only the customers this run changed, with the label and raw values it produced."), "Segmentation run") %}
     <a class="mq-btn mq-btn--secondary mq-btn--sm" href="{{ url_for('run_history.index') }}">Back to run history</a>
   {% endcall %}
 
   {{ synthetic_banner(synthetic, "This run scored demonstration data, not observed business activity, so every figure below is Synthetic.") }}
+
+  {% if run.scope != "FULL" %}
+    <div class="mq-alert mq-alert--info" id="incremental-run-note" role="status"><span class="mq-alert__icon">i</span><div class="mq-stack"><span class="mq-alert__title">An incremental change, not a snapshot</span><span class="mq-alert__text">This run records the {{ count_label(run.customer_count, "customer") }} an event or the clock moved, under the version published at the time. Every other customer keeps the assignment they already held, so the list below is not the whole population.</span></div></div>
+  {% endif %}
 
   <section class="mq-panel">
     <header class="mq-panel__header"><h2 class="mq-panel__title">Run details</h2>{{ synthetic_pill(synthetic) }}<span class="mq-caption mq-mono">run {{ run.run_id }}</span></header>
@@ -18,7 +22,8 @@
       <dl class="mq-description-list">
         <dt>Method</dt><dd>{{ run.method }}</dd>
         <dt>Window</dt><dd class="mq-mono">{{ run.window_days }} days</dd>
-        <dt>Customers scored</dt><dd class="mq-mono">{{ run.customer_count }}</dd>
+        <dt>Scope</dt><dd>{{ "Full: every customer scored" if run.scope == "FULL" else "Incremental: only the customers changed" }}</dd>
+        <dt>{{ "Customers scored" if run.scope == "FULL" else "Customers changed" }}</dt><dd class="mq-mono">{{ run.customer_count }}</dd>
         <dt>Executed by</dt><dd>{{ run.executed_by_name or "System" }}</dd>
         <dt>Run at</dt><dd class="mq-mono">{{ run.run_at.strftime("%Y-%m-%d %H:%M:%S") }}</dd>
         {# One format for every recorded value: a dict nested in the parameters is
@@ -49,7 +54,7 @@
 
   {% if assignments %}
     <section class="mq-panel mq-panel--table mq-density-compact">
-      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} scored</span><span class="mq-caption">Assignments from this run</span>{{ synthetic_pill(synthetic) }}</div>
+      <div class="mq-table__toolbar"><span class="mq-table__count">{{ count_label(total, "customer") }} {{ "scored" if run.scope == "FULL" else "changed" }}</span><span class="mq-caption">Assignments from this run</span>{{ synthetic_pill(synthetic) }}</div>
       <div class="mq-table-wrap">
         <table class="mq-table">
           <thead><tr><th class="mq-table__cell--sticky" scope="col">Customer</th><th scope="col">Label</th><th scope="col">R</th><th scope="col">F</th><th scope="col">M</th><th scope="col">Last purchase</th><th scope="col">Orders</th><th scope="col">Spend</th></tr></thead>

@@ -20,6 +20,7 @@ from web.db import get_connection
 from web.db.categories import get_category
 from web.db.channels import get_channel
 from web.db.customers import (
+    count_label_holders_outside_segment,
     get_customer,
     list_customers,
     list_customers_in_segment,
@@ -400,6 +401,9 @@ def segment_detail(segment_id: int) -> str | Response:
         segment=segment,
         rule=get_segment_rule(connection, segment.rule_id),
         members=members,
+        # ADR-0087: a change rfm-engine applies names a label and no segment, so
+        # the list above cannot show who holds the label that way (F22-17).
+        unplaced=count_label_holders_outside_segment(connection, segment_id),
         page=page,
         total_pages=page_count(total, _PER_PAGE),
         total=total,

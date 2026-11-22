@@ -18,6 +18,7 @@ from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
 from web.services.provenance import runs_synthetic
 from web.services.segment_migration import (
+    NotASnapshot,
     UnknownRun,
     build_migration_matrix,
     compute_migration,
@@ -68,7 +69,7 @@ def index() -> str | tuple[str, int]:
     """Offer a pair of runs to compare, and render the matrix once both are
     selected."""
     connection = get_connection()
-    runs, _total = list_runs(connection, page=1, per_page=_RUN_OPTIONS)
+    runs, _total = list_runs(connection, page=1, per_page=_RUN_OPTIONS, scope="FULL")
 
     run_a_raw, run_a_repeated = _query_value("run_a")
     run_b_raw, run_b_repeated = _query_value("run_b")
@@ -103,6 +104,8 @@ def index() -> str | tuple[str, int]:
                 earlier_id, later_id = order_runs(connection, run_a_id, run_b_id)
             except UnknownRun:
                 error = "One of the selected runs no longer exists."
+            except NotASnapshot as refusal:
+                error = str(refusal)
             else:
                 # Show the pair in the order the matrix uses, so the "Earlier
                 # run" picker always names the run the rows come from.
@@ -161,7 +164,7 @@ def index() -> str | tuple[str, int]:
         run_id = whole_number(raw, BIGINT_MAX)
         if run_id is not None and run_id not in listed:
             selected = get_run(connection, run_id)
-            if selected is not None:
+            if selected is not None and selected.scope == "FULL":
                 runs.append(selected)
 
     by_id = {run.run_id: run for run in runs}

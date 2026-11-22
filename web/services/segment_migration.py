@@ -28,7 +28,12 @@ from typing import Any
 
 from psycopg import Connection
 
-from web.db.segments import get_label_ordinals, get_run_at, list_run_labels
+from web.db.segments import (
+    get_label_ordinals,
+    get_run_at,
+    get_run_scope,
+    list_run_labels,
+)
 
 
 class MigrationCategory(Enum):
@@ -67,6 +72,12 @@ class CustomerMigration:
 
 class UnknownRun(ValueError):
     """One of the two run ids does not exist."""
+
+
+class NotASnapshot(ValueError):
+    """A run that records the changes of some customers (ADR-0063's
+    INCREMENTAL scope) was asked to stand for the whole population: as one side
+    of a migration, or as the dashboard's snapshot (RN-41, F22-17)."""
 
 
 def _classify(
@@ -149,7 +160,9 @@ def order_runs(
     order the caller happened to pass them in, and never by method.
 
     Refuses an unknown run id (UnknownRun) rather than silently returning a
-    misleading result (ADR-0018's "plausible, no error" failure mode).
+    misleading result (ADR-0018's "plausible, no error" failure mode), and a run
+    that is not a FULL snapshot (NotASnapshot): its customers are only those it
+    changed, so a migration against it would call everyone else absent.
     """
     run_at_a = get_run_at(connection, run_id_a)
     run_at_b = get_run_at(connection, run_id_b)
@@ -157,6 +170,12 @@ def order_runs(
         raise UnknownRun(f"Run {run_id_a} does not exist.")
     if run_at_b is None:
         raise UnknownRun(f"Run {run_id_b} does not exist.")
+    for run_id in (run_id_a, run_id_b):
+        if get_run_scope(connection, run_id) != "FULL":
+            raise NotASnapshot(
+                f"Run {run_id} is an incremental change of some customers, not a "
+                "snapshot of the population. Choose a full run."
+            )
 
     return (run_id_a, run_id_b) if run_at_a <= run_at_b else (run_id_b, run_id_a)
 

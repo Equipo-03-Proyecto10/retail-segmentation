@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.6.0
+  version: 1.6.1
   description: >-
     Serves what the segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history, the assignments of each model
@@ -207,7 +207,6 @@ paths:
         `api_customers.customer_ref_v1` is 404 `customer_not_found`; a missing or
         malformed `customer_id` is 422 `invalid_query`.
       operationId: getCurrentAssignmentState
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

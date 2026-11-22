@@ -118,19 +118,19 @@ Every call then goes to `https://mosaiq.maxthecoder.online/api/<service>/v1/…`
 
 ### 3. The three calls from the desktop client
 
-From `clients/desktop` at the identified commit. The accounts are read at a
+From `clients/desktop` at the identified commit (`RUN` is an absolute path, so step 4 and step 5 can use it from the repository root and from here). The accounts are read at a
 prompt (the password is not echoed) unless the variables are set; a password is
 never an argument and is never written:
 
 ```sh
 cd clients/desktop
-RUN=../docs/evidence/f20-02/$(date -u +%Y%m%dT%H%MZ)
-read -r  -p 'Staff email: '     MOSAIQ_F20_02_STAFF_EMAIL
-read -rs -p 'Staff password: '  MOSAIQ_F20_02_STAFF_PASSWORD; echo
-read -r  -p 'Marketing email: '    MOSAIQ_F20_02_MARKETING_EMAIL
-read -rs -p 'Marketing password: ' MOSAIQ_F20_02_MARKETING_PASSWORD; echo
-read -r  -p 'Analyst email: '    MOSAIQ_F20_02_FORBIDDEN_EMAIL
-read -rs -p 'Analyst password: ' MOSAIQ_F20_02_FORBIDDEN_PASSWORD; echo
+RUN=$(git rev-parse --show-toplevel)/docs/evidence/f20-02/$(date -u +%Y%m%dT%H%MZ)
+printf 'Staff email: '; read -r MOSAIQ_F20_02_STAFF_EMAIL
+printf 'Staff password: '; read -rs MOSAIQ_F20_02_STAFF_PASSWORD; echo
+printf 'Marketing email: '; read -r MOSAIQ_F20_02_MARKETING_EMAIL
+printf 'Marketing password: '; read -rs MOSAIQ_F20_02_MARKETING_PASSWORD; echo
+printf 'Analyst email: '; read -r MOSAIQ_F20_02_FORBIDDEN_EMAIL
+printf 'Analyst password: '; read -rs MOSAIQ_F20_02_FORBIDDEN_PASSWORD; echo
 export MOSAIQ_F20_02_STAFF_EMAIL MOSAIQ_F20_02_STAFF_PASSWORD \
   MOSAIQ_F20_02_MARKETING_EMAIL MOSAIQ_F20_02_MARKETING_PASSWORD \
   MOSAIQ_F20_02_FORBIDDEN_EMAIL MOSAIQ_F20_02_FORBIDDEN_PASSWORD

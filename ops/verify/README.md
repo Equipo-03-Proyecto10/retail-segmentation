@@ -66,7 +66,7 @@ Each step is the step a workflow already runs (named in
 | `android` | `ktlintCheck`, `lint`, `testDebugUnitTest`, the ADR-0041 checks | `android.yml` `check` |
 | `stack` | the local stack up from those images, with PostgreSQL built by the three scripts, both Redis instances on the instance's configuration and ACL, MongoDB and the gateway, then every boundary section re-applied | `nightly.yml` |
 | `e2e` | `tests/e2e`, the demonstration chain | `nightly.yml` |
-| `parity` | `tests/parity` against the stack, with the web system started in the toolbox on the database's bridge IP and the seed's demonstration accounts (#765) | `nightly.yml` |
+| `parity` | `tests/parity` against the stack, with the web system started in the toolbox on the database's bridge IP and the seed's demonstration accounts (#765); it also proves that the web's run and rfm-engine's full recalculation give every customer the same raw R, F and M (#783), and skips that case when no daily pass has completed | `nightly.yml` |
 | `negative` | `tests/negative` against the gateway, as its README's "The local stack" | — |
 
 The conformance stack and the local stack would both join network `mosaiq`

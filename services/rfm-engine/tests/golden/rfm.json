@@ -1,0 +1,519 @@
+{
+  "cases": [
+    {
+      "id": "seeded-customers",
+      "input": {
+        "call": "score_rfm_rules",
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "customers": [
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000001",
+              "f_score": 2,
+              "frequency": 6,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 5227200000000,
+              "m_score": 2,
+              "monetary": "1405.00",
+              "r_score": 3,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000002",
+              "f_score": 3,
+              "frequency": 10,
+              "label_code": "HIBERNATING",
+              "last_purchase_before_anchor_us": 9046800000000,
+              "m_score": 3,
+              "monetary": "2484.00",
+              "r_score": 1,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000003",
+              "f_score": 4,
+              "frequency": 13,
+              "label_code": "CHAMPION",
+              "last_purchase_before_anchor_us": 2498400000000,
+              "m_score": 5,
+              "monetary": "6075.00",
+              "r_score": 4,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000004",
+              "f_score": 5,
+              "frequency": 17,
+              "label_code": "AT_RISK",
+              "last_purchase_before_anchor_us": 6231600000000,
+              "m_score": 5,
+              "monetary": "4510.00",
+              "r_score": 2,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000005",
+              "f_score": 1,
+              "frequency": 5,
+              "label_code": "LOST",
+              "last_purchase_before_anchor_us": 10051200000000,
+              "m_score": 1,
+              "monetary": "484.00",
+              "r_score": 1,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000006",
+              "f_score": 3,
+              "frequency": 9,
+              "label_code": "LOYAL",
+              "last_purchase_before_anchor_us": 3502800000000,
+              "m_score": 4,
+              "monetary": "3945.00",
+              "r_score": 4,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000007",
+              "f_score": 4,
+              "frequency": 12,
+              "label_code": "AT_RISK",
+              "last_purchase_before_anchor_us": 7322400000000,
+              "m_score": 3,
+              "monetary": "2442.00",
+              "r_score": 2,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000008",
+              "f_score": 5,
+              "frequency": 16,
+              "label_code": "CHAMPION",
+              "last_purchase_before_anchor_us": 774000000000,
+              "m_score": 5,
+              "monetary": "7284.00",
+              "r_score": 5,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000009",
+              "f_score": 1,
+              "frequency": 4,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 4507200000000,
+              "m_score": 1,
+              "monetary": "747.00",
+              "r_score": 3,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000010",
+              "f_score": 2,
+              "frequency": 8,
+              "label_code": "LOST",
+              "last_purchase_before_anchor_us": 8326800000000,
+              "m_score": 1,
+              "monetary": "1118.00",
+              "r_score": 1,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000011",
+              "f_score": 3,
+              "frequency": 11,
+              "label_code": "LOYAL",
+              "last_purchase_before_anchor_us": 1778400000000,
+              "m_score": 4,
+              "monetary": "3586.25",
+              "r_score": 5,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000012",
+              "f_score": 5,
+              "frequency": 15,
+              "label_code": "LOYAL",
+              "last_purchase_before_anchor_us": 5598000000000,
+              "m_score": 4,
+              "monetary": "3210.00",
+              "r_score": 3,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000013",
+              "f_score": 1,
+              "frequency": 3,
+              "label_code": "LOST",
+              "last_purchase_before_anchor_us": 9331200000000,
+              "m_score": 2,
+              "monetary": "1410.00",
+              "r_score": 1,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000014",
+              "f_score": 2,
+              "frequency": 7,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 2782800000000,
+              "m_score": 3,
+              "monetary": "2372.00",
+              "r_score": 4,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000015",
+              "f_score": 3,
+              "frequency": 10,
+              "label_code": "AT_RISK",
+              "last_purchase_before_anchor_us": 6602400000000,
+              "m_score": 1,
+              "monetary": "1387.00",
+              "r_score": 2,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000016",
+              "f_score": 4,
+              "frequency": 14,
+              "label_code": "CHAMPION",
+              "last_purchase_before_anchor_us": 54000000000,
+              "m_score": 5,
+              "monetary": "4856.25",
+              "r_score": 5,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000017",
+              "f_score": 5,
+              "frequency": 17,
+              "label_code": "CHAMPION",
+              "last_purchase_before_anchor_us": 3873600000000,
+              "m_score": 4,
+              "monetary": "3750.75",
+              "r_score": 4,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000018",
+              "f_score": 2,
+              "frequency": 6,
+              "label_code": "HIBERNATING",
+              "last_purchase_before_anchor_us": 7606800000000,
+              "m_score": 3,
+              "monetary": "2190.00",
+              "r_score": 2,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000019",
+              "f_score": 3,
+              "frequency": 9,
+              "label_code": "LOYAL",
+              "last_purchase_before_anchor_us": 1058400000000,
+              "m_score": 3,
+              "monetary": "2820.00",
+              "r_score": 5,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000020",
+              "f_score": 4,
+              "frequency": 13,
+              "label_code": "LOYAL",
+              "last_purchase_before_anchor_us": 4878000000000,
+              "m_score": 2,
+              "monetary": "1779.50",
+              "r_score": 3,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000021",
+              "f_score": 5,
+              "frequency": 16,
+              "label_code": "AT_RISK",
+              "last_purchase_before_anchor_us": 8697600000000,
+              "m_score": 5,
+              "monetary": "5843.75",
+              "r_score": 1,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000022",
+              "f_score": 1,
+              "frequency": 5,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 2149200000000,
+              "m_score": 1,
+              "monetary": "1129.50",
+              "r_score": 4,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000023",
+              "f_score": 2,
+              "frequency": 8,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 5882400000000,
+              "m_score": 3,
+              "monetary": "2862.00",
+              "r_score": 3,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000024",
+              "f_score": 4,
+              "frequency": 12,
+              "label_code": "AT_RISK",
+              "last_purchase_before_anchor_us": 9702000000000,
+              "m_score": 4,
+              "monetary": "3340.00",
+              "r_score": 1,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000025",
+              "f_score": 5,
+              "frequency": 15,
+              "label_code": "CHAMPION",
+              "last_purchase_before_anchor_us": 3153600000000,
+              "m_score": 2,
+              "monetary": "2140.00",
+              "r_score": 4,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000026",
+              "f_score": 1,
+              "frequency": 4,
+              "label_code": "LOST",
+              "last_purchase_before_anchor_us": 6973200000000,
+              "m_score": 2,
+              "monetary": "1763.75",
+              "r_score": 2,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000027",
+              "f_score": 2,
+              "frequency": 7,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 424800000000,
+              "m_score": 2,
+              "monetary": "1533.00",
+              "r_score": 5,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000028",
+              "f_score": 3,
+              "frequency": 11,
+              "label_code": "LOYAL",
+              "last_purchase_before_anchor_us": 4158000000000,
+              "m_score": 5,
+              "monetary": "5299.50",
+              "r_score": 3,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000029",
+              "f_score": 4,
+              "frequency": 14,
+              "label_code": "AT_RISK",
+              "last_purchase_before_anchor_us": 7977600000000,
+              "m_score": 4,
+              "monetary": "3704.00",
+              "r_score": 2,
+              "via_fallback": false
+            },
+            {
+              "customer_id": "00000000-0000-0000-0000-000000000030",
+              "f_score": 1,
+              "frequency": 3,
+              "label_code": "POTENTIAL",
+              "last_purchase_before_anchor_us": 1429200000000,
+              "m_score": 1,
+              "monetary": "512.00",
+              "r_score": 5,
+              "via_fallback": false
+            }
+          ]
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "no-purchase",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c001",
+        "sales": [],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": null,
+          "last_purchase_before_anchor_us": null,
+          "monetary": null
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "one-sale",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c002",
+        "sales": [
+          {
+            "days": 5,
+            "price": "30.00",
+            "units": 2
+          }
+        ],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": 1,
+          "last_purchase_before_anchor_us": 432000000000,
+          "monetary": "60.00"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "cancelled-latest-sale",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c003",
+        "sales": [
+          {
+            "days": 5,
+            "price": "30.00",
+            "units": 2
+          },
+          {
+            "cancelled": true,
+            "days": 2,
+            "price": "50.00",
+            "units": 1
+          }
+        ],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": 1,
+          "last_purchase_before_anchor_us": 432000000000,
+          "monetary": "60.00"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "only-sale-cancelled",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c004",
+        "sales": [
+          {
+            "cancelled": true,
+            "days": 5,
+            "price": "30.00",
+            "units": 2
+          }
+        ],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": null,
+          "last_purchase_before_anchor_us": null,
+          "monetary": null
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "partly-returned-sale",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c005",
+        "sales": [
+          {
+            "days": 3,
+            "price": "10.00",
+            "returned": 1,
+            "units": 4
+          }
+        ],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": 1,
+          "last_purchase_before_anchor_us": 259200000000,
+          "monetary": "30.00"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "returned-latest-sale-leaves-an-earlier-one",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c006",
+        "sales": [
+          {
+            "days": 10,
+            "price": "20.00",
+            "units": 1
+          },
+          {
+            "days": 3,
+            "price": "15.00",
+            "returned": 2,
+            "units": 2
+          }
+        ],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": 1,
+          "last_purchase_before_anchor_us": 864000000000,
+          "monetary": "20.00"
+        },
+        "outcome": "accepted"
+      }
+    },
+    {
+      "id": "older-than-the-window",
+      "input": {
+        "customer_id": "00000000-0000-0000-0000-00000000c007",
+        "sales": [
+          {
+            "days": 190,
+            "price": "9.99",
+            "units": 1
+          }
+        ],
+        "window_days": 180
+      },
+      "outcome": {
+        "observed": {
+          "frequency": null,
+          "last_purchase_before_anchor_us": null,
+          "monetary": null
+        },
+        "outcome": "accepted"
+      }
+    }
+  ],
+  "header": {
+    "as_of": {
+      "anchor": "2026-11-22T22:47:57.728375+00:00"
+    },
+    "captured_on": "2026-11-22",
+    "port": "rfm",
+    "seed_sha256": "31124497d0f500aa3a631d887c2e2309edc71bf57ec3af97b36425119a53219e",
+    "web_commit": "3ed4e63a9179547975d65987697edec0c0790f0e"
+  }
+}

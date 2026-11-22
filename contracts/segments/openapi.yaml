@@ -202,14 +202,15 @@ paths:
         withdrew profiling is therefore never read as one with no purchases.
         `unassigned_reason` is null (omitted in XML) in every other state. It is
         a separate read because the response of `getCurrentAssignment` is closed
-        to additions within v1. The floor roles do not read it: they have the
-        floor view, which says nothing of consent. A customer absent from
+        to additions within v1. `SALES_ASSOCIATE` and `LOYALTY_OFFICER` use the
+        floor view, which says nothing of scores or consent. A customer absent from
         `api_customers.customer_ref_v1` is 404 `customer_not_found`; a missing or
         malformed `customer_id` is 422 `invalid_query`.
       operationId: getCurrentAssignmentState
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
+        - STORE_MANAGER
         - MARKETING
         - AUDITOR
       parameters:

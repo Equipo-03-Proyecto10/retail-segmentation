@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.6.0
+  version: 1.6.1
   description: >-
     Serves what the segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history, the assignments of each model

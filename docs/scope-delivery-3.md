@@ -218,7 +218,7 @@ campaign caused.
 | SV-07 | customers | F21-13, F21-14, F21-15, F21-19 |
 | SV-08 | customer-preferences | F21-15, F21-16, F21-17, F21-18 |
 | SV-09 | sales | F21-01, F21-02, F21-03, F25-05 |
-| SV-10 | segments | F22-12, F22-14, F22-15, F22-16 |
+| SV-10 | segments | F22-12, F22-14, F22-15, F22-16, F22-18 |
 | SV-11 | recommendations | F24-02, F24-03, F24-04, F24-05, F24-06 |
 | SV-12 | engagement | F21-20, F21-21 |
 | SV-13 | check-ins | F21-22, F21-23 |
@@ -245,7 +245,7 @@ campaign caused.
 | ID | Requirement | Stories |
 |---|---|---|
 | KC-1 | Incremental update | F22-01, F22-05, F22-06, F22-07, F22-08, F22-15, F29-10 |
-| KC-2 | Consistent history per model version | F22-02, F22-09, F22-13, F22-14, F22-15, F22-16, F29-10 |
+| KC-2 | Consistent history per model version | F22-02, F22-09, F22-13, F22-14, F22-15, F22-16, F22-18, F29-10 |
 | KC-3 | Personalization bound to inventory | F24-02, F24-04, F24-05, F24-07, F29-10 |
 | KC-4 | Experiments with reliable measurement | F25-01, F25-08, F25-10, F25-11, F25-13, F29-10 |
 
@@ -256,7 +256,7 @@ campaign caused.
 | AP-1 | Android: store seller | F19-03, F19-04, F27-01, F27-02, F27-03, F27-04, F27-05, F27-06 |
 | AP-2 | Android: store manager | F19-03, F27-01, F27-04, F27-08 |
 | AP-3 | Android: loyalty officer | F19-03, F19-04, F27-01, F27-09 |
-| AP-4 | Android: commercial supervisor | F19-03, F19-04, F27-01, F27-10, F27-11, F27-12, F27-14 |
+| AP-4 | Android: commercial supervisor | F19-03, F19-04, F27-01, F27-10, F27-11, F27-12, F27-14, F27-16 |
 
 ### Android technical functions
 

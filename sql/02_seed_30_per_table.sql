@@ -1364,6 +1364,35 @@ BEGIN
     UPDATE models.model_version
        SET state = 'PUBLISHED', published_at = created_at
      WHERE method = 'RFM_RULES';
+
+    -- The one drift report the seed can state honestly (F23-09): the report the
+    -- monitor would write if it ran as the seed does (ADR-0088). Its window ends at
+    -- the latest 03:00 UTC, and the version was published after that window began,
+    -- so it is NOT_COMPARED: its profiles were not scored under it. Its customers
+    -- are the scored profiles the seed holds, none (rfm.customer_profile starts
+    -- empty). The variables, statistics, bins and alerts the monitor writes are not
+    -- seeded: a figure here would not come from any window.
+    INSERT INTO models.drift_report
+        (version_id, kind, comparison, not_compared_reason, window_start, window_end,
+         customer_count, computed_at)
+    SELECT v.version_id, 'DATA_DRIFT',
+           CASE WHEN p.published_at > w.window_end - interval '30 days'
+                THEN 'NOT_COMPARED' ELSE 'INSUFFICIENT_DATA' END,
+           CASE WHEN p.published_at > w.window_end - interval '30 days'
+                THEN 'VERSION_CHANGE' END,
+           w.window_end - interval '30 days', w.window_end,
+           (SELECT count(*) FROM rfm.customer_profile WHERE state = 'scored')::int,
+           now()
+    FROM models.model_version AS v
+    CROSS JOIN LATERAL (SELECT max(published_at) AS published_at
+                          FROM models.model_publication
+                         WHERE version_id = v.version_id) AS p
+    CROSS JOIN LATERAL (SELECT date_trunc('day', now() AT TIME ZONE 'UTC')
+                               AT TIME ZONE 'UTC' + interval '3 hours'
+                               - CASE WHEN (now() AT TIME ZONE 'UTC')::time < time '03:00'
+                                      THEN interval '1 day' ELSE interval '0' END
+                               AS window_end) AS w
+    WHERE v.state = 'PUBLISHED';
 END
 $seed_models$;
 

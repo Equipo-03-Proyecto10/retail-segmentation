@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AttributionEvaluation xmlns="https://mosaiq.maxthecoder.online/xml/experimentation/v1">
+  <experiment_id>12</experiment_id>
+  <attributed>9</attributed>
+  <already_attributed>31</already_attributed>
+  <pending>2</pending>
+  <label>ATTRIBUTION</label>
+  <as_of>2026-10-22T08:00:03Z</as_of>
+</AttributionEvaluation>

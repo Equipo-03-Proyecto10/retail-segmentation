@@ -200,6 +200,13 @@ experiments.experiment_result_arm
 experiments.experiment_result_comparison
 experiments.experiment_result_balance
 
+# The record and balance of an assignment (F25-08, ADR-0068) exist only for an experiment assigned
+# through the service. The thirty seeded experiments were assigned by the web (rule V0), which
+# stored no check, and assigning thirty more only to check them would add customers to every
+# seeded report. Runtime facts, like a plan.
+experiments.experiment_assignment_record
+experiments.experiment_assignment_balance
+
 # experiments.exposure_notice is runtime projection state. Rows exist only as
 # experimentation consumes RECORDED and VOIDED notices from engagement's
 # stream; seeding them would invent floor observations that never occurred.

@@ -1,0 +1,77 @@
+{
+  "description": "Golden assignment (ADR-0068 section 2, ADR-0045). The keys were made with `openssl dgst -sha256 -mac HMAC -macopt hexkey:<salt>` over `mosaiq-assign-v1|<experiment>|<customer>`, and the order with `LC_ALL=C sort` on `<key> <customer>`, so nothing here comes from the service's code. The customers are dealt round-robin to `arms` (control first) in that order.",
+  "experiment_id": 7,
+  "salt": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f",
+  "arms": [
+    101,
+    102,
+    103
+  ],
+  "assignments": [
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000271",
+      "assignment_key": "016b3f8dbf9593be209713787bb6bac4b4d41f396bcb643c23876f5a0cf2959e",
+      "arm_id": 101
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000028",
+      "assignment_key": "09a7808d1c88647a5b0239e47a93df22a98f35ea2dd6e5803f78cd386c50749a",
+      "arm_id": 102
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000352",
+      "assignment_key": "40d045807440a90a0250d4bfd44f5fd1eb6ef53fd096ea7d3064f2fa5150fa88",
+      "arm_id": 103
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000433",
+      "assignment_key": "5e0fdce974f1657d8d22d15029d1f6ad343b2dbca31a480b42365f2d6acf38db",
+      "arm_id": 101
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000947",
+      "assignment_key": "7509cf0b4994af464315c207c3ef9258e800d0374c8e67711baaedf4e3997bf7",
+      "arm_id": 102
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000838",
+      "assignment_key": "7b4a5e1aacf46458635462736357fc63d405ba323c29be46a24242d1cd0cd4a7",
+      "arm_id": 103
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000109",
+      "assignment_key": "8ddf636289e428a55b03b8dab66cd1d6b2ea23c3947895346995d7104f083166",
+      "arm_id": 101
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000190",
+      "assignment_key": "b2d555eef08f21b59910e6d4e20feb17b9c190d411500508d3289cc9a09590bf",
+      "arm_id": 102
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000514",
+      "assignment_key": "b8566b9d263b67710361ef8262d7b2890f1bb71d1076167757a7f42fa214c74a",
+      "arm_id": 103
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000676",
+      "assignment_key": "c4dbf7b5f7686646e780b47f55ea51e9f5c5cf30a026d6eb506c7aa63c80dd8e",
+      "arm_id": 101
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000757",
+      "assignment_key": "cc70ebeedd5d4b1a401b334e8ef067c13cd18207683d2b5de86e3bb3a46f162f",
+      "arm_id": 102
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000595",
+      "assignment_key": "cea8e2e6b3e2342811c7ebafdae90265e5a058ad44d9175ebae49ce38bf54f72",
+      "arm_id": 103
+    },
+    {
+      "customer_id": "00000000-0000-4000-8000-000000000919",
+      "assignment_key": "ff851af22f490e503a65a1666df65a30554cd052c7abae3ae6f2ca5fcc140878",
+      "arm_id": 101
+    }
+  ]
+}

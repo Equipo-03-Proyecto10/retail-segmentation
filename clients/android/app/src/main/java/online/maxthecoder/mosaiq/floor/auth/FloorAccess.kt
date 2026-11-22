@@ -4,7 +4,7 @@ package online.maxthecoder.mosaiq.floor.auth
  * The sections of the floor shell, whoever may open them. Each is a root of the bottom bar except
  * [CUSTOMER_RECORD], which lives inside Customer: it has no bar entry and is reached from there.
  */
-enum class FloorSection { CHECK_IN, SCAN, SALE, INDICATORS, OUTBOX, CUSTOMER, CUSTOMER_RECORD }
+enum class FloorSection { CHECK_IN, SCAN, SALE, INDICATORS, OUTBOX, CUSTOMER, CUSTOMER_RECORD, REVIEW }
 
 /** One operation of a service contract, as `operationId` in `contracts/<service>/openapi.yaml`. */
 data class ServiceOperation(
@@ -47,9 +47,9 @@ object FloorAccess {
             "STORE_MANAGER" to EVERYTHING,
             "LOYALTY_OFFICER" to
                 listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.CUSTOMER_RECORD, FloorSection.OUTBOX),
-            "COMMERCIAL_SUPERVISOR" to listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX),
+            "COMMERCIAL_SUPERVISOR" to listOf(FloorSection.CHECK_IN, FloorSection.REVIEW, FloorSection.OUTBOX),
             // Not confined to stores, and holds every operation the floor calls (ADR-0060).
-            "ADMIN" to EVERYTHING
+            "ADMIN" to EVERYTHING + FloorSection.REVIEW
         )
 
     /**
@@ -100,6 +100,18 @@ object FloorAccess {
                     ServiceOperation("categories", "listCategories")
                 ),
             FloorSection.OUTBOX to emptyList(),
+            // What went wrong on the floor (F27-14): the incidents of the caller's stores and their review,
+            // the promotions shown by store and campaign, and the names those two need. The phone's own
+            // syncs come from the outbox, which calls nothing.
+            FloorSection.REVIEW to
+                listOf(
+                    ServiceOperation("engagement", "listCaptureIncidents"),
+                    ServiceOperation("engagement", "getCaptureIncident"),
+                    ServiceOperation("engagement", "reviewCaptureIncident"),
+                    ServiceOperation("engagement", "listEngagementEventsV2"),
+                    ServiceOperation("campaigns", "listPromotions"),
+                    ServiceOperation("stores", "listStores")
+                ),
             // Identifying a customer by loyalty card or by a floor search (F27-02), their
             // permitted commercial profile: segment, interests and restrictions (F27-03), and
             // the recommendations judged at the checked-in store, with the names they need (F27-06).

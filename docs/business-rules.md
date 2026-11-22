@@ -275,7 +275,10 @@ frequency by the same rule, in `web.services.segmentation_dashboard.quintile_bin
 (#423). **Verified** — `tests/test_segments_pipeline_db.py` pins that no
 quintile's ordering names `customer_id`, and against the seeded PostgreSQL, where
 every one of the 30 customers ties on frequency, by
-[`evidence/f352-quintile-ties.md`](evidence/f352-quintile-ties.md).
+[`evidence/f352-quintile-ties.md`](evidence/f352-quintile-ties.md); and against a
+small population worked out by hand, in the web and in rfm-engine, by
+`tests/test_rfm_hand_computed.py` and
+[`evidence/f29-01-rfm-hand-computed.md`](evidence/f29-01-rfm-hand-computed.md).
 
 ### RN-47 — The application role can close a segment assignment and nothing else
 A history row is closed once, by setting `valid_to`, and never changed or deleted

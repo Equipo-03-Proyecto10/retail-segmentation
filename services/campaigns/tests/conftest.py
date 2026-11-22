@@ -172,6 +172,7 @@ def database() -> Iterator[dict[str, str]]:
         yield {
             "owner": _with_database(url, name),
             "service": _with_database(url, name, role="svc_campaigns"),
+            "sales": _with_database(url, name, role="svc_sales"),
             "web": _with_database(url, name, role="retail_app"),
         }
     finally:

@@ -581,8 +581,20 @@ data class CaptureIncidentRequest(
 )
 
 /**
- * The fields of `CaptureIncidentItem` the updates screen reads. `reported_by` and `history` are left out on
- * purpose: nothing about a person reaches the phone's alerts.
+ * One review of an incident (`IncidentReview`): the state it moved to, the supervisor's note and when. `by` is
+ * left out on purpose: no person's id is kept on the phone.
+ */
+@Serializable
+data class IncidentReview(
+    val status: String,
+    val note: String? = null,
+    val at: String
+)
+
+/**
+ * The fields of `CaptureIncidentItem` the phone reads. `reported_by` and the reviewers' ids are left out on
+ * purpose: nothing about a person reaches the phone. [history] is what the supervisor's review screen shows;
+ * the updates screen ignores it.
  */
 @Serializable
 data class CaptureIncident(
@@ -593,11 +605,35 @@ data class CaptureIncident(
     @SerialName("refused_code") val refusedCode: String,
     @SerialName("occurred_at") val occurredAt: String,
     @SerialName("recorded_at") val recordedAt: String,
-    val status: String
+    val status: String,
+    val attempts: Int? = null,
+    @SerialName("line_count") val lineCount: Int? = null,
+    val history: List<IncidentReview> = emptyList()
 )
+
+/** `CaptureIncidentReviewRequest`: the state to move to, and an optional note of at most 200 characters. */
+@Serializable
+data class ReviewCaptureIncidentRequest(val status: String, val note: String? = null)
 
 @Serializable
 data class CaptureIncidentPage(
     @SerialName("capture_incidents") val captureIncidents: List<CaptureIncident>,
+    @SerialName("page_info") val pageInfo: PageInfo
+)
+
+/**
+ * A `CAMPAIGN_EXPOSURE` of `/v2` as the review screen counts it: where and for which campaign a promotion was
+ * shown. The event also carries a customer id, which this type does not declare, so it never reaches memory.
+ */
+@Serializable
+data class ExposureEvent(
+    val type: String,
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("campaign_id") val campaignId: Int? = null
+)
+
+@Serializable
+data class ExposureEventPage(
+    @SerialName("engagement_events") val events: List<ExposureEvent>,
     @SerialName("page_info") val pageInfo: PageInfo
 )

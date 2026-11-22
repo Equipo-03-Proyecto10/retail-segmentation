@@ -1076,6 +1076,8 @@ flowchart TD
     F22-13 --> F22-16
     F22-14 --> F22-16
     F22-15 --> F22-17
+    F22-14 --> F22-18
+    F22-15 --> F22-18
     F23-01 --> F23-02
     F23-02 --> F23-03
     F23-03 --> F23-04
@@ -1175,6 +1177,7 @@ flowchart TD
     F27-07 --> F27-15
     F27-10 --> F27-15
     F27-11 --> F27-15
+    F27-14 --> F27-16
     F26-07 --> F28-02
     F28-01 --> F28-02
     F22-03 --> F28-03
@@ -1345,6 +1348,7 @@ Epic #743.
 | F22-15 | #811 | Apply segment changes under the published version and announce them | P0 | F21-17, F22-05, F22-13, F22-14 |
 | F22-16 | #812 | Serve migrations by version, with their explanation, from segments-service | P0 | F22-13, F22-14 |
 | F22-17 | #813 | Keep the web's segment reports correct alongside incremental changes | P0 | F22-15 |
+| F22-18 | #1130 | Serve each assignment's cause and the reason a customer is unassigned from segments-service | P1 | F22-14, F22-15 |
 
 ## Phase 23 — Model validity and drift
 
@@ -1438,6 +1442,7 @@ Epic #748.
 | F27-13 | #867 | Keep offline drafts with a pending state, validated by the server on return | P0 | F27-05 |
 | F27-14 | #868 | Let the commercial supervisor review incidents, syncs and applied promotions | P1 | F27-11, F27-13 |
 | F27-15 | #869 | Raise notifications for campaigns, capture errors and incidents | P1 | F27-07, F27-10, F27-11 |
+| F27-16 | #1143 | Show the promotions applied in the supervisor's stores, in aggregate | P1 | F27-14 |
 
 ## Phase 28 — Desktop analysis console
 

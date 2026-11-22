@@ -216,6 +216,47 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="CustomerBudgetSpendingType">
+    <xs:sequence>
+      <xs:element name="customer_id" type="campaigns:Uuid"/>
+      <xs:element name="spent_amount" type="campaigns:Money"/>
+      <xs:element name="cap_reached" type="xs:boolean"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="BudgetSpendingPageInfoType">
+    <xs:sequence>
+      <xs:element name="page" type="xs:positiveInteger"/>
+      <xs:element name="size">
+        <xs:simpleType>
+          <xs:restriction base="xs:positiveInteger">
+            <xs:maxInclusive value="100"/>
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="total" type="xs:nonNegativeInteger"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CampaignBudgetSpendingType">
+    <xs:sequence>
+      <xs:element name="campaign_id" type="campaigns:CampaignId"/>
+      <xs:element name="computed_at" type="xs:dateTime"/>
+      <xs:element name="total_budget" type="campaigns:Money"
+                  minOccurs="0"/>
+      <xs:element name="total_spent" type="campaigns:Money"/>
+      <xs:element name="total_reached" type="xs:boolean"/>
+      <xs:element name="per_customer_cap" type="campaigns:Money"
+                  minOccurs="0"/>
+      <xs:element name="customers_at_cap" type="xs:nonNegativeInteger"
+                  minOccurs="0"/>
+      <xs:element name="customers" type="campaigns:CustomerBudgetSpendingType"
+                  minOccurs="0" maxOccurs="100"/>
+      <xs:element name="page_info"
+                  type="campaigns:BudgetSpendingPageInfoType"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="PutCampaignBudgetRequestType">
     <xs:sequence>
       <xs:element name="total_amount" type="campaigns:Money" minOccurs="0"/>
@@ -331,6 +372,8 @@
   <xs:element name="CampaignAudienceBreakdown"
               type="campaigns:CampaignAudienceBreakdownType"/>
   <xs:element name="CampaignBudget" type="campaigns:CampaignBudgetType"/>
+  <xs:element name="CampaignBudgetSpending"
+              type="campaigns:CampaignBudgetSpendingType"/>
   <xs:element name="PutCampaignBudgetRequest"
               type="campaigns:PutCampaignBudgetRequestType"/>
   <xs:element name="CampaignEligibilityRules"

@@ -20,3 +20,7 @@ entries:
     service: audit-trail
     version: 1.4.0
     values: [RULE_SET_CREATED, RULE_SET_EDITED, RULE_SET_VERSIONED, RULE_SET_PUBLISHED, rule_set]
+  - adr: ADR-0088
+    service: audit-trail
+    version: 1.5.0
+    values: [DRIFT]

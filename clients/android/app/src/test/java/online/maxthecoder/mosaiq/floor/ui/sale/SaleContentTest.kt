@@ -173,7 +173,7 @@ class SaleContentTest {
                 row(3, RowState.REFUSED, code = "future_dated")
             )
         show({ SaleUi(store = store, history = rows) })
-        compose.onNodeWithText("Waiting to send").performScrollTo().assertExists()
+        compose.onNodeWithText("Pending").performScrollTo().assertExists()
         compose.onNodeWithText("Sent").performScrollTo().assertExists()
         compose.onNodeWithText("Needs attention").performScrollTo().assertExists()
     }
@@ -318,10 +318,111 @@ class SaleContentTest {
         )
         compose.onNodeWithText("A discount is larger than its promotion allows.").assertExists()
         compose.onNodeWithText("Line: Rain shell").assertExists()
-        compose.onNodeWithText("Your cart is kept as it was. Fix it and confirm again.").assertExists()
+        compose.onNodeWithText(
+            "Your cart is kept as it was. Fix it and confirm again, or discard this sale."
+        ).assertExists()
         compose.onNodeWithTag("cart-line-2").performScrollTo().assertExists()
         compose.onNodeWithTag("back-to-cart").performClick()
         assertEquals(1, back)
+    }
+
+    // ---- F27-13: drafts, and a refused sale corrected or discarded wherever it sits ----
+
+    private val refusedRow = row(7, RowState.REFUSED, code = "stock_unavailable")
+
+    @Test
+    fun aQueuedSaleIsADraftWaitingForTheServerAndNeverClaimedRecorded() {
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    registration = ready,
+                    sale = cart(SaleLine(shirt, 1), queuedRowId = 7),
+                    queued = row(7, RowState.PENDING),
+                    history = listOf(row(7, RowState.PENDING))
+                )
+            }
+        )
+        compose.onNodeWithTag("sale-saved")
+            .assertTextEquals("Sale kept as a draft on this phone, pending. The server checks it when you are online.")
+        compose.onNodeWithText("Draft, pending. The server checks it when the connection returns.")
+            .performScrollTo().assertExists()
+        compose.onNodeWithText("Pending").performScrollTo().assertExists()
+        compose.onAllNodesWithText("recorded", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onAllNodesWithTag("sale-receipt").assertCountEquals(0)
+    }
+
+    @Test
+    fun aRefusedSaleOfTheHistoryCanBeCorrectedOrDiscardedAfterAnotherSaleWasStarted() {
+        val corrected = mutableListOf<Long>()
+        val discarded = mutableListOf<Long>()
+        show(
+            { SaleUi(store = store, registration = ready, history = listOf(refusedRow), kept = setOf("client-7")) },
+            SaleActions(onCorrect = { corrected += it.id }, onDiscard = { discarded += it.id })
+        )
+        compose.onNodeWithText("The store does not have enough units for a line.", substring = true)
+            .performScrollTo().assertExists()
+        compose.onNodeWithTag("correct-7").performScrollTo().performClick()
+        compose.onNodeWithTag("discard-7").performScrollTo().performClick()
+        assertEquals(listOf(7L), corrected)
+        assertEquals(listOf(7L), discarded)
+    }
+
+    @Test
+    fun correctingSaysWhyItIsNotOfferedWhileAnotherSaleIsBeingBuiltOrTheCartIsGone() {
+        var ui by mutableStateOf(
+            SaleUi(
+                store = store,
+                registration = ready,
+                history = listOf(refusedRow),
+                kept = setOf("client-7"),
+                sale = SaleBuilderState(lines = listOf(SaleLine(socks, 1)))
+            )
+        )
+        show({ ui })
+        compose.onNodeWithTag("correct-7").assertDoesNotExist()
+        compose.onNodeWithTag("correct-busy-7").performScrollTo().assertExists()
+        compose.onNodeWithText("Finish or clear the sale in progress to correct this one.").assertExists()
+        // Discarding is always there.
+        compose.onNodeWithTag("discard-7").performScrollTo().assertExists()
+
+        ui = ui.copy(kept = emptySet(), sale = SaleBuilderState())
+        compose.onNodeWithTag("correct-gone-7").performScrollTo().assertExists()
+        compose.onNodeWithTag("correct-7").assertDoesNotExist()
+        compose.onNodeWithTag("discard-7").assertExists()
+
+        ui = ui.copy(sale = SaleBuilderState(corrects = listOf("client-7"), lines = listOf(SaleLine(socks, 1))))
+        compose.onNodeWithTag("correct-open-7").performScrollTo().assertExists()
+        compose.onNodeWithTag("correct-7").assertDoesNotExist()
+    }
+
+    @Test
+    fun theRefusalOfTheSaleOnScreenCanBeDiscardedAsWellAsCorrected() {
+        val discarded = mutableListOf<Long>()
+        val refused = row(7, RowState.REFUSED, code = "stock_unavailable").copy(
+            body = """{"customer_id":"c1","store_id":1,"channel_id":1,"occurred_at":"2026-11-18T12:00:00Z",""" +
+                """"lines":[{"product_id":2,"quantity":1,"unit_price":"40.00"}]}"""
+        )
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    registration = ready,
+                    sale = cart(SaleLine(shirt, 1), queuedRowId = 7),
+                    queued = refused,
+                    history = listOf(refused),
+                    kept = setOf("client-7")
+                )
+            },
+            SaleActions(onDiscard = { discarded += it.id })
+        )
+        compose.onNodeWithText("Your cart is kept as it was. Fix it and confirm again, or discard this sale.")
+            .assertExists()
+        compose.onNodeWithTag("back-to-cart").assertExists()
+        compose.onNodeWithTag("discard-sale").performScrollTo().performClick()
+        assertEquals(listOf(7L), discarded)
     }
 
     private fun row(id: Long, state: RowState, code: String? = null) = OutboxRow(

@@ -56,6 +56,69 @@ class HistoryEntry:
     scope: str = "FULL"
 
 
+@dataclass(frozen=True)
+class PreviousHistoryAssignment:
+    """The row immediately before one history row for the same customer.
+
+    Its run origin travels with the assignment because an explanation is
+    Synthetic when either side came from demonstration data (ADR-0052).
+    """
+
+    assignment: RunAssignment
+    data_origin: str
+
+
+def get_previous_history_assignment(
+    connection: Connection[Any], history_id: int
+) -> PreviousHistoryAssignment | None:
+    """Return this customer's preceding stored assignment, if there is one.
+
+    Incremental runs need not contain this customer, so the previous global
+    run cannot identify the before-side of a change. History order is the same
+    `(valid_from, history_id)` order used by `assignment_change_v1`.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT previous.customer_id, c.name, previous.segment_id,
+                   previous.label_code, previous.r_score, previous.f_score,
+                   previous.m_score, previous.recency_last_purchase_at,
+                   previous.frequency_count, previous.monetary_total,
+                   r.data_origin
+            FROM customer_segment_history AS current
+            JOIN customer_segment_history AS previous
+              ON previous.customer_id = current.customer_id
+             AND (previous.valid_from, previous.history_id)
+                 < (current.valid_from, current.history_id)
+            JOIN customer AS c ON c.customer_id = previous.customer_id
+            JOIN segmentation_run AS r ON r.run_id = previous.run_id
+            WHERE current.history_id = %s
+            ORDER BY previous.valid_from DESC, previous.history_id DESC
+            LIMIT 1
+            """,
+            (history_id,),
+        )
+        row = cursor.fetchone()
+
+    if row is None:
+        return None
+    return PreviousHistoryAssignment(
+        assignment=RunAssignment(
+            customer_id=str(row[0]),
+            customer_name=row[1],
+            segment_id=row[2],
+            label_code=row[3],
+            r_score=row[4],
+            f_score=row[5],
+            m_score=row[6],
+            recency_last_purchase_at=row[7],
+            frequency_count=row[8],
+            monetary_total=row[9],
+        ),
+        data_origin=row[10],
+    )
+
+
 def list_history_entries(
     connection: Connection[Any],
     *,

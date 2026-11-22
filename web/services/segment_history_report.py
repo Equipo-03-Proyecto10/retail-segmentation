@@ -3,13 +3,11 @@
 Every applied filter -- run, label, period -- reaches both the count and the
 list read, so the page and its total always agree (RN-43). Each row carries a
 per-customer explanation, built the same way F7-06 already builds one: from
-the row's own values and the customer's assignment on the run immediately
-before this row's run (F12-01's `get_previous_run`, reused rather than
-duplicated). A customer's first-ever row has no previous run and so no
-explanation; that is not an error and not a missing customer, since RN-21
-guarantees every run scores every customer, so a "previous run exists but did
-not score this customer" case cannot occur in practice -- the machinery
-tolerates it anyway, because it costs nothing to.
+the row's own values and that customer's immediately preceding stored
+assignment. A customer's first-ever row has no previous assignment and so no
+explanation. Looking at the preceding history row, rather than the preceding
+global run, remains correct when intervening incremental runs changed another
+customer or when this customer changed more than once after the last full run.
 
 Nothing here reads or is told which method produced a run.
 
@@ -27,10 +25,9 @@ from typing import Any
 from web.db.segment_history_report import (
     HistoryEntry,
     count_history_entries,
+    get_previous_history_assignment,
     list_history_entries,
 )
-from web.db.segmentation_dashboard import get_previous_run
-from web.db.segments import get_customer_assignment_for_run
 from web.services.pagination import page_count
 from web.services.provenance import is_seeded
 from web.services.segment_migration import MigrationExplanation, explain_migration
@@ -46,8 +43,8 @@ class InvalidPeriod(ValueError):
 class ReportRow:
     entry: HistoryEntry
     explanation: MigrationExplanation | None
-    # The origin of the previous run the explanation compares with; None
-    # when there is no explanation.
+    # The origin of the preceding assignment's run; None when there is no
+    # explanation.
     previous_data_origin: str | None = None
 
     @property
@@ -115,20 +112,13 @@ def build_report(
         per_page=PAGE_SIZE,
     )
 
-    previous_runs: dict[int, Any] = {}
     rows = []
     for entry in entries:
-        if entry.run_id not in previous_runs:
-            previous_runs[entry.run_id] = get_previous_run(connection, entry.run_id)
-        previous_run = previous_runs[entry.run_id]
-
+        previous = get_previous_history_assignment(connection, entry.history_id)
         explanation = previous_origin = None
-        if previous_run is not None:
-            previous_origin = previous_run.data_origin
-            previous_assignment = get_customer_assignment_for_run(
-                connection, previous_run.run_id, entry.assignment.customer_id
-            )
-            explanation = explain_migration(previous_assignment, entry.assignment)
+        if previous is not None:
+            previous_origin = previous.data_origin
+            explanation = explain_migration(previous.assignment, entry.assignment)
 
         rows.append(
             ReportRow(

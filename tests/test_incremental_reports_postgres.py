@@ -26,6 +26,7 @@ from web.db.customers import list_customers, list_customers_in_segment
 from web.db.model_comparison import list_runs_of_method
 from web.db.segmentation_dashboard import get_previous_run
 from web.db.segments import get_current_assignment, get_run, list_runs
+from web.services.segment_history_report import build_report
 from web.services.segment_migration import compute_migration, order_runs
 from web.services.segmentation_dashboard import build_dashboard
 
@@ -220,3 +221,39 @@ def test_a_segment_page_counts_who_holds_its_label_without_naming_it(
 
     assert world.customer not in {member.customer_id for member in members}
     assert count_label_holders_outside_segment(world.connection, segment_id) >= 1
+
+
+def test_a_second_change_is_explained_from_the_first_change(world: World) -> None:
+    """The preceding global FULL run is not the before-side of a second
+    incremental change: the customer's preceding stored row is."""
+    original_label, changed_at = _one(
+        world.connection,
+        "SELECT old.label_code, changed.run_at"
+        " FROM customer_segment_history AS old"
+        " JOIN segmentation_run AS changed ON changed.run_id = %s"
+        " WHERE old.run_id = %s AND old.customer_id = %s",
+        (world.incremental, world.full, world.customer),
+    )
+    second_at = changed_at + timedelta(hours=1)
+    second = _run(world.connection, second_at, "INCREMENTAL", 1)
+    with world.connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE customer_segment_history SET valid_to = %s"
+            " WHERE customer_id = %s AND valid_to IS NULL",
+            (second_at, world.customer),
+        )
+        cursor.execute(
+            "INSERT INTO customer_segment_history"
+            " (customer_id, run_id, segment_id, label_code, valid_from, cause)"
+            " VALUES (%s, %s, NULL, %s, %s, 'SALE')",
+            (world.customer, second, original_label, second_at),
+        )
+
+    report = build_report(world.connection, run_id=second)
+
+    assert len(report.rows) == 1
+    explanation = report.rows[0].explanation
+    assert explanation is not None
+    assert explanation.label_before == world.label
+    assert explanation.label_after == original_label
+    assert explanation.label_changed

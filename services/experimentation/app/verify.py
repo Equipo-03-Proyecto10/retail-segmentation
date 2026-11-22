@@ -1,9 +1,11 @@
 """Recompute an experiment's assignment from its published values (F25-08, ADR-0068 §2).
 
 Standard library only, and no database: an auditor needs this file, the experiment's
-salt, its id, its arm order and the customers it assigned. `python -m app.verify FILE`
-reads a JSON document and says whether every customer landed where the service put
-them::
+salt, its id, its arm order and the customers it assigned. `python app/verify.py FILE`
+(from the service's directory, or wherever the file is copied: it imports nothing but
+the standard library, so it does not need the service's dependencies; `python -m
+app.verify FILE` does the same inside the service's environment) reads a JSON document
+and says whether every customer landed where the service put them::
 
     {"experiment_id": 12, "salt": "<64 hex>", "arms": [31, 32],
      "assignments": [{"customer_id": "<uuid>", "arm_id": 31}, ...]}
@@ -60,19 +62,15 @@ def verify(document: dict[str, Any]) -> list[str]:
     if len(stored) != len(document["assignments"]):
         problems.append("a customer is assigned more than once")
     expected = deal(document["salt"], experiment_id, arms, stored)
+    published: dict[str, Any] = {}
+    for row in document["assignments"]:
+        published.setdefault(str(UUID(row["customer_id"])), row.get("assignment_key"))
     for customer, arm in sorted(stored.items()):
         if expected[customer] != arm:
             problems.append(
                 f"{customer}: stored arm {arm}, recomputed {expected[customer]}"
             )
-        key = next(
-            (
-                r.get("assignment_key")
-                for r in document["assignments"]
-                if str(UUID(r["customer_id"])) == customer
-            ),
-            None,
-        )
+        key = published[customer]
         if key is not None and key != assignment_key(
             document["salt"], experiment_id, customer
         ):
@@ -86,7 +84,7 @@ def verify(document: dict[str, Any]) -> list[str]:
 def main(argv: Sequence[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if len(args) != 1:
-        print("usage: python -m app.verify assignment.json", file=sys.stderr)
+        print("usage: python verify.py assignment.json", file=sys.stderr)
         return 2
     with open(args[0], encoding="utf-8") as handle:
         problems = verify(json.load(handle))

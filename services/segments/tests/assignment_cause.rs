@@ -81,6 +81,20 @@ impl Stack {
         (status, String::from_utf8(body.to_vec()).unwrap())
     }
 
+    async fn get_without_token(&self, path: &str, accept: &str) -> (StatusCode, String) {
+        let request = Request::builder()
+            .uri(path)
+            .header("Accept", accept)
+            .body(Body::empty())
+            .unwrap();
+        let response = tower::ServiceExt::oneshot(self.app.clone(), request)
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
     async fn finish(mut self) {
         drop_acl(&mut self.redis).await;
     }
@@ -225,15 +239,22 @@ async fn a_customer_who_withdrew_profiling_is_not_one_with_no_purchases() {
 }
 
 #[tokio::test]
-async fn only_the_roles_the_contract_lists_read_the_reason() {
+async fn the_contract_roles_read_the_reason_and_other_roles_are_refused() {
     let _turn = TURN.lock().await;
     let Some(stack) = Stack::start().await else {
         return;
     };
     let customer = Uuid::parse_str("00000000-0000-0000-0000-000000000007").unwrap();
     for accept in ["application/json", "application/xml"] {
-        for (sub, role) in [(MANAGER, "STORE_MANAGER"), (SELLER, "SALES_ASSOCIATE")] {
-            let (status, body) = stack.get(&state_path(customer), sub, role, accept).await;
+        let (status, body) = stack.get_without_token(&state_path(customer), accept).await;
+        assert_eq!(status, 401, "{body}");
+        assert!(body.contains("invalid_token"), "{body}");
+        let (status, body) = stack
+            .get(&state_path(customer), MANAGER, "STORE_MANAGER", accept)
+            .await;
+        assert_eq!(status, 200, "{body}");
+        for role in ["SALES_ASSOCIATE", "LOYALTY_OFFICER"] {
+            let (status, body) = stack.get(&state_path(customer), SELLER, role, accept).await;
             assert_eq!(status, 403, "{role}: {body}");
             assert!(body.contains("forbidden_role"), "{body}");
         }

@@ -1175,6 +1175,7 @@ flowchart TD
     F27-07 --> F27-15
     F27-10 --> F27-15
     F27-11 --> F27-15
+    F27-14 --> F27-16
     F26-07 --> F28-02
     F28-01 --> F28-02
     F22-03 --> F28-03
@@ -1438,6 +1439,7 @@ Epic #748.
 | F27-13 | #867 | Keep offline drafts with a pending state, validated by the server on return | P0 | F27-05 |
 | F27-14 | #868 | Let the commercial supervisor review incidents, syncs and applied promotions | P1 | F27-11, F27-13 |
 | F27-15 | #869 | Raise notifications for campaigns, capture errors and incidents | P1 | F27-07, F27-10, F27-11 |
+| F27-16 | #1143 | Show the promotions applied in the supervisor's stores, in aggregate | P1 | F27-14 |
 
 ## Phase 28 — Desktop analysis console
 

@@ -65,6 +65,24 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- A current assignment and, for an unassigned result only, why it has no
+       label (ADR-0087). A separate type: CurrentAssignment is closed to
+       additions within v1. -->
+  <xs:complexType name="CurrentAssignmentState">
+    <xs:sequence>
+      <xs:element name="customer_id" type="segments:Uuid"/>
+      <xs:element name="state" type="segments:AssignmentState"/>
+      <xs:element name="label_code" type="xs:string" minOccurs="0"/>
+      <xs:element name="r_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="f_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="m_score" type="segments:Score" minOccurs="0"/>
+      <xs:element name="since" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="run_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="unassigned_reason" type="segments:UnassignedReason"
+                  minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <!-- The floor view of the current assignment (ADR-0060): the label and
        since only. The scores and run_id are not elements of this type. -->
   <xs:complexType name="FloorCurrentAssignment">
@@ -125,6 +143,16 @@
       <xs:enumeration value="AGEING"/>
       <xs:enumeration value="VERSION_CHANGE"/>
       <xs:enumeration value="FULL_RUN"/>
+      <xs:enumeration value="CONSENT_WITHDRAWN"/>
+      <xs:enumeration value="CONSENT_GRANTED"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Why a customer in unassigned_result has no label (ADR-0087). -->
+  <xs:simpleType name="UnassignedReason">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="PROFILING_WITHDRAWN"/>
+      <xs:enumeration value="NO_PURCHASES"/>
     </xs:restriction>
   </xs:simpleType>
 
@@ -298,6 +326,8 @@
   <xs:element name="Segment" type="segments:Segment"/>
   <xs:element name="Segments" type="segments:Segments"/>
   <xs:element name="CurrentAssignment" type="segments:CurrentAssignment"/>
+  <xs:element name="CurrentAssignmentState"
+              type="segments:CurrentAssignmentState"/>
   <xs:element name="FloorCurrentAssignment"
               type="segments:FloorCurrentAssignment"/>
   <xs:element name="SegmentAssignments" type="segments:SegmentAssignments"/>

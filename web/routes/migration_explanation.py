@@ -25,6 +25,7 @@ from web.middleware.authz import SEGMENT_READ, requires
 from web.parsing import BIGINT_MAX, whole_number
 from web.services.provenance import runs_synthetic
 from web.services.segment_migration import (
+    NotASnapshot,
     UnknownRun,
     describe_migration,
     explain_migration,
@@ -61,6 +62,9 @@ def index() -> str:
         earlier_id, later_id = order_runs(connection, run_a_id, run_b_id)
     except UnknownRun:
         abort(404)
+    except NotASnapshot as refusal:
+        # A run of changes has no customer the other run lacks to explain.
+        abort(400, description=str(refusal))
 
     earlier_run = get_run(connection, earlier_id)
     later_run = get_run(connection, later_id)

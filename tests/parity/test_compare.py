@@ -2,6 +2,8 @@
 
 import http.client
 import json
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -14,8 +16,11 @@ from tests.parity.compare import (
     AuditShape,
     CaseResult,
     Difference,
+    EngineRfm,
     ReportDifference,
+    RfmDifference,
     SegmentDifference,
+    WebRfm,
     assignment_from_service,
     audit_shape,
     credentials_in,
@@ -23,6 +28,7 @@ from tests.parity.compare import (
     diff_audit,
     diff_levels,
     diff_members,
+    diff_rfm,
     parse_customer_current,
     parse_propagation_bound,
     parse_report_open_members,
@@ -430,3 +436,108 @@ def test_an_index_without_sales_has_no_figures() -> None:
 def test_a_report_difference_names_the_figure() -> None:
     found = ReportDifference("reports index", "revenue", "10.00", "20.00")
     assert "reports index: revenue: web='10.00' expected='20.00'" == str(found)
+
+
+# ---------- RFM (F20-11) ----------
+
+BOUGHT = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)
+COMPUTED = datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+CUSTOMER = "11111111-1111-1111-1111-111111111111"
+
+
+def _web(frequency=3, monetary="120.50", at=BOUGHT) -> WebRfm:
+    return WebRfm(at, frequency, Decimal(monetary))
+
+
+def _engine(r_days=20, f_count=3, m_total="120.50", state="scored") -> EngineRfm:
+    return EngineRfm(state, r_days, f_count, Decimal(m_total), COMPUTED)
+
+
+def test_the_same_raw_values_are_no_difference() -> None:
+    # 20 days and 2 hours 30 minutes from the last purchase to computed_at.
+    assert diff_rfm({CUSTOMER: _web()}, {CUSTOMER: _engine()}) == []
+
+
+def test_recency_is_the_whole_days_to_the_profiles_own_clock() -> None:
+    just_under = BOUGHT - timedelta(hours=21, minutes=30)  # 21 days to COMPUTED
+    assert (
+        diff_rfm({CUSTOMER: _web(at=just_under)}, {CUSTOMER: _engine(r_days=21)}) == []
+    )
+    found = diff_rfm({CUSTOMER: _web()}, {CUSTOMER: _engine(r_days=21)})
+    assert found == [RfmDifference(CUSTOMER, "recency_days", 20, 21)]
+
+
+def test_each_difference_names_the_customer_and_both_values() -> None:
+    found = diff_rfm(
+        {CUSTOMER: _web(frequency=3, monetary="120.50")},
+        {CUSTOMER: _engine(f_count=4, m_total="150.00")},
+    )
+    assert [str(d) for d in found] == [
+        f"{CUSTOMER}: frequency: web=3 rfm-engine=4",
+        f"{CUSTOMER}: monetary: web=Decimal('120.50') rfm-engine=Decimal('150.00')",
+    ]
+
+
+def test_money_is_compared_as_a_decimal_not_as_text() -> None:
+    assert (
+        diff_rfm(
+            {CUSTOMER: _web(monetary="120.5")}, {CUSTOMER: _engine(m_total="120.50")}
+        )
+        == []
+    )
+
+
+def test_a_customer_with_no_purchase_agrees_with_an_unassigned_profile_or_none() -> (
+    None
+):
+    nothing = WebRfm(None, None, None)
+    unassigned = EngineRfm("unassigned", None, 0, Decimal("0.00"), COMPUTED)
+    assert diff_rfm({CUSTOMER: nothing}, {CUSTOMER: unassigned}) == []
+    assert diff_rfm({CUSTOMER: nothing}, {}) == []
+
+
+def test_a_purchase_with_no_scored_profile_is_a_difference() -> None:
+    found = diff_rfm({CUSTOMER: _web()}, {})
+    assert found == [
+        RfmDifference(CUSTOMER, "profile", (BOUGHT, 3, Decimal("120.50")), None)
+    ]
+    pending = EngineRfm("pending", None, None, None, COMPUTED)
+    assert diff_rfm({CUSTOMER: _web()}, {CUSTOMER: pending})[0].engine == "pending"
+
+
+def test_a_scored_profile_with_no_web_purchase_is_a_difference() -> None:
+    found = diff_rfm({CUSTOMER: WebRfm(None, None, None)}, {CUSTOMER: _engine()})
+    assert found == [
+        RfmDifference(CUSTOMER, "profile", None, (20, 3, Decimal("120.50")))
+    ]
+
+
+def test_a_customer_only_one_side_knows_is_found() -> None:
+    other = "22222222-2222-2222-2222-222222222222"
+    found = diff_rfm({CUSTOMER: _web()}, {other: _engine()})
+    assert [d.customer_id for d in found] == sorted([CUSTOMER, other])
+
+
+def test_differences_are_listed_in_customer_order() -> None:
+    low, high = (
+        "00000000-0000-0000-0000-000000000001",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    )
+    found = diff_rfm(
+        {high: _web(frequency=1), low: _web(frequency=1)},
+        {high: _engine(f_count=2), low: _engine(f_count=2)},
+    )
+    assert [d.customer_id for d in found] == [low, high]
+
+
+def test_an_rfm_difference_is_written_to_the_results_file(tmp_path) -> None:
+    path = tmp_path / "parity.json"
+    found = RfmDifference(CUSTOMER, "frequency", 3, 4)
+    write_results([CaseResult("rfm", "failed", "x", [found])], path)
+    entry = json.loads(path.read_text())["cases"][0]["differences"][0]
+    assert entry == {
+        "customer_id": CUSTOMER,
+        "what": "frequency",
+        "web": 3,
+        "engine": 4,
+    }

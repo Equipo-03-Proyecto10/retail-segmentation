@@ -15,6 +15,9 @@ service then commits that capture as its fixtures and holds its port to them.
 | campaigns | `TRANSITIONS`, `transition`, `create_campaign`, `update_draft`, `validate_campaign` | the table, every (from, action) pair on the seeded campaigns, duplicate draft creation, the draft-only edit, end before start two ways, and activation: an ended seeded draft (RN-49), a new draft with no experiment, and one whose experiment has no treatment (RN-24) | `services/campaigns/tests/golden/campaigns.json` |
 | segments | `classify_migration`, `build_migration_matrix`, `explain_migration`, `describe_migration` | RN-39 label comparison, RN-59's reconciled traceable matrix, and RN-60's raw-value judgements | `services/segments/tests/golden/segments.json` |
 | model-registry | `fit_customers`, `normalise`, `label_clusters`, `rank_clusters`, `labels_by_rank` | min-max and its constant feature; k-means++ seeding and the final assignment; the iteration limit and a tolerance equal to the last shift; identical customers (empty cluster refilled); two equidistant ties; fewer customers than clusters; a sampled silhouette at 2,100 customers; equal-ranked clusters; label pairing for k = 2 to 8 | `services/model-registry/tests/golden/model-registry.json` |
+| rfm | `score_rfm_rules`, `read_rfm_inputs` (raw R, F and M, quintile scores, label) | every seeded customer at the anchor; a cancelled latest sale; a partly returned sale; a returned latest sale that leaves an earlier one; a customer with no purchase, with only a cancelled sale, and with a sale older than the window (F21-01, ADR-0062) | `services/rfm-engine/tests/golden/rfm.json` |
+
+The `rfm` capture writes synthetic sales and reversals as the database owner (it switches to `svc_sales`, as ADR-0062 allows only that role to write returns), in a transaction that is rolled back; it needs the owner URL and a superuser.
 
 ## Capturing
 

@@ -7,6 +7,11 @@ traced back to the run that produced it rather than read as "current".
 
 A run of SEEDED origin is marked Synthetic, on its row in the list and on
 its own page (ADR-0052).
+
+An incremental run (ADR-0063) is a batch of changes to some customers, not a
+snapshot, and there will be far more of them than full runs. The list shows the
+full runs unless it is asked for the incremental ones or for both (F22-17), and
+says which it shows.
 """
 
 from __future__ import annotations
@@ -31,20 +36,31 @@ bp = Blueprint("run_history", __name__, url_prefix="/run-history")
 
 _PER_PAGE = 20
 
+# What the scope filter offers, and the scope each choice reads: no choice is
+# the full runs, the snapshots every other report compares.
+SCOPES = ("FULL", "INCREMENTAL", "ALL")
+
 
 @bp.get("/")
 @requires(SEGMENT_READ)
 def index() -> str | Response:
-    """List completed runs, most recent first, optionally filtered by method
-    and by the executing user's name."""
+    """List completed runs, most recent first, optionally filtered by method,
+    by the executing user's name and by scope. With no scope chosen it lists the
+    full runs and says so."""
     page = parse_pagination(request.args.get("page"))
-    filters = active_filters(method=choice_filter("method", METHODS), q=text_filter())
+    filters = active_filters(
+        method=choice_filter("method", METHODS),
+        q=text_filter(),
+        scope=choice_filter("scope", SCOPES),
+    )
+    shown = filters.get("scope", "FULL")
     rows, total = list_runs(
         get_connection(),
         page=page,
         per_page=_PER_PAGE,
         method=filters.get("method"),
         search=filters.get("q"),
+        scope=None if shown == "ALL" else shown,
     )
     if response := redirect_last_page(page, page_count(total, _PER_PAGE)):
         return response
@@ -55,6 +71,7 @@ def index() -> str | Response:
         total_pages=page_count(total, _PER_PAGE),
         total=total,
         filters=filters,
+        shown_scope=shown,
         methods=METHODS,
         runs_synthetic=runs_synthetic,
         synthetic=runs_synthetic(*rows),

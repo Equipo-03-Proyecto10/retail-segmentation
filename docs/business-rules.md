@@ -614,7 +614,13 @@ run.
   dimension, is carried on the same 25 cells rather than binned a third time: each
   cell shows its customers' mean spend in the run's window, in MXN, as a second
   heatmap beside the count, with the 25 cells also listed as a table (#537).
-* **Migration flow** is the previous run, by `run_at`, compared to this one on
+* **A run here is a FULL run** (ADR-0063, F22-17). An `INCREMENTAL` run records
+  only the customers an event or the clock moved, so it is never the newest run
+  the dashboard opens, never the previous run of a migration and never a run the
+  run pickers offer; asking for one by id is refused with the reason. The run
+  history lists full runs by default, says which scope each run has, and lists the
+  incremental ones on request.
+* **Migration flow** is the previous full run, by `run_at`, compared to this one on
   label code (RN-39), whichever methods produced either run. A customer only one of
   the two runs scored is a change in population, not a move between labels, and is
   reported as a count beside the chart rather than as a flow between labels.
@@ -642,8 +648,8 @@ table's caption) starts "Synthetic. ", so assistive technology reads it too. An
 
 **Enforced:** application — `web/services/segmentation_dashboard.py` for the four
 charts, `web/db/segmentation_dashboard.py` for its two new reads (`SELECT`-only,
-parameterized), reusing `web/services/segment_migration.py` unchanged for the
-migration comparison. The page is gated on `segment.read`
+parameterized), and `web/services/segment_migration.py` for the migration
+comparison and its refusal of a non-snapshot run. The page is gated on `segment.read`
 (`docs/analytics-permission-map.md`, Phase 12). **Verified** — by
 `tests/test_segmentation_dashboard.py`, `tests/test_segmentation_dashboard_db.py`
 and `tests/test_segmentation_dashboard_route.py`, including that faults seeded into
@@ -656,7 +662,7 @@ SEEDED/OBSERVED pair per page in the route tests and against PostgreSQL by
 [`evidence/an-20-row-level-synthetic-marker.md`](evidence/an-20-row-level-synthetic-marker.md).
 · `F12-01` · `AN-20`
 
-### RN-43 — The segment history report's filters combine, and a row's explanation is its customer's previous run
+### RN-43 — The segment history report's filters combine, and a row's explanation uses its customer's previous assignment
 
 The report lists `customer_segment_history` rows across every run, filtered by
 three independent, optional conditions that combine with AND:
@@ -672,19 +678,19 @@ A filter combination that matches nothing is a report with no rows, not an error
 the count and the list read share the same filters, so the two never disagree.
 
 **Expanding a row shows why that customer holds that label**, built by F7-06's
-`explain_migration` from exactly two rows: this one, and the same customer's
-assignment on the run immediately before this row's run (found the same way
-F12-01's dashboard finds a run's previous run — the run immediately before it by
-`run_at`, whichever method produced either). A customer's first-ever row has no
-earlier run to compare it with, and says so rather than showing an empty or
-invented comparison. Nothing here recomputes a score; every value comes from the
-stored history rows (ADR-0017).
+`explain_migration` from exactly two stored history rows: this one and the same
+customer's immediately preceding assignment. A preceding global run is not enough:
+an incremental run may omit this customer, and the same customer may change more
+than once after the last full run. A customer's first-ever row has no earlier
+assignment to compare it with, and says so rather than showing an empty or invented
+comparison. Nothing here recomputes a score; every value comes from the stored
+history rows (ADR-0017, ADR-0063).
 
-**A row is marked Synthetic by its run, and by the previous run its explanation compares with** (ADR-0052, #560). A row without an explanation is marked by its run alone. The page carries a warning banner when any row on it is marked.
+**A row is marked Synthetic by its run, and by the preceding assignment's run its explanation compares with** (ADR-0052, #560). A row without an explanation is marked by its run alone. The page carries a warning banner when any row on it is marked.
 
 **Enforced:** application — `web/services/segment_history_report.py` for the
 filters and the per-row explanation, `web/db/segment_history_report.py` for the
-two reads (`SELECT`-only, parameterized, paginated). Building SQL text with an
+three reads (`SELECT`-only and parameterized; the report rows are paginated). Building SQL text with an
 f-string or concatenation is refused elsewhere in this codebase
 (`tests/test_write_services.py`), so the count and list statements' identical
 `WHERE` clauses are two literals kept in step by a test that compares them,

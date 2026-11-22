@@ -530,6 +530,19 @@ def get_run_at(connection: Connection[Any], run_id: int) -> datetime | None:
     return row[0] if row else None
 
 
+def get_run_scope(connection: Connection[Any], run_id: int) -> str | None:
+    """Return whether a run is a FULL snapshot or an INCREMENTAL batch of
+    changes (ADR-0063), or None if the run does not exist. Like get_run_at, it
+    reads nothing that says how the run was produced (ADR-0018)."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT scope FROM segmentation_run WHERE run_id = %s", (run_id,)
+        )
+        row = cursor.fetchone()
+
+    return row[0] if row else None
+
+
 def list_run_labels(connection: Connection[Any], run_id: int) -> dict[Any, str | None]:
     """Return every customer this run scored, mapped to the label_code it
     assigned — None where the customer was scored but left unassigned
@@ -580,6 +593,10 @@ class SegmentationRun:
     run_at: datetime
     # ADR-0052: SEEDED if the run scored any SEEDED sale, else OBSERVED.
     data_origin: str
+    # ADR-0063: FULL when the run re-scored every customer, INCREMENTAL when it
+    # recorded the changes of the customers an event or the clock moved. Only a
+    # FULL run is a snapshot of the population (RN-41).
+    scope: str = "FULL"
 
 
 # The select list every SegmentationRun reader shares, in the dataclass's
@@ -588,7 +605,7 @@ class SegmentationRun:
 RUN_COLUMNS = """
             SELECT r.run_id, r.method, r.window_days, r.parameters,
                    r.customer_count, r.executed_by, u.name, r.run_at,
-                   r.data_origin
+                   r.data_origin, r.scope
             FROM segmentation_run AS r
             LEFT JOIN app_user AS u ON u.user_id = r.executed_by
 """
@@ -600,6 +617,7 @@ RUN_COLUMNS = """
 _RUN_FILTER = """
             WHERE (%(method)s::text IS NULL OR r.method = %(method)s)
               AND (%(search)s::text IS NULL OR u.name ILIKE %(search)s)
+              AND (%(scope)s::text IS NULL OR r.scope = %(scope)s)
 """
 
 _LIST_RUNS = RUN_COLUMNS + _RUN_FILTER + """
@@ -621,15 +639,19 @@ def list_runs(
     per_page: int,
     method: str | None = None,
     search: str | None = None,
+    scope: str | None = None,
 ) -> tuple[list[SegmentationRun], int]:
     """Return a page of completed runs, most recent first, and the total.
 
     `method` keeps one segmentation method; `search` matches the executing
-    user's name, literally and case-insensitively. Either may be None.
+    user's name, literally and case-insensitively; `scope` keeps the FULL runs
+    (the snapshots a report compares) or the INCREMENTAL ones (a batch of
+    changes). Each may be None.
     """
     parameters = {
         "method": method,
         "search": ilike_pattern(search) if search else None,
+        "scope": scope,
     }
     offset = (page - 1) * per_page
 

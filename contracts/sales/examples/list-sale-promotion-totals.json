@@ -1,0 +1,27 @@
+{
+  "from": "2026-11-01T00:00:00-06:00",
+  "to": "2026-12-01T00:00:00-06:00",
+  "totals": [
+    {
+      "store_id": 3,
+      "promotion_id": 12,
+      "lines": 4,
+      "units": 9,
+      "discount": "22.50"
+    },
+    {
+      "store_id": 3,
+      "promotion_id": 15,
+      "lines": 2,
+      "units": 3,
+      "discount": "12.00"
+    },
+    {
+      "store_id": 7,
+      "promotion_id": 12,
+      "lines": 1,
+      "units": 2,
+      "discount": "5.00"
+    }
+  ]
+}

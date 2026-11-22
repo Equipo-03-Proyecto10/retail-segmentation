@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.9.0
+  version: 1.10.0
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -13,7 +13,9 @@ info:
     by line, field and reason (ADR-0070). A finished import can then be reconciled:
     a sale it made that looks like a sale recorded earlier under another source id is
     listed as a case for a person to settle, never merged or removed silently, and the
-    import's quality report counts its failures by code (F26-09).
+    import's quality report counts its failures by code (F26-09). The
+    promotions applied in sales are totalled per store and promotion, in
+    aggregate and net of reversals, with no customer named (F27-16).
 security:
   - bearer: []
 tags:
@@ -21,6 +23,7 @@ tags:
   - name: Sale reversals
   - name: Sale imports
   - name: Sale reconciliation
+  - name: Sale promotion totals
   - name: Channels
   - name: Meta
 paths:
@@ -1338,6 +1341,86 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/sale-promotion-totals:
+    get:
+      tags: [Sale promotion totals]
+      summary: Total the promotions applied in sales, per store
+      description: >-
+        Totals, for each store and promotion, the sale lines whose sales
+        occurred in the window `[from, to)` and that applied that promotion: how
+        many lines (`lines`), the units they carry (`units`) and the discount
+        those units carry (`discount`). Both bounds are required RFC 3339
+        timestamps with an offset; a missing or malformed bound, or `from` not
+        before `to`, gets 422 `invalid_query`. The response states the window it
+        covers.
+
+        A line applied a promotion when the sale recorded one on it
+        (`promotion_id` on `recordSale`, F25-05) and the unit price charged is
+        below the product's list price on the sale's day. Every figure is net of
+        reversals (ADR-0062): a line counts with `quantity - returned_quantity`
+        units and stops counting when none remain, and its discount is those
+        units times `list_price - unit_price`. Only lines recorded through
+        `recordSale` carry a promotion; imported lines never appear.
+
+        The response is an aggregate (ADR-0060): it names no sale, line or
+        customer, and carries no customer id, name or contact. Promotion names
+        are campaigns' (`/v1/promotions`); this read carries only
+        `promotion_id`. Totals are ordered by `store_id`, then `promotion_id`,
+        and a pair with no line in the window is absent.
+
+        A caller confined to assigned stores (`STORE_MANAGER`,
+        `COMMERCIAL_SUPERVISOR`) is totalled over those stores only: without
+        `store_id` the totals cover them, a floor user with no assignment gets
+        no totals, and a `store_id` outside the assignment is 403
+        `forbidden_store`, with no totals (ADR-0060). `ADMIN` and `ANALYST` are
+        not confined. Reading it changes nothing and records nothing.
+      operationId: listSalePromotionTotals
+      x-mosaiq-status: planned
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - COMMERCIAL_SUPERVISOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/StoreIdFilter'
+        - $ref: '#/components/parameters/WindowFrom'
+        - $ref: '#/components/parameters/WindowTo'
+      responses:
+        '200':
+          description: The totals over the window.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalePromotionTotals'
+              examples:
+                totals:
+                  externalValue: ./examples/list-sale-promotion-totals.json
+                no_totals:
+                  externalValue: ./examples/list-sale-promotion-totals-empty.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/SalePromotionTotals'
+              examples:
+                totals:
+                  externalValue: ./examples/list-sale-promotion-totals.xml
+                no_totals:
+                  externalValue: ./examples/list-sale-promotion-totals-empty.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/StoreForbidden'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/InvalidPromotionTotalsQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /v1/channels:
     get:
       tags: [Sales]
@@ -1568,6 +1651,22 @@ components:
       in: query
       required: false
       description: Exclusive upper bound on `occurred_at`, RFC 3339 with an offset.
+      schema:
+        type: string
+        format: date-time
+    WindowFrom:
+      name: from
+      in: query
+      required: true
+      description: Inclusive lower bound on the sale's `occurred_at`, RFC 3339 with an offset.
+      schema:
+        type: string
+        format: date-time
+    WindowTo:
+      name: to
+      in: query
+      required: true
+      description: Exclusive upper bound on the sale's `occurred_at`, RFC 3339 with an offset.
       schema:
         type: string
         format: date-time
@@ -2460,6 +2559,64 @@ components:
           type: integer
         name:
           type: string
+    SalePromotionTotal:
+      type: object
+      additionalProperties: false
+      required:
+        - store_id
+        - promotion_id
+        - lines
+        - units
+        - discount
+      properties:
+        store_id:
+          type: integer
+        promotion_id:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Campaigns' promotion identifier, as recorded on the lines.
+        lines:
+          type: integer
+          minimum: 1
+          description: Sale lines that applied the promotion and still carry units.
+        units:
+          type: integer
+          minimum: 1
+          description: Units those lines carry, net of reversals.
+        discount:
+          type: string
+          pattern: '^[0-9]+\.[0-9]{2}$'
+          description: >-
+            The sum, over those lines, of net units times `list_price -
+            unit_price`.
+      xml:
+        name: SalePromotionTotal
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
+    SalePromotionTotals:
+      type: object
+      additionalProperties: false
+      required:
+        - from
+        - to
+        - totals
+      properties:
+        from:
+          type: string
+          format: date-time
+          description: The window's inclusive lower bound, as asked.
+        to:
+          type: string
+          format: date-time
+          description: The window's exclusive upper bound, as asked.
+        totals:
+          type: array
+          description: One entry per store and promotion, by `store_id` then `promotion_id`.
+          items:
+            $ref: '#/components/schemas/SalePromotionTotal'
+      xml:
+        name: SalePromotionTotals
+        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
     ChannelList:
       type: object
       additionalProperties: false
@@ -2859,6 +3016,24 @@ components:
               externalValue: ./examples/invalid-query.xml
             invalid_pagination:
               externalValue: ./examples/invalid-pagination.xml
+    InvalidPromotionTotalsQuery:
+      description: '`invalid_query`: a bound is missing or malformed, or `from` is not before `to`.'
+      headers:
+        X-Correlation-ID:
+          $ref: '#/components/headers/CorrelationId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-promotion-totals-window.json
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalid_query:
+              externalValue: ./examples/invalid-promotion-totals-window.xml
     StoreForbidden:
       description: '`forbidden_role` or `forbidden_store`.'
       headers:

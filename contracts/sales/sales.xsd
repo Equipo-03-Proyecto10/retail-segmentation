@@ -371,6 +371,25 @@
     </xs:sequence>
   </xs:complexType>
 
+  <xs:complexType name="SalePromotionTotal">
+    <xs:sequence>
+      <xs:element name="store_id" type="xs:integer"/>
+      <xs:element name="promotion_id" type="xs:positiveInteger"/>
+      <xs:element name="lines" type="xs:positiveInteger"/>
+      <xs:element name="units" type="xs:positiveInteger"/>
+      <xs:element name="discount" type="sales:Money"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SalePromotionTotals">
+    <xs:sequence>
+      <xs:element name="from" type="xs:dateTime"/>
+      <xs:element name="to" type="xs:dateTime"/>
+      <xs:element name="SalePromotionTotal" type="sales:SalePromotionTotal"
+                  minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="Channel">
     <xs:sequence>
       <xs:element name="channel_id" type="xs:integer"/>
@@ -392,6 +411,7 @@
   <xs:element name="SaleReversal" type="sales:SaleReversal"/>
   <xs:element name="SaleReversals" type="sales:SaleReversals"/>
   <xs:element name="Channels" type="sales:Channels"/>
+  <xs:element name="SalePromotionTotals" type="sales:SalePromotionTotals"/>
   <xs:element name="SaleImportRequest" type="sales:SaleImportRequest"/>
   <xs:element name="SaleImportChunk" type="sales:SaleImportChunk"/>
   <xs:element name="SaleImportStatusRequest" type="sales:SaleImportStatusRequest"/>

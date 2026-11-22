@@ -93,6 +93,7 @@ export interface Evidence {
 const JWT = /eyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]+/g;
 const SECRET_ELEMENTS = ['password', 'current_password', 'new_password', 'access_token', 'refresh_token'];
 const KEPT_RESPONSE_HEADERS = ['content-type', 'x-correlation-id', 'location', 'retry-after'];
+const SECRET_HEADER = /^(cookie|set-cookie|x-api-key|x-auth-token|x-access-token)$/;
 const UNRECORDED_BODIES = /\/api\/auth\/v1\/sessions(\/refresh)?$/;
 
 export class UnmaskedSecret extends Error {}
@@ -100,8 +101,10 @@ export class UnmaskedSecret extends Error {}
 /** Each distinct secret becomes `<masked #n>`, as tests/acceptance/evidence.py marks them. */
 export class Masker {
   private readonly seen = new Map<string, number>();
+  private readonly known = new Set<string>();
 
   mark(secret: string): string {
+    this.known.add(secret);
     let n = this.seen.get(secret);
     if (n === undefined) {
       n = this.seen.size + 1;
@@ -110,22 +113,41 @@ export class Masker {
     return `<masked #${n}>`;
   }
 
+  /** A secret that must never reach a file, even one the masking rules would not find (a password). */
+  watch(secret: string): void {
+    if (secret !== '') this.known.add(secret);
+  }
+
+  /** Whether the text holds a token-shaped string or any secret this run has seen or watches. */
+  leaks(text: string): boolean {
+    JWT.lastIndex = 0;
+    if (JWT.test(text)) return true;
+    for (const secret of this.known) if (text.includes(secret)) return true;
+    return false;
+  }
+
   header(name: string, value: string): string {
     const lower = name.toLowerCase();
-    if (lower === 'authorization') {
+    if (lower === 'authorization' || lower === 'proxy-authorization') {
       const [scheme, ...rest] = value.split(' ');
       return rest.length > 0 ? `${scheme} ${this.mark(rest.join(' '))}` : this.mark(value);
     }
-    if (lower === 'cookie' || lower === 'set-cookie') return this.mark(value);
+    if (SECRET_HEADER.test(lower)) return this.mark(value);
     return value;
   }
 
   body(text: string): string {
     let masked = text;
     for (const element of SECRET_ELEMENTS) {
-      const pattern = new RegExp(`(<(?:[\\w-]+:)?${element}>)([^<]*)(</(?:[\\w-]+:)?${element}>)`, 'g');
-      masked = masked.replace(pattern, (_m, open: string, secret: string, close: string) =>
+      const xml = new RegExp(`(<(?:[\\w-]+:)?${element}>)([^<]*)(</(?:[\\w-]+:)?${element}>)`, 'g');
+      masked = masked.replace(xml, (_m, open: string, secret: string, close: string) =>
         secret === '' ? `${open}${close}` : `${open}${this.mark(secret)}${close}`,
+      );
+      // A JSON answer (a proxy's error page, say) names the same fields as members.
+      const json = new RegExp(`("${element}"\\s*:\\s*")((?:[^"\\\\]|\\\\.)+)(")`, 'g');
+      masked = masked.replace(
+        json,
+        (_m, open: string, secret: string, close: string) => `${open}${this.mark(secret)}${close}`,
       );
     }
     return masked.replace(JWT, (m) => this.mark(m));
@@ -167,15 +189,12 @@ function headersOf(init: RequestInit): Record<string, string> {
 
 class Recorder {
   readonly exchanges: Recorded[] = [];
+  /** The exact bytes kept for xmllint, by path under the output directory; written only once all is checked. */
+  readonly bodies = new Map<string, string>();
   readonly masker = new Masker();
   step: Step = 'staff';
 
-  constructor(
-    private readonly out: string,
-    private readonly inner: FetchLike,
-  ) {
-    mkdirSync(join(out, 'bodies'), { recursive: true });
-  }
+  constructor(private readonly inner: FetchLike) {}
 
   /** A fetch for Transport: sends through the real fetch and records what passed. */
   readonly fetch: FetchLike = async (url, init) => {
@@ -207,11 +226,11 @@ class Recorder {
       const stem = `${String(number).padStart(3, '0')}-${this.step}`;
       if (requestBody !== '') {
         entry.request_file = `bodies/${stem}-request.xml`;
-        writeFileSync(join(this.out, entry.request_file), requestBody);
+        this.bodies.set(entry.request_file, requestBody);
       }
       if (text !== '') {
         entry.response_file = `bodies/${stem}-response.xml`;
-        writeFileSync(join(this.out, entry.response_file), text);
+        this.bodies.set(entry.response_file, text);
       }
     }
     this.exchanges.push(entry);
@@ -247,7 +266,8 @@ function markdown(evidence: Evidence, exchanges: Recorded[]): string {
 
 /** Runs the three steps, writes result.json, exchanges.json, exchanges.md and bodies/. */
 export async function collect(options: Options): Promise<Evidence> {
-  const recorder = new Recorder(options.out, options.fetchImpl ?? ((url, init) => fetch(url, init)));
+  const recorder = new Recorder(options.fetchImpl ?? ((url, init) => fetch(url, init)));
+  for (const account of Object.values(options.accounts)) recorder.masker.watch(account.password);
   const validator = new XsdValidator(options.bundle);
   const transport = new Transport(options.bundle, validator, () => options.baseUrl, recorder.fetch);
   const started = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
@@ -314,14 +334,13 @@ export async function collect(options: Options): Promise<Evidence> {
     'result.json': JSON.stringify(evidence, null, 2) + '\n',
     'exchanges.json': JSON.stringify(recorder.exchanges, null, 2) + '\n',
     'exchanges.md': markdown(evidence, recorder.exchanges),
+    ...Object.fromEntries(recorder.bodies),
   };
-  for (const [name, text] of Object.entries(files)) {
-    JWT.lastIndex = 0;
-    if (JWT.test(text)) throw new UnmaskedSecret(`${name} still holds a token; nothing written`);
-    for (const account of Object.values(options.accounts))
-      if (account.password !== '' && text.includes(account.password))
-        throw new UnmaskedSecret(`${name} still holds a password; nothing written`);
-  }
+  // Every file, the kept bodies included, is checked before the first is written.
+  for (const [name, text] of Object.entries(files))
+    if (recorder.masker.leaks(text))
+      throw new UnmaskedSecret(`${name} still holds a secret; nothing written`);
+  mkdirSync(join(options.out, 'bodies'), { recursive: true });
   for (const [name, text] of Object.entries(files)) writeFileSync(join(options.out, name), text);
   return evidence;
 }

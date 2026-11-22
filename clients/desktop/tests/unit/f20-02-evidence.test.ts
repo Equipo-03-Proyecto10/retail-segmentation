@@ -1,8 +1,8 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { collect, Masker, verdict, type Options } from '../../scripts/f20-02-evidence';
+import { collect, Masker, UnmaskedSecret, verdict, type Options } from '../../scripts/f20-02-evidence';
 import { bundle, claims, errorXml, example, fakeFetch, tokenResult, type Responder } from '../support/fake';
 
 // F20-02 (#760): what the evidence script records around the main-process calls. What a live
@@ -19,7 +19,10 @@ const ROLE: Record<string, string> = {
 };
 
 /** Answers like auth, sales, campaigns and the name lookups, from the recorded examples. */
-function gateway(forbiddenAnswer = errorXml('forbidden_role')): Responder {
+function gateway(
+  forbiddenAnswer = errorXml('forbidden_role'),
+  forbiddenHeaders: Record<string, string> = {},
+): Responder {
   let signedIn = '';
   return (r) => {
     const path = new URL(r.url).pathname;
@@ -37,7 +40,7 @@ function gateway(forbiddenAnswer = errorXml('forbidden_role')): Responder {
     if (r.method === 'POST' && path === '/api/campaigns/v1/campaigns')
       return ROLE[signedIn] === 'MARKETING'
         ? { status: 201, body: example('campaigns', 'campaign') }
-        : { status: 403, body: forbiddenAnswer };
+        : { status: 403, body: forbiddenAnswer, headers: forbiddenHeaders };
     return { status: 404, body: errorXml('not_found') };
   };
 }
@@ -131,5 +134,41 @@ describe('the F20-02 evidence script', () => {
       '<a:password><masked #2></a:password><refresh_token><masked #3></refresh_token>',
     );
     expect(m.body(`free text ${ACCESS}`)).toBe('free text <masked #1>');
+  });
+
+  it('masks a JSON member, an opaque Authorization value and a cookie header', () => {
+    const m = new Masker();
+    expect(m.header('authorization', `Bearer ${REFRESH}`)).toBe('Bearer <masked #1>');
+    expect(m.header('Set-Cookie', 'sid=abc')).toBe('<masked #2>');
+    expect(m.header('X-Correlation-ID', 'abc')).toBe('abc');
+    expect(m.body(`{"refresh_token":"${REFRESH}","password": "${PASSWORD}","code":"x"}`)).toBe(
+      '{"refresh_token":"<masked #1>","password": "<masked #3>","code":"x"}',
+    );
+    expect(m.leaks(`log: ${REFRESH}`)).toBe(true);
+    expect(m.leaks('log: nothing')).toBe(false);
+  });
+
+  // A secret the masking rules cannot find (it sits in an element, a member or a header they
+  // do not know) must stop the run before anything, the kept bodies included, is written.
+  const survivors: [string, () => Responder][] = [
+    ['an opaque refresh token in an XML element', () => gateway(errorXml('forbidden_role', REFRESH))],
+    ['an access token in an XML element', () => gateway(errorXml('forbidden_role', ACCESS))],
+    ['the password in an XML element', () => gateway(errorXml('forbidden_role', PASSWORD))],
+    ['a refresh token in a JSON body', () => gateway(JSON.stringify({ detail: `see ${REFRESH}` }))],
+    ['an access token in a JSON body', () => gateway(JSON.stringify({ detail: ACCESS }))],
+    [
+      'a refresh token in a response header',
+      () => gateway(errorXml('forbidden_role'), { Location: `/x?r=${REFRESH}` }),
+    ],
+    [
+      'an access token in a response header',
+      () => gateway(errorXml('forbidden_role'), { Location: `/x?t=${ACCESS}` }),
+    ],
+  ];
+  it.each(survivors)('refuses to write anything when %s survives', async (_name, responder) => {
+    const o = options(responder());
+    await expect(collect(o)).rejects.toBeInstanceOf(UnmaskedSecret);
+    expect(readdirSync(o.out)).toEqual([]);
+    expect(existsSync(join(o.out, 'bodies'))).toBe(false);
   });
 });

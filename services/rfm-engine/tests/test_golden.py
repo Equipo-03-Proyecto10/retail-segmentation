@@ -10,14 +10,15 @@ nothing from `web/`: the web's answers are the fixture's rows.
 Each case is replayed through the port: the net purchases the customer's sales
 leave, read from `api_sales.net_purchase_line_v1`, and `profile.build` under the
 seeded rule set. The instant of the last purchase is compared as the number of
-microseconds before the anchor, so a database loaded on another day agrees; a
-seed that changed, which moves every figure, fails first and names the capture to
-redo (`python -m tests.golden.capture --service rfm`, see tests/golden/README.md).
+microseconds before the anchor, so a database loaded on another day agrees. A
+seed change that moves a figure fails the replay; the capture to redo is
+`python -m tests.golden.capture --service rfm` (tests/golden/README.md). The
+header's seed hash is not pinned, as in the other ports: the seed is shared, and
+an edit to a table this port never reads must not fail rfm-engine's suite.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import timedelta
 from decimal import Decimal
@@ -36,7 +37,6 @@ HERE = Path(__file__).parent
 FIXTURE = json.loads((HERE / "golden/rfm.json").read_text())
 CASES = {case["id"]: case for case in FIXTURE["cases"]}
 SYNTHETIC = [case_id for case_id in CASES if case_id != "seeded-customers"]
-SEED = HERE.parents[2] / "sql/02_seed_30_per_table.sql"
 MICROSECOND = timedelta(microseconds=1)
 
 
@@ -50,12 +50,9 @@ def _before_anchor(anchor, instant) -> int | None:
     return None if instant is None else (anchor - instant) // MICROSECOND
 
 
-def test_the_fixture_was_captured_from_this_seed() -> None:
+def test_the_fixture_is_the_rfm_port() -> None:
     assert FIXTURE["header"]["port"] == "rfm"
-    assert (
-        FIXTURE["header"]["seed_sha256"]
-        == hashlib.sha256(SEED.read_bytes()).hexdigest()
-    ), "the seed changed since the capture: capture rfm again"
+    assert "seeded-customers" in CASES and SYNTHETIC
 
 
 def test_every_seeded_customer_has_the_webs_raw_values_scores_and_label(

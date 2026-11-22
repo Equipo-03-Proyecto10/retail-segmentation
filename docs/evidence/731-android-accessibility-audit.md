@@ -81,12 +81,24 @@ problem on any of them, so no screen changed.
 
 Counts for this pass: 9 screens (11 composables), 89 new states, 0 findings.
 
+## Fourth pass (#867, #868): refused-sale actions and the supervisor's review
+
+Drawn and walked like the third pass, at 1.0x and 2.0x. The guard found no problem, so no screen changed.
+
+| Screen (story) | Composable | States drawn | What was checked |
+|---|---|---|---|
+| Sale history, refused rows (#867) | `HistorySection`, inside the sale screen | refused row that can be corrected, while another sale is being built, with its cart gone, open for correction; a refusal on screen with Discard; a queued draft marked pending | Correct and Discard are full-width buttons, labelled with the sale's time so two rows read differently, and at least 44dp. The reasons the correction is not offered ("Finish or clear the sale in progress...", "The cart of this sale is no longer on this phone...") are text, not a disabled control with no explanation. |
+| Review (#868) | `ReviewContent` | full (incidents in each state, this phone's syncs, promotions shown), loading, empty, every read failed, a review on its way with a 409 and a 403 | Incidents are grouped under headings by state, each with a badge that carries the state in text. Acknowledge and Resolve are labelled buttons of 48dp or more and are disabled with a spinner while a review is on its way. The note field has a visible label and is not clipped at 200%. Each refused review shows its reason as text beside its incident. Store and campaign names are headings and rows, not a table. |
+
+Counts for this pass: 2 screens, 11 new states (6 and 5), 0 findings.
+
 ## Guard
 
-`AccessibilityGuardTest` renders 122 screen states: the 33 of the second pass (sign-in, check-in, store picker, scan,
+`AccessibilityGuardTest` renders 133 screen states: the 33 of the second pass (sign-in, check-in, store picker, scan,
 sale, registration, insights, outbox, the shell bars and the open account menu) and the 89 of the third pass (identify,
 profile and recommendations, new customer and record, promotions, inbox, indicators, catalog search, availability, the
-cart summary, receipt, sale bar and history). It draws each one at the
+cart summary, receipt, sale bar and history), and the 11 of the fourth pass (the refused sale's actions and the
+supervisor's review). It draws each one at the
 default font size and again at 200%, with native text measurement, and walks the semantics tree. It fails if any
 of these hold:
 - a node with a click action has no text, description or merged child text;

@@ -80,6 +80,8 @@ import online.maxthecoder.mosaiq.floor.ui.indicators.IndicatorsViewModel
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxList
 import online.maxthecoder.mosaiq.floor.ui.record.CustomerRecordScreen
 import online.maxthecoder.mosaiq.floor.ui.record.NewCustomerScreen
+import online.maxthecoder.mosaiq.floor.ui.review.ReviewScreen
+import online.maxthecoder.mosaiq.floor.ui.review.ReviewViewModel
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 import online.maxthecoder.mosaiq.floor.ui.theme.isLargeFont
 
@@ -102,12 +104,26 @@ fun FloorHome(
     promotions: PromotionsViewModel,
     onSignOut: () -> Unit,
     inbox: InboxViewModel? = null,
-    indicators: IndicatorsViewModel? = null
+    indicators: IndicatorsViewModel? = null,
+    review: ReviewViewModel? = null
 ) {
     if (FloorAccess.sections(signedIn.role).isEmpty()) {
         TurnedAway(model::forgetSession, onSignOut)
     } else {
-        FloorProfile(signedIn, model, scan, sales, insights, identify, record, promotions, onSignOut, inbox, indicators)
+        FloorProfile(
+            signedIn,
+            model,
+            scan,
+            sales,
+            insights,
+            identify,
+            record,
+            promotions,
+            onSignOut,
+            inbox,
+            indicators,
+            review
+        )
     }
 }
 
@@ -138,7 +154,8 @@ private fun FloorProfile(
     promotions: PromotionsViewModel,
     onSignOut: () -> Unit,
     inbox: InboxViewModel?,
-    indicators: IndicatorsViewModel?
+    indicators: IndicatorsViewModel?,
+    review: ReviewViewModel?
 ) {
     val role = signedIn.role
     var saved: FloorLocation by rememberSaveable(stateSaver = FloorLocationSaver) {
@@ -225,6 +242,7 @@ private fun FloorProfile(
                         )
                     FloorLocation.Indicators -> indicators?.let { IndicatorsScreen(it, chosen) }
                     FloorLocation.Outbox -> OutboxList(model)
+                    FloorLocation.Review -> review?.let { ReviewScreen(it, model) }
                     FloorLocation.Customer, is FloorLocation.CustomerProfile ->
                         Column(verticalArrangement = Arrangement.spacedBy(Spacing.Md)) {
                             // The loyalty officer's way into registration and the record (F27-09).
@@ -429,6 +447,7 @@ private val SECTIONS =
             R.drawable.ic_lucide_chart_column,
             "nav-indicators"
         ),
+        Section(FloorSection.REVIEW, R.string.nav_review, R.drawable.ic_lucide_triangle_alert, "nav-review"),
         Section(FloorSection.OUTBOX, R.string.nav_outbox, R.drawable.ic_lucide_inbox, "nav-outbox")
     )
 

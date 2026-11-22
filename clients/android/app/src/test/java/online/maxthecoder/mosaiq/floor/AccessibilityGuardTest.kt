@@ -52,6 +52,7 @@ import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.DemandCoverageReport
 import online.maxthecoder.mosaiq.floor.net.FloorCurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.FloorCustomer
+import online.maxthecoder.mosaiq.floor.net.IncidentReview
 import online.maxthecoder.mosaiq.floor.net.InferredInterest
 import online.maxthecoder.mosaiq.floor.net.InterestProfile
 import online.maxthecoder.mosaiq.floor.net.ItemAvailability
@@ -119,6 +120,10 @@ import online.maxthecoder.mosaiq.floor.ui.record.EnrolFields
 import online.maxthecoder.mosaiq.floor.ui.record.NewCustomerBody
 import online.maxthecoder.mosaiq.floor.ui.record.RecordActions
 import online.maxthecoder.mosaiq.floor.ui.record.RecordBody
+import online.maxthecoder.mosaiq.floor.ui.review.IncidentsState
+import online.maxthecoder.mosaiq.floor.ui.review.PromotionsShownState
+import online.maxthecoder.mosaiq.floor.ui.review.ReviewContent
+import online.maxthecoder.mosaiq.floor.ui.review.ShownPromotion
 import online.maxthecoder.mosaiq.floor.ui.sale.HistorySection
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationFields
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationForm
@@ -1047,6 +1052,86 @@ class AccessibilityGuardTest {
 
     @Test fun saleRefusedWithKeptCart() =
         sale(ready(cart(queuedRowId = 8), queued = refusedSale, history = listOf(refusedSale)))
+
+    // Review (#868) ------------------------------------------------------------------------------
+
+    private val reviewed by lazy {
+        listOf(
+            incident.copy(attempts = 3),
+            incident.copy(
+                incidentId = "i-2",
+                sourceType = "CHECK_IN",
+                refusedCode = "outside_geofence",
+                status = "ACKNOWLEDGED",
+                history = listOf(IncidentReview("ACKNOWLEDGED", "Checking with the associate.", "2026-11-05T14:20:00Z"))
+            ),
+            incident.copy(
+                incidentId = "i-3",
+                status = "RESOLVED",
+                history = listOf(
+                    IncidentReview("ACKNOWLEDGED", null, "2026-11-05T14:20:00Z"),
+                    IncidentReview("RESOLVED", "Fixed with the till.", "2026-11-05T15:00:00Z")
+                )
+            )
+        )
+    }
+
+    private val shown = PromotionsShownState(
+        loading = false,
+        rows = listOf(
+            ShownPromotion(3, 12, "Loyal customers", 24),
+            ShownPromotion(3, 14, null, 3),
+            ShownPromotion(5, 12, "Loyal customers", 1)
+        ),
+        since = LocalDate.parse("2026-11-15"),
+        counted = 500,
+        total = 1203,
+        storeNames = mapOf(3 to "Coyoacan", 5 to "Centro")
+    )
+
+    private fun review(
+        incidents: IncidentsState = IncidentsState(loading = false, incidents = reviewed, total = 450),
+        promotions: PromotionsShownState = shown,
+        syncs: List<OutboxRow>? = listOf(
+            row(1, Operation.SALE, RowState.PENDING),
+            row(2, Operation.SALE, RowState.REFUSED)
+        )
+    ) = audit {
+        ReviewContent(
+            incidents, promotions, syncs, "A", emptySet(), { _, _, _ -> }, {}, {}, {}, {}, now,
+            ZoneId.of(
+                "UTC"
+            )
+        )
+    }
+
+    @Test fun reviewFull() = review()
+
+    @Test fun reviewLoading() = review(IncidentsState(), PromotionsShownState(), null)
+
+    @Test fun reviewEmpty() = review(
+        IncidentsState(loading = false),
+        PromotionsShownState(loading = false, since = LocalDate.parse("2026-11-15")),
+        emptyList()
+    )
+
+    @Test fun reviewEveryReadFailed() = review(
+        IncidentsState(loading = false, error = ApiError.unreachable(null)),
+        PromotionsShownState(loading = false, error = ApiError(403, "forbidden_role", "Refused.", "c"))
+    )
+
+    @Test fun reviewOnItsWayAndRefused() = review(
+        IncidentsState(
+            loading = false,
+            incidents = reviewed,
+            total = 3,
+            busy = setOf("i-1"),
+            reviewErrors = mapOf(
+                "i-2" to ApiError(409, "invalid_transition", "Moves forward only.", "c"),
+                "i-3" to ApiError(403, "forbidden_store", "Not your store.", "c")
+            )
+        )
+    )
 
     // Shell --------------------------------------------------------------------------------------
 

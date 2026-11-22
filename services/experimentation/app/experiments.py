@@ -17,7 +17,9 @@ from typing import Any
 from mosaiq_kit import ApiError
 from psycopg import Connection
 
-from app import plan
+from app import plan, stats
+
+MEASURES = ("PRE_RECENCY_DAYS", "PRE_PURCHASE_COUNT", "PRE_NET_SPEND")
 
 STATES = ("PLANNED", "ASSIGNED", "ANALYZED")
 ORIGINS = ("OBSERVED", "SEEDED", "INJECTED")
@@ -90,6 +92,17 @@ SELECT experiment_id, reason, removed
  WHERE experiment_id = ANY(%s)
  ORDER BY experiment_id, reason
 """
+RECORDS = """
+SELECT experiment_id, assigned_by, acknowledged_underpowered,
+       recomputation_matches, sample_ratio_p_value
+  FROM experiments.experiment_assignment_record
+ WHERE experiment_id = ANY(%s)
+"""
+BALANCES = """
+SELECT experiment_id, group_id, measure, standardized_mean_difference
+  FROM experiments.experiment_assignment_balance
+ WHERE experiment_id = ANY(%s)
+"""
 FLAGS = """
 SELECT experiment_id, flag
   FROM experiments.experiment_flag
@@ -137,6 +150,43 @@ def _number(value: Any) -> float | None:
 
 def _instant(value: datetime | None) -> str | None:
     return None if value is None else plan.instant(value)
+
+
+def _assigned_by(record: tuple[Any, ...] | None) -> str | None:
+    return None if record is None or record[0] is None else str(record[0])
+
+
+def _checks(
+    record: tuple[Any, ...] | None,
+    balance: list[tuple[Any, ...]],
+    arm_ids: list[int],
+) -> dict[str, Any] | None:
+    """What was checked at assignment; None for an assignment the web recorded (V0)."""
+    if record is None:
+        return None
+    _by, _acknowledged, matches, p_value = record
+    position = {arm_id: index for index, arm_id in enumerate(arm_ids)}
+    return {
+        "recomputation_matches": matches,
+        "sample_ratio": {
+            "status": "FAILED" if p_value < stats.SAMPLE_RATIO_THRESHOLD else "PASSED",
+            "p_value": p_value,
+            "threshold": stats.SAMPLE_RATIO_THRESHOLD,
+        },
+        "balance": [
+            {
+                "measure": measure,
+                "arm_id": group_id,
+                "reference_arm_id": arm_ids[0],
+                "standardized_mean_difference": round(difference, 6),
+                "flagged": abs(difference) > stats.BALANCE_THRESHOLD,
+                "threshold": stats.BALANCE_THRESHOLD,
+            }
+            for group_id, measure, difference in sorted(
+                balance, key=lambda r: (position[r[0]], MEASURES.index(r[1]))
+            )
+        ],
+    }
 
 
 def _design(row: tuple[Any, ...], assigned_last: datetime | None) -> dict[str, Any]:
@@ -200,6 +250,13 @@ def load(connection: Connection, rows: list[tuple[Any, ...]]) -> list[dict[str, 
         exclusion_rows = cursor.fetchall()
         cursor.execute(FLAGS, (ids,))
         flag_rows = cursor.fetchall()
+        cursor.execute(RECORDS, (ids,))
+        records = {r[0]: r[1:] for r in cursor.fetchall()}
+        cursor.execute(BALANCES, (ids,))
+        balance_rows = cursor.fetchall()
+    balances: dict[int, list[tuple[Any, ...]]] = {}
+    for experiment_id, group_id, measure, difference in balance_rows:
+        balances.setdefault(experiment_id, []).append((group_id, measure, difference))
     arms: dict[int, list[tuple[Any, ...]]] = {}
     for arm in arm_rows:
         arms.setdefault(arm[0], []).append(arm)
@@ -233,14 +290,20 @@ def load(connection: Connection, rows: list[tuple[Any, ...]]) -> list[dict[str, 
             assignment = {
                 "experiment_id": experiment_id,
                 "assigned_at": _instant(assigned_first),
-                "assigned_by": None,
+                "assigned_by": _assigned_by(records.get(experiment_id)),
                 "assigned_total": sum(arm[5] for arm in mine),
-                "acknowledged_underpowered": False,
+                "acknowledged_underpowered": bool(
+                    records.get(experiment_id, (None, False))[1]
+                ),
                 "arms": [
                     {"arm_id": arm[1], "kind": arm[2], "assigned": arm[5]}
                     for arm in mine
                 ],
-                "checks": None,
+                "checks": _checks(
+                    records.get(experiment_id),
+                    balances.get(experiment_id, []),
+                    [arm[1] for arm in mine],
+                ),
             }
         frame = None
         if planned:

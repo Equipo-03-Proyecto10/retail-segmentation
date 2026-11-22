@@ -686,6 +686,25 @@ can keep each fact consistent. The two flags a look can raise go to `experiment_
 the plan: `svc_experiments` holds SELECT and INSERT only, and the same trigger refuses any UPDATE
 or DELETE.
 
+The assignment's checks (F25-08) add two more, in 4NF, written once with the assignment and
+frozen like the plan:
+- **`experiments.experiment_assignment_record`** is keyed by `experiment_id`, which determines who
+  assigned, whether an `UNDERPOWERED` plan was acknowledged, whether recomputing gave the stored
+  arms and the sample ratio's p-value. These are facts of one act, fixed when it happened. Not
+  columns, because each follows from rows that cannot change: the assignment instant, the total
+  and each arm's count (from `experiment_assignment`), the sample ratio's status (the p-value
+  against 0.001) and whether the experiment is flagged.
+- **`experiments.experiment_assignment_balance`** is keyed by `(experiment_id, group_id,
+  measure)`, which determines the standardized mean difference. The reference arm (the control,
+  or the first offer) and whether a difference is flagged (its absolute value against 0.25) are
+  derived. Balance has its own relation and is not a column of the record: it is a multivalued
+  fact per arm and measure. The result's own balance is a separate fact, a look at the analysis
+  instant, and stays in `experiment_result_balance`.
+
+Both are exempt from the 30-row minimum, like the other tables written only by an operation
+(`sql/seed-exempt.txt`). `public.experiment_assignment` itself gains triggers rather than columns:
+no role may UPDATE, DELETE or TRUNCATE a row (RN-42), and the web may not INSERT into a planned experiment.
+
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
 - **`recommendations.recommendation_decision`** is keyed by `decision_id`, which
@@ -1575,6 +1594,25 @@ window.
 | `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result` | The look |
 | `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
 | `reference_group_id` | `INTEGER` | NN | FK likewise | The control, or the first offer when there is none |
+| `measure` | `VARCHAR(20)` | NN | PK part; CHECK one of `PRE_RECENCY_DAYS`, `PRE_PURCHASE_COUNT`, `PRE_NET_SPEND` | A measure over the window before the frame instant |
+| `standardized_mean_difference` | `DOUBLE PRECISION` | NN | — | The arm minus the reference over the pooled standard deviation |
+
+#### `experiments.experiment_assignment_record`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK; FK → `public.experiment` | The experiment assigned |
+| `assigned_by` | `UUID` | NN | FK → `public.app_user` | Who assigned it |
+| `acknowledged_underpowered` | `BOOLEAN` | NN | — | An `UNDERPOWERED` plan was assigned on an explicit acknowledgement |
+| `recomputation_matches` | `BOOLEAN` | NN | — | Dealing again from the stored rows gave the stored arms |
+| `sample_ratio_p_value` | `DOUBLE PRECISION` | NN | CHECK in [0, 1] | The chi-square test of the arm counts against equal shares |
+
+#### `experiments.experiment_assignment_balance`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_assignment_record` | The assignment |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
 | `measure` | `VARCHAR(20)` | NN | PK part; CHECK one of `PRE_RECENCY_DAYS`, `PRE_PURCHASE_COUNT`, `PRE_NET_SPEND` | A measure over the window before the frame instant |
 | `standardized_mean_difference` | `DOUBLE PRECISION` | NN | — | The arm minus the reference over the pooled standard deviation |
 

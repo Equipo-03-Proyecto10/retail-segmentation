@@ -25,7 +25,12 @@ from datetime import date
 from uuid import UUID
 
 from psycopg import Connection
-from psycopg.errors import ForeignKeyViolation, IntegrityError, UniqueViolation
+from psycopg.errors import (
+    CheckViolation,
+    ForeignKeyViolation,
+    IntegrityError,
+    UniqueViolation,
+)
 
 from web.db import experiments
 from web.db.campaigns import get_campaign
@@ -405,6 +410,10 @@ def activation_refusal(connection: Connection, campaign_id: int) -> str | None:
 _CAMPAIGN_ACTIVE = "ACTIVE"
 
 
+# The database's name for refusing an INSERT into an experiment with a stored plan.
+PLANNED_BY_SERVICE = "experiment_assignment_planned_by_service"
+
+
 class AssignmentRefused(Exception):
     """The experiment cannot be assigned now; the message says why."""
 
@@ -556,6 +565,19 @@ def assign(connection: Connection, experiment_id: int) -> AssignmentPlan:
             f"A customer in this population is already assigned in experiment "
             f"{experiment_id}; nothing was written."
         ) from error
+    except CheckViolation as error:
+        # An experiment the experimentation service planned has a stored frame and a
+        # salt, and its arms are a function of them (ADR-0068): a shuffle here would
+        # make the assignment unverifiable. The database refuses it; the web cannot
+        # read the service's schema to say so first, so the refusal is reported here.
+        if error.diag.constraint_name == PLANNED_BY_SERVICE:
+            raise AssignmentRefused(
+                f"Experiment {experiment_id} was planned by the experimentation "
+                "service, which assigns it from its stored frame so that anyone can "
+                "verify the assignment. It cannot be assigned from here; nothing "
+                "was written."
+            ) from error
+        raise
 
 
 # ---------- exposure (F11-05) ----------

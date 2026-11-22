@@ -61,6 +61,11 @@ EXPECTED = {
     ("experiments.experiment_result_balance", "INSERT"),
     ("experiments.sale_attribution", "SELECT"),
     ("experiments.sale_attribution", "INSERT"),
+    # F25-08: what the assignment checked, two more of its own tables.
+    ("experiments.experiment_assignment_record", "SELECT"),
+    ("experiments.experiment_assignment_record", "INSERT"),
+    ("experiments.experiment_assignment_balance", "SELECT"),
+    ("experiments.experiment_assignment_balance", "INSERT"),
     # F25-09: the frame is read from published objects only (ADR-0044, ADR-0068).
     ("api_campaigns", "USAGE"),
     ("api_campaigns.campaign_target_v1", "SELECT"),

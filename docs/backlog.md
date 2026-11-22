@@ -1076,6 +1076,8 @@ flowchart TD
     F22-13 --> F22-16
     F22-14 --> F22-16
     F22-15 --> F22-17
+    F22-14 --> F22-18
+    F22-15 --> F22-18
     F23-01 --> F23-02
     F23-02 --> F23-03
     F23-03 --> F23-04
@@ -1346,6 +1348,7 @@ Epic #743.
 | F22-15 | #811 | Apply segment changes under the published version and announce them | P0 | F21-17, F22-05, F22-13, F22-14 |
 | F22-16 | #812 | Serve migrations by version, with their explanation, from segments-service | P0 | F22-13, F22-14 |
 | F22-17 | #813 | Keep the web's segment reports correct alongside incremental changes | P0 | F22-15 |
+| F22-18 | #1130 | Serve each assignment's cause and the reason a customer is unassigned from segments-service | P1 | F22-14, F22-15 |
 
 ## Phase 23 — Model validity and drift
 

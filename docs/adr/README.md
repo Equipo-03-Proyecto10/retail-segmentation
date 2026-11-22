@@ -226,6 +226,7 @@ Later runtime events must be preserved.
 | [0085](0085-the-primary-result-of-an-experiment-is-stored-once-as-four-frozen-relations-and-read-from-them.md) | The primary result of an experiment is stored once, as four frozen relations, and read from them | Accepted |
 | [0086](0086-a-verification-compares-a-profile-as-the-incremental-design-promises-it-at-one-instant.md) | A verification compares a profile as the incremental design promises it, at one instant | Accepted |
 | [0087](0087-an-incremental-change-is-applied-to-the-segment-history-in-the-profile-transaction-under-the-published-version.md) | An incremental change is applied to the segment history in the profile's transaction, under the published version, and a withdrawn PROFILING is the unassigned result | Accepted |
+| [0088](0088-the-drift-monitor-reads-the-current-profiles-in-one-snapshot-raises-an-alert-on-the-second-alarming-window-and-is-audited-as-a-calculation-run.md) | The drift monitor reads the current profiles in one snapshot, raises an alert on the second alarming window, and is audited as a calculation run | Accepted |
 
 ## Writing one
 

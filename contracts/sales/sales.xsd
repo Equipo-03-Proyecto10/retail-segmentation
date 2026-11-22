@@ -385,7 +385,7 @@
     <xs:sequence>
       <xs:element name="from" type="xs:dateTime"/>
       <xs:element name="to" type="xs:dateTime"/>
-      <xs:element name="SalePromotionTotal" type="sales:SalePromotionTotal"
+      <xs:element name="totals" type="sales:SalePromotionTotal"
                   minOccurs="0" maxOccurs="unbounded"/>
     </xs:sequence>
   </xs:complexType>

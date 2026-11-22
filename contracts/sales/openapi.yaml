@@ -2590,9 +2590,6 @@ components:
           description: >-
             The sum, over those lines, of net units times `list_price -
             unit_price`.
-      xml:
-        name: SalePromotionTotal
-        namespace: https://mosaiq.maxthecoder.online/xml/sales/v1
     SalePromotionTotals:
       type: object
       additionalProperties: false
@@ -2604,11 +2601,11 @@ components:
         from:
           type: string
           format: date-time
-          description: The window's inclusive lower bound, as asked.
+          description: The window's inclusive lower bound, the instant asked, in UTC.
         to:
           type: string
           format: date-time
-          description: The window's exclusive upper bound, as asked.
+          description: The window's exclusive upper bound, the instant asked, in UTC.
         totals:
           type: array
           description: One entry per store and promotion, by `store_id` then `promotion_id`.

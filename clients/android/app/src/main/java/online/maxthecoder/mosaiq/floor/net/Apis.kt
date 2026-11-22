@@ -222,15 +222,43 @@ interface EngagementApi {
         @Query("size") size: Int = 20
     ): Response<EngagementEventPage>
 
-    /** The supervisor's open incidents since a server time (ADR-0071's poll). */
+    /**
+     * The supervisor's incidents: open ones since a server time for ADR-0071's poll, or every state (a null
+     * [status]) for the review screen (F27-14). Narrowed to the caller's stores by the service.
+     */
     @GET(Services.ENGAGEMENT + "capture-incidents")
     suspend fun listCaptureIncidents(
-        @Query("status") status: String = "OPEN",
+        @Query("status") status: String? = "OPEN",
         @Query("recorded_since") recordedSince: String? = null,
         @Query("page") page: Int = 1,
         @Query("size") size: Int = POLL_PAGE_SIZE
     ): Response<CaptureIncidentPage>
+
+    @GET(Services.ENGAGEMENT + "capture-incidents/{incident_id}")
+    suspend fun getCaptureIncident(@Path("incident_id") incidentId: String): Response<CaptureIncident>
+
+    /** Moves an incident forward: `OPEN` to `ACKNOWLEDGED` to `RESOLVED`; anything else is 409 `invalid_transition`. */
+    @POST(Services.ENGAGEMENT + "capture-incidents/{incident_id}/reviews")
+    suspend fun reviewCaptureIncident(
+        @Path("incident_id") incidentId: String,
+        @Body review: ReviewCaptureIncidentRequest
+    ): Response<CaptureIncident>
 }
+
+/** engagement's `/v2` reads: the events of the caller's stores, here only the exposures to count. */
+interface EngagementV2Api {
+    @GET(Services.ENGAGEMENT_V2 + "engagement-events")
+    suspend fun listEvents(
+        @Query("type") type: String,
+        @Query("from") from: String? = null,
+        @Query("voided") voided: Boolean = false,
+        @Query("page") page: Int = 1,
+        @Query("size") size: Int = EXPOSURE_PAGE_SIZE
+    ): Response<ExposureEventPage>
+}
+
+/** The contract's largest page for the events list. */
+const val EXPOSURE_PAGE_SIZE = 100
 
 /** ADR-0071: each poll request asks for 50 items or fewer. */
 const val POLL_PAGE_SIZE = 50

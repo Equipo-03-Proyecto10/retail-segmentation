@@ -506,6 +506,16 @@ svc_models,models.model_version_feature,INSERT
 svc_models,models.model_publication,SELECT
 svc_models,models.model_publication,INSERT
 svc_models,models.run_version,SELECT
+svc_models,models.drift_report,SELECT
+svc_models,models.drift_report,INSERT
+svc_models,models.drift_variable,SELECT
+svc_models,models.drift_variable,INSERT
+svc_models,models.drift_statistic,SELECT
+svc_models,models.drift_statistic,INSERT
+svc_models,models.drift_bin,SELECT
+svc_models,models.drift_bin,INSERT
+svc_models,models.drift_alert,SELECT
+svc_models,models.drift_alert,INSERT
 svc_models,models.model_training,SELECT
 svc_models,models.model_training,INSERT
 svc_models,models.model_training_feature,SELECT

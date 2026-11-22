@@ -141,7 +141,11 @@ class FloorViewModel(
     }
 
     fun dismiss(row: OutboxRow) {
-        viewModelScope.launch { graph.outbox.dismiss(row.id) }
+        viewModelScope.launch {
+            // A refused sale's cart is kept for correcting it; once the row is gone the cart has no use.
+            graph.drafts.forget(row.userId, listOf(row.clientId))
+            graph.outbox.dismiss(row.id)
+        }
     }
 
     /** How many of the signed-in user's writes would wait if they signed out. */

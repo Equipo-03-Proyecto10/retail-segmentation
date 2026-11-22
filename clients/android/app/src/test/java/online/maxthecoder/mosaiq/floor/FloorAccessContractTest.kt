@@ -5,6 +5,7 @@ import online.maxthecoder.mosaiq.floor.auth.FloorAccess
 import online.maxthecoder.mosaiq.floor.auth.FloorSection
 import online.maxthecoder.mosaiq.floor.auth.RecordPart
 import online.maxthecoder.mosaiq.floor.auth.RecordWriters
+import online.maxthecoder.mosaiq.floor.auth.ServiceOperation
 import online.maxthecoder.mosaiq.floor.auth.SessionRepository
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -135,9 +136,12 @@ class FloorAccessContractTest {
             listOf(FloorSection.CHECK_IN, FloorSection.CUSTOMER, FloorSection.CUSTOMER_RECORD, FloorSection.OUTBOX),
             FloorAccess.sections("LOYALTY_OFFICER")
         )
-        assertEquals(listOf(FloorSection.CHECK_IN, FloorSection.OUTBOX), FloorAccess.sections("COMMERCIAL_SUPERVISOR"))
+        assertEquals(
+            listOf(FloorSection.CHECK_IN, FloorSection.REVIEW, FloorSection.OUTBOX),
+            FloorAccess.sections("COMMERCIAL_SUPERVISOR")
+        )
         // The floor search and floor view are the store profiles' reads: the administrator does not hold them.
-        assertEquals(everything, FloorAccess.sections("ADMIN"))
+        assertEquals(everything + FloorSection.REVIEW, FloorAccess.sections("ADMIN"))
     }
 
     @Test
@@ -178,6 +182,23 @@ class FloorAccessContractTest {
     fun onlyTheStoreManagerAndTheAdministratorReadTheStoreIndicators() {
         val holders = SessionRepository.FLOOR_ROLES.filter { FloorAccess.holds(it, FloorSection.INDICATORS) }
         assertEquals(setOf("STORE_MANAGER", "ADMIN"), holders.toSet())
+    }
+
+    @Test
+    fun onlyTheCommercialSupervisorAndTheAdministratorReviewTheFloor() {
+        val holders = SessionRepository.FLOOR_ROLES.filter { FloorAccess.holds(it, FloorSection.REVIEW) }
+        assertEquals(setOf("COMMERCIAL_SUPERVISOR", "ADMIN"), holders.toSet())
+        // F27-14: reading the incidents and moving them forward are the operations of that section.
+        listOf("listCaptureIncidents", "getCaptureIncident", "reviewCaptureIncident").forEach {
+            assertEquals(it, setOf("ADMIN", "COMMERCIAL_SUPERVISOR"), rolesOf("engagement", it))
+            assertTrue(
+                FloorAccess.operations.getValue(FloorSection.REVIEW).contains(ServiceOperation("engagement", it))
+            )
+        }
+        // The seller and the store manager are refused the review by the service, not only by this table.
+        listOf("SALES_ASSOCIATE", "STORE_MANAGER", "LOYALTY_OFFICER").forEach {
+            assertTrue("$it is refused", it !in rolesOf("engagement", "reviewCaptureIncident"))
+        }
     }
 
     @Test

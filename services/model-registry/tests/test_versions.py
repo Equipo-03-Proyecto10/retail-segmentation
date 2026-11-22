@@ -209,16 +209,14 @@ def test_there_is_no_route_to_edit_or_delete_a_version(
         assert response.get_json()["code"] == "method_not_allowed"
 
 
-def test_the_planned_operations_answer_404_or_405(
+def test_no_operation_is_still_marked_planned_and_the_drift_reads_are_served(
     client: FlaskClient, token: Any
 ) -> None:
-    for method, path in (
-        ("get", "/v1/drift-reports"),
-        ("get", "/v1/drift-reports/1"),
-        ("get", "/v1/drift-alerts"),
-        ("get", "/v1/drift-alerts/1"),
-    ):
-        assert getattr(client, method)(path, headers=token()).status_code in (404, 405)
+    contract = (ROOT / "contracts/model-registry/openapi.yaml").read_text()
+    assert "x-mosaiq-status: planned" not in contract
+    for path in ("/v1/drift-reports", "/v1/drift-alerts"):
+        assert client.get(path, headers=token()).status_code == 200
+        assert client.post(path, headers=token(), json={}).status_code in (404, 405)
 
 
 def _create_draft(client: FlaskClient, token: Any) -> dict[str, Any]:
@@ -602,7 +600,9 @@ def test_outbox_is_trigger_owned_and_unpublished_view_grants_are_deferred(
             " VALUES (%s, %s, %s)",
             ("stream:models.v1.publication_recorded", "INSERT", "1"),
         )
-    for role in ("svc_rfm", "svc_kpis"):
+    # svc_rfm reads the published version since F22-15 (ADR-0087); no other
+    # consumer is granted the view yet.
+    for role, granted in (("svc_rfm", True), ("svc_kpis", False)):
         exists = owner.execute(
             "SELECT 1 FROM pg_roles WHERE rolname = %s", (role,)
         ).fetchone()
@@ -610,7 +610,7 @@ def test_outbox_is_trigger_owned_and_unpublished_view_grants_are_deferred(
             assert owner.execute(
                 "SELECT has_table_privilege(%s, %s, 'SELECT')",
                 (role, "api_models.published_version_v1"),
-            ).fetchone() == (False,)
+            ).fetchone() == (granted,)
 
 
 # The schema's half of immutability, as svc_models and as the owner.

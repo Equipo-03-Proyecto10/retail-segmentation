@@ -38,8 +38,34 @@ data class SaleUi(
     val statusMessage: String? = null,
     val statusError: ApiError? = null,
     /** The queued sale's row, once "Confirm sale" was tapped: waiting, recorded or refused. */
-    val queued: OutboxRow? = null
+    val queued: OutboxRow? = null,
+    /** The client ids of refused sales whose cart is still kept on this phone, so they can be corrected. */
+    val kept: Set<String> = emptySet()
 )
+
+/** Whether a refused sale can be put back in the cart to fix, and if not, why. */
+enum class Correction {
+    /** This very sale's cart is open now, to fix and confirm again. */
+    OPEN,
+
+    /** The cart is free, or it is this very sale's. */
+    AVAILABLE,
+
+    /** Another sale is being built; correcting this one would replace it. */
+    BUSY,
+
+    /** The cart is no longer on this phone: the sale can only be discarded. */
+    GONE
+}
+
+/** What "Correct" can do for a refused [row]: the sale in progress is never replaced behind the seller's back. */
+fun correctionOf(row: OutboxRow, ui: SaleUi): Correction {
+    val sale = ui.sale
+    if (row.clientId in sale.corrects) return Correction.OPEN
+    if (row.clientId !in ui.kept) return Correction.GONE
+    val free = sale.lines.isEmpty() && sale.queuedRowId == null && !sale.confirming && !sale.reviewing
+    return if (free || sale.queuedRowId == row.id) Correction.AVAILABLE else Correction.BUSY
+}
 
 /** What the sale screen can ask for; the stateful wrapper wires each to the view model. */
 class SaleActions(
@@ -62,6 +88,8 @@ class SaleActions(
     val onConfirm: () -> Unit = {},
     val onBackToCart: () -> Unit = {},
     val onNewSale: () -> Unit = {},
+    val onCorrect: (OutboxRow) -> Unit = {},
+    val onDiscard: (OutboxRow) -> Unit = {},
     val onRefreshStatus: (OutboxRow) -> Unit = {},
     val onPickStore: () -> Unit = {},
     val rowStatus: (OutboxRow) -> String? = { null }

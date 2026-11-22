@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -20,7 +21,7 @@ from mosaiq_kit import (
 
 import redis
 
-from . import audit, rules, store, training
+from . import audit, monitor, reports, rules, store, training
 from .config import Settings
 
 METHODS = ("RFM_RULES", "KMEANS")
@@ -29,6 +30,9 @@ NAME_CONSTRAINT = "model_version_name_key"
 PUBLISHED_CONSTRAINT = "model_version_one_published"
 RUNNING_CONSTRAINT = "model_training_one_running"
 TRAINING_STATES = ("RUNNING", "COMPLETED", "FAILED")
+DRIFT_KINDS = ("DATA_DRIFT", "OUTCOME_TEST")
+COMPARISONS = ("COMPARED", "INSUFFICIENT_DATA", "NOT_COMPARED")
+DRIFT_VARIABLES = ("SEGMENT_SHARES", "R", "F", "M", "REPURCHASE_RATE")
 LOGGER = logging.getLogger(__name__)
 STREAM = "stream:models.v1.publication_recorded"
 
@@ -66,6 +70,20 @@ def _filter(args: Any, name: str, allowed: tuple[str, ...]) -> str | None:
     if value not in allowed:
         raise _invalid_query(name, allowed)
     return value
+
+
+def _version_filter(args: Any) -> int | None:
+    value = args.get("model_version_id")
+    if value is None:
+        return None
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) < 2**63:
+        raise ApiError(
+            422,
+            "invalid_query",
+            "model_version_id must be a positive integer.",
+            [{"field": "model_version_id", "code": "invalid_value"}],
+        )
+    return int(value)
 
 
 def _scoring(stored: dict[str, Any]) -> dict[str, Any]:
@@ -369,6 +387,74 @@ def create_app(*, start_relay: bool = True) -> Flask:
             )
         return Representation("ModelTraining", training_view(row))
 
+    @kit.operation("listDriftReports")
+    def list_drift_reports() -> Page:
+        kind = _filter(request.args, "kind", DRIFT_KINDS)
+        comparison = _filter(request.args, "comparison", COMPARISONS)
+        version_id = _version_filter(request.args)
+        with kit.db.connection() as connection:
+            rows, total = reports.list_reports(
+                connection,
+                kind,
+                version_id,
+                comparison,
+                kit.size,
+                (kit.page - 1) * kit.size,
+            )
+        return Page(
+            "DriftReports",
+            "DriftReport",
+            "reports",
+            rows,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getDriftReport")
+    def get_drift_report(report_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = reports.get_report(connection, report_id)
+        if row is None:
+            raise ApiError(
+                404, "drift_report_not_found", "The drift report does not exist."
+            )
+        return Representation("DriftReport", row)
+
+    @kit.operation("listDriftAlerts")
+    def list_drift_alerts() -> Page:
+        kind = _filter(request.args, "kind", DRIFT_KINDS)
+        variable = _filter(request.args, "variable", DRIFT_VARIABLES)
+        version_id = _version_filter(request.args)
+        with kit.db.connection() as connection:
+            rows, total = reports.list_alerts(
+                connection,
+                kind,
+                version_id,
+                variable,
+                kit.size,
+                (kit.page - 1) * kit.size,
+            )
+        return Page(
+            "DriftAlerts",
+            "DriftAlert",
+            "alerts",
+            rows,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getDriftAlert")
+    def get_drift_alert(alert_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = reports.get_alert(connection, alert_id)
+        if row is None:
+            raise ApiError(
+                404, "drift_alert_not_found", "The drift alert does not exist."
+            )
+        return Representation("DriftAlert", row)
+
     threads: list[Any] = []
     app.extensions["training_threads"] = threads
 
@@ -430,6 +516,12 @@ def create_app(*, start_relay: bool = True) -> Flask:
         )
         relay.start()
         app.extensions["models_relay"] = relay
+        if settings.drift_interval_seconds > 0:
+            stop = threading.Event()
+            app.extensions["drift_stop"] = stop
+            app.extensions["drift_monitor"] = monitor.start(
+                dsn, kit.db, settings.drift_interval_seconds, stop
+            )
 
     return app
 

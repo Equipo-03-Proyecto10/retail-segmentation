@@ -109,7 +109,7 @@ fun OutboxContent(
 
 /** How many writes wait and how many need attention, with the way to try sending now. */
 @Composable
-private fun OutboxSummary(waiting: Int, needAttention: Int, onSendNow: (() -> Unit)?) {
+internal fun OutboxSummary(waiting: Int, needAttention: Int, onSendNow: (() -> Unit)?) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.Lg, vertical = Spacing.Sm),
         verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
@@ -142,7 +142,7 @@ private fun OutboxSummary(waiting: Int, needAttention: Int, onSendNow: (() -> Un
 }
 
 @Composable
-private fun OutboxItem(
+internal fun OutboxItem(
     row: OutboxRow,
     otherUser: Boolean,
     sending: Boolean,

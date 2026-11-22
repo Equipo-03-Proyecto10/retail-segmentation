@@ -36,6 +36,9 @@ sealed interface FloorLocation {
 
     data object Customer : Root
 
+    /** The commercial supervisor's review of incidents, this phone's syncs and promotions shown (F27-14). */
+    data object Review : Root
+
     /** Choosing a store, from the top bar's chip or "Change store"; part of Check-in. */
     data object StorePicker : FloorLocation {
         override val root: Root
@@ -105,6 +108,7 @@ val FloorLocation.section: FloorSection
                     FloorLocation.Indicators -> FloorSection.INDICATORS
                     FloorLocation.Outbox -> FloorSection.OUTBOX
                     FloorLocation.Customer -> FloorSection.CUSTOMER
+                    FloorLocation.Review -> FloorSection.REVIEW
                 }
         }
 
@@ -117,6 +121,7 @@ val FloorSection.root: FloorLocation.Root
             FloorSection.INDICATORS -> FloorLocation.Indicators
             FloorSection.OUTBOX -> FloorLocation.Outbox
             FloorSection.CUSTOMER -> FloorLocation.Customer
+            FloorSection.REVIEW -> FloorLocation.Review
             // No bar entry of its own: it is reached from Customer.
             FloorSection.CUSTOMER_RECORD -> FloorLocation.Customer
         }
@@ -150,6 +155,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 FloorLocation.Indicators -> "indicators"
                 FloorLocation.Outbox -> "outbox"
                 FloorLocation.Customer -> "customer"
+                FloorLocation.Review -> "review"
                 FloorLocation.StorePicker -> "store_picker"
                 FloorLocation.RegisterCustomer -> "register_customer"
                 is FloorLocation.ProductFromRecommendation -> PRODUCT_PREFIX + location.productId
@@ -166,6 +172,7 @@ val FloorLocationSaver: Saver<FloorLocation, String> =
                 saved == "indicators" -> FloorLocation.Indicators
                 saved == "outbox" -> FloorLocation.Outbox
                 saved == "customer" -> FloorLocation.Customer
+                saved == "review" -> FloorLocation.Review
                 saved == "store_picker" -> FloorLocation.StorePicker
                 saved == "register_customer" -> FloorLocation.RegisterCustomer
                 saved == INBOX -> FloorLocation.Inbox()

@@ -22,6 +22,7 @@ import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.asError
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
+import online.maxthecoder.mosaiq.floor.outbox.refusalReason
 import online.maxthecoder.mosaiq.floor.ui.SaleBuilderState
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
@@ -46,7 +47,7 @@ fun HistorySection(ui: SaleUi, actions: SaleActions) {
                 modifier = Modifier.testTag("history-empty")
             )
         }
-        ui.history.forEach { row -> SaleHistoryRow(row, actions) }
+        ui.history.forEach { row -> SaleHistoryRow(row, ui, actions) }
         ui.statusMessage?.let {
             Text(
                 it,
@@ -61,7 +62,7 @@ fun HistorySection(ui: SaleUi, actions: SaleActions) {
 }
 
 @Composable
-private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
+private fun SaleHistoryRow(row: OutboxRow, ui: SaleUi, actions: SaleActions) {
     Column(
         Modifier.fillMaxWidth().testTag("sale-row-${row.id}"),
         verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
@@ -100,8 +101,12 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
                 style = MaterialTheme.typography.bodyMedium
             )
             RowState.REFUSED -> {
-                MqErrorPanel(row.asError(stringResource(R.string.sale_refused_default)))
+                MqErrorPanel(
+                    row.asError(stringResource(R.string.sale_refused_default)),
+                    friendly = refusalReason(row.code)
+                )
                 refusalAdvice(row.code)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                RefusedActions(row, ui, actions)
             }
             RowState.DONE -> {
                 Text(
@@ -116,6 +121,50 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+    }
+}
+
+/**
+ * What the seller can do with a refused sale, wherever it sits in the history: put its cart back to fix it, or
+ * throw it away. Correcting never replaces a sale in progress, and says why when it cannot be offered (F27-13).
+ */
+@Composable
+private fun RefusedActions(row: OutboxRow, ui: SaleUi, actions: SaleActions) {
+    val whenText = formatWhen(row.createdAt)
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
+        when (correctionOf(row, ui)) {
+            Correction.AVAILABLE -> MqButton(
+                stringResource(R.string.sale_correct_row, whenText),
+                { actions.onCorrect(row) },
+                fullWidth = true,
+                modifier = Modifier.testTag("correct-${row.id}")
+            )
+            Correction.OPEN -> Text(
+                stringResource(R.string.sale_correct_open),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("correct-open-${row.id}")
+            )
+            Correction.BUSY -> Text(
+                stringResource(R.string.sale_correct_busy),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("correct-busy-${row.id}")
+            )
+            Correction.GONE -> Text(
+                stringResource(R.string.sale_correct_gone),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("correct-gone-${row.id}")
+            )
+        }
+        MqButton(
+            stringResource(R.string.sale_discard_row, whenText),
+            { actions.onDiscard(row) },
+            variant = MqButtonVariant.Quiet,
+            fullWidth = true,
+            modifier = Modifier.testTag("discard-${row.id}")
+        )
     }
 }
 

@@ -50,7 +50,7 @@ first two rows below. The other rows come from reading the screens again against
 | Sale: registration form | The channel error was red text alone. | `MqInlineError`: an alert icon beside the text, merged and announced politely. |
 | Insights | The click-refusal note was red text alone. | `MqInlineError`, as above. |
 | Outbox | Before Room's first answer the screen said "Everything is synced". That was false, and TalkBack read it too. | The outbox shows a loading state until the queue has been read once. |
-| Every screen (guard) | Roles, clipped controls, cut text and most states at 200% were not checked. | The guard checks all of them, at both font sizes, for 33 states. |
+| Every screen (guard) | Roles, clipped controls, cut text and most states at 200% were not checked. | The guard checks all of them, at both font sizes, for 33 states (122 after the third pass). |
 | Every screen (code) | Three private copies of the 1.3 large-font threshold. | One `isLargeFont()` in the theme. |
 | Insights error, 200% font | Drawn alone in a test, the panel's Details row ran off the bottom. | No fix needed: the card always sits in the sale screen's scrolling column, and the guard now hosts it there. |
 | Text fields | A field has a click action and no role. | No fix needed: TalkBack announces it as an edit box from its class. |
@@ -58,10 +58,47 @@ first two rows below. The other rows come from reading the screens again against
 Counts for this pass: 10 findings, 8 fixed and 2 needing no fix. The 200% "Search button a few dp above the field"
 item above is gone with the stacked layout. "Product row Add X" and the badge prefix stay as written above.
 
+## Third pass (#1122): the screens added with #1120
+
+The guard of the second pass covered the screens on `develop` at the time. Integration PR #1120 added the screens
+below. Each is drawn by its stateless composable at 1.0x and at 2.0x font scale, with the same five checks (label,
+role, 44dp target, clipped control, cut text). Panels that live inside a scrolling parent in the app (a card, a
+section) are hosted in a `verticalScroll` column here, as `insightsCard` hosts the insights card. The guard found no
+problem on any of them, so no screen changed.
+
+| Screen (story) | Composable | States drawn | What was checked |
+|---|---|---|---|
+| Identify (#856) | `IdentifyBody` | idle, camera on, camera error, camera denied, looking up, not a loyalty card, unknown card, revoked card, card lookup failed, search results with a pager, empty search, searching, search failed | Scan, grant-access, settings, retry and "Scan again" buttons and every customer row are labelled and at least 44dp. The search field, its button and the pager do not clip at 200%. Unknown and revoked cards show text and an action, not an icon alone. |
+| Identify profile (#856, #860) | `ProfileBody`, `RecommendationsPart` | full, objected to personalization, loading, error, each of the three parts failed, unassigned segment, recommendations (primary, alternative, elsewhere; tappable and read-only), loading, no store, error | The segment, interests and restrictions parts keep their text at 200%. A recommendation row is one labelled node, a button only when the role records taps. "Alternative" and "Elsewhere" are badges with text. The error panels offer a retry button. |
+| New customer (#863) | `NewCustomerBody` | empty, every consent answered, sending, refused, registered with the unknown-outcome advice | The three consent questions are radio rows with roles and labels, each 44dp or more at 200%. The submit button is full width, and while a consent is unanswered a line of text says so. |
+| Customer record (#863) | `RecordBody` | full, loading, error, saved/saving/refused writes per part, history open (consent and preference changes), history loading, empty and failed | The consent choices, the channel and interest checkboxes and the three save buttons have roles and labels. The "who may change this" lines and history rows are not cut. The history toggle is reachable by scrolling. |
+| Promotions (#861) | `PromotionsContent` | listed (one recorded), none, loading, error, arm unknown, note | Each "Shown to customer" button is labelled and at least 44dp. The recorded state is a text badge, not a colour. The discount and validity lines wrap at 200%. |
+| Updates inbox (#869) | `InboxContent` | full with refused writes, notifications off, focused item, refreshing, empty, never polled, both sources failed | The refresh and "Open outbox" buttons are labelled. The "Ends soon" badge carries text. Headline, subject and time are not cut at 200%. |
+| Indicators (#862) | `IndicatorsContent` | shown (every contract example), loading, store refused, every report refused, a definition open | The period chips have roles and 44dp targets, each figure is a labelled button that opens its definition, and the stock alert rows and the definition panel do not clip at 200%. |
+| Catalog search (#858) | `CatalogSearchSection` | idle, searching, found (with a retired product and a "showing 3 of 25" note), found nothing, failed | The query field and search button are reachable. Each result row is one labelled button with a chevron. The retired product reads "no longer sold" in text. |
+| Availability (#858) | `ScanAnswer` | sellable (add and read-only), out of stock, not stocked, channel not enabled, paused, discontinued, retired, stock read failed, barcode not found, invalid barcode | The stock, status and "not sellable" badges carry text. "Add to sale" and "Scan another" are labelled, full width and 44dp or more. The explanation of an unsellable product is not cut at 200%. |
+| Cart, summary, receipt (#859) | `ReviewContent`, `SaleOutcome`, `SaleBar`, `HistorySection`, and the sale screen | summary, confirming, refused on confirm; receipt (recorded, replayed), refused naming the line; bar (ready, blocked, confirming, queued, recorded, refused); history (mixed pending, done and refused; empty; status message and error); the whole sale screen with a promotion line, a receipt and a kept cart | The summary is drawn through `ReviewContent`, not `ReviewSheet`, because a `ModalBottomSheet` is a separate window the semantics walk does not reach. Confirm and "Back to cart" are labelled and 44dp or more. Receipt lines, the discount and the total are merged text nodes. The refused row carries its reason as text next to the "Needs attention" badge. |
+
+Counts for this pass: 9 screens (11 composables), 89 new states, 0 findings.
+
+## Fourth pass (#867, #868): refused-sale actions and the supervisor's review
+
+Drawn and walked like the third pass, at 1.0x and 2.0x. The guard found no problem, so no screen changed.
+
+| Screen (story) | Composable | States drawn | What was checked |
+|---|---|---|---|
+| Sale history, refused rows (#867) | `HistorySection`, inside the sale screen | refused row that can be corrected, while another sale is being built, with its cart gone, open for correction; a refusal on screen with Discard; a queued draft marked pending | Correct and Discard are full-width buttons, labelled with the sale's time so two rows read differently, and at least 44dp. The reasons the correction is not offered ("Finish or clear the sale in progress...", "The cart of this sale is no longer on this phone...") are text, not a disabled control with no explanation. |
+| Review (#868) | `ReviewContent` | full (incidents in each state, this phone's syncs, promotions shown), loading, empty, every read failed, a review on its way with a 409 and a 403 | Incidents are grouped under headings by state, each with a badge that carries the state in text. Acknowledge and Resolve are labelled buttons of 48dp or more and are disabled with a spinner while a review is on its way. The note field has a visible label and is not clipped at 200%. Each refused review shows its reason as text beside its incident. Store and campaign names are headings and rows, not a table. |
+
+Counts for this pass: 2 screens, 11 new states (6 and 5), 0 findings.
+
 ## Guard
 
-`AccessibilityGuardTest` renders 33 screen states: sign-in, check-in, store picker, scan, sale, registration,
-insights, outbox (loading, empty and mixed), the shell bars and the open account menu. It draws each one at the
+`AccessibilityGuardTest` renders 133 screen states: the 33 of the second pass (sign-in, check-in, store picker, scan,
+sale, registration, insights, outbox, the shell bars and the open account menu) and the 89 of the third pass (identify,
+profile and recommendations, new customer and record, promotions, inbox, indicators, catalog search, availability, the
+cart summary, receipt, sale bar and history), and the 11 of the fourth pass (the refused sale's actions and the
+supervisor's review). It draws each one at the
 default font size and again at 200%, with native text measurement, and walks the semantics tree. It fails if any
 of these hold:
 - a node with a click action has no text, description or merged child text;

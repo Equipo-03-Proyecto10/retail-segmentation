@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: model-registry-service
-  version: 1.2.1
+  version: 1.3.0
   description: >-
     Keeps every model version immutable and says which one is published. A model version is
     immutable once published, carries its dataset, parameters, metrics and reference distribution,
@@ -651,7 +651,6 @@ paths:
         reports on its schedule; no operation here starts a run. `kind`, `model_version_id` and
         `comparison` filter on the stored values and combine.
       operationId: listDriftReports
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -714,7 +713,6 @@ paths:
         and kind that precedes this one, the other window or cohort of the persistence rule, and `alert_ids`
         the alerts this report raised.
       operationId: getDriftReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -792,7 +790,6 @@ paths:
         or `CONCEPT_DRIFT` on an alert of an `OUTCOME_TEST` alone. `kind`, `model_version_id` and `variable`
         filter on the stored values and combine.
       operationId: listDriftAlerts
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -852,7 +849,6 @@ paths:
         so the persistence rule can be read. The full evidence, every bin and every variable, is in the
         report.
       operationId: getDriftAlert
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST

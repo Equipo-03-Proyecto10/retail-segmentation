@@ -15,6 +15,7 @@ class FloorLocationTest {
             FloorLocation.Sale,
             FloorLocation.Indicators,
             FloorLocation.Outbox,
+            FloorLocation.Review,
             FloorLocation.StorePicker,
             FloorLocation.RegisterCustomer,
             FloorLocation.ProductFromRecommendation(42),
@@ -59,6 +60,7 @@ class FloorLocationTest {
             FloorLocation.Sale,
             FloorLocation.Indicators,
             FloorLocation.Outbox,
+            FloorLocation.Review,
             FloorLocation.Customer
         ).forEach {
             assertEquals(FloorLocation.CheckIn, it.back)

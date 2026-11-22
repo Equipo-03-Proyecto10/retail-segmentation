@@ -40,6 +40,18 @@ class FloorLocationAccessTest {
     }
 
     @Test
+    fun theReviewIsKeptForTheSupervisorAndTheAdministratorAndForNobodyElse() {
+        listOf("COMMERCIAL_SUPERVISOR", "ADMIN").forEach {
+            assertEquals(FloorLocation.Review, FloorLocation.Review.allowedFor(it))
+        }
+        listOf("SALES_ASSOCIATE", "STORE_MANAGER", "LOYALTY_OFFICER").forEach {
+            assertEquals(FloorLocation.CheckIn, FloorLocation.Review.allowedFor(it))
+        }
+        // A restored "review" is only a request too.
+        assertEquals(FloorLocation.CheckIn, FloorLocationSaver.restore("review")!!.allowedFor("STORE_MANAGER"))
+    }
+
+    @Test
     fun noLocationIsAllowedForARoleThatHoldsNothing() {
         listOf(null, "ANALYST", "CUSTOMER", "whatever").forEach { role ->
             every.forEach { assertEquals(FloorLocation.CheckIn, it.allowedFor(role)) }

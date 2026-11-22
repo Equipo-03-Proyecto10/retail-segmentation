@@ -25,6 +25,7 @@ import online.maxthecoder.mosaiq.floor.ui.SessionState
 import online.maxthecoder.mosaiq.floor.ui.SessionViewModel
 import online.maxthecoder.mosaiq.floor.ui.inbox.InboxViewModel
 import online.maxthecoder.mosaiq.floor.ui.indicators.IndicatorsViewModel
+import online.maxthecoder.mosaiq.floor.ui.review.ReviewViewModel
 import online.maxthecoder.mosaiq.floor.ui.shell.FloorHome
 import online.maxthecoder.mosaiq.floor.ui.shell.SignOutButton
 
@@ -61,6 +62,8 @@ class MainActivity : ComponentActivity() {
                 viewModel(factory = viewModelFactory { initializer { InboxViewModel(graph) } })
             val indicators: IndicatorsViewModel =
                 viewModel(factory = viewModelFactory { initializer { IndicatorsViewModel(graph) } })
+            val review: ReviewViewModel =
+                viewModel(factory = viewModelFactory { initializer { ReviewViewModel(graph) } })
             val state = model.state.collectAsStateWithLifecycle()
             // Signing in again lets this user's queued writes go out, and starts the notification poll with a
             // pull at once (ADR-0071).
@@ -87,7 +90,8 @@ class MainActivity : ComponentActivity() {
                         promotions,
                         model::signOut,
                         inbox,
-                        indicators
+                        indicators,
+                        review
                     )
                 },
                 signOut = { SignOutButton(floor, model::signOut) }

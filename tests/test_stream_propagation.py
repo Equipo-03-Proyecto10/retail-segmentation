@@ -417,7 +417,7 @@ def test_plan_measures_deployed_groups_and_says_why_it_skips_the_rest():
     assert reasons[("stream:users.v1.access_changed", "auth")].startswith(
         "producer not deployed"
     )
-    assert reasons[("stream:rfm.v1.profile_changed", "model-registry")].startswith(
+    assert reasons[("stream:rfm.v1.profile_changed", "analytics-kpis")].startswith(
         "producer not deployed"
     )
     assert reasons[("stream:segments.v1.run_recorded", "segments")].startswith(

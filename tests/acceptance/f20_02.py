@@ -326,20 +326,42 @@ class Checked:
             f"{(s.get('error') or {}).get('code')}, "
             f"{(s.get('error') or {}).get('correlation_id')}",
         )
-        sql = "SELECT count(*) FROM campaign WHERE name = %s"
-        name = self.result["draft"]["name"]
+        self.nothing_created(c)
+        self.rec.facts["forbidden X-Correlation-ID"] = s.get("correlation_id")
+
+    def nothing_created(self, c: str) -> None:
+        """No campaign of the draft's name came after the run's own draft."""
+        created = self.rec.facts.get("campaign_id")
+        if created is None:
+            # The draft was not created, so there is nothing to count after:
+            # the check fails instead of dropping out of summary.md.
+            self.rec.check(
+                c,
+                "the refused write created nothing: no campaign of the draft's name "
+                "after the run's own draft",
+                "0",
+                "no campaign_id was recorded for the run's draft",
+                False,
+            )
+            return
+        # Ids are max + 1 (campaigns-service), so a row the refused write made
+        # would come after the run's own draft; an earlier run's draft of the
+        # same name does not.
+        sql = "SELECT count(*) FROM campaign WHERE name = %s AND campaign_id > %s"
+        params = (self.result["draft"]["name"], created)
         anchor = self.rec.add_rows(
-            "campaigns with the draft's name", self.db.table(sql, (name,))
+            f"campaigns with the draft's name after campaign {created}",
+            self.db.table(sql, params),
         )
-        [[count]] = self.db.rows(sql, (name,))
+        [[count]] = self.db.rows(sql, params)
         self.rec.check(
             c,
-            "the refused write created nothing: one campaign has the draft's name",
-            "1",
+            "the refused write created nothing: no campaign of the draft's name "
+            f"after campaign {created}",
+            "0",
             count,
             links=[anchor],
         )
-        self.rec.facts["forbidden X-Correlation-ID"] = s.get("correlation_id")
 
 
 def refuse_tokens(electron: Path) -> None:
@@ -361,6 +383,8 @@ def run(args: argparse.Namespace) -> int:
     rec = Recorder(
         Path(args.out), "F20-02 Electron reads the sale and writes a draft", "f20-02"
     )
+    for path in [electron / "result.json", electron / "exchanges.json"]:
+        rec.masker.reserve(path.read_text(encoding="utf-8"))
     checked = Checked(electron, rec, Database.from_environment())
     checked.sale()
     checked.campaign()

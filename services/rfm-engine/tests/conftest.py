@@ -240,6 +240,10 @@ class Shop:
             "DELETE FROM preferences_events.outbox WHERE entity_id = ANY(%s)",
             ([str(customer_id) for customer_id in self.customers],),
         )
+        self.owner.execute(
+            "DELETE FROM customers_events.outbox WHERE entity_id = ANY(%s)",
+            ([str(customer_id) for customer_id in self.customers],),
+        )
         for customer_id in self.customers:
             self.owner.execute(
                 "DELETE FROM rfm_events.outbox WHERE entity_id = %s",

@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, launchElectron, test, type Page } from './electron-test';
+import { expect, findOnPages, launchElectron, test, type Page } from './electron-test';
 
 // F20-02 (#760): the desktop window against a live gateway, after `npm run evidence:f20-02`
 // recorded its calls. It is skipped unless MOSAIQ_F20_02_ELECTRON_DIR names that run's
@@ -114,6 +114,7 @@ test.describe('F20-02 against a live gateway', () => {
     const largest = await size!.locator('option').last().getAttribute('value');
     await size!.selectOption(largest ?? '20');
     await filters.getByRole('button', { name: 'Search' }).click();
+    await findOnPages(page, 'campaigns', `view-campaign-${id}`);
     await page.getByTestId(`view-campaign-${id}`).click();
     await expect(page.getByTestId('campaign-name')).toHaveText(r.draft.name);
     await expect(page.getByTestId('campaign-status')).toHaveText('DRAFT');

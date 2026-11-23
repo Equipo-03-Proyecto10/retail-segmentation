@@ -1,4 +1,5 @@
-"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #891, #462).
+"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #889, #891,
+#462).
 
 What they say about a live system is shown by running them (the runbooks in
 docs/evidence/f29-03-*.md and f29-06-*.md, docs/demo-distributed.md); these
@@ -18,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from tests.acceptance import demo
+from tests.acceptance import demo, f24_08
 from tests.acceptance.evidence import (
     JWT,
     Database,
@@ -50,6 +51,40 @@ def test_the_same_secret_keeps_its_mark() -> None:
     masker = Masker()
     assert masker.mark("a") == masker.mark("a") == "<masked #1>"
     assert masker.mark("b") == "<masked #2>"
+
+
+def test_a_mark_another_masker_made_keeps_its_number_and_is_not_reused() -> None:
+    # The F20-02 client masks first (#1 the password, #2 the bearer token); the
+    # collector must not renumber its marks, nor reuse them for a new secret.
+    masker = Masker()
+    assert masker.header("Authorization", "Bearer <masked #2>") == "Bearer <masked #2>"
+    body = json.dumps({"password": "<masked #1>"})
+    assert json.loads(masker.body(body)) == {"password": "<masked #1>"}
+    assert masker.mark("a new secret") == "<masked #3>"
+    assert masker.mark("<masked #2>") == "<masked #2>"
+
+
+def test_a_client_label_that_arrives_after_a_new_secret_is_not_confused_with_it() -> (
+    None
+):
+    masker = Masker()
+    assert masker.mark("new secret") == "<masked #1>"
+    with pytest.raises(ValueError):
+        masker.mark("<masked #1>")
+
+
+def test_the_clients_labels_are_reserved_before_a_new_secret_is_numbered() -> None:
+    masker = Masker()
+    masker.reserve('{"password": "<masked #1>", "access_token": "<masked #2>"}')
+    assert masker.mark("new secret") == "<masked #3>"
+    assert masker.mark("<masked #1>") == "<masked #1>"
+    # A body with a raw token before the client's label in the same text.
+    other = Masker()
+    body = json.dumps({"access_token": TOKEN, "password": "<masked #1>"})
+    assert json.loads(other.body(body)) == {
+        "access_token": "<masked #2>",
+        "password": "<masked #1>",
+    }
 
 
 def test_write_refuses_evidence_that_still_holds_a_token(tmp_path) -> None:
@@ -193,6 +228,241 @@ def test_f20_02_refuses_a_client_directory_that_holds_a_token_in_any_file(
         with pytest.raises(SystemExit, match="holds a token"):
             refuse_tokens(tmp_path)
         path.write_text(clean)
+
+
+class _Rows:
+    """A Database stand-in that answers one count and keeps what it was asked."""
+
+    def __init__(self, count: int) -> None:
+        self.count = count
+        self.asked: list[tuple[str, tuple]] = []
+
+    def rows(self, sql: str, params: tuple = ()) -> list[tuple[str, ...]]:
+        self.asked.append((sql, params))
+        return [(str(self.count),)]
+
+    def table(self, sql: str, params: tuple = ()) -> str:
+        self.asked.append((sql, params))
+        return f" count\n-------\n {self.count}\n"
+
+
+def _checked(tmp_path, count: int):
+    from tests.acceptance.f20_02 import Checked
+
+    checked = Checked.__new__(Checked)
+    checked.rec = Recorder(tmp_path, "F20-02", "f20-02")
+    checked.db = _Rows(count)
+    checked.result = {"draft": {"name": "F20-02 evidence draft 20261123T1200Z"}}
+    checked.rec.facts["campaign_id"] = 32
+    return checked
+
+
+def test_f20_02_counts_only_campaigns_after_the_runs_own_draft(tmp_path) -> None:
+    # A rerun with the same name finds the earlier run's draft; it is not the
+    # refused write's, so only rows after this run's campaign_id count.
+    checked = _checked(tmp_path, 0)
+    checked.nothing_created("3")
+    [check] = checked.rec.checks
+    assert check.held and check.expected == "0"
+    for sql, params in checked.db.asked:
+        assert "campaign_id > %s" in sql and "name = %s" in sql
+        assert params == ("F20-02 evidence draft 20261123T1200Z", 32)
+
+
+def test_f20_02_an_unrecorded_draft_fails_the_check_instead_of_dropping_it(
+    tmp_path,
+) -> None:
+    checked = _checked(tmp_path, 0)
+    del checked.rec.facts["campaign_id"]
+    checked.nothing_created("3")
+    [check] = checked.rec.checks
+    assert not check.held and "no campaign_id" in check.actual
+    assert checked.db.asked == []
+
+
+def test_f20_02_reports_a_campaign_after_the_runs_draft_as_not_held(tmp_path) -> None:
+    checked = _checked(tmp_path, 1)
+    checked.nothing_created("3")
+    [check] = checked.rec.checks
+    assert not check.held and check.actual == "1"
+
+
+# ---------- F29-04 (#889) ----------
+
+
+def test_f29_04_a_skip_or_an_empty_run_is_never_a_pass() -> None:
+    from tests.acceptance.f29_04 import held
+
+    ok = {"tests": 12, "failures": 0, "errors": 0, "skipped": 0}
+    assert held(0, ok)
+    assert not held(0, ok | {"skipped": 1})  # a missing database skips
+    assert not held(0, ok | {"tests": 0})
+    assert not held(1, ok)
+    assert not held(0, {})
+
+
+def test_f29_04_adds_every_cargo_result_line() -> None:
+    from tests.acceptance.f29_04 import cargo_counts
+
+    log = (
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured\n"
+        "test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured\n"
+        "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured\n"
+    )
+    assert cargo_counts(log) == {"tests": 11, "failures": 2, "errors": 0, "skipped": 1}
+
+
+def test_f29_04_runs_each_kind_where_it_lives(tmp_path) -> None:
+    from tests.acceptance.f29_04 import SUITES, command_for
+
+    junit = tmp_path / "j.xml"
+    kinds = {s.kind: command_for(s, junit) for s in SUITES}
+    assert kinds["service"][:3] == ["uv", "run", "--frozen"]
+    assert kinds["cargo"][:4] == ["cargo", "test", "--locked", "--no-fail-fast"]
+    assert "--test" in kinds["cargo"]
+    assert kinds["pytest"][1:3] == ["-m", "pytest"]
+    assert {s.criterion for s in SUITES} == {
+        "RFM",
+        "Migración",
+        "Incremental",
+        "K-means",
+        "Drift",
+    }
+
+
+def test_f29_04_names_the_registered_kmeans_and_drift_results() -> None:
+    from pathlib import Path
+
+    from tests.acceptance.f29_04 import REGISTERED_DRIFT, REGISTERED_PARTITION
+
+    root = Path(__file__).resolve().parents[1] / "docs" / "evidence"
+    assert REGISTERED_PARTITION in (root / "f23-04-kmeans-stability.md").read_text()
+    assert REGISTERED_DRIFT in (root / "f23-10-drift-detection.md").read_text()
+
+
+class _Reply:
+    def __init__(self, status: int, body: dict | None = None) -> None:
+        self.status = status
+        self._body = body or {}
+
+    def json(self) -> dict:
+        return self._body
+
+    def outcome(self) -> str:
+        return f"HTTP {self.status}"
+
+
+def _recorder(tmp_path, replies):
+    """A Recorder whose calls answer from a script, nothing leaves the process."""
+    from tests.acceptance.evidence import Recorder
+
+    class Scripted(Recorder):
+        def call(self, edge, method, path, **kwargs):
+            return replies.pop(0), len(replies) + 1
+
+    return Scripted(tmp_path, "t", "f29-04")
+
+
+def test_f29_04_a_verification_that_compared_nobody_does_not_hold(tmp_path) -> None:
+    from tests.acceptance.f29_04 import _verification
+
+    done = {
+        "recalculation_id": "r",
+        "state": "COMPLETED",
+        "outcome": "EQUIVALENT",
+        "customers_different": 0,
+    }
+    for checked, expected in ((0, False), (None, False), (30, True)):
+        rec = _recorder(tmp_path, [_Reply(201, done | {"customers_checked": checked})])
+        _verification(rec, None, "t", 1.0)
+        assert rec.checks[0].held is expected, checked
+
+
+def test_f29_04_an_error_while_polling_is_recorded_not_raised(
+    tmp_path, monkeypatch
+) -> None:
+    from tests.acceptance import f29_04
+
+    monkeypatch.setattr(f29_04.time, "sleep", lambda _s: None)
+    running = {"recalculation_id": "r", "state": "RUNNING"}
+    rec = _recorder(tmp_path, [_Reply(201, running), _Reply(502)])
+    f29_04._verification(rec, None, "t", 60.0)
+    assert [(c.criterion, c.held) for c in rec.checks] == [("Incremental", False)]
+    assert rec.write() is False  # summary.md is still written
+    assert (tmp_path / "summary.md").exists()
+
+
+def test_f29_04_a_sale_that_changed_nothing_is_not_a_held_migration() -> None:
+    from tests.acceptance.f29_04 import migration_verdict
+
+    kept = {"previous_state": "label", "previous_label_code": "LOYAL"}
+    lost = {"previous_state": "label"}
+    assert migration_verdict(200, [kept]) == (True, "1 changed, 1 with it")
+    assert migration_verdict(200, [kept, lost])[0] is False
+    held, actual = migration_verdict(200, [])
+    assert held is False and "did not provoke" in actual
+    assert migration_verdict(503, [kept])[0] is False
+
+
+def test_f29_04_every_planted_size_has_its_row_and_a_kind_needs_a_detection() -> None:
+    from tests.acceptance.f29_04 import drift_row
+
+    seen = {
+        "kind": "SPEND",
+        "size": 2.0,
+        "pairs": 50,
+        "alerted_pairs": 50,
+        "explained": 50,
+    }
+    assert drift_row(seen)[3] is True
+    assert drift_row(seen | {"explained": 49})[3] is False
+    assert drift_row(seen | {"alerted_pairs": 49})[3] is False
+    missed = drift_row(seen | {"size": 1.5, "alerted_pairs": 0, "explained": 0})
+    assert "not detected" in missed[0] and missed[2] == "0 of 50 detected"
+
+
+def test_f29_04_checks_drift_for_every_size_and_every_kind(tmp_path) -> None:
+    from tests.acceptance.evidence import Recorder
+    from tests.acceptance.f29_04 import check_drift
+
+    def entry(kind, size, alerted):
+        return {
+            "kind": kind,
+            "size": size,
+            "pairs": 50,
+            "alerted_pairs": alerted,
+            "explained": alerted,
+        }
+
+    figures = {
+        "digest": "x",
+        "detection": [
+            entry("SPEND", 1.5, 0),
+            entry("SPEND", 2.0, 50),
+            entry("FREQUENCY", 0.9, 0),
+        ],
+        "false_alarms": {"alerted_pairs": 0, "pairs": 200, "alert_upper": 0.0075},
+    }
+    rec = Recorder(tmp_path, "t", "f29-04")
+    check_drift(rec, tmp_path, lambda: figures)
+    cases = [c.case for c in rec.checks]
+    assert sum("planted at" in c for c in cases) == 3  # the undetected sizes show
+    frequency = [c for c in rec.checks if c.case.startswith("FREQUENCY: at least")]
+    assert frequency[0].held is False  # no frequency size detected
+
+
+def test_f29_04_logs_hide_tokens_and_connection_passwords() -> None:
+    from tests.acceptance.evidence import Masker
+    from tests.acceptance.f29_04 import mask_log
+
+    jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"
+    log = (
+        f"FAILED connect postgresql://owner:s3cret-pw@db:5432/retail Bearer {jwt}\n"
+        "redis://127.0.0.1:6379/0 stays\n"
+    )
+    out = mask_log(Masker(), log)
+    assert "s3cret-pw" not in out and jwt not in out
+    assert "postgresql://owner:<masked #" in out and "redis://127.0.0.1:6379/0" in out
 
 
 # ---------- the rehearsal's preconditions (acceptance/demo.py, #462, #896) ----------
@@ -607,3 +877,120 @@ def test_demo_judges_each_answer_by_the_fields_the_contracts_name() -> None:
     assert demo.promotions_for(page, first["campaign_id"], store, channel) == [first]
     assert demo.promotions_for(page, first["campaign_id"] + 1, store, channel) == []
     assert demo.promotions_for(page, first["campaign_id"], store + 99, channel) == []
+
+
+# ---------- F24-08 (#831) ----------
+
+
+def test_f24_08_reads_the_bound_from_the_stock_stream_contract() -> None:
+    p95, maximum = f24_08.stream_bound()
+    assert 0 < p95 <= maximum
+    assert f24_08.STREAM_CONTRACT.name == "stock.changed.v1.md"
+
+
+def test_f24_08_a_contract_without_the_group_stops_the_run(tmp_path) -> None:
+    contract = tmp_path / "stock.changed.v1.md"
+    contract.write_text(
+        "## Propagation bound\n\n| Group | p95 (ms) | Max (ms) |\n|---|---:|---:|\n"
+        "| `products` | 3000 | 5000 |\n"
+    )
+    with pytest.raises(SystemExit):
+        f24_08.stream_bound(contract)
+
+
+def test_f24_08_an_elsewhere_entry_is_not_offered_at_the_store() -> None:
+    body = example("recommendations", "v2/recommended-with-alternatives.json")
+    assert f24_08.offered_here(body, 120)  # primary
+    assert f24_08.offered_here(body, 246)  # an alternative, sold here
+    assert not f24_08.offered_here(body, 88)  # held at store 3 only
+    assert f24_08.elsewhere(body, 88)["unavailable_reason"] == "out_of_stock"
+    assert f24_08.primary(body, 246) is None
+    assert not f24_08.offered_here(body, 999)
+    assert f24_08.exclusion_count(body, "out_of_stock") == 2
+    assert f24_08.exclusion_count(body, "PERSONALIZATION_WITHDRAWN") == 0
+    line = f24_08.describe(body, 88)
+    assert "elsewhere" in line and "store 3" in line and "out_of_stock 2" in line
+
+
+def test_f24_08_the_wait_reports_the_first_read_that_holds() -> None:
+    now = [0.0]
+    answers = iter([{"decision_id": "a"}, None, {"decision_id": "b", "ok": True}])
+
+    def read():
+        now[0] += 0.05
+        return next(answers), int(now[0] * 100)
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    wait = f24_08.wait_for(
+        read,
+        lambda body: body.get("ok", False),
+        0.0,
+        5.0,
+        0.1,
+        clock=lambda: now[0],
+        sleep=sleep,
+    )
+    assert [p.held for p in wait.polls] == [False, False, True]
+    assert wait.first_held.decision_id == "b"
+    assert wait.last_before is wait.polls[1]
+    assert wait.as_dict()["delay_ms"] == pytest.approx(250.0)
+
+
+def test_f24_08_the_wait_gives_up_after_the_deadline() -> None:
+    now = [0.0]
+
+    def read():
+        now[0] += 0.4
+        return {"decision_id": "a"}, 1
+
+    wait = f24_08.wait_for(
+        read,
+        lambda _body: False,
+        0.0,
+        1.0,
+        0.1,
+        clock=lambda: now[0],
+        sleep=lambda s: None,
+    )
+    assert wait.first_held is None
+    assert wait.as_dict()["delay_ms"] is None
+    assert len(wait.polls) == 3
+
+
+def test_f24_08_shape_ignores_what_a_decision_does_not_keep():
+    answer = example("recommendations", "v2/recommended-with-alternatives.json")
+    stored = {
+        "items": [
+            {
+                "position": i["position"],
+                "product_id": i["product_id"],
+                "kind": i["kind"],
+                "category_id": i["category_id"],
+                "availability": {
+                    "quantity_on_hand": i["availability"]["quantity_on_hand"]
+                },
+                "alternative_for": i["alternative_for"],
+                "unavailable_reason": i["unavailable_reason"],
+            }
+            for i in reversed(answer["items"])
+        ],
+        "exclusions": [dict(e) for e in reversed(answer["exclusions"])],
+    }
+    assert f24_08.shape(stored) == f24_08.shape(answer)
+    stored["exclusions"][0]["count"] += 1
+    assert f24_08.shape(stored) != f24_08.shape(answer)
+
+
+def test_a_run_with_no_checks_does_not_hold(tmp_path) -> None:
+    rec = Recorder(tmp_path, "t", "t")
+    assert rec.write() is False
+    rec.check("c", "a case", 1, 1)
+    assert rec.write() is True
+
+
+def test_f24_08_says_how_to_restore_a_product_left_at_zero() -> None:
+    notice = f24_08.left_at_zero_notice(3, 2, 10)
+    assert "product 2" in notice and "store 3" in notice
+    assert '"quantity": 10' in notice and "RECEIPT" in notice

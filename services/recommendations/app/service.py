@@ -13,6 +13,7 @@ from flask import Flask, request
 from mosaiq_kit import (
     ApiError,
     Kit,
+    Page,
     Representation,
     StreamConsumer,
     configure_logging,
@@ -31,6 +32,9 @@ LOGGER = logging.getLogger(__name__)
 SUFFIX = "recommendations"
 _INT = re.compile(r"[0-9]+")
 INT32_MAX = 2_147_483_647
+_RFC3339 = re.compile(
+    r"\d{4}-\d{2}-\d{2}[Tt]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[Zz]|[+-]\d{2}:\d{2})"
+)
 # The roles that work only in the stores assigned to them and may name only
 # those as the reference store (ADR-0060, the contract's getRecommendationsV2).
 FLOOR_ROLES = frozenset({"SALES_ASSOCIATE", "STORE_MANAGER", "LOYALTY_OFFICER"})
@@ -158,6 +162,50 @@ def _positive_id(name: str) -> int | None:
     if len(normalized) > len(str(INT32_MAX)) or not 1 <= int(normalized) <= INT32_MAX:
         raise _invalid_query(name, "out_of_range", message)
     return int(normalized)
+
+
+def _optional_uuid(name: str) -> str | None:
+    value = request.args.get(name)
+    if value is None:
+        return None
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        raise _invalid_query(
+            name, "invalid_format", f"{name} must be a UUID."
+        ) from None
+
+
+def _decision_status() -> str | None:
+    value = request.args.get("status")
+    if value is not None and value not in decisions.STATUSES:
+        raise _invalid_query(
+            "status",
+            "invalid_value",
+            "status must be one of the recommendation statuses.",
+        )
+    return value
+
+
+def _instant(name: str) -> datetime | None:
+    value = request.args.get(name)
+    if value is None:
+        return None
+    try:
+        if _RFC3339.fullmatch(value) is None:
+            raise ValueError(value)
+        parsed = datetime.fromisoformat(
+            value.replace("z", "+00:00").replace("Z", "+00:00")
+        )
+        if parsed.utcoffset() is None:
+            raise ValueError(value)
+        return parsed
+    except ValueError:
+        raise _invalid_query(
+            name,
+            "invalid_format",
+            f"{name} must be an RFC 3339 timestamp.",
+        ) from None
 
 
 def _long_timeout_client(url: str, timeout: float) -> redis.Redis:
@@ -342,6 +390,77 @@ def create_app() -> Flask:
         data = wire_value(result.as_dict(decision))
         cache.put(key, data, generation, decision.decision_id)
         return Representation("Recommendation", data)
+
+    @kit.operation("listRecommendationDecisions")
+    def list_recommendation_decisions() -> Page:
+        customer_id = _optional_uuid("customer_id")
+        store_id = _positive_id("store_id")
+        status = _decision_status()
+        computed_from = _instant("from")
+        computed_to = _instant("to")
+        if (
+            computed_from is not None
+            and computed_to is not None
+            and computed_to <= computed_from
+        ):
+            raise _invalid_query("to", "not_after_from", "to must be after from.")
+        principal = kit.principal or {}
+        allowed_stores = None
+        with kit.db.connection() as connection:
+            if principal.get("role") == "STORE_MANAGER":
+                assigned = store.assigned_stores(connection, str(principal["sub"]))
+                if store_id is not None and store_id not in assigned:
+                    raise ApiError(
+                        403,
+                        "forbidden_store",
+                        "The caller is not assigned to this store.",
+                        [{"field": "store_id", "code": "other_store"}],
+                    )
+                allowed_stores = sorted(assigned)
+            summaries, total = decision_store.list_summaries(
+                connection,
+                customer_id=customer_id,
+                store_id=store_id,
+                status=status,
+                computed_from=computed_from,
+                computed_to=computed_to,
+                allowed_stores=allowed_stores,
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "RecommendationDecisions",
+            "RecommendationDecisionSummary",
+            "recommendation_decisions",
+            summaries,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
+
+    @kit.operation("getRecommendationDecision")
+    def get_recommendation_decision(decision_id: uuid.UUID) -> Representation:
+        principal = kit.principal or {}
+        with kit.db.connection() as connection:
+            decision = decision_store.read(connection, str(decision_id))
+            if decision is None:
+                raise ApiError(
+                    404,
+                    "decision_not_found",
+                    f"No decision {decision_id} is held.",
+                )
+            if principal.get(
+                "role"
+            ) == "STORE_MANAGER" and decision.store_id not in store.assigned_stores(
+                connection, str(principal["sub"])
+            ):
+                raise ApiError(
+                    403,
+                    "forbidden_store",
+                    "The caller is not assigned to this store.",
+                    [{"field": "store_id", "code": "other_store"}],
+                )
+        return Representation("RecommendationDecision", decision.as_dict())
 
     _start_consumers(app, settings, cache)
     if settings.retention_enabled:

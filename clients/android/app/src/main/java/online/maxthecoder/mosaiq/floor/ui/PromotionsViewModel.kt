@@ -1,5 +1,6 @@
 package online.maxthecoder.mosaiq.floor.ui
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import java.time.Instant
@@ -12,6 +13,18 @@ import online.maxthecoder.mosaiq.floor.net.Answer
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Promotion
 import online.maxthecoder.mosaiq.floor.net.call
+
+/**
+ * A refused promotions list, in the app's own words when the list is not there at all. campaigns serves
+ * `listPromotions` now (F25-16), but an instance still on an older release answers 404 with the
+ * framework's default text, envelope or not; that text must not reach the floor (#1155). The code and
+ * correlation id are kept for "Details". Any other refusal keeps its own message, which [ApiError] has
+ * already made plain.
+ */
+fun promotionsRefusal(error: ApiError, @StringRes missing: Int): ApiError =
+    if (error.status == NOT_FOUND) error.copy(message = AppText.get(missing)) else error
+
+private const val NOT_FOUND = 404
 
 /** The promotions the selected customer may be offered here, today (F27-07). */
 data class PromotionsState(
@@ -80,7 +93,8 @@ class PromotionsViewModel(
         val active =
             when (val answer = activePromotions(storeId, channel)) {
                 is Answer.Body -> answer.value
-                is Answer.Refused -> return base.copy(error = answer.error)
+                is Answer.Refused ->
+                    return base.copy(error = promotionsRefusal(answer.error, R.string.promotions_unavailable))
             }
         var armError: ApiError? = null
         val shown =

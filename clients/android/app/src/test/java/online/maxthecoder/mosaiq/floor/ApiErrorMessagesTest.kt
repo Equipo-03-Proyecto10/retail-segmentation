@@ -72,4 +72,12 @@ class ApiErrorMessagesTest {
     fun theCorrelationIdStaysForSupport() {
         assertEquals("corr-1", answered(503).correlationId)
     }
+
+    @Test
+    fun onlyAnAnswerThatMayChangeIsWorthARetry() {
+        assertTrue(ApiError.unreachable(null).retryable)
+        for (status in listOf(429, 500, 502, 503, 504)) assertTrue("$status", answered(status).retryable)
+        for (status in listOf(400, 403, 404, 409, 422)) assertFalse("$status", answered(status).retryable)
+        assertFalse(ApiError.unexpected().retryable)
+    }
 }

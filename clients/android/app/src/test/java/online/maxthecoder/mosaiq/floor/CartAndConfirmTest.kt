@@ -35,6 +35,7 @@ import online.maxthecoder.mosaiq.floor.ui.sale.saleDiscount
 import online.maxthecoder.mosaiq.floor.ui.sale.saleTotal
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -63,6 +64,9 @@ class CartAndConfirmTest {
     /** What `POST /v1/sales` answers next; the recorded sale by default. */
     private var saleAnswer: () -> MockResponse = { ok(201, contract("sales/examples/record-sale.json")) }
 
+    /** What `GET /v1/promotions` answers; the listed promotions by default. */
+    private var promotionsAnswer: () -> MockResponse = { ok(200, PROMOTIONS) }
+
     private val ids = mutableListOf<UUID>()
     private val newId: () -> UUID = { UUID.randomUUID().also { ids += it } }
 
@@ -86,7 +90,7 @@ class CartAndConfirmTest {
                     path == "/api/sales/v1/channels" -> ok(200, contract("sales/examples/list-channels.json"))
                     path == "/api/stores/v1/stores/3/commercial-rules" ->
                         ok(200, contract("stores/examples/store-commercial-rules.json"))
-                    path == "/api/campaigns/v1/promotions" -> ok(200, PROMOTIONS)
+                    path == "/api/campaigns/v1/promotions" -> promotionsAnswer()
                     path == "/api/engagement/v2/engagement-events" -> ok(201, "{}")
                     path == "/api/sales/v1/sales" && request.method == "POST" -> saleAnswer()
                     else -> MockResponse().setResponseCode(404)
@@ -224,6 +228,46 @@ class CartAndConfirmTest {
         assertEquals(listOf(SaleLineRequest(camera.productId, 2, "110.42", WINTER)), body.lines)
         assertTrue(rows(Operation.SALE).single().body.contains("\"promotion_id\":$WINTER"))
         assertEquals(false, model.sale.value.reviewing)
+    }
+
+    @Test
+    fun aPromotionsListThatIsNotThereSaysSoPlainlyOffersNoRetryAndTheSaleGoesAtListPrice() {
+        // campaigns' listPromotions is still planned: the kit answers 404 with the framework's text (#1155).
+        promotionsAnswer = {
+            error(404, "not_found", FRAMEWORK_NOT_FOUND)
+        }
+        val model = model()
+        model.loadChannels()
+        settle { model.registration.value.channels.isNotEmpty() }
+        model.loadPromotions()
+        settle { model.sale.value.discounts.error != null }
+
+        val refusal = model.sale.value.discounts.error!!
+        assertEquals(app.getString(R.string.sale_promotions_unavailable), refusal.message)
+        assertEquals("not_found", refusal.code)
+        assertEquals("corr-not_found", refusal.correlationId)
+        assertFalse("a 404 says the same next time", refusal.retryable)
+
+        model.selectCustomer(customer)
+        model.addProduct(camera)
+        model.confirm(NOW)
+        settle { model.sale.value.queuedRowId != null }
+        val body = json.decodeFromString(SaleRequest.serializer(), rows(Operation.SALE).single().body)
+        assertEquals(listOf(SaleLineRequest(camera.productId, 1, "129.90", null)), body.lines)
+    }
+
+    @Test
+    fun aPromotionsListThatIsDownKeepsItsOwnWordsAndOffersRetry() {
+        promotionsAnswer = { error(503, "database_unavailable") }
+        val model = model()
+        model.loadChannels()
+        settle { model.registration.value.channels.isNotEmpty() }
+        model.loadPromotions()
+        settle { model.sale.value.discounts.error != null }
+
+        val refusal = model.sale.value.discounts.error!!
+        assertTrue(refusal.message, "not answering right now" in refusal.message)
+        assertTrue(refusal.retryable)
     }
 
     @Test

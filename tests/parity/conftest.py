@@ -18,6 +18,7 @@ from tests.parity.compare import (
     AuditDifference,
     CaseResult,
     Difference,
+    RecommendationDifference,
     ReportDifference,
     RfmDifference,
     SegmentDifference,
@@ -34,6 +35,7 @@ _differences: dict[
         | AuditDifference
         | ReportDifference
         | RfmDifference
+        | RecommendationDifference
     ],
 ] = {}
 # The files whose cases are parity cases; test_compare.py is not one.
@@ -42,6 +44,7 @@ _CASE_FILES = {
     "test_segment_parity.py",
     "test_audit_parity.py",
     "test_rfm_parity.py",
+    "test_recommendation_parity.py",
 }
 
 
@@ -161,6 +164,26 @@ def rfm(db) -> stack.RfmPath:
     )
 
 
+@pytest.fixture(scope="session")
+def recommendations() -> stack.RecommendationsPath:
+    absent = [
+        f"services/{n}/"
+        for n in ("auth", "recommendations", "stock", "customer-preferences")
+        if not (ROOT / "services" / n).is_dir()
+    ]
+    if absent:
+        pytest.skip("recommendations path: waiting for " + ", ".join(absent))
+    if missing := _missing(
+        "PARITY_GATEWAY_URL", "PARITY_WEB_EMAIL", "PARITY_WEB_PASSWORD"
+    ):
+        pytest.skip("recommendations path: not set: " + ", ".join(missing))
+    return stack.RecommendationsPath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_WEB_EMAIL"),
+        stack.env("PARITY_WEB_PASSWORD"),
+    )
+
+
 @pytest.fixture
 def differences(request) -> list[Difference]:
     """Where a case collects what differs, so it is printed and recorded."""
@@ -171,6 +194,7 @@ def differences(request) -> list[Difference]:
         | AuditDifference
         | ReportDifference
         | RfmDifference
+        | RecommendationDifference
     ] = []
     _differences[request.node.name] = found
     return found

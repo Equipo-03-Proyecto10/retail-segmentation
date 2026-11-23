@@ -51,19 +51,23 @@ from tests.parity.compare import (
     Assignment,
     EngineRfm,
     Pair,
+    Recommendation,
     WebRfm,
     assignment_from_service,
     parse_customer_current,
     parse_propagation_bound,
+    parse_recommendations_page,
     parse_report_open_members,
     parse_reports_revenue,
     parse_stock_page,
+    recommendation_from_service,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
 _CSRF = re.compile(r'name="csrf_token"\s+value="([^"]+)"')
 _WINDOW = re.compile(r'name="window"\s+value="(\d+)"')
 RUN_RECORDED_CONTRACT = ROOT / "contracts/streams/segments.run_recorded.v1.md"
+STREAM_CONTRACTS = ROOT / "contracts/streams"
 MAX_RATE_LIMIT_RETRIES = 3
 MAX_RETRY_AFTER_SECONDS = 60
 
@@ -125,6 +129,16 @@ def run_recorded_bound() -> float:
     to the acknowledgement, in the stream's `## Propagation bound` table."""
 
     _, maximum = parse_propagation_bound(RUN_RECORDED_CONTRACT.read_text(), "segments")
+    return maximum / 1000
+
+
+def stream_bound(contract: str, group: str) -> float:
+    """Seconds `group` is contracted to take at most on one stream, from the
+    outbox commit to the acknowledgement: the maximum in the `## Propagation
+    bound` table of contracts/streams/<contract>.md (F20-06)."""
+
+    text = (STREAM_CONTRACTS / f"{contract}.md").read_text()
+    _, maximum = parse_propagation_bound(text, group)
     return maximum / 1000
 
 
@@ -278,6 +292,14 @@ class WebPath:
             if shown >= count:
                 return members
             page = shown + 1
+
+    def recommendations(self, customer_id: str) -> Recommendation:
+        """What /catalog/customers/<id>/recommendations shows (F10-02), over
+        the page's default window."""
+
+        return parse_recommendations_page(
+            self._get(f"/catalog/customers/{customer_id}/recommendations")
+        )
 
     def run_segmentation(self, window_days: int | None = None) -> None:
         """One RFM run, confirmed, over `window_days` or the form's default."""
@@ -463,6 +485,69 @@ class SegmentsPath:
             if page * info["size"] >= info["total"]:
                 return members
             page += 1
+
+
+class RecommendationsPath:
+    """recommendations-service as a client reads it, and the two service writes
+    whose events it consumes that the other drivers do not make (F20-10): a
+    stock count through stock-service and an interest-category replace through
+    customer-preferences-service. All are ADMIN's."""
+
+    def __init__(self, gateway_url: str, email: str, password: str) -> None:
+        self.client = ParityClient(
+            gateway_url, load_contract(ROOT / "contracts/recommendations")
+        )
+        self.stock = ParityClient(gateway_url, load_contract(ROOT / "contracts/stock"))
+        self.preferences = ParityClient(
+            gateway_url, load_contract(ROOT / "contracts/customer-preferences")
+        )
+        self.token = sign_in(gateway_url, email, password)
+
+    def read(self, customer_id: str) -> tuple[Recommendation, dict]:
+        """GET /v1/recommendations, in the web's terms and as answered."""
+
+        query = urllib.parse.urlencode({"customer_id": customer_id})
+        reply = self.client.call(
+            "GET", f"/api/recommendations/v1/recommendations?{query}", token=self.token
+        )
+        assert reply.status == 200, f"{reply.status} {reply.body!r}"
+        body = reply.json()
+        return recommendation_from_service(body), body
+
+    def count_stock(self, store_id: int, product_id: int, quantity: int) -> None:
+        """A COUNT movement: sets on-hand at the store (stream:stock.v1.changed)."""
+
+        reply = self.stock.call(
+            "POST",
+            "/api/stock/v1/stock-movements",
+            token=self.token,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "movement_type": "COUNT",
+                    "store_id": store_id,
+                    "product_id": product_id,
+                    "quantity": quantity,
+                    "counted_by": "parity harness",
+                }
+            ).encode(),
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+        assert reply.status == 201, f"{reply.status} {reply.body!r}"
+
+    def replace_interests(self, customer_id: str, category_ids: list[int]) -> None:
+        """PUT the customer's declared interest categories
+        (stream:preferences.v1.changed)."""
+
+        reply = self.preferences.call(
+            "PUT",
+            f"/api/customer-preferences/v1/preference-profiles/{customer_id}"
+            "/interest-categories",
+            token=self.token,
+            content_type="application/json",
+            body=json.dumps({"category_ids": sorted(category_ids)}).encode(),
+        )
+        assert reply.status == 200, f"{reply.status} {reply.body!r}"
 
 
 class RfmPath:

@@ -7,12 +7,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,18 +26,15 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
 import online.maxthecoder.mosaiq.floor.ui.components.MqCard
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
+import online.maxthecoder.mosaiq.floor.ui.components.MqSheet
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
 import online.maxthecoder.mosaiq.floor.ui.formatMoney
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 /** The summary before the sale is recorded, in a modal bottom sheet; dismissing it goes back to the cart. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewSheet(ui: SaleUi, actions: SaleActions) {
-    ModalBottomSheet(
-        onDismissRequest = actions.onCancelReview,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ) {
+    MqSheet(onDismiss = actions.onCancelReview) {
         ReviewContent(ui, actions)
     }
 }
@@ -120,7 +114,11 @@ fun SaleOutcome(ui: SaleUi, actions: SaleActions = SaleActions()) {
     val refusal = refusalOf(ui.queued, ui.sale.lines)
     when {
         receipt != null -> ReceiptCard(receipt)
-        refusal != null -> RefusalCard(refusal, onDiscard = { ui.queued?.let(actions.onDiscard) })
+        refusal != null -> RefusalCard(
+            refusal,
+            onDiscard = { ui.queued?.let(actions.onDiscard) },
+            onNewSale = actions.onNewSale
+        )
     }
 }
 
@@ -179,18 +177,21 @@ private fun ReceiptCard(receipt: Receipt) {
 }
 
 @Composable
-private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit) {
+private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit, onNewSale: () -> Unit) {
     Column(Modifier.fillMaxWidth().testTag("sale-refused"), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
         Text(
             stringResource(R.string.sale_refused_title),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.semantics { heading() }
+            modifier = Modifier.semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            }
         )
         MqErrorPanel(refusal.error, friendly = refusal.reason)
         refusal.line?.let {
             Text(stringResource(R.string.sale_refused_line, it), style = MaterialTheme.typography.bodyLarge)
         }
-        // "Back to cart" sits in the bar below, always in reach.
+        // "Back to cart" sits alone in the bar below, always in reach; the other ways out stay here (#1156).
         Text(stringResource(R.string.sale_refused_kept), style = MaterialTheme.typography.bodyMedium)
         MqButton(
             stringResource(R.string.sale_discard),
@@ -198,6 +199,13 @@ private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit) {
             variant = MqButtonVariant.Quiet,
             fullWidth = true,
             modifier = Modifier.testTag("discard-sale")
+        )
+        MqButton(
+            stringResource(R.string.sale_another),
+            onNewSale,
+            variant = MqButtonVariant.Quiet,
+            fullWidth = true,
+            modifier = Modifier.testTag("another-sale")
         )
     }
 }

@@ -1,8 +1,16 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { collect, Masker, UnmaskedSecret, verdict, type Options } from '../../scripts/f20-02-evidence';
+import {
+  collect,
+  configDirFor,
+  Masker,
+  saleIdFrom,
+  UnmaskedSecret,
+  verdict,
+  type Options,
+} from '../../scripts/f20-02-evidence';
 import { bundle, claims, errorXml, example, fakeFetch, tokenResult, type Responder } from '../support/fake';
 
 // F20-02 (#760): what the evidence script records around the main-process calls. What a live
@@ -170,5 +178,51 @@ describe('the F20-02 evidence script', () => {
     await expect(collect(o)).rejects.toBeInstanceOf(UnmaskedSecret);
     expect(readdirSync(o.out)).toEqual([]);
     expect(existsSync(join(o.out, 'bodies'))).toBe(false);
+  });
+
+  it('finds a password with a quote or a backslash in the JSON and XML it is written as', () => {
+    for (const password of ['pa"ss', 'back\\slash', 'a<b&c']) {
+      const m = new Masker();
+      m.watch(password);
+      expect(m.leaks(JSON.stringify({ note: password }))).toBe(true);
+      expect(m.leaks(`<note>${password.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</note>`)).toBe(true);
+      expect(m.leaks('nothing secret')).toBe(false);
+    }
+  });
+
+  it('writes nothing when a password with a quote reaches result.json', async () => {
+    const o = options(gateway());
+    o.accounts.staff = { email: 'staff@test', password: 'quote"d' };
+    o.draft.name = 'echoes quote"d';
+    await expect(collect(o)).rejects.toThrow(UnmaskedSecret);
+    expect(readdirSync(o.out)).toEqual([]);
+  });
+
+  it('takes --sale-id only as a positive integer', () => {
+    expect(saleIdFrom('4812')).toBe(4812);
+    expect(saleIdFrom(' 30 ')).toBe(30);
+    for (const bad of [undefined, '', '0', '-3', '12a', '1.5', '1e3', 'NaN', '99999999999999999999'])
+      expect(saleIdFrom(bad)).toBeNull();
+  });
+
+  it("reads settings.json from the folder the packaged app's userData names", () => {
+    const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf8')) as {
+      name: string;
+      productName?: string;
+    };
+    // electron-builder.yml's productName ("MOSAIQ Back Office") names the bundle only; Electron
+    // reads userData from package.json, which has no productName, as the README's folders say.
+    expect(pkg.productName).toBeUndefined();
+    expect(configDirFor(pkg, 'darwin', {}, '/Users/u')).toBe(
+      '/Users/u/Library/Application Support/mosaiq-desktop',
+    );
+    expect(configDirFor(pkg, 'linux', {}, '/home/u')).toBe('/home/u/.config/mosaiq-desktop');
+    expect(configDirFor(pkg, 'win32', { APPDATA: 'C:/AppData' }, 'C:/u')).toBe(
+      join('C:/AppData', 'mosaiq-desktop'),
+    );
+    expect(configDirFor({ ...pkg, productName: 'Other' }, 'linux', {}, '/home/u')).toBe(
+      '/home/u/.config/Other',
+    );
+    expect(configDirFor(pkg, 'linux', { MOSAIQ_DESKTOP_CONFIG_DIR: '/x' }, '/home/u')).toBe('/x');
   });
 });

@@ -422,6 +422,8 @@ svc_rfm,api_rfm,USAGE
 svc_rfm,api_sales,USAGE
 svc_rfm,api_sales.purchase_line_v1,SELECT
 svc_rfm,api_sales.net_purchase_line_v1,SELECT
+svc_rfm,api_customers,USAGE
+svc_rfm,api_customers.customer_ref_v1,SELECT
 svc_rfm,rfm.rule_set,SELECT
 svc_rfm,rfm.rule_set,INSERT
 svc_rfm,rfm.rule_set(name),UPDATE
@@ -543,6 +545,8 @@ svc_kpis,api_products.product_ref_v1,SELECT
 svc_kpis,api_models,USAGE
 svc_kpis,api_segments.assignment_change_v1,SELECT
 svc_kpis,api_models.run_version_v1,SELECT
+svc_kpis,api_experiments,USAGE
+svc_kpis,api_experiments.campaign_effect_v1,SELECT
 svc_experiments,api_campaigns,USAGE
 svc_experiments,api_campaigns.campaign_target_v1,SELECT
 svc_experiments,api_campaigns.campaign_excluded_customer_v1,SELECT

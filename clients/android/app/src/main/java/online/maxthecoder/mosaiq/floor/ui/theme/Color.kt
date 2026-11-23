@@ -31,9 +31,11 @@ private val Orange700 = Color(0xFFA33F00)
 // Semantic, light (:root).
 private val LightBgCanvas = Color(0xFFFAFAF9)
 private val LightBgSurface = Color(0xFFFFFFFF)
+private val LightBgRaised = Color(0xFFFFFFFF)
 private val LightBgSunken = Color(0xFFF4F4F2)
 private val LightBgActive = Color(0xFFE7E7E4)
 private val LightBorderSubtle = Color(0xFFE7E7E4)
+private val LightBorderDefault = Color(0xFFD5D5D1)
 private val LightTextPrimary = Color(0xFF232320)
 private val LightTextSecondary = Color(0xFF6B6B65)
 private val LightTextInverse = Color(0xFFFAFAF9)
@@ -56,6 +58,7 @@ private val DarkBgRaised = Color(0xFF232320)
 private val DarkBgSunken = Color(0xFF0B0B0A)
 private val DarkBgHover = Color(0xFF383834)
 private val DarkBorderSubtle = Color(0xFF383834)
+private val DarkBorderDefault = Color(0xFF4F4F4A)
 private val DarkTextPrimary = Color(0xFFF4F4F2)
 private val DarkTextSecondary = Color(0xFFB3B3AE)
 private val DarkTextInverse = Color(0xFF141412)
@@ -120,9 +123,11 @@ internal val MosaiqPalette: Map<String, Color> =
 
         put("light/--mq-bg-canvas", LightBgCanvas)
         put("light/--mq-bg-surface", LightBgSurface)
+        put("light/--mq-bg-raised", LightBgRaised)
         put("light/--mq-bg-sunken", LightBgSunken)
         put("light/--mq-bg-active", LightBgActive)
         put("light/--mq-border-subtle", LightBorderSubtle)
+        put("light/--mq-border-default", LightBorderDefault)
         put("light/--mq-text-primary", LightTextPrimary)
         put("light/--mq-text-secondary", LightTextSecondary)
         put("light/--mq-text-inverse", LightTextInverse)
@@ -144,6 +149,7 @@ internal val MosaiqPalette: Map<String, Color> =
         put("dark/--mq-bg-sunken", DarkBgSunken)
         put("dark/--mq-bg-hover", DarkBgHover)
         put("dark/--mq-border-subtle", DarkBorderSubtle)
+        put("dark/--mq-border-default", DarkBorderDefault)
         put("dark/--mq-text-primary", DarkTextPrimary)
         put("dark/--mq-text-secondary", DarkTextSecondary)
         put("dark/--mq-text-inverse", DarkTextInverse)
@@ -258,13 +264,33 @@ data class MosaiqColors(
     /** `cat-01..08`, in order; index with the segment's position, modulo 8. */
     val segment: List<Color>,
     /** Accent-colored text and links: orange-700 (light) or the dark link token, never `primary`. */
-    val link: Color
+    val link: Color,
+    /** `--mq-bg-raised`: the surface of a modal, above the canvas and the cards (ADR-0002). */
+    val raised: Color,
+    /** `--mq-border-default`: the border of a modal, a step stronger than a card's. */
+    val borderDefault: Color
 )
 
 internal val MosaiqLightExtras =
-    MosaiqColors(LightSuccess, LightWarning, LightInfo, LightSegments, LightTextLink)
+    MosaiqColors(
+        LightSuccess,
+        LightWarning,
+        LightInfo,
+        LightSegments,
+        LightTextLink,
+        LightBgRaised,
+        LightBorderDefault
+    )
 
 internal val MosaiqDarkExtras =
-    MosaiqColors(DarkSuccess, DarkWarning, DarkInfo, DarkSegments, DarkTextLink)
+    MosaiqColors(
+        DarkSuccess,
+        DarkWarning,
+        DarkInfo,
+        DarkSegments,
+        DarkTextLink,
+        DarkBgRaised,
+        DarkBorderDefault
+    )
 
 internal val LocalMosaiqColors = staticCompositionLocalOf { MosaiqLightExtras }

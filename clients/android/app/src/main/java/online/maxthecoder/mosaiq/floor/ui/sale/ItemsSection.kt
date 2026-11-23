@@ -1,11 +1,14 @@
 package online.maxthecoder.mosaiq.floor.ui.sale
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.KeyboardActions
@@ -16,8 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,9 +50,12 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.formatMoney
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
-/** Section 2: search products to add, and the cart as rows with a quantity stepper. */
+/**
+ * Section 2: search products to add, and the cart as rows with a quantity stepper. [fixLine] is the product
+ * whose line a refusal named; once the cart is open again that line scrolls into view, and [onLineShown] says so.
+ */
 @Composable
-fun ItemsSection(ui: SaleUi, actions: SaleActions) {
+fun ItemsSection(ui: SaleUi, actions: SaleActions, fixLine: Int? = null, onLineShown: () -> Unit = {}) {
     val sale = ui.sale
     var query by rememberSaveable { mutableStateOf(sale.query) }
     var searched by rememberSaveable { mutableStateOf(sale.products.isNotEmpty()) }
@@ -128,19 +136,44 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
         if (sale.lines.isNotEmpty()) {
             when {
                 sale.discounts.loading -> MqLoading(stringResource(R.string.sale_promotions_loading))
-                sale.discounts.error != null -> MqErrorPanel(sale.discounts.error, onRetry = actions.onLoadPromotions)
+                sale.discounts.error != null ->
+                    MqErrorPanel(
+                        sale.discounts.error,
+                        onRetry = actions.onLoadPromotions.takeIf { sale.discounts.error.retryable }
+                    )
             }
         }
-        sale.lines.forEach { line -> CartLine(line, locked, sale.discounts, actions) }
+        sale.lines.forEach { line ->
+            val fix = !locked && line.product.productId == fixLine
+            CartLine(line, locked, sale.discounts, actions, fix, onLineShown)
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CartLine(line: SaleLine, locked: Boolean, discounts: DiscountState, actions: SaleActions) {
+private fun CartLine(
+    line: SaleLine,
+    locked: Boolean,
+    discounts: DiscountState,
+    actions: SaleActions,
+    fix: Boolean = false,
+    onShown: () -> Unit = {}
+) {
     val id = line.product.productId
     val cap = discounts.maxDiscountPercent
     val options = if (discounts.loaded) applicablePromotions(discounts) else emptyList()
-    Column(Modifier.fillMaxWidth().testTag("cart-line-$id"), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(fix) {
+        if (fix) {
+            requester.bringIntoView()
+            onShown()
+        }
+    }
+    Column(
+        Modifier.fillMaxWidth().bringIntoViewRequester(requester).testTag("cart-line-$id"),
+        verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
+    ) {
         Column(Modifier.semantics(mergeDescendants = true) {}) {
             Text(line.product.name, style = MaterialTheme.typography.bodyLarge)
             Text(

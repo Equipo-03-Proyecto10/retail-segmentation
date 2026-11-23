@@ -12,12 +12,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +33,7 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.components.MqInlineError
 import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
+import online.maxthecoder.mosaiq.floor.ui.components.MqSheet
 import online.maxthecoder.mosaiq.floor.ui.components.MqTextField
 import online.maxthecoder.mosaiq.floor.ui.humanize
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
@@ -52,7 +50,6 @@ internal fun channelLabel(name: String): String =
  * The new-customer form in a modal bottom sheet: labeled fields with the right keyboards,
  * inline validation, the registration channel as 48dp radio rows, and one primary action.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RegistrationSheet(
     fields: RegistrationFields,
@@ -63,10 +60,7 @@ fun RegistrationSheet(
     onSubmit: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ) {
+    MqSheet(onDismiss = onDismiss) {
         RegistrationForm(fields, onFields, registration, onChooseChannel, onLoadChannels, onSubmit)
     }
 }

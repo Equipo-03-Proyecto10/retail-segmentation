@@ -108,7 +108,11 @@ Point the desktop app at the instance. The configuration directory is
 `~/.config/mosaiq-desktop/` on Linux and `%APPDATA%\mosaiq-desktop\` on
 Windows; `MOSAIQ_DESKTOP_CONFIG_DIR` overrides it
 ([`clients/desktop/README.md`](../../clients/desktop/README.md), "Against the
-instance"):
+instance"). The release build reads the same folder: Electron names `userData`
+after `package.json`, which has no `productName`, so the bundle name
+`MOSAIQ Back Office` in `electron-builder.yml` does not change it (checked on a
+`--mac dir` build, 2026-11-23). The script and the hand-driven app in step 5
+therefore read one `settings.json`:
 
 ```json
 { "baseUrl": "https://mosaiq.maxthecoder.online" }
@@ -218,8 +222,8 @@ step 2 `settings.json`:
    Capture `f20-02-desktop-01-sale.png`: the same `sale_id`, lines and total as
    F20-01's 201. Sign out.
 2. Sign in as the `MARKETING` account. **Campaigns**: Status `DRAFT`, the
-   draft's label, the largest page size, **Search**, then **View** on step 3's
-   campaign. Capture `f20-02-desktop-02-draft-campaign.png`. Sign out.
+   draft's label, the largest page size, **Search**, then **Next** until step
+   3's campaign is listed, and **View** on it. Capture `f20-02-desktop-02-draft-campaign.png`. Sign out.
 3. Sign in as the analyst. **Campaigns**. Capture
    `f20-02-desktop-03-no-create-control.png`: the list, and no **New campaign**
    form. Sign out.
@@ -324,7 +328,7 @@ release of each service from F20-01 step 7.›
 | `xmllint` against `contracts/common/v1/common.xsd` | ‹fill› | ‹fill› |
 | The envelope: code and correlation id | ‹fill: `forbidden_role`, the request's id› | same |
 | Through the window's bridge | ‹fill: `window-forced-write.json`, code and correlation id› | ‹fill› |
-| Nothing was written | ‹fill: one campaign with the draft's name› | ‹fill: `checked/rows.md#rows-3`› |
+| Nothing was written | ‹fill: no campaign of the draft's name after step 3's `campaign_id`› | ‹fill: `checked/rows.md#rows-3`› |
 | The deviation accepted | ‹fill: by Marcelo, link› | [above](#the-deviation-in-criterion-3) |
 
 Checks: ‹fill: "N checks, N held" from `checked/summary.md`, linked›.

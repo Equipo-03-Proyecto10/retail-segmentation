@@ -179,9 +179,17 @@ internal fun recordBlocker(ui: SaleUi): String? = when {
     else -> null
 }
 
-/** Section 3, pinned above the bottom navigation: the total and the one primary action. */
+/**
+ * Section 3, pinned above the bottom navigation: the total and the one primary action. [onBackToCart] is
+ * what "Back to cart" does on a refused sale; the screen adds bringing the named line into view.
+ */
 @Composable
-fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
+fun SaleBar(
+    ui: SaleUi,
+    actions: SaleActions,
+    modifier: Modifier = Modifier,
+    onBackToCart: () -> Unit = actions.onBackToCart
+) {
     val sale = ui.sale
     val blocker = recordBlocker(ui)
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
@@ -191,25 +199,14 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
                 SaleTotals(sale)
                 if (sale.queuedRowId != null) {
                     when (ui.queued?.state) {
-                        RowState.REFUSED -> {
-                            Text(
-                                stringResource(R.string.sale_refused_title),
-                                style = MaterialTheme.typography.bodyMedium,
-                                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }
-                            )
-                            MqButton(
-                                stringResource(R.string.sale_back_to_cart),
-                                actions.onBackToCart,
-                                fullWidth = true,
-                                modifier = Modifier.testTag("back-to-cart")
-                            )
-                            MqButton(
-                                stringResource(R.string.sale_another),
-                                actions.onNewSale,
-                                fullWidth = true,
-                                variant = MqButtonVariant.Quiet
-                            )
-                        }
+                        // Only the next step stays pinned; the refusal card above says why and offers the rest,
+                        // so the reason and the line it names keep the room at 375 dp (#1156).
+                        RowState.REFUSED -> MqButton(
+                            stringResource(R.string.sale_back_to_cart),
+                            onBackToCart,
+                            fullWidth = true,
+                            modifier = Modifier.testTag("back-to-cart")
+                        )
                         else -> {
                             Text(
                                 ui.queued?.let(actions.rowStatus) ?: stringResource(R.string.sale_saved),

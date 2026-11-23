@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +28,7 @@ import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.Channel
 import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
@@ -44,6 +46,7 @@ import online.maxthecoder.mosaiq.floor.ui.sale.SaleActions
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleBar
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleOutcome
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleUi
+import online.maxthecoder.mosaiq.floor.ui.sale.refusalOf
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
@@ -169,20 +172,34 @@ fun SalesContent(
             phone = ""
         }
     }
+    val scroll = rememberScrollState()
+    // A refusal arrives wherever the seller had scrolled; its card at the top says why and names the line (#1156).
+    val refusedRow = ui.queued?.takeIf { it.state == RowState.REFUSED }?.id
+    LaunchedEffect(refusedRow) { if (refusedRow != null) scroll.animateScrollTo(0) }
+    // The product whose line that refusal named, to bring into view once "Back to cart" opens the cart again.
+    var fixLine by rememberSaveable { mutableStateOf<Int?>(null) }
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = Spacing.Lg),
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(bottom = Spacing.Lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.Xxl)
         ) {
             StoreLine(ui.store, actions.onPickStore)
             SaleOutcome(ui, actions)
             CustomerSection(ui, actions, onNewCustomer = { onRegisteringChange(true) })
             if (ui.customer != null) insights()
-            ItemsSection(ui, actions)
+            ItemsSection(ui, actions, fixLine, onLineShown = { fixLine = null })
             HistorySection(ui, actions)
         }
         MqSnackbarHost(snackbar)
-        SaleBar(ui, actions)
+        SaleBar(
+            ui,
+            actions,
+            Modifier.testTag("sale-bar"),
+            onBackToCart = {
+                fixLine = refusalOf(ui.queued, ui.sale.lines)?.productId
+                actions.onBackToCart()
+            }
+        )
     }
     if (ui.sale.reviewing && ui.sale.queuedRowId == null) ReviewSheet(ui, actions)
     if (registering) {

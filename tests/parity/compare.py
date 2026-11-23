@@ -99,6 +99,21 @@ class RfmDifference:
         )
 
 
+@dataclass(frozen=True)
+class RecommendationDifference:
+    """One way the web and recommendations-service disagree about a customer's
+    recommendations after a change (F20-10). `change` names the change, such as
+    "sale"."""
+
+    change: str
+    what: str
+    web: object
+    service: object
+
+    def __str__(self) -> str:
+        return f"{self.change}: {self.what}: web={self.web!r} service={self.service!r}"
+
+
 @dataclass
 class CaseResult:
     case: str
@@ -110,6 +125,7 @@ class CaseResult:
         | AuditDifference
         | ReportDifference
         | RfmDifference
+        | RecommendationDifference
     ] = field(default_factory=list)
 
 
@@ -607,6 +623,88 @@ def diff_rfm(
             if left != right:
                 found.append(RfmDifference(customer, what, left, right))
     return found
+
+
+# ---------- recommendations (F20-10) ----------
+
+
+@dataclass(frozen=True)
+class Recommendation:
+    """A customer's recommendations in the web's terms: its status and, in
+    order, each item's product id and the units on hand it was chosen with."""
+
+    status: str  # recommended | no_segment | no_usual_store | none_match
+    items: tuple[tuple[int, int], ...] = ()
+
+    @property
+    def products(self) -> tuple[int, ...]:
+        return tuple(product for product, _ in self.items)
+
+
+# The web reports both of the service's segment statuses as no_segment (RN-40).
+_SERVICE_STATUS = {
+    "no_open_assignment": "no_segment",
+    "unassigned_result": "no_segment",
+}
+# The empty state's title on the web's page, for each status but `recommended`.
+_EMPTY_TITLES = {
+    "No segment available": "no_segment",
+    "No usual store": "no_usual_store",
+    "No eligible products": "none_match",
+}
+_ITEM = re.compile(
+    r'data-recommendation="(\d+)".*?Available stock</dt>\s*'
+    r'<dd class="mq-num">(\d+) units?</dd>',
+    re.DOTALL,
+)
+_EMPTY_TITLE = re.compile(r'<span class="mq-state__title">([^<]+)</span>')
+
+
+def parse_recommendations_page(html: str) -> Recommendation:
+    """What /catalog/customers/<id>/recommendations shows: each item's product
+    and units in stock, in the page's order, or the empty state's reason."""
+
+    items = tuple((int(p), int(q)) for p, q in _ITEM.findall(html))
+    cards = html.count("data-recommendation=")
+    if cards != len(items):
+        # An item without its stock line would be paired with the next item's
+        # and drop it: the units compared would be another product's.
+        raise ValueError(f"{cards} recommendation items, {len(items)} with their stock")
+    if items:
+        return Recommendation("recommended", items)
+    title = _EMPTY_TITLE.search(html)
+    if title is None or title.group(1).strip() not in _EMPTY_TITLES:
+        raise ValueError("the page shows neither recommendations nor a reason")
+    return Recommendation(_EMPTY_TITLES[title.group(1).strip()])
+
+
+def recommendation_from_service(body: dict) -> Recommendation:
+    """GET /v1/recommendations, in the web's terms."""
+
+    return Recommendation(
+        _SERVICE_STATUS.get(body["status"], body["status"]),
+        tuple((i["product_id"], i["quantity_on_hand"]) for i in body["items"]),
+    )
+
+
+def diff_recommendations(
+    change: str, web: Recommendation, service: Recommendation
+) -> list[RecommendationDifference]:
+    """Status, then the ordered products, then each shared item's units."""
+
+    if web.status != service.status:
+        return [RecommendationDifference(change, "status", web.status, service.status)]
+    if web.products != service.products:
+        return [
+            RecommendationDifference(
+                change, "products", list(web.products), list(service.products)
+            )
+        ]
+    return [
+        RecommendationDifference(change, f"product {p} on hand", left, right)
+        for (p, left), (_, right) in zip(web.items, service.items, strict=True)
+        if left != right
+    ]
 
 
 def write_results(results: list[CaseResult], path: Path) -> None:

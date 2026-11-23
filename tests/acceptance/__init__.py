@@ -1,4 +1,4 @@
-"""Evidence collectors for the instructor's acceptance tests (F29, #888, #891).
+"""Evidence collectors for the instructor's acceptance tests (F29, #888, #889, #891).
 
 They are command-line tools, not test cases: each run writes an evidence
 directory (the requests and responses with their correlation ids, the rows,

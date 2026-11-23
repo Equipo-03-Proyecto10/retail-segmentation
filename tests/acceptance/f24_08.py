@@ -385,6 +385,18 @@ class Session:
 
 # ---------- cycle: criteria 1 and 2 ----------
 
+
+def left_at_zero_notice(store: int, product: int, quantity: int) -> str:
+    """What to do when the run stops after the COUNT to zero and before the
+    RECEIPT is recorded: the product stays at zero on a live stack."""
+    return (
+        f"WARNING: product {product} was counted to zero at store {store} and "
+        f"the restock was not recorded. Restore it: POST {MOVEMENTS} with "
+        f'{{"movement_type": "RECEIPT", "store_id": {store}, "product_id": '
+        f'{product}, "quantity": {quantity}}} and a new Idempotency-Key.'
+    )
+
+
 ZERO = "1. Agotado"
 BACK = "2. Reabastecido"
 
@@ -582,6 +594,7 @@ def run_cycle(args: argparse.Namespace) -> int:
     rec.facts["poll interval ms"] = args.poll_ms
     s = Session(rec, planner=True)
     delays: dict[str, Any] = {"bound": {"p95_ms": p95_ms, "max_ms": max_ms}}
+    at_zero: tuple[int, int, int] | None = None
     try:
         versions(rec, s.edge, SERVICES)
         before, number = s.recommend(args.customer, args.store, args.channel, "before")
@@ -658,6 +671,7 @@ def run_cycle(args: argparse.Namespace) -> int:
         )
         if moved is None:
             return 0 if rec.write() else 1
+        at_zero = (args.store, product, quantity)
         wait = _measure(s, args, ZERO, start, max_ms, product, expect_offered=False)
         delays["zero"] = wait.as_dict()
         after = _after_bound(s, args, ZERO, start, max_ms, product, False, 0, before)
@@ -682,6 +696,7 @@ def run_cycle(args: argparse.Namespace) -> int:
             [rec.link(number)],
         )
         if moved is not None:
+            at_zero = None
             wait = _measure(s, args, BACK, start, max_ms, product, expect_offered=True)
             delays["restock"] = wait.as_dict()
             _after_bound(
@@ -698,6 +713,8 @@ def run_cycle(args: argparse.Namespace) -> int:
         )
         (rec.out / "delays.json").write_text(json.dumps(delays, indent=2))
     finally:
+        if at_zero is not None:
+            print(left_at_zero_notice(*at_zero), file=sys.stderr)
         s.close()
     return 0 if rec.write() else 1
 

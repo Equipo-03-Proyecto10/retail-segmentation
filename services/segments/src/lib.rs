@@ -209,6 +209,28 @@ pub struct Assignment {
     pub valid_to: Option<DateTime<Utc>>,
 }
 
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VersionedAssignmentFilter {
+    pub model_version_id: Option<i64>,
+    pub customer_id: Option<Uuid>,
+    pub label_code: Option<String>,
+    pub open: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VersionedAssignment {
+    pub customer_id: Uuid,
+    pub run_id: i64,
+    pub model_version_id: Option<i64>,
+    pub cause: Option<String>,
+    pub label_code: Option<String>,
+    pub r_score: Option<i16>,
+    pub f_score: Option<i16>,
+    pub m_score: Option<i16>,
+    pub valid_from: DateTime<Utc>,
+    pub valid_to: Option<DateTime<Utc>>,
+}
+
 const RECENCY_STABLE_DAYS: i64 = 7;
 const MONETARY_STABLE_PERCENT: i64 = 10;
 
@@ -399,6 +421,41 @@ impl Assignment {
     }
 }
 
+impl VersionedAssignment {
+    fn from_row(row: &Row) -> Result<Self, ApiError> {
+        Ok(Self {
+            customer_id: row.try_get(0)?,
+            run_id: row.try_get(1)?,
+            model_version_id: row.try_get(2)?,
+            cause: row.try_get(3)?,
+            label_code: row.try_get(4)?,
+            r_score: row.try_get(5)?,
+            f_score: row.try_get(6)?,
+            m_score: row.try_get(7)?,
+            valid_from: row.try_get(8)?,
+            valid_to: row.try_get(9)?,
+        })
+    }
+
+    fn wire(&self) -> Representation {
+        Representation::new(
+            "VersionedSegmentAssignment",
+            [
+                ("customer_id", Value::from(self.customer_id.to_string())),
+                ("run_id", Value::from(self.run_id)),
+                ("model_version_id", Value::from(self.model_version_id)),
+                ("cause", Value::from(self.cause.clone())),
+                ("label_code", Value::from(self.label_code.clone())),
+                ("r_score", Value::from(self.r_score)),
+                ("f_score", Value::from(self.f_score)),
+                ("m_score", Value::from(self.m_score)),
+                ("valid_from", Value::from(self.valid_from)),
+                ("valid_to", Value::from(self.valid_to)),
+            ],
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Errors and query parsing
 // ---------------------------------------------------------------------------
@@ -494,6 +551,63 @@ pub fn assignment_filter(query: &str) -> Result<Filter, ApiError> {
     match filter {
         Some(filter) if details.is_empty() => Ok(filter),
         _ => Err(invalid_query(details)),
+    }
+}
+
+/// Optional filters of `listVersionedSegmentAssignments`. Customer and label
+/// retain the contract parameters' exclusive relationship; every other filter
+/// combines with either one or with an unfiltered history read.
+pub fn versioned_assignment_filter(query: &str) -> Result<VersionedAssignmentFilter, ApiError> {
+    let values = query_pairs(query);
+    let mut details = Vec::new();
+    let model_version_id =
+        values
+            .get("model_version_id")
+            .and_then(|raw| match raw.parse::<i64>() {
+                Ok(version) if version >= 1 => Some(version),
+                Ok(_) => {
+                    details.push(Detail::new("model_version_id", "out_of_range"));
+                    None
+                }
+                Err(_) => {
+                    details.push(Detail::new("model_version_id", "invalid_type"));
+                    None
+                }
+            });
+    let customer_id = values.get("customer_id").and_then(|raw| {
+        parse_customer_id(raw).or_else(|| {
+            details.push(Detail::new("customer_id", "invalid_type"));
+            None
+        })
+    });
+    let label_code = values.get("label_code").and_then(|code| {
+        if code.is_empty() || code.chars().count() > 40 {
+            details.push(Detail::new("label_code", "out_of_range"));
+            None
+        } else {
+            Some(code.clone())
+        }
+    });
+    if values.contains_key("customer_id") && values.contains_key("label_code") {
+        details.push(Detail::new("customer_id", "conflicting_filters"));
+    }
+    let open = match values.get("open").map(String::as_str) {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => {
+            details.push(Detail::new("open", "invalid_type"));
+            false
+        }
+    };
+    if details.is_empty() {
+        Ok(VersionedAssignmentFilter {
+            model_version_id,
+            customer_id,
+            label_code,
+            open,
+        })
+    } else {
+        Err(invalid_query(details))
     }
 }
 
@@ -1010,6 +1124,83 @@ pub async fn read_assignments_in<C: GenericClient + Sync>(
     let assignments = rows
         .iter()
         .map(Assignment::from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((assignments, total as u64))
+}
+
+/// One page of assignment history with the immutable model version that scored
+/// each run. A missing run-version link is pending and stays null; it is never
+/// replaced with the currently published version (ADR-0064).
+pub async fn read_versioned_assignments(
+    db: &Database,
+    filter: &VersionedAssignmentFilter,
+    page: u32,
+    size: u32,
+) -> Result<(Vec<VersionedAssignment>, u64), ApiError> {
+    let connection = db.connection().await?;
+    if let Some(customer) = filter.customer_id {
+        if connection
+            .query_opt(
+                "SELECT 1 FROM api_customers.customer_ref_v1 WHERE customer_id = $1",
+                &[&customer],
+            )
+            .await?
+            .is_none()
+        {
+            return Err(customer_not_found());
+        }
+    }
+    if let Some(label) = &filter.label_code {
+        if connection
+            .query_opt(
+                "SELECT 1 FROM public.segment_label WHERE label_code = $1",
+                &[label],
+            )
+            .await?
+            .is_none()
+        {
+            return Err(segment_not_found());
+        }
+    }
+    let limit = i64::from(size);
+    let offset = i64::from(page - 1) * limit;
+    let parameters: [&(dyn tokio_postgres::types::ToSql + Sync); 6] = [
+        &filter.model_version_id,
+        &filter.customer_id,
+        &filter.label_code,
+        &filter.open,
+        &limit,
+        &offset,
+    ];
+    let total: i64 = connection
+        .query_one(
+            "SELECT count(*) FROM public.customer_segment_history AS h \
+             LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
+             WHERE ($1::bigint IS NULL OR rv.version_id = $1) \
+               AND ($2::uuid IS NULL OR h.customer_id = $2) \
+               AND ($3::text IS NULL OR h.label_code = $3) \
+               AND (NOT $4::boolean OR h.valid_to IS NULL)",
+            &parameters[..4],
+        )
+        .await?
+        .try_get(0)?;
+    let rows = connection
+        .query(
+            "SELECT h.customer_id, h.run_id, rv.version_id, h.cause, h.label_code, \
+                    h.r_score, h.f_score, h.m_score, h.valid_from, h.valid_to \
+             FROM public.customer_segment_history AS h \
+             LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
+             WHERE ($1::bigint IS NULL OR rv.version_id = $1) \
+               AND ($2::uuid IS NULL OR h.customer_id = $2) \
+               AND ($3::text IS NULL OR h.label_code = $3) \
+               AND (NOT $4::boolean OR h.valid_to IS NULL) \
+             ORDER BY h.valid_from DESC, h.history_id DESC LIMIT $5 OFFSET $6",
+            &parameters,
+        )
+        .await?;
+    let assignments = rows
+        .iter()
+        .map(VersionedAssignment::from_row)
         .collect::<Result<Vec<_>, _>>()?;
     Ok((assignments, total as u64))
 }
@@ -1831,6 +2022,24 @@ pub fn assignments_reply(assignments: &[Assignment], page: u32, size: u32, total
     .into()
 }
 
+pub fn versioned_assignments_reply(
+    assignments: &[VersionedAssignment],
+    page: u32,
+    size: u32,
+    total: u64,
+) -> Reply {
+    Page::new(
+        "VersionedSegmentAssignments",
+        "VersionedSegmentAssignment",
+        "assignments",
+        assignments.iter().map(|row| row.wire().data).collect(),
+        page,
+        total,
+    )
+    .size(size)
+    .into()
+}
+
 pub fn migrations_reply(
     window: &MigrationWindow,
     migrations: &[Migration],
@@ -2100,6 +2309,14 @@ async fn list_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(assignments_reply(&rows, ctx.page, ctx.size, total))
 }
 
+async fn list_versioned_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
+    let filter = versioned_assignment_filter(&request_info().query)?;
+    let (rows, total) = read_versioned_assignments(ctx.db(), &filter, ctx.page, ctx.size).await?;
+    Ok(versioned_assignments_reply(
+        &rows, ctx.page, ctx.size, total,
+    ))
+}
+
 async fn get_segment_migration_matrix(ctx: Ctx) -> Result<Reply, ApiError> {
     let window = migration_window(&request_info().query)?;
     let matrix = read_migration_matrix(ctx.db(), window).await?;
@@ -2261,6 +2478,10 @@ pub fn router(
         .operation("getCurrentAssignmentState", get_current_assignment_state)?
         .operation("getFloorCurrentAssignment", get_floor_current_assignment)?
         .operation("listSegmentAssignments", list_segment_assignments)?
+        .operation(
+            "listVersionedSegmentAssignments",
+            list_versioned_segment_assignments,
+        )?
         .operation("getSegmentMigrationMatrix", get_segment_migration_matrix)?
         .operation("listSegmentMigrations", list_segment_migrations)?
         .operation(

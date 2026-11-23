@@ -20,7 +20,15 @@ from mosaiq_kit import Kit, Page, Representation, configure_logging
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.streams import StreamConsumer
 
-from app import conversions, experiments, exposures, plan, results
+from app import (
+    assignment,
+    attribution,
+    conversions,
+    experiments,
+    exposures,
+    plan,
+    results,
+)
 from app.config import ENGAGEMENT_STREAM, Settings
 
 
@@ -70,17 +78,35 @@ def create_app() -> Flask:
 
     @kit.operation("listSaleAttributions")
     def list_sale_attributions() -> Page:
-        # No attribution exists until #843 builds it: the empty page is true.
+        filters = attribution.parse_filters(request.args)
+        with kit.db.connection() as connection:
+            rows, total = attribution.list_attributions(
+                connection, filters, page=kit.page, size=kit.size
+            )
         return Page(
             "SaleAttributions",
             "SaleAttribution",
             "attributions",
-            [],
+            rows,
             page=kit.page,
             size=kit.size,
-            total=0,
+            total=total,
             info_key="page_info",
         )
+
+    @kit.operation("getSaleAttribution")
+    def get_sale_attribution(attribution_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "SaleAttribution",
+                attribution.get_attribution(connection, attribution_id),
+            )
+
+    @kit.operation("evaluateAttributions")
+    def evaluate_attributions(experiment_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            evaluated = attribution.evaluate(connection, experiment_id)
+        return Representation("AttributionEvaluation", evaluated)
 
     @kit.operation("listConversions")
     def list_conversions(experiment_id: int) -> Page:
@@ -116,6 +142,36 @@ def create_app() -> Flask:
         response = Representation("Experiment", created, status=201)
         response.headers = {"Location": f"/v1/experiments/{experiment_id}"}
         return response
+
+    @kit.operation("assignExperiment")
+    def assign_experiment() -> Representation:
+        body = kit.body
+        actor = str(kit.principal["sub"])
+        with kit.db.transaction() as connection:
+            summary = assignment.assign(
+                connection,
+                body["experiment_id"],
+                actor=actor,
+                acknowledge_underpowered=bool(body.get("acknowledge_underpowered")),
+            )
+        return Representation("AssignmentSummary", summary, status=201)
+
+    @kit.operation("listExperimentAssignments")
+    def list_experiment_assignments() -> Page:
+        filters = assignment.parse_filters(request.args)
+        with kit.db.connection() as connection:
+            rows, total = assignment.list_assignments(
+                connection, filters, page=kit.page, size=kit.size
+            )
+        return Page(
+            "ExperimentAssignments",
+            "ExperimentAssignment",
+            "assignments",
+            rows,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+        )
 
     @kit.operation("getExperiment")
     def get_experiment(experiment_id: int) -> Representation:

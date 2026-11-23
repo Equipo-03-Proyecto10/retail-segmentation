@@ -17,7 +17,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
-PORTS = ("sales", "recommendations", "users", "campaigns", "segments", "model-registry")
+PORTS = (
+    "sales",
+    "recommendations",
+    "users",
+    "campaigns",
+    "segments",
+    "model-registry",
+    "rfm",
+)
+# A port is named for the rule, a service for its boundary: the fixture of `rfm`
+# is rfm-engine's.
+SERVICE_DIR = {"rfm": "rfm-engine"}
 
 
 def _cases(fixture: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -25,7 +36,7 @@ def _cases(fixture: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def compare_port(name: str, captured_dir: Path, services_dir: Path) -> list[str]:
-    golden = services_dir / name / "tests" / "golden"
+    golden = services_dir / SERVICE_DIR.get(name, name) / "tests" / "golden"
     if not golden.is_dir():
         return [f"{name}: not yet captured ({golden} does not exist); skipped"]
     committed_path = golden / f"{name}.json"

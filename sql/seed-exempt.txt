@@ -128,7 +128,9 @@ models.model_version_feature
 models.model_publication
 
 # models.drift_report, drift_variable, drift_statistic, drift_bin, drift_alert
-# (F23-09): what the drift monitor wrote about the published version's windows.
+# (F23-09) and drift_outcome_segment (F23-11, ADR-0089): what the drift monitor wrote
+# about the published version's windows and matured cohorts. An outcome test needs
+# 100 customers a side in a segment, which thirty customers cannot hold either.
 # A report needs 200 customers to hold a number and the seeded data holds thirty,
 # so the seed states the one honest report, INSUFFICIENT_DATA, and no statistic,
 # bin or alert exists to seed; thirty invented figures would be a history the
@@ -138,6 +140,7 @@ models.drift_variable
 models.drift_statistic
 models.drift_bin
 models.drift_alert
+models.drift_outcome_segment
 
 # models.model_training, its variables and its cluster sizes: a training is a run an
 # administrator started and what that fit produced (F22-12). Seeding trainings would
@@ -199,6 +202,13 @@ experiments.experiment_result
 experiments.experiment_result_arm
 experiments.experiment_result_comparison
 experiments.experiment_result_balance
+
+# The record and balance of an assignment (F25-08, ADR-0068) exist only for an experiment assigned
+# through the service. The thirty seeded experiments were assigned by the web (rule V0), which
+# stored no check, and assigning thirty more only to check them would add customers to every
+# seeded report. Runtime facts, like a plan.
+experiments.experiment_assignment_record
+experiments.experiment_assignment_balance
 
 # experiments.exposure_notice is runtime projection state. Rows exist only as
 # experimentation consumes RECORDED and VOIDED notices from engagement's

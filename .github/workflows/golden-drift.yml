@@ -67,6 +67,10 @@ jobs:
           for service in sales recommendations users campaigns segments model-registry; do
             python -m tests.golden.capture --service "$service" --out "$RUNNER_TEMP/golden"
           done
+          # rfm records reversals as svc_sales inside its rolled-back cases, which
+          # retail_app may not do, so its capture runs as the database owner.
+          python -m tests.golden.capture --service rfm --out "$RUNNER_TEMP/golden" \
+            --database-url postgresql://postgres:postgres@localhost:5432/retail
 
       - name: Compare with the committed fixtures
         run: python -m tests.golden.compare "$RUNNER_TEMP/golden"

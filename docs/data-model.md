@@ -649,6 +649,18 @@ The primary result (ADR-0085, F25-13) adds four more, also in 4NF, written toget
 first primary read at or after the analysis instant. A look cannot be recomputed later (the net
 view keeps no history of its reversals), so each stored value is a fact of the look and not a
 function of current data:
+- **`experiments.sale_attribution`** (F25-12, ADR-0069) is keyed by `attribution_id`, and `sale_id` is
+  a second key (`UNIQUE`), so a sale has at most one holder: the schema refuses a second. The row
+  stores only what the holder rule decides: the `assignment_id` that holds the sale and the
+  `exposure_id` that earned the credit. The experiment, campaign, customer, arm, the exposure and
+  sale instants and the window's end are functions of those two keys and the sale, so they are read
+  from their owners and not copied (a copy could disagree with `experiment_assignment`). The net
+  amount and whether the sale still counts are not columns either: a reversal is a fact about the
+  sale, read from the net view when shown (ADR-0062), and the holder is never reopened. There is no
+  multivalued or join dependency left: one sale, one holder. Triggers refuse a control assignment,
+  an experiment with no campaign, an exposure that is not the assignment's or does not precede the
+  sale, and a sale that is not the customer's own or falls past the window; every `UPDATE` and
+  `DELETE` is refused, even for the owner, and `svc_experiments` holds `SELECT` and `INSERT` only.
 - **`experiments.experiment_result`** is keyed by `experiment_id`, which determines when the look
   was computed, the sample ratio's p-value and whether the figures are synthetic. The status is
   not a column: it is `INVALID` exactly when that p-value is below 0.001.
@@ -673,6 +685,25 @@ They are one relation per kind of fact, never an array and never a document, so 
 can keep each fact consistent. The two flags a look can raise go to `experiment_flag`. Frozen like
 the plan: `svc_experiments` holds SELECT and INSERT only, and the same trigger refuses any UPDATE
 or DELETE.
+
+The assignment's checks (F25-08) add two more, in 4NF, written once with the assignment and
+frozen like the plan:
+- **`experiments.experiment_assignment_record`** is keyed by `experiment_id`, which determines who
+  assigned, whether an `UNDERPOWERED` plan was acknowledged, whether recomputing gave the stored
+  arms and the sample ratio's p-value. These are facts of one act, fixed when it happened. Not
+  columns, because each follows from rows that cannot change: the assignment instant, the total
+  and each arm's count (from `experiment_assignment`), the sample ratio's status (the p-value
+  against 0.001) and whether the experiment is flagged.
+- **`experiments.experiment_assignment_balance`** is keyed by `(experiment_id, group_id,
+  measure)`, which determines the standardized mean difference. The reference arm (the control,
+  or the first offer) and whether a difference is flagged (its absolute value against 0.25) are
+  derived. Balance has its own relation and is not a column of the record: it is a multivalued
+  fact per arm and measure. The result's own balance is a separate fact, a look at the analysis
+  instant, and stays in `experiment_result_balance`.
+
+Both are exempt from the 30-row minimum, like the other tables written only by an operation
+(`sql/seed-exempt.txt`). `public.experiment_assignment` itself gains triggers rather than columns:
+no role may UPDATE, DELETE or TRUNCATE a row (RN-42), and the web may not INSERT into a planned experiment.
 
 The recommendations boundary (ADR-0067, ADR-0046, F24-05) adds four relations,
 all in 4NF. They keep the explanation of each recommendation the service served:
@@ -1174,9 +1205,26 @@ decision that matters is how a product's many-valued facts are split:
   the report before it", keyed `alert_id`, with `(report_id, variable)` unique and a
   foreign key to the variable. Its kind, version, window and reference are the report's;
   its statistics and bins are the variable's rows; its text is a function of the bins and
-  the review code, so none is stored. The claim is constrained to `DISTRIBUTION_CHANGE`:
-  a data-drift alert cannot make the claim only an outcome test may (ADR-0065).
-  All five tables are insert-only, by trigger, and nothing is deleted.
+  the review code, so none is stored. The claim is tied to the variable: only
+  `REPURCHASE_RATE`, the outcome test's variable, may claim `CONCEPT_DRIFT`, and it
+  claims nothing else; a trigger keeps that variable on `OUTCOME_TEST` reports and the
+  other four on `DATA_DRIFT` reports, so a data-drift alert cannot make the claim only an
+  outcome test may (ADR-0065, ADR-0089). The review code is a function of the variable,
+  and a CHECK says so.
+- **`models.drift_outcome_segment`** is the multivalued fact "this segment's repurchase
+  in the reference cohort and in this matured cohort, and the test between them"
+  (F23-11, ADR-0089), keyed `(report_id, label_code)`. The four counts, z, the p-value,
+  the Holm-adjusted p-value, the result and `persisted` depend on the whole key and on
+  nothing else (BCNF). The adjusted p-value depends on the other segments of the same
+  report, which is why it is stored: it is the result of a step over the report, not a
+  function of the row. The rates, the difference in points, the thresholds, the horizon
+  (the report's window) and the claim (any `persisted` row) are derived and not stored,
+  and CHECKs derive `NOT_TESTED` and `PASSED` from the counts and adjusted p-value,
+  so no row can disagree with ADR-0065's constants. A trigger admits rows only for an
+  `OUTCOME_TEST` report. A segment is one fact per report,
+  independent of the report's variable state, so it is a table of its own and not a
+  repetition inside `drift_variable` (4NF).
+  All six tables are insert-only, by trigger, and nothing is deleted.
 
 ---
 
@@ -1536,6 +1584,16 @@ window.
 | `experiment_id` | `INTEGER` | NN | PK part; FK → `public.experiment`, `ON DELETE RESTRICT` | The experiment |
 | `flag` | `VARCHAR(30)` | NN | PK part; CHECK one of the four flags of the contract | A flag that applies to the experiment |
 
+#### `experiments.sale_attribution`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `attribution_id` | `BIGINT` | NN | PK, identity | The attribution |
+| `sale_id` | `BIGINT` | NN | UNIQUE; FK → `public.transaction`, `ON DELETE RESTRICT` | The sale: held by one campaign at most |
+| `assignment_id` | `BIGINT` | NN | FK → `public.experiment_assignment`, `ON DELETE RESTRICT`; a treatment assignment of an experiment with a campaign | The assignment that holds the sale |
+| `exposure_id` | `BIGINT` | NN | FK → `public.experiment_exposure`, `ON DELETE RESTRICT`; the assignment's own exposure, before the sale | The exposure that earned the credit |
+| `attributed_at` | `TIMESTAMPTZ` | NN | DEFAULT `now()` | When the holder was written |
+
 #### `experiments.experiment_result`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -1581,6 +1639,25 @@ window.
 | `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_result` | The look |
 | `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
 | `reference_group_id` | `INTEGER` | NN | FK likewise | The control, or the first offer when there is none |
+| `measure` | `VARCHAR(20)` | NN | PK part; CHECK one of `PRE_RECENCY_DAYS`, `PRE_PURCHASE_COUNT`, `PRE_NET_SPEND` | A measure over the window before the frame instant |
+| `standardized_mean_difference` | `DOUBLE PRECISION` | NN | — | The arm minus the reference over the pooled standard deviation |
+
+#### `experiments.experiment_assignment_record`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK; FK → `public.experiment` | The experiment assigned |
+| `assigned_by` | `UUID` | NN | FK → `public.app_user` | Who assigned it |
+| `acknowledged_underpowered` | `BOOLEAN` | NN | — | An `UNDERPOWERED` plan was assigned on an explicit acknowledgement |
+| `recomputation_matches` | `BOOLEAN` | NN | — | Dealing again from the stored rows gave the stored arms |
+| `sample_ratio_p_value` | `DOUBLE PRECISION` | NN | CHECK in [0, 1] | The chi-square test of the arm counts against equal shares |
+
+#### `experiments.experiment_assignment_balance`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `experiment_id` | `INTEGER` | NN | PK part; FK → `experiments.experiment_assignment_record` | The assignment |
+| `group_id` | `INTEGER` | NN | PK part; FK `(group_id, experiment_id)` → `public.experiment_group` | The arm |
 | `measure` | `VARCHAR(20)` | NN | PK part; CHECK one of `PRE_RECENCY_DAYS`, `PRE_PURCHASE_COUNT`, `PRE_NET_SPEND` | A measure over the window before the frame instant |
 | `standardized_mean_difference` | `DOUBLE PRECISION` | NN | — | The arm minus the reference over the pooled standard deviation |
 

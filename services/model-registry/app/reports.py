@@ -12,7 +12,7 @@ from typing import Any
 
 from psycopg import Connection
 
-from . import drift
+from . import drift, outcome, store
 
 THRESHOLDS = {
     "PSI": ("VALUE", drift.PSI_WATCH, drift.PSI_ALARM),
@@ -113,6 +113,79 @@ def _variable_parts(
     return statistics, bins, shown
 
 
+def _segments(connection: Connection[Any], report_id: int) -> list[outcome.Segment]:
+    labels = {
+        label: position
+        for position, label in enumerate(store.label_vocabulary(connection))
+    }
+    rows = connection.execute(
+        "SELECT label_code, reference_customers, reference_repurchasers,"
+        " current_customers, current_repurchasers, z, p_value, adjusted_p_value,"
+        " result, persisted FROM models.drift_outcome_segment WHERE report_id = %s",
+        (report_id,),
+    ).fetchall()
+    found = [
+        outcome.Segment(
+            row[0],
+            outcome.Side(row[1], row[2]),
+            outcome.Side(row[3], row[4]),
+            row[5],
+            row[6],
+            row[7],
+            row[8],
+            row[9],
+        )
+        for row in rows
+    ]
+    return sorted(
+        found, key=lambda s: (labels.get(s.label_code, len(labels)), s.label_code)
+    )
+
+
+def _rates(side: outcome.Side) -> dict[str, Any]:
+    rate = side.rate
+    return {
+        "customers": side.customers,
+        "repurchasers": side.repurchasers,
+        "rate": None if rate is None else round(rate, 4),
+    }
+
+
+def _outcome_test(as_of: Any, segments: list[outcome.Segment]) -> dict[str, Any]:
+    """The published `OutcomeTest`: the relation, the horizon and the cohort named
+    beside the claim, which is made only by a segment that persisted (ADR-0065)."""
+    shown = []
+    for s in segments:
+        ref, cur = s.reference.rate, s.current.rate
+        shown.append(
+            {
+                "label_code": s.label_code,
+                "reference": _rates(s.reference),
+                "current": _rates(s.current),
+                "difference_points": (
+                    None if ref is None or cur is None else round(100 * (cur - ref), 2)
+                ),
+                "z": s.z,
+                "p_value": s.p_value,
+                "adjusted_p_value": s.adjusted_p_value,
+                "result": s.result,
+                "persisted": s.persisted,
+            }
+        )
+    return {
+        "relation": outcome.RELATION,
+        "horizon_days": outcome.HORIZON.days,
+        "cohort_as_of": as_of,
+        "thresholds": {
+            "alpha": outcome.ALPHA,
+            "min_difference_points": outcome.MIN_DIFFERENCE_POINTS,
+            "min_customers_per_side": outcome.MIN_CUSTOMERS,
+        },
+        "segments": shown,
+        "claim": outcome.CLAIM if any(s.persisted for s in segments) else None,
+    }
+
+
 def _head(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "kind": row[1],
@@ -166,7 +239,11 @@ def report_view(connection: Connection[Any], row: tuple[Any, ...]) -> dict[str, 
         "reference": head["reference"],
         "previous_report_id": row[12],
         "variables": variables,
-        "outcome_test": None,
+        "outcome_test": (
+            _outcome_test(row[7], _segments(connection, report_id))
+            if row[1] == outcome.KIND and row[5] == "COMPARED"
+            else None
+        ),
         "alert_ids": alert_ids,
         "computed_at": row[13],
     }
@@ -177,6 +254,24 @@ def alert_view(connection: Connection[Any], row: tuple[Any, ...]) -> dict[str, A
     report = connection.execute(_REPORT, (report_id, report_id) + (None,) * 6 + (1, 0))
     head_row = report.fetchone()
     head = _head(head_row)
+    if variable == outcome.VARIABLE:
+        persisted = [s for s in _segments(connection, report_id) if s.persisted]
+        return {
+            "alert_id": alert_id,
+            "report_id": report_id,
+            "previous_report_id": previous_id,
+            "kind": head["kind"],
+            "claim": claim,
+            "model_version": head["model_version"],
+            "variable": variable,
+            "window": head["window"],
+            "reference": head["reference"],
+            "statistics": [],
+            "bins": [],
+            "outcome_test": _outcome_test(head_row[7], persisted),
+            "suggested_review": {"code": code, "text": outcome.review_text(persisted)},
+            "raised_at": raised_at,
+        }
     statistics, bins, _shown = _variable_parts(connection, report_id, variable)
     moved = sorted(bins, key=lambda item: (-item.contribution, item.label))[:3]
     return {

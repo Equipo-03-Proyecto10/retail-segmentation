@@ -24,6 +24,13 @@ data class ApiError(
     val details: List<ErrorDetail> = emptyList(),
     val retryAfterSeconds: Long? = null
 ) {
+    /**
+     * True when asking again may get a different answer: no answer at all, a rate limit, or a server
+     * or gateway fault. A 4xx refusal says the same thing the next time, so Retry is not offered for it.
+     */
+    val retryable: Boolean
+        get() = code == "unreachable" || status == TOO_MANY_REQUESTS || status >= SERVER_FAULT
+
     companion object {
         const val CORRELATION_HEADER = "X-Correlation-ID"
 

@@ -57,7 +57,7 @@ fun PromotionsContent(
         when {
             state.note != null -> Text(state.note, style = MaterialTheme.typography.bodyMedium)
             state.loading -> MqLoading(stringResource(R.string.promotions_loading))
-            error != null -> MqErrorPanel(error, onRetry = onRetry)
+            error != null -> MqErrorPanel(error, onRetry = onRetry.takeIf { error.retryable })
             state.promotions.isEmpty() && armError == null ->
                 Text(
                     stringResource(R.string.promotions_none),
@@ -67,7 +67,11 @@ fun PromotionsContent(
                 )
         }
         if (!state.loading && armError != null) {
-            MqErrorPanel(armError, onRetry = onRetry, friendly = stringResource(R.string.promotions_arm_unknown))
+            MqErrorPanel(
+                armError,
+                onRetry = onRetry.takeIf { armError.retryable },
+                friendly = stringResource(R.string.promotions_arm_unknown)
+            )
         }
         if (!state.loading) {
             state.promotions.forEach { PromotionRow(it, it.promotionId in state.recorded, onRecord) }

@@ -26,6 +26,11 @@ fun error(status: Int, code: String, message: String = "Refused: $code."): MockR
     .setHeader("X-Correlation-ID", "corr-$code")
     .setBody("""{"code":"$code","message":"$message","correlation_id":"corr-$code"}""")
 
+/** The framework's own 404 text, which the kit puts in the envelope of a route that is not there (#1155). */
+const val FRAMEWORK_NOT_FOUND =
+    "The requested URL was not found on the server. " +
+        "If you entered the URL manually please check your spelling and try again."
+
 fun ok(status: Int, body: String): MockResponse =
     MockResponse().setResponseCode(status).setHeader("Content-Type", "application/json").setBody(body)
 

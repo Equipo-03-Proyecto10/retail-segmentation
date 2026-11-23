@@ -67,7 +67,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 | [E-14](#e-14--campaigns-shares-the-webs-id-allocation-lock) | campaigns shares the web's id-allocation lock | [campaigns](./campaigns.md) |
 | [E-15](#e-15--the-credential-view-carries-the-password-hash) | the credential view carries the password hash | [auth](./auth.md), [users](./users.md) |
 | [E-16](#e-16--phone-sales-share-the-transaction-id-namespace-with-csv) | phone sales share the transaction id namespace with CSV | [sales](./sales.md) |
-| [E-17](#e-17--rules-ported-from-the-web-exist-twice) | rules ported from the web exist twice | [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md) |
+| [E-17](#e-17--rules-ported-from-the-web-exist-twice) | rules ported from the web exist twice | [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md), [model-registry](./model-registry.md) |
 | [E-18](#e-18--never-deleted-is-enforced-in-service-code-not-in-mongodb) | "never deleted" is enforced in service code, not in MongoDB | [engagement](./engagement.md) |
 | [E-19](#e-19--one-postgresql-one-ddl-file-one-redis-state-one-mongodb) | one PostgreSQL, one DDL file, one redis-state, one MongoDB | all 15 |
 | [E-20](#e-20--the-liveness-key-and-the-jwks-file-are-read-by-every-service) | the liveness key and the JWKS file are read by every service | all 15 |
@@ -152,6 +152,7 @@ The design accepts a small number of deliberate deviations from the strict readi
 - **Why it is acceptable:** Without a declared owner, several services would read `store` directly and nobody would know who a change breaks. One read owner gives one service to change and one contract for everyone else.
 - **Guard:** Exactly one `svc_*` role holds any privilege on each base table, and CI checks it. A read owner cannot fix its own data: the web does.
 - **Outcome when the web and a service both write `store` (F21-12, #786):** they do not write the same fact. The web alone writes the `store` row, `is_active` included; stores-service writes the store's operating status, hours, enabled channels and maximum discount in its own `stores` tables, and holds only `SELECT` on `store`. Neither write can overwrite the other. Both are announced on `stream:stores.v1.changed`, because the capture trigger covers `public.store` and the new tables whoever writes, and `api_stores.store_directory_v2` publishes `is_active` and `status` side by side: a consumer lets a store sell only when `is_active` is true, the status is `OPEN` and the channel is enabled.
+- **Outcome when the web and rfm-engine both write the segmentation tables (F22-15, #811):** rfm-engine writes none of them. Segments' function `api_segments.apply_assignment_v1`, owned by `definer_segments`, writes the run and the history row, so RN-20 and RN-21 are enforced where the tables are owned. The web's run still writes them as a whole population, and the function takes the same per-customer instant and is guarded by the same open-row index (ADR-0087).
 - **Services:** [users](./users.md), [stores](./stores.md), [stock](./stock.md), [sales](./sales.md), [segments](./segments.md), [audit-trail](./audit-trail.md)
 - **Decided in:** [ADR-0034](../adr/0034-fifteen-single-rule-services-each-the-only-service-writer-of-its-data.md) (Decision and ownership matrix)
 
@@ -205,10 +206,10 @@ The design accepts a small number of deliberate deviations from the strict readi
 
 ### E-17 — rules ported from the web exist twice
 
-- **What:** Four rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes and campaign transitions. For RN-40, parity holds on the default path only (ADR-0067): no store and no channel named, every product active and sellable. A given store or channel, `not_sellable`, `store_not_selling`, alternatives, the recorded explanation and consent are not in the web and are outside the parity claim.
+- **What:** Five rules exist in the web and in a service: sale validation, the RN-40 recommendation rule, user outcomes, campaign transitions and the K-means fit with its cluster labels (RN-58, RN-38). For RN-40, parity holds on the default path only (ADR-0067): no store and no channel named, every product active and sellable. A given store or channel, `not_sellable`, `store_not_selling`, alternatives, the recorded explanation and consent are not in the web and are outside the parity claim.
 - **Why it is acceptable:** A service may not import `web/`, which is frozen, loads Flask and has no version to pin. Carrying a rule twice is the price of independence. The web cannot read the stock-channel, commercial-status and consent contracts, so it does not adopt the new behaviours.
 - **Guard:** The database carries what it can (CHECKs, indexes, triggers). The rest is a port pinned by golden fixtures captured once from the web on the seed database, with a drift job. A web bug fix opens an issue to regenerate them. Each deliberate difference of RN-40 is a recorded fixture with its reason (ADR-0045).
-- **Services:** [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md)
+- **Services:** [sales](./sales.md), [recommendations](./recommendations.md), [users](./users.md), [campaigns](./campaigns.md), [model-registry](./model-registry.md)
 - **Decided in:** [ADR-0045](../adr/0045-services-never-import-the-web-system.md) (Decision); [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) (Context)
 
 ### E-18 — "never deleted" is enforced in service code, not in MongoDB

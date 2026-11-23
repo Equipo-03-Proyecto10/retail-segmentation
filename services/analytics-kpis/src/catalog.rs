@@ -64,7 +64,8 @@ const CATALOG: &str = r#"[
   "window": "A sale falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC). Reversals recorded at any time up to generated_at are subtracted from it.",
   "origin_views": [
    "api_sales.net_purchase_line_v1",
-   "api_segments.current_label_v1"
+   "api_segments.current_label_v1",
+   "api_models.run_version_v1"
   ],
   "dimensions": [
    "segment",
@@ -112,7 +113,8 @@ const CATALOG: &str = r#"[
   "window": "from and to select cohorts by the bucket of the first purchase. The next bucket is read in full; when it has not ended at generated_at, retained_customers and retention_rate are absent for that cohort.",
   "origin_views": [
    "api_sales.net_purchase_line_v1",
-   "api_segments.current_label_v1"
+   "api_segments.current_label_v1",
+   "api_models.run_version_v1"
   ],
   "dimensions": [
    "segment",
@@ -159,7 +161,8 @@ const CATALOG: &str = r#"[
   "definition": "A migration is a change of a customer's segment label between two consecutive assignments within one model version. A change across two model versions is methodological, not behaviour (ADR-0064), so it is counted apart and never in customers_migrated. A row never mixes versions. A change has no store or channel, so only segment and period group it: segment means the pair of the label left and the label entered.",
   "window": "A change falls in the window when the instant it was recorded lies in [from 00:00 UTC, to + 1 day 00:00 UTC).",
   "origin_views": [
-   "api_segments.assignment_change_v1"
+   "api_segments.assignment_change_v1",
+   "api_models.run_version_v1"
   ],
   "dimensions": [
    "segment",

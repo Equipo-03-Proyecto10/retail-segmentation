@@ -1,6 +1,6 @@
 # segments
 
-> **Status:** Implemented (phase 14, core; F14-20, #461). Version-aware migrations were implemented by F22-16 (#812); per-version assignment listing remains planned. ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
+> **Status:** Implemented (phase 14, core; F14-20, #461). Version-aware migrations were implemented by F22-16 (#812); per-version assignment listing remains planned. The floor view of a customer's current segment was implemented by F21-26 (#1095). ADR-0034 to ADR-0046 accepted on 2026-10-15 (F13-01, #408).
 > **One rule:** A customer has at most one current segment, named by its stable label code, unassigned states are reported as they are, a migration compares one customer's labels within one model version, and a comparison across versions is marked methodological (RN-20, RN-21, RN-39, RN-59, RN-60)
 
 ## Summary
@@ -24,15 +24,17 @@
 - A customer with no open assignment, or whose latest result is unassigned, is reported as exactly that (`no_open_assignment`, `unassigned_result`) and never filled in from elsewhere. Read-rule service (E-08).
 - A migration is one customer's movement between two instants, read from the assignment history and never recomputed: the label held at each instant, the run, the model version and the cause of each side, and the measures judged to have changed (RN-59, RN-60). The version of a run is read from model-registry's published view and is never stored here.
 - A comparison whose two sides were written under different versions, or whose version is unknown, is marked `methodological`, and so is a row whose cause is a change of version. Such a difference may come from the model and is never behaviour (ADR-0064, RN-39).
-- Assignments are applied by `api_segments.apply_assignment_v1`, which this boundary owns and enforces (RN-20, RN-21), and which rfm-engine calls in the same transaction as its profile (ADR-0063).
+- Assignments are applied by `api_segments.apply_assignment_v1`, which this boundary owns and enforces (RN-20, RN-21), and which rfm-engine calls in the same transaction as its profile (ADR-0063). Implemented by F22-15 (ADR-0087): each batch of changes is one `INCREMENTAL` run (`segmentation_run.scope`), each history row records its `cause`, and the trigger on `customer_segment_history` raises `stream:segments.v1.assignment_changed`, which the relay of this service delivers. A reader of "the latest run" that means a whole population selects `scope = FULL`, as `GET /v1/segments` does. `api_segments.current_label_v1` also serves `unassigned_reason` (`PROFILING_WITHDRAWN` or `NO_PURCHASES`). The migrations read each side's `cause` from its history row (`CONSENT_WITHDRAWN` and `CONSENT_GRANTED` are in `AssignmentCause`, added to v1 by ADR-0087 through `contracts/vocabulary-growth.yaml`), and `getCurrentAssignmentState` serves the reason, so a customer who withdrew profiling is never read as one with no purchases (F22-18). A client that validates XML against the XSD takes the new XSD with contract 1.6.0, the desktop included. `listVersionedSegmentAssignments` stays `planned`.
 
 ## Endpoints
 
 | Method | Path | Purpose | Roles (`x-mosaiq-roles`) |
 |---|---|---|---|
-| GET | `/v1/segments` | Label vocabulary in business order, with sizes from the latest run | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segments` | Label vocabulary in business order, with sizes from the latest whole (`FULL`) run | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segments/{label_code}` | One label | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-assignments/current?customer_id=` | Label, RFM scores, `since` and `run_id`, or the unassigned state | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-assignments/current-state?customer_id=` | The current assignment and, for an unassigned result, `unassigned_reason`: `PROFILING_WITHDRAWN` or `NO_PURCHASES` (F22-18, ADR-0066, ADR-0087). A separate read because `current` is closed to additions within v1 (`contracts/README.md`). `SALES_ASSOCIATE` and `LOYALTY_OFFICER` keep their score-free floor view | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
+| GET | `/v1/segment-assignments/floor-view?customer_id=` | The floor roles' read (ADR-0060): `customer_id`, `state`, `label_code` and `since` only; no R, F, M scores and no `run_id`, absent rather than null. 404 `customer_not_found`, 422 `invalid_query` | SALES_ASSOCIATE, LOYALTY_OFFICER |
 | GET | `/v1/segment-assignments` | One customer's history, or one label's members (`customer_id` or `label_code`, `open`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-assignments/versioned` | Assignment rows with the model version and cause of each (`model_version_id`, `customer_id`, `label_code`, `open`, `page`, `size`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |
 | GET | `/v1/segment-migrations/matrix` | The migration matrix between two instants: totals with entries and exits per state, cells, and whether it is methodological (`from`, `to`) | ADMIN, ANALYST, STORE_MANAGER, MARKETING, AUDITOR |

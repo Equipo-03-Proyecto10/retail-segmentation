@@ -79,6 +79,9 @@ kotlin {
 // run with it is never mistaken for an up-to-date run without it.
 tasks.withType<Test>().configureEach {
     inputs.property("screenshots", providers.environmentVariable("SCREENSHOTS").orElse(""))
+    // FloorAccessContractTest reads contracts/, so a change there must rerun the tests.
+    inputs.dir(rootDir.resolve("../../contracts")).withPropertyName("contracts")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
 }
 
 dependencies {
@@ -130,4 +133,5 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestImplementation(libs.androidx.test.espresso.core)
 }

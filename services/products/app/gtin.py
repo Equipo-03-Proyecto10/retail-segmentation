@@ -24,5 +24,11 @@ def check_digit(body: str) -> int:
     return (10 - total % 10) % 10
 
 
+def is_well_formed(code: str) -> bool:
+    """The contract's ``Barcode`` pattern alone, without the check digit."""
+
+    return _GTIN.fullmatch(code) is not None
+
+
 def is_valid(code: str) -> bool:
-    return _GTIN.fullmatch(code) is not None and check_digit(code[:-1]) == int(code[-1])
+    return is_well_formed(code) and check_digit(code[:-1]) == int(code[-1])

@@ -16,3 +16,15 @@ entries:
     service: audit-trail
     version: 1.3.0
     values: [loyalty_card, product_attribute, product_barcode, product_relation, product_status, store_assignment, store_channel, store_channel_set, store_commercial_rule, store_hours, store_hours_interval, store_status]
+  - adr: ADR-0083
+    service: audit-trail
+    version: 1.4.0
+    values: [RULE_SET_CREATED, RULE_SET_EDITED, RULE_SET_VERSIONED, RULE_SET_PUBLISHED, rule_set]
+  - adr: ADR-0088
+    service: audit-trail
+    version: 1.5.0
+    values: [DRIFT]
+  - adr: ADR-0087
+    service: segments
+    version: 1.6.0
+    values: [CONSENT_WITHDRAWN, CONSENT_GRANTED]

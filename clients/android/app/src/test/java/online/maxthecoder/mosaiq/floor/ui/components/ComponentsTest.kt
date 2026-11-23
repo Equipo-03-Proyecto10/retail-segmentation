@@ -11,6 +11,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
@@ -30,6 +34,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import java.io.File
 import online.maxthecoder.mosaiq.floor.FloorTestApp
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.ApiError
@@ -294,6 +299,23 @@ class ComponentsTest {
     }
 
     @Test
+    fun aConnectionErrorReadsInPlainWordsAndSaysWhatHappensNext() {
+        show { MqErrorPanel(ApiError.unreachable(null), onRetry = {}) }
+        compose.onNodeWithText("No connection.", substring = true).assertExists()
+        compose.onNodeWithText("kept on this phone and sent when you are back online", substring = true).assertExists()
+        compose.onNodeWithText("could not be reached", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Retry").assertExists()
+    }
+
+    @Test
+    fun aGatewayFaultIsNotAStatusLineEither() {
+        show { MqErrorPanel(ApiError.from(503, """{"code":"bad_gateway","message":"upstream reset"}""", "c-1", null)) }
+        compose.onNodeWithText("The service is not answering right now.", substring = true).assertExists()
+        compose.onNodeWithText("upstream reset").assertDoesNotExist()
+        compose.onNodeWithText("The service answered", substring = true).assertDoesNotExist()
+    }
+
+    @Test
     fun errorPanelWithoutRetryHasNoRetryButton() {
         show { MqErrorPanel(ApiError.unexpected()) }
         compose.onNodeWithText("Something went wrong. Try again.").assertExists()
@@ -332,5 +354,86 @@ class ComponentsTest {
         show { MqQuantityStepper(value = 1, onDecrease = {}, onIncrease = {}, min = 1, max = 1) }
         compose.onNodeWithContentDescription("Decrease quantity").assertIsNotEnabled()
         compose.onNodeWithContentDescription("Increase quantity").assertIsNotEnabled()
+    }
+
+    @Test
+    fun aNamedStepperSaysWhichItemItChanges() {
+        show { MqQuantityStepper(value = 2, onDecrease = {}, onIncrease = {}, itemName = "Trail socks") }
+        compose.onNodeWithContentDescription("Decrease quantity of Trail socks").assertIsEnabled()
+        compose.onNodeWithContentDescription("Increase quantity of Trail socks").assertIsEnabled()
+        compose.onNodeWithContentDescription("Decrease quantity").assertDoesNotExist()
+    }
+
+    @Test
+    fun anInlineErrorIsOneAnnouncedNodeWithItsText() {
+        show { MqInlineError("Choose a registration channel.") }
+        compose.onNodeWithText("Choose a registration channel.")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+    }
+
+    /**
+     * UX-16: every public kit composable is drawn in ComponentsPreview.kt, and every sample sheet there
+     * has a light and a dark preview, so each component is previewed in both schemes.
+     */
+    @Test
+    fun everyKitComponentHasAPreviewInBothSchemes() {
+        val dir = File("src/main/java/online/maxthecoder/mosaiq/floor/ui/components")
+        val preview = File(dir, "ComponentsPreview.kt").readText()
+        val components =
+            dir.listFiles { f -> f.extension == "kt" && f.name != "ComponentsPreview.kt" }!!
+                .flatMap {
+                    Regex(
+                        """@Composable\s+fun (Mq\w+)\("""
+                    ).findAll(it.readText()).map { m -> m.groupValues[1] }
+                }
+        assertTrue("no kit components found under ${dir.path}", components.isNotEmpty())
+        val missing = components.filter { !Regex("""\b$it\s*[({]""").containsMatchIn(preview) }
+        assertEquals("kit components with no preview", emptyList<String>(), missing)
+        val sheets = Regex("""Sheet\(dark = (true|false)\) \{ (\w+)\(\) \}""").findAll(preview)
+            .groupBy({ it.groupValues[2] }, { it.groupValues[1] })
+        assertTrue("no preview sheets found", sheets.isNotEmpty())
+        sheets.forEach { (sheet, schemes) ->
+            assertEquals("$sheet is previewed in light and dark", setOf("false", "true"), schemes.toSet())
+        }
+        // Every sample function that draws components is one of the previewed sheets.
+        val samples = Regex("""private fun (\w+)\(\) \{""").findAll(preview).map { it.groupValues[1] }.toSet()
+        assertEquals("sample sheets without a preview", emptySet<String>(), samples - sheets.keys)
+    }
+
+    @Test
+    fun dialogNamesItsWindowHeadsItsTitleAndItsActionsAreTouchTargets() {
+        var stayed = 0
+        var left = 0
+        show {
+            MqDialog(
+                title = "Leave?",
+                onDismiss = {},
+                actions = {
+                    MqButton("Stay", { stayed++ }, variant = MqButtonVariant.Secondary)
+                    MqButton("Leave anyway", { left++ }, variant = MqButtonVariant.Danger)
+                }
+            ) { Text("Two writes are waiting.") }
+        }
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Leave?")).assertExists()
+        compose.onNode(hasText("Leave?") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertExists()
+        compose.onNodeWithText("Two writes are waiting.").assertExists()
+        compose.onNodeWithText("Stay").assertHeightIsAtLeast(Spacing.X5l).performClick()
+        compose.onNodeWithText("Leave anyway").assertHeightIsAtLeast(Spacing.X5l).performClick()
+        assertEquals(1, stayed)
+        assertEquals(1, left)
+    }
+
+    @Test
+    fun sheetShowsItsContentAndItsActionsWork() {
+        var saved = 0
+        show {
+            MqSheet(onDismiss = {}) {
+                Text("New customer")
+                MqButton("Register customer", { saved++ })
+            }
+        }
+        compose.onNodeWithText("New customer").assertExists()
+        compose.onNodeWithText("Register customer").performClick()
+        assertEquals(1, saved)
     }
 }

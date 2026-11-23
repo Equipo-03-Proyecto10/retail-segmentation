@@ -112,6 +112,60 @@ def products(connection: psycopg.Connection, product_ids: list[int]) -> dict[int
     return {row[0]: row[1] for row in rows}
 
 
+def list_prices(
+    connection: psycopg.Connection, product_ids: list[int]
+) -> dict[int, Decimal]:
+    """Each product's list price now, read in the caller's transaction."""
+    rows = connection.execute(
+        "SELECT product_id, list_price FROM api_products.product_ref_v1"
+        " WHERE product_id = ANY(%s)",
+        (product_ids,),
+    ).fetchall()
+    return {row[0]: row[1] for row in rows}
+
+
+def store_cap(
+    connection: psycopg.Connection, store_id: int
+) -> tuple[Decimal | None] | None:
+    """The store's `max_discount_percent` (None: no cap), or None for no store."""
+    row = connection.execute(
+        "SELECT max_discount_percent FROM api_stores.store_directory_v2"
+        " WHERE store_id = %s",
+        (store_id,),
+    ).fetchone()
+    return None if row is None else (row[0],)
+
+
+def channel_exists(connection: psycopg.Connection, channel_id: int) -> bool:
+    return (
+        connection.execute(
+            "SELECT 1 FROM public.channel WHERE channel_id = %s", (channel_id,)
+        ).fetchone()
+        is not None
+    )
+
+
+def promotion_windows(
+    connection: psycopg.Connection,
+    promotion_ids: list[int],
+    store_id: int,
+    channel_id: int,
+) -> dict[int, tuple[Decimal, Any, Any]]:
+    """The named promotions that ran for this store and channel, with their
+    percentage and validity. The caller judges the sale's own day against the
+    validity: the view has no date test, so a sale queued offline on a
+    promotion's last day still finds it. A promotion not there is not usable."""
+    if not promotion_ids:
+        return {}
+    rows = connection.execute(
+        "SELECT promotion_id, discount_percent, starts_on, ends_on"
+        " FROM api_campaigns.promotion_window_v1"
+        " WHERE promotion_id = ANY(%s) AND store_id = %s AND channel_id = %s",
+        (promotion_ids, store_id, channel_id),
+    ).fetchall()
+    return {row[0]: (row[1], row[2], row[3]) for row in rows}
+
+
 def insert_sale(
     connection: psycopg.Connection,
     *,
@@ -151,6 +205,22 @@ def insert_sale(
                 line["product_id"],
                 line["quantity"],
                 line["unit_price"],
+            ),
+        )
+    for line in lines:
+        # A phone sale keeps each line's list price at sale time and its
+        # promotion (F25-05). An imported row has no list price to keep.
+        if "list_price" not in line:
+            continue
+        connection.execute(
+            "INSERT INTO sales.sale_line_price"
+            " (transaction_id, product_id, list_price, promotion_id)"
+            " VALUES (%s, %s, %s, %s)",
+            (
+                sale_id,
+                line["product_id"],
+                line["list_price"],
+                line.get("promotion_id"),
             ),
         )
     consume_stock(connection, store_id, lines)
@@ -204,6 +274,59 @@ def list_sales(
     ).fetchall()
     sales = [get_sale(connection, row[0]) for row in rows]
     return [sale for sale in sales if sale is not None], total
+
+
+def promotion_totals(
+    connection: psycopg.Connection,
+    *,
+    store_id: int | None,
+    store_ids: list[int] | None,
+    occurred_from: datetime,
+    occurred_to: datetime,
+) -> list[dict[str, Any]]:
+    """Per store and promotion, the lines that applied it in the window (F27-16).
+
+    A line applied a promotion when sales.sale_line_price records one and the
+    price charged is below the list price of the sale's day, the definition
+    api_sales.promotion_line_v1 publishes. Every figure is net of reversals
+    (ADR-0062): a line counts with quantity - returned_quantity units, and not
+    at all once none remain. Nothing that names a sale or a customer is read
+    out, only the grouped sums (ADR-0060).
+    """
+    rows = connection.execute(
+        "SELECT t.store_id, p.promotion_id, count(*),"
+        " sum(l.quantity - l.returned_quantity),"
+        " sum((l.quantity - l.returned_quantity) * (p.list_price - l.unit_price))"
+        " FROM public.transaction AS t"
+        " JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id"
+        " JOIN sales.sale_line_price AS p"
+        "   ON p.transaction_id = l.transaction_id AND p.product_id = l.product_id"
+        " WHERE p.promotion_id IS NOT NULL"
+        " AND p.list_price > l.unit_price"
+        " AND l.quantity > l.returned_quantity"
+        " AND t.occurred_at >= %(occurred_from)s"
+        " AND t.occurred_at < %(occurred_to)s"
+        " AND (%(store_id)s::smallint IS NULL OR t.store_id = %(store_id)s)"
+        " AND (%(store_ids)s::smallint[] IS NULL OR t.store_id = ANY(%(store_ids)s))"
+        " GROUP BY t.store_id, p.promotion_id"
+        " ORDER BY t.store_id, p.promotion_id",
+        {
+            "store_id": store_id,
+            "store_ids": store_ids,
+            "occurred_from": occurred_from,
+            "occurred_to": occurred_to,
+        },
+    ).fetchall()
+    return [
+        {
+            "store_id": row[0],
+            "promotion_id": row[1],
+            "lines": row[2],
+            "units": int(row[3]),
+            "discount": _money(row[4]),
+        }
+        for row in rows
+    ]
 
 
 def channels(connection: psycopg.Connection) -> list[dict[str, Any]]:

@@ -106,6 +106,7 @@ class OutboxInFlightTest {
     @Test
     fun sendNowKicksTheQueue() {
         var kicked = 0
+        var chained = 0
         val kicking = AppGraph(
             graph.tokens,
             graph.session,
@@ -113,12 +114,27 @@ class OutboxInFlightTest {
             graph.network,
             graph.outbox,
             graph.location,
+            { chained++ },
+            "JVM",
             { kicked++ },
-            "JVM"
+            notified = app.database.notified()
         )
 
         FloorViewModel(kicking).sendNow()
 
-        assertEquals(1, kicked)
+        assertEquals("a manual send starts its own drain", 1, kicked)
+        assertEquals("and does not chain behind the backed-off worker", 0, chained)
+    }
+
+    @Test
+    fun forgettingTheSessionClearsTokensAndProfileWithoutTheNetwork() = runBlocking {
+        server.shutdown()
+
+        FloorViewModel(graph).forgetSession()
+        val deadline = System.currentTimeMillis() + 5_000
+        while (graph.tokens.read() != null && System.currentTimeMillis() < deadline) Thread.sleep(10)
+
+        assertEquals(null, graph.tokens.read())
+        assertEquals(null, graph.session.profile())
     }
 }

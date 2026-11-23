@@ -43,11 +43,19 @@ that cannot read the view treats the purpose as withdrawn and says so, and never
 falls back to a cached grant (ADR-0066 section 2). Each effect below is the
 decision of that record and is not re-decided here.
 
+One consumer reads it otherwise, by a later record:
+[ADR-0087](../../docs/adr/0087-an-incremental-change-is-applied-to-the-segment-history-in-the-profile-transaction-under-the-published-version.md)
+partially supersedes ADR-0066 for rfm-engine's `PROFILING`. Only a `WITHDRAWN` row
+excludes a customer from profiling. A customer with no `PROFILING` row is segmented,
+because registration records no decision yet, and reading the absence as a refusal
+would stop segmenting every customer registered since. A view rfm-engine cannot read
+refuses the entry, which is redelivered, instead of closing open assignments.
+
 | Consumer | Purposes it reads | When the purpose is not granted |
 |---|---|---|
 | recommendations | `PERSONALIZATION` | The answer is "nothing qualifies" with reason `PERSONALIZATION_WITHDRAWN`, and no segment, history or interest of the customer is read (RN-40, ADR-0067). A cached result is invalidated by `stream:preferences.v1.consent_changed` |
 | campaigns | `PERSONALIZATION`, `MARKETING_CONTACT` | Without `PERSONALIZATION` the customer is in no audience built on a segment or an interest; without `MARKETING_CONTACT` they are in no audience whatever its criterion |
-| rfm-engine | `PROFILING` | The customer's open assignment is closed and they are reported as unassigned with reason `PROFILING_WITHDRAWN`, and they are skipped by incremental updates (ADR-0063) |
+| rfm-engine | `PROFILING` | On a `WITHDRAWN` row only (ADR-0087): the customer's open assignment is closed and they are reported as unassigned with reason `PROFILING_WITHDRAWN` (`api_segments.current_label_v1.unassigned_reason`), and they are not measured by incremental updates (ADR-0063). A missing row is segmented; an unreadable view refuses the entry |
 | check-ins | `PROFILING` | A customer visit is refused with `consent_required`; an unreadable view fails closed with `consent_unavailable`, and nothing is stored (ADR-0066, RN-72) |
 
 model-registry (training sets) and

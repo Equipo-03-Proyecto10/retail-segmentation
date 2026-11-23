@@ -161,6 +161,7 @@
       <xs:enumeration value="stock_level"/>
       <xs:enumeration value="campaign"/>
       <xs:enumeration value="experiment"/>
+      <xs:enumeration value="rule_set"/>
       <xs:enumeration value="audit_entry"/>
       <xs:enumeration value="domain_event"/>
     </xs:restriction>
@@ -198,6 +199,7 @@
             <xs:enumeration value="RFM"/>
             <xs:enumeration value="SEGMENTATION"/>
             <xs:enumeration value="KPI"/>
+            <xs:enumeration value="DRIFT"/>
           </xs:restriction>
         </xs:simpleType>
       </xs:element>
@@ -264,6 +266,10 @@
             <xs:enumeration value="AUDIT_PAYLOAD_REDACTED"/>
             <xs:enumeration value="EXPERIMENT_FROZEN"/>
             <xs:enumeration value="CAMPAIGN_ACTIVATED"/>
+            <xs:enumeration value="RULE_SET_CREATED"/>
+            <xs:enumeration value="RULE_SET_EDITED"/>
+            <xs:enumeration value="RULE_SET_VERSIONED"/>
+            <xs:enumeration value="RULE_SET_PUBLISHED"/>
           </xs:restriction>
         </xs:simpleType>
       </xs:element>

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: recommendations-service
-  version: 2.0.1
+  version: 2.0.4
   description: >-
     Answers what to recommend to one customer, and why, or why nothing qualifies
     (RN-40, restated by ADR-0067).
@@ -28,10 +28,11 @@ info:
     (`api_products.product_ref_v1`, `api_categories.category_tree_v1`,
     `api_stock.stock_level_v1`, `api_customers.customer_ref_v1`,
     `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1` and
-    `api_segments.current_label_v1`) and, for `/v2`, `api_stock.availability_v1`
-    and the commercial-status, product-relation and store views that F21-09 to
-    F21-12 publish. It keeps a result cache, and since ADR-0067 it records each
-    decision in a schema it owns (ADR-0046). Staleness bound: a result may be
+    `api_segments.current_label_v1`) and, for `/v2`, `api_stock.availability_v1`,
+    `api_products.product_relation_v1`, `api_stores.store_directory_v2`,
+    `api_sales.channel_v1`, `api_users.store_assignment_v1` and
+    `api_models.run_version_v1`. It keeps a result cache, and since ADR-0067 it
+    records each decision in a schema it owns (ADR-0046). Staleness bound: a result may be
     served from cache for at most 120 s after the facts behind it change, and
     normally within the relay's 5 s plus the consumer's turn. Items carry ids and
     figures only: clients fetch names with `GET /v1/products?ids=`.
@@ -152,6 +153,17 @@ paths:
         stock. Product, category, store and channel names are fetched from their own
         services by id (ADR-0035).
 
+        The commercial status is read as products publishes it: a product that is
+        not `active` (`paused` or `discontinued`, published as `is_active` false) is
+        `not_sellable`, so it may be answered by an alternative (ADR-0084).
+        `inactive` stays in the vocabulary for an `active` flag that differs from
+        the commercial status; products publishes no such flag today, so no
+        product is excluded as `inactive`. The store permits sales when it is
+        active and `OPEN`; with no `channel_id`, a store that enables no channel
+        does not permit sales either, and its products are `store_not_selling`
+        (ADR-0084). Like every `store_not_selling`, this lies outside the default
+        path's parity with the web (ADR-0067).
+
         A product that matches a stated signal and fails is excluded for exactly one
         reason, the first that applies in this order: `already_bought`, `inactive`,
         `not_sellable`, `store_not_selling`, `channel_not_enabled`, `out_of_stock`,
@@ -182,6 +194,16 @@ paths:
         never a recommendation for this store and is never stock here. Nothing is
         invented when neither exists.
 
+        "Nearest" is the great-circle distance between the reference store's
+        coordinates and the other store's, as the stores directory publishes them
+        (ADR-0084). A tie goes to the lowest `store_id`. A store without
+        coordinates is never a candidate, and when the reference store has none
+        no `elsewhere` entry is offered. The other store is selling the product
+        when the product is sellable, that store is active and `OPEN`, it enables
+        the reference channel (any channel when none was given), and it holds
+        more than zero units. A `not_sellable` product is sellable nowhere, so it
+        is never reported elsewhere.
+
         `status` is `recommended` when at least one `primary` item exists. It is
         `none_match` when a segment and a reference store are known and no product
         qualifies as a primary item; `items` may then still hold `alternative` and
@@ -201,11 +223,18 @@ paths:
         A floor role (`SALES_ASSOCIATE`, `STORE_MANAGER`, `LOYALTY_OFFICER`) that
         names a `store_id` it is not assigned to (ADR-0060) gets 403
         `forbidden_store`; with no `store_id` it is not narrowed. A role that is
-        not a floor role, and `ADMIN`, may name any store. A `store_id` that does not
-        exist answers 422 `unknown_store`, and a `channel_id` that does not exist
-        answers 422 `unknown_channel`.
+        not a floor role, and `ADMIN`, may name any store, and gets 422
+        `unknown_store` for a `store_id` that does not exist; a floor role gets 403
+        `forbidden_store` for one instead (see the order below). A `channel_id` that
+        does not exist answers 422 `unknown_channel`.
+
+        The refusals are checked in this order, and the first that applies is the
+        answer: 422 `invalid_query` for a malformed parameter, then 403
+        `forbidden_store`, then 422 `unknown_store`, `unknown_channel` and
+        `unknown_customer` (ADR-0084). A floor role is never assigned to a store
+        that does not exist, so it gets 403 `forbidden_store` for one, as sales
+        answers it (ADR-0060), and learns nothing about which store ids exist.
       operationId: getRecommendationsV2
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -299,7 +328,6 @@ paths:
         stores, a decision with no reference store is not listed, and a `store_id`
         outside them answers 403 `forbidden_store`.
       operationId: listRecommendationDecisions
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -368,7 +396,6 @@ paths:
         assigned stores (ADR-0060), and any other, including one with no reference
         store, answers 403 `forbidden_store`.
       operationId: getRecommendationDecision
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -553,10 +580,12 @@ components:
       description: >-
         The reference store the products are judged at, the seller's declared
         position. It takes precedence over the customer's usual store. A value that
-        is not a positive integer answers 422 `invalid_query`, a store that does
-        not exist answers 422 `unknown_store`, and a floor role naming a store it is
-        not assigned to answers 403 `forbidden_store` (ADR-0060, ADR-0067). A foreign
-        id, so it is a query field and never a path segment (ADR-0035).
+        is not a positive integer answers 422 `invalid_query`. A floor role naming a
+        store it is not assigned to answers 403 `forbidden_store` (ADR-0060,
+        ADR-0067), and so does a floor role naming a store that does not exist
+        (ADR-0084); for any other role, a store that does not exist answers 422
+        `unknown_store`. A foreign id, so it is a query field and never a path
+        segment (ADR-0035).
       schema:
         type: integer
         format: int32
@@ -822,13 +851,15 @@ components:
       type: string
       description: 'Why a product that matches a signal was excluded, in the order the
         service applies them (ADR-0067): `already_bought` (bought in the window),
-        `inactive`, `not_sellable` (its commercial status does not allow the sale,
-        such as discontinued), `store_not_selling` (the reference store''s status
-        does not permit sales), `channel_not_enabled` (a reference channel is given
-        and the store does not enable it), `out_of_stock` (no unit on hand at the
-        reference store, a missing stock record included) and
-        `PERSONALIZATION_WITHDRAWN` (the customer''s consent or restrictions forbid
-        it).'
+        `inactive` (an `active` flag that differs from the commercial status; none
+        is published today, ADR-0084), `not_sellable` (its commercial status does
+        not allow the sale: paused or discontinued), `store_not_selling` (the
+        reference store is not active and `OPEN`, or, with no reference channel,
+        it enables no channel; ADR-0084), `channel_not_enabled` (a reference
+        channel is given and the store does not enable it), `out_of_stock` (no
+        unit on hand at the reference store, a missing stock record included) and
+        `PERSONALIZATION_WITHDRAWN` (the customer''s consent or restrictions
+        forbid it).'
       enum:
       - already_bought
       - inactive

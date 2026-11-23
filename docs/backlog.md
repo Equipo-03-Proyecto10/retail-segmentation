@@ -1076,6 +1076,11 @@ flowchart TD
     F22-13 --> F22-16
     F22-14 --> F22-16
     F22-15 --> F22-17
+    F22-14 --> F22-18
+    F22-15 --> F22-18
+    F22-03 --> F22-19
+    F22-04 --> F22-19
+    F22-14 --> F22-20
     F23-01 --> F23-02
     F23-02 --> F23-03
     F23-03 --> F23-04
@@ -1102,6 +1107,8 @@ flowchart TD
     F20-06 --> F24-08
     F21-06 --> F24-08
     F24-04 --> F24-08
+    F24-03 --> F24-09
+    F24-05 --> F24-09
     F19-02 --> F25-03
     F19-03 --> F25-03
     F21-17 --> F25-04
@@ -1127,6 +1134,9 @@ flowchart TD
     F25-12 --> F25-14
     F25-13 --> F25-14
     F25-05 --> F25-15
+    F25-03 --> F25-16
+    F25-05 --> F25-16
+    F25-08 --> F25-17
     F19-02 --> F26-01
     F19-03 --> F26-01
     F19-08 --> F26-02
@@ -1175,6 +1185,7 @@ flowchart TD
     F27-07 --> F27-15
     F27-10 --> F27-15
     F27-11 --> F27-15
+    F27-14 --> F27-16
     F26-07 --> F28-02
     F28-01 --> F28-02
     F22-03 --> F28-03
@@ -1244,6 +1255,10 @@ flowchart TD
     F25-08 --> F29-10
     F25-10 --> F29-10
     F25-13 --> F29-10
+    F25-16 --> F29-10
+    F25-17 --> F29-10
+    F22-19 --> F29-10
+    F24-09 --> F29-10
     F27-05 --> F29-10
     F27-07 --> F29-10
     F28-06 --> F29-10
@@ -1345,6 +1360,9 @@ Epic #743.
 | F22-15 | #811 | Apply segment changes under the published version and announce them | P0 | F21-17, F22-05, F22-13, F22-14 |
 | F22-16 | #812 | Serve migrations by version, with their explanation, from segments-service | P0 | F22-13, F22-14 |
 | F22-17 | #813 | Keep the web's segment reports correct alongside incremental changes | P0 | F22-15 |
+| F22-18 | #1130 | Serve each assignment's cause and the reason a customer is unassigned from segments-service | P1 | F22-14, F22-15 |
+| F22-19 | #1175 | Serve RFM profiles from rfm-engine | P0 | F22-03, F22-04 |
+| F22-20 | #1177 | Serve segment assignments per model version from segments-service | P1 | F22-14 |
 
 ## Phase 23 — Model validity and drift
 
@@ -1378,6 +1396,7 @@ Epic #745.
 | F24-06 | #829 | Exclude what the customer's consent and restrictions forbid | P0 | F21-17, F24-03 |
 | F24-07 | #830 | Offer valid alternatives when a product is unavailable | P0 | F24-04 |
 | F24-08 | #831 | Prove a stock change produces the expected recommendation update | P0 | F20-06, F21-06, F24-04 |
+| F24-09 | #1176 | Serve the stored recommendation decisions from recommendations-service | P0 | F24-03, F24-05 |
 
 ## Phase 25 — Campaign measurement
 
@@ -1400,6 +1419,8 @@ Epic #746.
 | F25-13 | #844 | Measure incremental effect with its uncertainty | P0 | F25-11 |
 | F25-14 | #845 | Validate the experiment pipeline: A/A, injected effect, stability and contamination | P0 | F25-08, F25-10, F25-12, F25-13 |
 | F25-15 | #1048 | Report what a campaign has spent against its budget | P1 | F25-05 |
+| F25-16 | #1164 | Serve promotions from campaigns-service: list, create, read and replace | P0 | F25-03, F25-05 |
+| F25-17 | #1165 | Serve one customer's experiment arm from experimentation-service | P0 | F25-08 |
 
 ## Phase 26 — KPIs, planning and data quality
 
@@ -1438,6 +1459,7 @@ Epic #748.
 | F27-13 | #867 | Keep offline drafts with a pending state, validated by the server on return | P0 | F27-05 |
 | F27-14 | #868 | Let the commercial supervisor review incidents, syncs and applied promotions | P1 | F27-11, F27-13 |
 | F27-15 | #869 | Raise notifications for campaigns, capture errors and incidents | P1 | F27-07, F27-10, F27-11 |
+| F27-16 | #1143 | Show the promotions applied in the supervisor's stores, in aggregate | P1 | F27-14 |
 
 ## Phase 28 — Desktop analysis console
 
@@ -1477,7 +1499,7 @@ Epic #750.
 | F29-07 | #895 | Run the deployed-integration and reproducibility tests on a clean environment | P0 | F20-12, F29-12 |
 | F29-08 | #892 | Plan the usability tests with store staff, analysts and administrators | P0 | — |
 | F29-09 | #893 | Run the usability sessions and act on what they find | P0 | F27-05, F27-08, F27-09, F27-13, F28-11, F28-14, F29-08 |
-| F29-10 | #896 | Demonstrate the complete loop on the deployed system, from purchase to measured effect | P0 | #462, F22-15, F24-04, F25-05, F25-08, F25-10, F25-13, F27-05, F27-07, F28-06, F28-11, F29-12 |
+| F29-10 | #896 | Demonstrate the complete loop on the deployed system, from purchase to measured effect | P0 | #462, F22-15, F22-19, F24-04, F24-09, F25-05, F25-08, F25-10, F25-13, F25-16, F25-17, F27-05, F27-07, F28-06, F28-11, F29-12 |
 | F29-11 | #897 | Publish the service catalog compliance and update the delivery documents | P0 | F29-07, F29-09, F29-10, F15-03 |
 | F29-12 | #894 | Release the third delivery to the instance | P0 | F29-03, F29-04, F29-05, F29-06, F29-09 |
 

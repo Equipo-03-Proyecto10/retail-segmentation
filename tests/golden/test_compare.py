@@ -80,3 +80,28 @@ def test_main_fails_on_drift_and_passes_otherwise(tmp_path: Path, capsys) -> Non
     _write(captured / "users.json", fresh)
     assert compare.main([str(captured), "--services-dir", str(services)]) == 1
     assert "DRIFT" in capsys.readouterr().out
+
+
+def test_a_port_is_compared_in_the_service_that_holds_its_fixture(
+    tmp_path: Path,
+) -> None:
+    services = tmp_path / "services"
+    captured = tmp_path / "captured"
+    fixture = {"header": {"port": "rfm"}, "cases": FIXTURE["cases"]}
+    _write(services / "rfm-engine" / "tests" / "golden" / "rfm.json", fixture)
+    _write(captured / "rfm.json", {**fixture, "cases": FIXTURE["cases"][:1]})
+    [line] = compare.compare_port("rfm", captured, services)
+    assert line.startswith("DRIFT ") and "case b" in line
+
+
+def test_every_committed_fixture_is_compared() -> None:
+    """A fixture the drift job does not walk can drift unseen."""
+
+    root = Path(__file__).resolve().parents[2]
+    committed = {
+        path.stem: path for path in (root / "services").glob("*/tests/golden/*.json")
+    }
+    assert set(compare.PORTS) == set(committed)
+    for name, path in committed.items():
+        golden = root / "services" / compare.SERVICE_DIR.get(name, name)
+        assert path.parent == golden / "tests" / "golden", name

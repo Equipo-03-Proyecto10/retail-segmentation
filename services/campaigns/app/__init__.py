@@ -1,6 +1,6 @@
 """campaigns-service: the campaign state machine (F14-28, RN-15 to RN-49).
 
-The five operations of contracts/campaigns/openapi.yaml on mosaiq-kit. Every
+The operations of contracts/campaigns/openapi.yaml on mosaiq-kit. Every
 write runs in `kit.db.transaction()`, which names the caller to fn_audit, so
 the campaign's own audit trigger writes one attributed `audit_log` row per
 statement. Nothing is cached: a move made through the web's page shows on the
@@ -20,7 +20,7 @@ from flask import Flask, request
 from mosaiq_kit import ApiError, Kit, Page, Representation, configure_logging
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 
-from app import limits, rules
+from app import limits, promotions, rules
 
 
 @contextmanager
@@ -41,8 +41,17 @@ def create_app() -> Flask:
         with holder["kit"].db.connection() as connection:
             row = connection.execute(
                 "SELECT to_regclass(%s) IS NOT NULL AND EXISTS ("
-                " SELECT FROM pg_trigger WHERE tgname = %s AND NOT tgisinternal)",
-                ("public.campaign", "trg_campaign_activation_guard"),
+                " SELECT FROM pg_trigger WHERE tgname = %s AND NOT tgisinternal)"
+                " AND to_regclass(%s) IS NOT NULL"
+                " AND to_regclass(%s) IS NOT NULL"
+                " AND to_regclass(%s) IS NOT NULL",
+                (
+                    "public.campaign",
+                    "trg_campaign_activation_guard",
+                    "api_sales.promotion_line_v1",
+                    "campaigns.promotion",
+                    "api_users.store_assignment_v1",
+                ),
             ).fetchone()
         return bool(row and row[0])
 
@@ -162,6 +171,17 @@ def create_app() -> Flask:
                 "CampaignBudget", limits.get_budget(connection, campaign_id)
             )
 
+    @kit.operation("getCampaignBudgetSpending")
+    def get_budget_spending(campaign_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            spending = limits.get_budget_spending(
+                connection,
+                campaign_id,
+                page=kit.page,
+                size=kit.size,
+            )
+        return Representation("CampaignBudgetSpending", spending)
+
     @kit.operation("putCampaignBudget")
     def put_budget(campaign_id: int) -> Representation:
         with kit.db.transaction() as connection:
@@ -194,5 +214,65 @@ def create_app() -> Flask:
         with kit.db.transaction() as connection:
             saved = limits.put_exclusions(connection, campaign_id, dict(kit.body))
         return Representation("CampaignExclusions", saved)
+
+    # --- Promotions (F25-16) -----------------------------------------------
+
+    @kit.operation("listPromotions")
+    def list_promotions() -> Page:
+        active_arg = request.args.get("active")
+        active = None if active_arg is None else active_arg.lower() == "true"
+        with kit.db.connection() as connection:
+            found, total = promotions.list_promotions(
+                connection,
+                kit.principal,
+                campaign_id=(
+                    int(request.args["campaign_id"])
+                    if "campaign_id" in request.args
+                    else None
+                ),
+                store_id=(
+                    int(request.args["store_id"])
+                    if "store_id" in request.args
+                    else None
+                ),
+                channel_id=(
+                    int(request.args["channel_id"])
+                    if "channel_id" in request.args
+                    else None
+                ),
+                active=active,
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "Promotions",
+            "Promotion",
+            "promotions",
+            found,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    @kit.operation("createPromotion")
+    def create_promotion() -> Representation:
+        with kit.db.transaction() as connection:
+            created = promotions.create(connection, dict(kit.body))
+        response = Representation("Promotion", created, status=201)
+        response.headers = {"Location": f"/v1/promotions/{created['promotion_id']}"}
+        return response
+
+    @kit.operation("getPromotion")
+    def get_promotion(promotion_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            found = promotions.require(connection, promotion_id, kit.principal)
+        return Representation("Promotion", found)
+
+    @kit.operation("replacePromotion")
+    def replace_promotion(promotion_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            replaced = promotions.replace(connection, promotion_id, dict(kit.body))
+        return Representation("Promotion", replaced)
 
     return app

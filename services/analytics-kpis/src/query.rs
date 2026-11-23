@@ -154,8 +154,19 @@ fn invalid(details: Vec<Detail>) -> ApiError {
 }
 
 /// Read the query string of a report that groups by `group_by` and filters by
-/// store, segment and channel (`net-sales`, `spend`, `retention`).
+/// store, segment and channel (`net-sales`, `spend`).
 pub fn parse_sales_query(query: &str) -> Result<SalesQuery, ApiError> {
+    parse_sales(query, false)
+}
+
+/// Read the query string of the retention report: its rows are always cohorts,
+/// so `period` is a dimension whether or not the caller named it, and
+/// `granularity` is allowed without it (the contract's `getRetentionReport`).
+pub fn parse_retention_query(query: &str) -> Result<SalesQuery, ApiError> {
+    parse_sales(query, true)
+}
+
+fn parse_sales(query: &str, always_period: bool) -> Result<SalesQuery, ApiError> {
     let values = values(query);
     let mut details = Vec::new();
 
@@ -189,10 +200,15 @@ pub fn parse_sales_query(query: &str) -> Result<SalesQuery, ApiError> {
     let mut granularity = None;
     if let Some(text) = values.get("granularity") {
         match Granularity::parse(text) {
-            Some(parsed) if group_by.contains(&Dimension::Period) => granularity = Some(parsed),
+            Some(parsed) if always_period || group_by.contains(&Dimension::Period) => {
+                granularity = Some(parsed)
+            }
             Some(_) => details.push(Detail::new("granularity", "requires_period")),
             None => details.push(Detail::new("granularity", "enum")),
         }
+    }
+    if always_period && !group_by.contains(&Dimension::Period) {
+        group_by.insert(0, Dimension::Period);
     }
     if granularity.is_none() && group_by.contains(&Dimension::Period) {
         granularity = Some(Granularity::Month);
@@ -287,6 +303,155 @@ pub fn parse_demand_query(query: &str, today: NaiveDate) -> Result<DemandQuery, 
             store_id,
             category_id,
             target_cover_days,
+        }),
+        _ => Err(invalid(details)),
+    }
+}
+
+/// A migration report's parameters, validated (`getMigrationReport`). A change
+/// of label has no store and no channel, so only `segment` and `period` group it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MigrationQuery {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    /// In the order the caller gave them; `segment` and `period` only.
+    pub group_by: Vec<Dimension>,
+    /// `Some` only when `period` is grouped; `month` unless given.
+    pub granularity: Option<Granularity>,
+    /// The label entered.
+    pub segment_code: Option<String>,
+    /// Keeps the changes entered under one model version.
+    pub model_version_id: Option<i64>,
+}
+
+impl MigrationQuery {
+    pub fn groups(&self, dimension: Dimension) -> bool {
+        self.group_by.contains(&dimension)
+    }
+
+    pub fn window_start(&self) -> DateTime<Utc> {
+        Utc.from_utc_datetime(&self.from.and_time(chrono::NaiveTime::MIN))
+    }
+
+    pub fn window_end(&self) -> DateTime<Utc> {
+        let after = self.to.checked_add_days(Days::new(1)).unwrap_or(self.to);
+        Utc.from_utc_datetime(&after.and_time(chrono::NaiveTime::MIN))
+    }
+}
+
+/// Read the query string of the migration report. A dimension a change does not
+/// have is `dimension_not_supported`, never ignored.
+pub fn parse_migration_query(query: &str) -> Result<MigrationQuery, ApiError> {
+    let values = values(query);
+    let mut details = Vec::new();
+
+    let from = date(&values, "from", &mut details);
+    let to = date(&values, "to", &mut details);
+    if let (Some(from), Some(to)) = (from, to) {
+        if to < from {
+            details.push(Detail::new("to", "to_before_from"));
+        } else if (to - from).num_days() + 1 > MAX_WINDOW_DAYS {
+            details.push(Detail::new("to", "window_too_long"));
+        }
+    }
+
+    let mut group_by: Vec<Dimension> = Vec::new();
+    if let Some(text) = values.get("group_by") {
+        for part in text.split(',').filter(|_| !text.is_empty()) {
+            match Dimension::parse(part) {
+                Some(Dimension::Store | Dimension::Channel) => {
+                    details.push(Detail::new("group_by", "dimension_not_supported"));
+                    break;
+                }
+                Some(dimension) if group_by.contains(&dimension) => {
+                    details.push(Detail::new("group_by", "invalid_format"));
+                    break;
+                }
+                Some(dimension) => group_by.push(dimension),
+                None => {
+                    details.push(Detail::new("group_by", "enum"));
+                    break;
+                }
+            }
+        }
+    }
+
+    let mut granularity = None;
+    if let Some(text) = values.get("granularity") {
+        match Granularity::parse(text) {
+            Some(parsed) if group_by.contains(&Dimension::Period) => granularity = Some(parsed),
+            Some(_) => details.push(Detail::new("granularity", "requires_period")),
+            None => details.push(Detail::new("granularity", "enum")),
+        }
+    }
+    if granularity.is_none() && group_by.contains(&Dimension::Period) {
+        granularity = Some(Granularity::Month);
+    }
+
+    let segment_code = match values.get("segment_code") {
+        Some(text) if (1..=40).contains(&text.chars().count()) => Some(text.clone()),
+        Some(_) => {
+            details.push(Detail::new("segment_code", "invalid_format"));
+            None
+        }
+        None => None,
+    };
+    let model_version_id = match values.get("model_version_id") {
+        Some(text) => match text.parse::<i64>() {
+            Ok(number) if number >= 1 => Some(number),
+            _ => {
+                details.push(Detail::new("model_version_id", "invalid_format"));
+                None
+            }
+        },
+        None => None,
+    };
+
+    match (from, to, details.is_empty()) {
+        (Some(from), Some(to), true) => Ok(MigrationQuery {
+            from,
+            to,
+            group_by,
+            granularity,
+            segment_code,
+            model_version_id,
+        }),
+        _ => Err(invalid(details)),
+    }
+}
+
+/// Campaign performance's parameters, validated (F26-04). A row is a campaign, so
+/// no dimension groups it and `group_by` is refused.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CampaignQuery {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub campaign_id: Option<i32>,
+}
+
+pub fn parse_campaign_query(query: &str) -> Result<CampaignQuery, ApiError> {
+    let values = values(query);
+    let mut details = Vec::new();
+
+    let from = date(&values, "from", &mut details);
+    let to = date(&values, "to", &mut details);
+    if let (Some(from), Some(to)) = (from, to) {
+        if to < from {
+            details.push(Detail::new("to", "to_before_from"));
+        } else if (to - from).num_days() + 1 > MAX_WINDOW_DAYS {
+            details.push(Detail::new("to", "window_too_long"));
+        }
+    }
+    if values.get("group_by").is_some_and(|text| !text.is_empty()) {
+        details.push(Detail::new("group_by", "dimension_not_supported"));
+    }
+    let campaign_id = positive_i32(&values, "campaign_id", &mut details);
+
+    match (from, to, details.is_empty()) {
+        (Some(from), Some(to), true) => Ok(CampaignQuery {
+            from,
+            to,
+            campaign_id,
         }),
         _ => Err(invalid(details)),
     }

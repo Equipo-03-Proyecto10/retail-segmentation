@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: experimentation-service
-  version: 1.0.3
+  version: 1.2.1
   description: >-
     Plans experiments, assigns customers to their arms, evaluates conversions, credits sales to campaigns
     and reports results (RN-67). An experiment's frame and arms are fixed before measurement, assignment,
@@ -44,6 +44,13 @@ info:
     row stays when its sale is reversed and stops counting. Every figure that depends on net sales carries
     `as_of`. The primary result is stored once at its analysis instant and is never rewritten; a later
     read (`basis=RE_READ`) is labelled as of its own time.
+
+
+
+    **A comparison needs enough customers in both arms.** A proportion comparison needs at least one
+    customer per arm, and a Welch comparison needs at least two. A comparison that does not meet its
+    minimum is omitted, and one `COMPARISON_WITHHELD_SMALL_ARM` assumption names its metric, arms and
+    reason. Other comparisons in the same result remain present.
 
 
 
@@ -348,7 +355,7 @@ paths:
         Records, for every assigned customer, each qualifying sale in the experiment's window that is
         not recorded yet. It records the same conversions however often it runs, and a conversion already
         recorded is never changed or deleted (ADR-0050). It reads sales net of reversals (ADR-0062) and
-        writes no attribution: attribution is written by the service when the window has closed. Answers
+        writes no attribution: attribution is written by `evaluateAttributions` once the window has closed. Answers
         200 with what it added, including when that is nothing. An experiment that is not assigned has
         nothing to evaluate: 409 `experiment_not_assigned`.
       operationId: evaluateConversions
@@ -391,6 +398,61 @@ paths:
           $ref: '#/components/responses/RateLimited'
         '503':
           $ref: '#/components/responses/OperationUnavailable'
+  /v1/experiments/{experiment_id}/attributions:
+    post:
+      tags:
+      - Attributions
+      summary: Attribute an experiment's sales
+      description: >-
+        Holds, for every sale that is a recorded conversion of a treatment assignment of the experiment,
+        the one campaign that attributes it (ADR-0069). The holder is the latest exposure before the sale,
+        inside the window, among every experiment with a campaign; a tie goes to the lower `assignment_id`.
+        A sale is written only once every candidate's window has closed, over the exposures that exist then,
+        and a holder is never reassigned or reopened. It writes the same rows however often it runs; a sale
+        that is not held yet because a window is open is counted as `pending`. It reads no net amount: that
+        is read when an attribution is shown (ADR-0062). The result is attribution, not effect: nothing it
+        writes says a campaign caused a sale. Answers 200 with what it added, including when that is
+        nothing. An experiment that is not assigned has nothing to attribute: 409 `experiment_not_assigned`.
+      operationId: evaluateAttributions
+      x-mosaiq-roles:
+      - ADMIN
+      - MARKETING
+      parameters:
+      - $ref: '#/components/parameters/CorrelationId'
+      - $ref: '#/components/parameters/ExperimentId'
+      responses:
+        '200':
+          description: The attribution ran.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttributionEvaluation'
+              examples:
+                evaluated:
+                  externalValue: ./examples/attribution-evaluation.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/AttributionEvaluation'
+              examples:
+                evaluated:
+                  externalValue: ./examples/attribution-evaluation.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ExperimentNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '409':
+          $ref: '#/components/responses/NotAssigned'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
   /v1/experiment-assignments:
     get:
       tags:
@@ -409,7 +471,6 @@ paths:
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/ExperimentIdFilter'
@@ -473,7 +534,6 @@ paths:
       x-mosaiq-roles:
       - ADMIN
       - MARKETING
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       requestBody:
@@ -557,7 +617,6 @@ paths:
       - ADMIN
       - STORE_MANAGER
       - SALES_ASSOCIATE
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/CustomerIdRequired'
@@ -613,15 +672,16 @@ paths:
         the body holds counts and the elapsed share of the window and no interval, p-value or direction.
         `basis=RE_READ` computes the figures again as of the request, labelled with its `as_of`; it never
         replaces the primary result and gives no estimate before the analysis instant. A failed sample
-        ratio check makes the status INVALID and withholds the estimate. An experiment that is not assigned
-        has no result: 409 `experiment_not_assigned`.
+        ratio check makes the status INVALID and withholds the estimate. A comparison is omitted when
+        either arm has fewer than one customer for a proportion test or fewer than two for Welch's interval;
+        one `COMPARISON_WITHHELD_SMALL_ARM` assumption names each omitted comparison and its reason. An
+        experiment that is not assigned has no result: 409 `experiment_not_assigned`.
       operationId: getExperimentResult
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/ExperimentId'
@@ -649,6 +709,8 @@ paths:
                   externalValue: ./examples/result-invalid.json
                 offer_comparison:
                   externalValue: ./examples/result-offer-comparison.json
+                withheld_small_arm:
+                  externalValue: ./examples/result-withheld-small-arm.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/ExperimentResult'
@@ -665,6 +727,8 @@ paths:
                   externalValue: ./examples/result-invalid.xml
                 offer_comparison:
                   externalValue: ./examples/result-offer-comparison.xml
+                withheld_small_arm:
+                  externalValue: ./examples/result-withheld-small-arm.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -757,7 +821,6 @@ paths:
       - ANALYST
       - MARKETING
       - AUDITOR
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/AttributionId'
@@ -1179,8 +1242,9 @@ components:
       type: string
       description: >-
         PENDING: counts only, no interval, p-value or direction, because the analysis instant has not
-        been reached or its result is not stored yet. COMPLETE: the estimate is present. INVALID: the
-        sample ratio check failed and the estimate is withheld.
+        been reached or its result is not stored yet. COMPLETE: the analysis is finished and every supported
+        comparison is present; a comparison with too few customers is omitted and explained by an assumption.
+        INVALID: the sample ratio check failed and the estimate is withheld.
       enum:
       - PENDING
       - COMPLETE
@@ -1911,6 +1975,46 @@ components:
       xml:
         name: ConversionEvaluation
         namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
+    AttributionEvaluation:
+      type: object
+      additionalProperties: false
+      description: >-
+        What one attribution run did. Running again writes nothing that was written, so repeating it holds the
+        same sales. This is attribution, not effect (ADR-0069).
+      required:
+      - experiment_id
+      - attributed
+      - already_attributed
+      - pending
+      - label
+      - as_of
+      properties:
+        experiment_id:
+          type: integer
+          format: int64
+          minimum: 1
+        attributed:
+          type: integer
+          minimum: 0
+          description: Sales this run held.
+        already_attributed:
+          type: integer
+          minimum: 0
+          description: Sales the experiment's conversions have that were already held, by this or another campaign.
+        pending:
+          type: integer
+          minimum: 0
+          description: Sales not held yet because a candidate's window is still open.
+        label:
+          type: string
+          enum:
+          - ATTRIBUTION
+        as_of:
+          type: string
+          format: date-time
+      xml:
+        name: AttributionEvaluation
+        namespace: https://mosaiq.maxthecoder.online/xml/experimentation/v1
     ArmOutcome:
       type: object
       additionalProperties: false
@@ -2204,7 +2308,9 @@ components:
     Assumption:
       type: object
       additionalProperties: false
-      description: One statement the estimate depends on.
+      description: >-
+        One statement the estimate depends on, or the reason one comparison is omitted. A small-arm reason
+        is carried without changing the closed result status or flag vocabularies.
       required:
       - code
       - statement
@@ -2213,7 +2319,9 @@ components:
           $ref: '#/components/schemas/Code'
           description: >-
             Open vocabulary. Today: INTENT_TO_TREAT, NET_OF_REVERSALS, SINGLE_LOOK, FAMILY_WISE_ALPHA,
-            LARGE_SAMPLE_APPROXIMATION, NO_CONTAMINATION, CONTROL_NEVER_EXPOSED and ZERO_FOR_NON_BUYERS.
+            LARGE_SAMPLE_APPROXIMATION, NO_CONTAMINATION, CONTROL_NEVER_EXPOSED, ZERO_FOR_NON_BUYERS and
+            COMPARISON_WITHHELD_SMALL_ARM. The last code appears once per omitted comparison; its statement
+            names the metric and both arms, and says which minimum was not met.
         statement:
           type: string
           minLength: 1
@@ -2295,8 +2403,9 @@ components:
           items:
             $ref: '#/components/schemas/Comparison'
           description: >-
-            Empty while PENDING or INVALID. Otherwise the primary metric's comparison of each treatment,
-            then the secondary metric's.
+            Empty while PENDING or INVALID. Otherwise the supported primary metric comparisons of each
+            treatment, then the supported secondary metric comparisons. A comparison needing more customers
+            than either arm holds is omitted and explained by one COMPARISON_WITHHELD_SMALL_ARM assumption.
         effect_refusal:
           description: Present for an OFFER_COMPARISON.
           oneOf:
@@ -2311,6 +2420,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Assumption'
+          description: >-
+            Statements used to read the result. Each comparison omitted for a small arm has its own
+            COMPARISON_WITHHELD_SMALL_ARM entry naming the metric, both arms and the unmet minimum.
         flags:
           type: array
           items:

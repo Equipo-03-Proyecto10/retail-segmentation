@@ -76,3 +76,20 @@ export const test = base.extend<{ temporaryDirectories: void }>({
 
 export { expect };
 export type { ElectronApplication, Page };
+
+/**
+ * Pages forward with the screen's own Next button until `wanted` is listed. On an instance
+ * where earlier evidence runs left many drafts of the label, the new one need not be on page 1.
+ */
+export async function findOnPages(page: Page, noun: string, wanted: string): Promise<void> {
+  const summary = page.getByTestId(`${noun}-page`);
+  await expect(summary).toBeVisible();
+  for (;;) {
+    if ((await page.getByTestId(wanted).count()) > 0) return;
+    const next = page.getByTestId(`${noun}-next`);
+    const at = await summary.textContent();
+    expect(await next.isDisabled(), `${wanted} is on no page (${at ?? ''})`).toBe(false);
+    await next.click();
+    await expect(summary).not.toHaveText(at ?? '');
+  }
+}

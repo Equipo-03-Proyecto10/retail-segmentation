@@ -1,22 +1,32 @@
 package online.maxthecoder.mosaiq.floor.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.ZeroCornerSize
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,10 +35,14 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.ui.theme.Elevation
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
+import online.maxthecoder.mosaiq.floor.ui.theme.mosaic
 
 /** A surface with a hairline border and the 4dp radius: no shadow, no tint. */
 @Composable
@@ -55,7 +69,8 @@ fun MqSection(title: String, modifier: Modifier = Modifier, content: @Composable
 
 /**
  * "- value +". The buttons are 48dp targets and read "Decrease quantity" and
- * "Increase quantity"; decreasing stops at [min], increasing at [max].
+ * "Increase quantity", or "Decrease quantity of [itemName]" when a list holds several steppers, so
+ * TalkBack says which line each one changes. Decreasing stops at [min], increasing at [max].
  */
 @Composable
 fun MqQuantityStepper(
@@ -64,17 +79,27 @@ fun MqQuantityStepper(
     onIncrease: () -> Unit,
     modifier: Modifier = Modifier,
     min: Int = 1,
-    max: Int = Int.MAX_VALUE
+    max: Int = Int.MAX_VALUE,
+    itemName: String? = null
 ) {
+    val decrease =
+        if (itemName == null) {
+            stringResource(R.string.component_decrease_quantity)
+        } else {
+            stringResource(R.string.component_decrease_quantity_of, itemName)
+        }
+    val increase =
+        if (itemName == null) {
+            stringResource(R.string.component_increase_quantity)
+        } else {
+            stringResource(R.string.component_increase_quantity_of, itemName)
+        }
     Row(
         modifier = modifier.border(Hairline, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.small),
         verticalAlignment = Alignment.CenterVertically
     ) {
         IconButton(onClick = onDecrease, modifier = Modifier.size(ControlHeight), enabled = value > min) {
-            MqIcon(
-                R.drawable.ic_lucide_minus,
-                contentDescription = stringResource(R.string.component_decrease_quantity)
-            )
+            MqIcon(R.drawable.ic_lucide_minus, contentDescription = decrease)
         }
         val spoken = stringResource(R.string.a11y_quantity, value)
         Text(
@@ -87,7 +112,7 @@ fun MqQuantityStepper(
             style = MaterialTheme.typography.titleMedium
         )
         IconButton(onClick = onIncrease, modifier = Modifier.size(ControlHeight), enabled = value < max) {
-            MqIcon(R.drawable.ic_lucide_plus, contentDescription = stringResource(R.string.component_increase_quantity))
+            MqIcon(R.drawable.ic_lucide_plus, contentDescription = increase)
         }
     }
 }
@@ -104,4 +129,81 @@ fun MqSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier) 
             actionColor = MaterialTheme.colorScheme.inversePrimary
         )
     }
+}
+
+/**
+ * The MOSAIQ modal (ADR-0002, ADR-0057): the raised surface with the default border, the 6dp
+ * radius and the modal shadow, a title that is a heading, a body, and a sunken footer whose
+ * [actions] are [MqButton]s, aligned to the end and wrapping at 375dp. TalkBack announces the
+ * window by its [title]. Never a stock AlertDialog: its text buttons draw `primary` text, which
+ * fails AA on its own container (#1153).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MqDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    actions: @Composable FlowRowScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        val scheme = MaterialTheme.colorScheme
+        Surface(
+            modifier = modifier.fillMaxWidth().semantics { paneTitle = title },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.mosaic.raised,
+            contentColor = scheme.onSurface,
+            border = BorderStroke(Hairline, MaterialTheme.mosaic.borderDefault),
+            shadowElevation = Elevation.Modal
+        ) {
+            Column {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = Spacing.Lg, vertical = Spacing.Md).semantics { heading() }
+                )
+                HorizontalDivider(thickness = Hairline, color = scheme.outlineVariant)
+                Column(
+                    Modifier.padding(Spacing.Lg),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Md),
+                    content = content
+                )
+                HorizontalDivider(thickness = Hairline, color = scheme.outlineVariant)
+                FlowRow(
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .background(scheme.surfaceVariant)
+                        .padding(horizontal = Spacing.Lg, vertical = Spacing.Md),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Sm, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Sm),
+                    content = actions
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The MOSAIQ bottom sheet, opened fully expanded: the raised surface with the 6dp radius on its top
+ * corners and no tonal elevation (ADR-0057). Its top edge stops under the status bar, so the drag
+ * handle never sits between the clock and the status icons and the sheet never paints the bar
+ * (#1154). The New customer form and Check the sale both use it, so both get the same insets.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MqSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        // Outside the sheet's surface: the bar keeps the app's color, and the insets are consumed here.
+        modifier = modifier.statusBarsPadding(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = MaterialTheme.shapes.medium.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
+        containerColor = MaterialTheme.mosaic.raised,
+        contentColor = scheme.onSurface,
+        tonalElevation = Spacing.None,
+        content = content
+    )
 }

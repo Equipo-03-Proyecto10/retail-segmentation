@@ -36,6 +36,9 @@ class RuleSet:
     monetary: tuple[Decimal, Decimal, Decimal, Decimal]
     bands: tuple[Band, ...]
     fallback_label: str
+    # A draft can still change (F22-09, ADR-0064), so a profile is scored under a
+    # rule set only once it is PUBLISHED and can never change.
+    published: bool = True
 
 
 @dataclass(frozen=True, slots=True)

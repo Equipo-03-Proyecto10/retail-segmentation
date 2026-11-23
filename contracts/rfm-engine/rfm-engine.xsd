@@ -143,6 +143,35 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- The governed form of a rule set (F22-09): RfmRuleSet and its state, version,
+       lineage and sale treatment. Each boundary list holds four cut-points, in the order of the scores
+       5, 4, 3 and 2. created_by is omitted for a rule set the system seeded,
+       parent_rule_set_id for version 1 and published_at for a draft. -->
+  <xs:complexType name="RfmRuleSetDetail">
+    <xs:sequence>
+      <xs:element name="rule_set_id" type="xs:long"/>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="window_days" type="rfm:WindowDays"/>
+      <xs:element name="recency_boundaries" type="xs:nonNegativeInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="frequency_boundaries" type="xs:positiveInteger"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="monetary_boundaries" type="rfm:Money"
+                  minOccurs="4" maxOccurs="4"/>
+      <xs:element name="bands" type="rfm:Band" maxOccurs="unbounded"/>
+      <xs:element name="fallback_label_code" type="xs:string"/>
+      <xs:element name="cancelled_sales" type="rfm:SaleTreatment"/>
+      <xs:element name="returned_sales" type="rfm:SaleTreatment"/>
+      <xs:element name="state" type="rfm:RuleSetState"/>
+      <xs:element name="version_no" type="xs:positiveInteger"/>
+      <xs:element name="parent_rule_set_id" type="xs:long" minOccurs="0"/>
+      <xs:element name="published" type="xs:boolean"/>
+      <xs:element name="published_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="created_by" type="rfm:Uuid" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <xs:complexType name="RfmRuleSets">
     <xs:sequence>
       <xs:element name="RfmRuleSet" type="rfm:RfmRuleSet"
@@ -163,8 +192,23 @@
                   minOccurs="4" maxOccurs="4"/>
       <xs:element name="bands" type="rfm:Band" maxOccurs="unbounded"/>
       <xs:element name="fallback_label_code" type="xs:string"/>
+      <xs:element name="cancelled_sales" type="rfm:SaleTreatment" minOccurs="0"/>
+      <xs:element name="returned_sales" type="rfm:SaleTreatment" minOccurs="0"/>
     </xs:sequence>
   </xs:complexType>
+
+  <xs:simpleType name="SaleTreatment">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DEDUCT"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="RuleSetState">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="DRAFT"/>
+      <xs:enumeration value="PUBLISHED"/>
+    </xs:restriction>
+  </xs:simpleType>
 
   <xs:simpleType name="RuleSetName">
     <xs:restriction base="xs:string">
@@ -246,6 +290,7 @@
   <xs:element name="RfmProfile" type="rfm:RfmProfile"/>
   <xs:element name="RfmProfiles" type="rfm:RfmProfiles"/>
   <xs:element name="RfmRuleSet" type="rfm:RfmRuleSet"/>
+  <xs:element name="RfmRuleSetDetail" type="rfm:RfmRuleSetDetail"/>
   <xs:element name="RfmRuleSets" type="rfm:RfmRuleSets"/>
   <xs:element name="RfmRuleSetRequest" type="rfm:RfmRuleSetRequest"/>
   <xs:element name="RfmRecalculation" type="rfm:RfmRecalculation"/>

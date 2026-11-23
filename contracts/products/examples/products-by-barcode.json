@@ -1,0 +1,18 @@
+{
+  "products": [
+    {
+      "product_id": 1001,
+      "sku": "MOS-CAM-001",
+      "name": "Aisle Camera",
+      "category_id": 12,
+      "list_price": "129.90",
+      "is_active": true,
+      "image_path": "products/1001-camera.webp"
+    }
+  ],
+  "page_info": {
+    "page": 1,
+    "size": 20,
+    "total": 1
+  }
+}

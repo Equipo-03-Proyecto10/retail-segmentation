@@ -22,6 +22,7 @@ import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 private const val PREVIEW_WIDTH = 375
 private const val PREVIEW_HEIGHT = 760
 private const val SAMPLE_STOCK = 14
+private const val SAMPLE_BARCODE = "4006381333931"
 
 private val sample = Product(120, "SKU-120", "Cotton shirt", 4, "12.5", true)
 
@@ -104,6 +105,26 @@ private fun ProductOutDark() = Frame(dark = true) {
 @Preview(name = "Not found, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
 @Composable
 private fun NotFoundLight() = Frame(dark = false) { Body(result = ScanResult.ProductNotFound) }
+
+@Preview(name = "Barcode not found, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun BarcodeNotFoundLight() = Frame(dark = false) {
+    Body(result = ScanResult.BarcodeNotFound(SAMPLE_BARCODE))
+}
+
+@Preview(name = "Barcode not found, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun BarcodeNotFoundDark() = Frame(dark = true) {
+    Body(result = ScanResult.BarcodeNotFound(SAMPLE_BARCODE))
+}
+
+@Preview(name = "Invalid barcode, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun InvalidBarcodeLight() = Frame(dark = false) { Body(result = ScanResult.InvalidBarcode) }
+
+@Preview(name = "Invalid barcode, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
+@Composable
+private fun InvalidBarcodeDark() = Frame(dark = true) { Body(result = ScanResult.InvalidBarcode) }
 
 @Preview(name = "Offline, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT, showBackground = true)
 @Composable

@@ -15,6 +15,7 @@ import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.Profile
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -55,11 +56,16 @@ class RecoClickRefusalTest(private val example: String, private val status: Int,
         server.enqueue(
             MockResponse().setResponseCode(status).setHeader("Content-Type", "application/json").setBody(body)
         )
+        // The refusal is reported once as a capture incident (ADR-0071); that report is the only other request.
+        server.enqueue(MockResponse().setResponseCode(201).setHeader("Content-Type", "application/json").setBody("{}"))
 
         assertEquals(ListenableWorker.Result.success(), work())
         assertEquals(ListenableWorker.Result.success(), work())
+        assertEquals(ListenableWorker.Result.success(), work())
 
-        assertEquals(1, server.requestCount)
+        val paths = List(server.requestCount) { server.takeRequest().path.orEmpty() }
+        assertEquals("the refused click was sent once", 1, paths.count { it.endsWith("/engagement-events") })
+        assertTrue(paths.drop(1).all { it.endsWith("/capture-incidents") })
         val row = graph.outbox.find(id)!!
         assertEquals(RowState.REFUSED, row.state)
         assertEquals(code, row.code)

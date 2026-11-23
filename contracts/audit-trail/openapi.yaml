@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: audit-trail-service
-  version: 1.3.0
+  version: 1.5.0
   description: >-
     Reads the audit trail: the append-only entries `fn_audit` writes for every
     insert, update and delete on an audited table (RN-28, RN-30). An entry is
@@ -839,6 +839,7 @@ components:
         - stock_level
         - campaign
         - experiment
+        - rule_set
         - audit_entry
         - domain_event
     SubjectId:
@@ -862,7 +863,7 @@ components:
       properties:
         calculation:
           type: string
-          enum: [RFM, SEGMENTATION, KPI]
+          enum: [RFM, SEGMENTATION, KPI, DRIFT]
         status:
           type: string
           enum: [COMPLETED, FAILED]
@@ -944,6 +945,10 @@ components:
             - AUDIT_PAYLOAD_REDACTED
             - EXPERIMENT_FROZEN
             - CAMPAIGN_ACTIVATED
+            - RULE_SET_CREATED
+            - RULE_SET_EDITED
+            - RULE_SET_VERSIONED
+            - RULE_SET_PUBLISHED
         reason_code:
           $ref: '#/components/schemas/ReasonCode'
     HistoryReadDetails:

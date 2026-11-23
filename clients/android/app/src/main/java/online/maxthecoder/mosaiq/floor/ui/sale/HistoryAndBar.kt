@@ -22,6 +22,8 @@ import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.outbox.asError
 import online.maxthecoder.mosaiq.floor.outbox.refusalAdvice
+import online.maxthecoder.mosaiq.floor.outbox.refusalReason
+import online.maxthecoder.mosaiq.floor.ui.SaleBuilderState
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
@@ -45,7 +47,7 @@ fun HistorySection(ui: SaleUi, actions: SaleActions) {
                 modifier = Modifier.testTag("history-empty")
             )
         }
-        ui.history.forEach { row -> SaleHistoryRow(row, actions) }
+        ui.history.forEach { row -> SaleHistoryRow(row, ui, actions) }
         ui.statusMessage?.let {
             Text(
                 it,
@@ -60,7 +62,7 @@ fun HistorySection(ui: SaleUi, actions: SaleActions) {
 }
 
 @Composable
-private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
+private fun SaleHistoryRow(row: OutboxRow, ui: SaleUi, actions: SaleActions) {
     Column(
         Modifier.fillMaxWidth().testTag("sale-row-${row.id}"),
         verticalArrangement = Arrangement.spacedBy(Spacing.Sm)
@@ -99,8 +101,12 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
                 style = MaterialTheme.typography.bodyMedium
             )
             RowState.REFUSED -> {
-                MqErrorPanel(row.asError(stringResource(R.string.sale_refused_default)))
+                MqErrorPanel(
+                    row.asError(stringResource(R.string.sale_refused_default)),
+                    friendly = refusalReason(row.code)
+                )
                 refusalAdvice(row.code)?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+                RefusedActions(row, ui, actions)
             }
             RowState.DONE -> {
                 Text(
@@ -118,6 +124,50 @@ private fun SaleHistoryRow(row: OutboxRow, actions: SaleActions) {
     }
 }
 
+/**
+ * What the seller can do with a refused sale, wherever it sits in the history: put its cart back to fix it, or
+ * throw it away. Correcting never replaces a sale in progress, and says why when it cannot be offered (F27-13).
+ */
+@Composable
+private fun RefusedActions(row: OutboxRow, ui: SaleUi, actions: SaleActions) {
+    val whenText = formatWhen(row.createdAt)
+    Column(verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
+        when (correctionOf(row, ui)) {
+            Correction.AVAILABLE -> MqButton(
+                stringResource(R.string.sale_correct_row, whenText),
+                { actions.onCorrect(row) },
+                fullWidth = true,
+                modifier = Modifier.testTag("correct-${row.id}")
+            )
+            Correction.OPEN -> Text(
+                stringResource(R.string.sale_correct_open),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("correct-open-${row.id}")
+            )
+            Correction.BUSY -> Text(
+                stringResource(R.string.sale_correct_busy),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("correct-busy-${row.id}")
+            )
+            Correction.GONE -> Text(
+                stringResource(R.string.sale_correct_gone),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("correct-gone-${row.id}")
+            )
+        }
+        MqButton(
+            stringResource(R.string.sale_discard_row, whenText),
+            { actions.onDiscard(row) },
+            variant = MqButtonVariant.Quiet,
+            fullWidth = true,
+            modifier = Modifier.testTag("discard-${row.id}")
+        )
+    }
+}
+
 /** Why "Record sale" is off, in words; null when it can be pressed. */
 @Composable
 internal fun recordBlocker(ui: SaleUi): String? = when {
@@ -129,34 +179,45 @@ internal fun recordBlocker(ui: SaleUi): String? = when {
     else -> null
 }
 
-/** Section 3, pinned above the bottom navigation: the total and the one primary action. */
+/**
+ * Section 3, pinned above the bottom navigation: the total and the one primary action. [onBackToCart] is
+ * what "Back to cart" does on a refused sale; the screen adds bringing the named line into view.
+ */
 @Composable
-fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
+fun SaleBar(
+    ui: SaleUi,
+    actions: SaleActions,
+    modifier: Modifier = Modifier,
+    onBackToCart: () -> Unit = actions.onBackToCart
+) {
     val sale = ui.sale
     val blocker = recordBlocker(ui)
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
         Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Column(Modifier.padding(vertical = Spacing.Md), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        stringResource(R.string.sale_total),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        formatMoney(saleTotal(sale)),
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.testTag("sale-total")
-                    )
-                }
+                SaleTotals(sale)
                 if (sale.queuedRowId != null) {
-                    Text(
-                        stringResource(R.string.sale_saved),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.testTag("sale-saved").semantics { liveRegion = LiveRegionMode.Polite }
-                    )
-                    MqButton(stringResource(R.string.sale_another), actions.onNewSale, fullWidth = true)
+                    when (ui.queued?.state) {
+                        // Only the next step stays pinned; the refusal card above says why and offers the rest,
+                        // so the reason and the line it names keep the room at 375 dp (#1156).
+                        RowState.REFUSED -> MqButton(
+                            stringResource(R.string.sale_back_to_cart),
+                            onBackToCart,
+                            fullWidth = true,
+                            modifier = Modifier.testTag("back-to-cart")
+                        )
+                        else -> {
+                            Text(
+                                ui.queued?.let(actions.rowStatus) ?: stringResource(R.string.sale_saved),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.testTag("sale-saved").semantics {
+                                    liveRegion = LiveRegionMode.Polite
+                                }
+                            )
+                            MqButton(stringResource(R.string.sale_another), actions.onNewSale, fullWidth = true)
+                        }
+                    }
                 } else {
                     if (blocker != null) {
                         if (ui.registration.loading && ui.registration.channels.isEmpty()) {
@@ -179,7 +240,7 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
                     }
                     MqButton(
                         stringResource(R.string.sale_record),
-                        actions.onConfirm,
+                        actions.onReview,
                         enabled = blocker == null,
                         loading = sale.confirming,
                         fullWidth = true,
@@ -188,5 +249,39 @@ fun SaleBar(ui: SaleUi, actions: SaleActions, modifier: Modifier = Modifier) {
                 }
             }
         }
+    }
+}
+
+/** The total, and above it the subtotal and the discount when a promotion takes something off. */
+@Composable
+internal fun SaleTotals(sale: SaleBuilderState) {
+    val discount = saleDiscount(sale)
+    if (discount.signum() > 0) {
+        AmountRow(stringResource(R.string.sale_subtotal), formatMoney(saleSubtotal(sale)), "sale-subtotal")
+        AmountRow(
+            stringResource(R.string.sale_discount),
+            stringResource(R.string.sale_discount_amount, formatMoney(discount)),
+            "sale-discount"
+        )
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            stringResource(R.string.sale_total),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            formatMoney(saleTotal(sale)),
+            style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.testTag("sale-total")
+        )
+    }
+}
+
+@Composable
+internal fun AmountRow(label: String, amount: String, tag: String) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(amount, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.testTag(tag))
     }
 }

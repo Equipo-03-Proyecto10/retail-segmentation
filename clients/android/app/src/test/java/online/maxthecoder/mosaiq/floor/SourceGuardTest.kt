@@ -39,10 +39,10 @@ class SourceGuardTest {
                 owners[service!!] = match.groupValues[1].split(",").map { it.trim() }.toSet()
             }
         }
-        val calls = Regex("""Services\.([A-Z_]+) \+ "([a-z0-9.-]+)""")
+        val calls = Regex("""Services\.([A-Z_0-9]+) \+ "([a-z0-9.-]+)""")
         val services = File(main, "online/maxthecoder/mosaiq/floor/net/Services.kt").readText()
         val prefixes =
-            Regex("""const val ([A-Z_]+) = "api/([a-z-]+)/v1/"""")
+            Regex("""const val ([A-Z_0-9]+) = "api/([a-z-]+)/v[0-9]+/"""")
                 .findAll(services)
                 .associate { it.groupValues[1] to it.groupValues[2] }
         val found = sources.flatMap { calls.findAll(it.readText()).toList() }
@@ -52,6 +52,20 @@ class SourceGuardTest {
             val resource = call.groupValues[2]
             assertTrue("$resource is not a resource of $name", resource in owners.getValue(name))
         }
+    }
+
+    /**
+     * ADR-0057, #1153, #1154: a dialog, a sheet or a text button is a kit component. Material3's stock
+     * AlertDialog and TextButton draw `primary` text, which fails AA, and its stock sheet runs under
+     * the status bar, so only `ui/components/` may wrap them.
+     */
+    @Test
+    fun noStockDialogOrTextButtonOutsideTheKit() {
+        val names = "AlertDialog|BasicAlertDialog|TextButton|ModalBottomSheet"
+        val stock = Regex("""\b(?:$names)\s*\(|import androidx\.compose\.material3\.(?:$names)\b""")
+        val kit = File(main, "online/maxthecoder/mosaiq/floor/ui/components")
+        val hits = sources.filter { !it.startsWith(kit) && stock.containsMatchIn(it.readText()) }.map { it.name }
+        assertEquals("use MqDialog, MqSheet and MqButton", emptyList<String>(), hits)
     }
 
     /** ADR-0041: a retry id is generated once, at the tap, never per attempt. */
@@ -76,6 +90,7 @@ class SourceGuardTest {
             "ui/outbox/OutboxScreen.kt",
             "ui/SalesScreen.kt",
             "ui/CustomerInsights.kt",
+            "ui/Promotions.kt",
             "ui/ScanScreen.kt"
         )) {
             assertTrue("$path uses collectAsState", ".collectAsState()" !in File(floor, path).readText())
@@ -87,6 +102,7 @@ class SourceGuardTest {
             "ui/checkin/StorePicker.kt",
             "ui/outbox/OutboxScreen.kt",
             "ui/CustomerInsights.kt",
+            "ui/Promotions.kt",
             "net/TokenAuthenticator.kt",
             "outbox/OutboxWorker.kt"
         )) {

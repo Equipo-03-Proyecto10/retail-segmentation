@@ -39,7 +39,13 @@ class ThemeContrastTest {
             Pair("inverseOnSurface/inverseSurface", inverseOnSurface, inverseSurface, TEXT),
             Pair("outline/background (border)", outline, background, BORDER),
             Pair("outline/surface (border)", outline, surface, BORDER),
-            Pair("primary/background (focus ring, filled control)", primary, background, BORDER)
+            Pair("primary/background (focus ring, filled control)", primary, background, BORDER),
+            // The modal surface of MqDialog (#1153): its body, its links and its footer's buttons.
+            Pair("onSurface/raised (modal text)", onSurface, extras.raised, TEXT),
+            Pair("onSurfaceVariant/raised (modal text)", onSurfaceVariant, extras.raised, TEXT),
+            Pair("link/raised (modal accent text)", extras.link, extras.raised, TEXT),
+            Pair("link/surfaceVariant (modal footer accent text)", extras.link, surfaceVariant, TEXT),
+            Pair("outline/surfaceVariant (modal footer button border)", outline, surfaceVariant, BORDER)
         )
     }
 

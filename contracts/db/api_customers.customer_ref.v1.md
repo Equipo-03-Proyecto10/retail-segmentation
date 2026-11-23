@@ -42,6 +42,9 @@ a consumer re-reads this view and never trusts the event for state.
   `registered_on` is not read (F25-09).
 - **campaigns** reads `customer_id` and `registered_on` to judge a campaign's
   audience (registration cutoff, customers the reference does not list).
+- **rfm-engine** reads `customer_id` to tell a registered customer with no
+  computed profile (`pending`) from an unknown id (`customer_not_found`) when it
+  serves profiles (F22-19).
 
 Consumers name only the columns they read. Adding a column, as `anonymized`
 was, is therefore not a breaking change. Removing either v1 column, changing its PostgreSQL type or

@@ -115,7 +115,7 @@ describe('reading rule sets', () => {
 
 describe('previewing a draft', () => {
   const answer = byExample({
-    '/rfm-rule-sets/3': [200, 'rule-set'],
+    '/rfm-rule-sets/3': [200, 'rule-set-published'],
     '/rfm-profiles': [200, 'profiles-page'],
   });
 
@@ -157,7 +157,7 @@ describe('previewing a draft', () => {
       await signedIn('ANALYST', (r) => {
         const path = new URL(r.url).pathname;
         if (path.endsWith('/rfm-rule-sets/3'))
-          return { status: 200, body: example('rfm-engine', 'rule-set') };
+          return { status: 200, body: example('rfm-engine', 'rule-set-published') };
         return {
           status: 200,
           body: example('rfm-engine', 'profiles-page').replace(
@@ -184,7 +184,7 @@ describe('previewing a draft', () => {
 });
 
 describe('storing a draft', () => {
-  const created = byExample({ '/rfm-rule-sets': [201, 'rule-set-created'] });
+  const created = byExample({ '/rfm-rule-sets': [201, 'rule-set-draft'] });
 
   it('sends the contract’s request, in its order, and answers with the unpublished rule set', async () => {
     const { rules, seen } = await signedIn('ADMIN', created);

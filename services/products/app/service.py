@@ -69,6 +69,22 @@ def _text_filter(name: str, maximum: int) -> str | None:
     return value
 
 
+def _barcode_filter() -> str | None:
+    """The contract's ``Barcode`` pattern, or 422 ``invalid_query``.
+
+    A well-formed value with a wrong check digit is not an error here: the
+    contract says it matches no product, and the CHECK on
+    ``products.product_barcode`` guarantees that no stored barcode has one.
+    """
+
+    value = request.args.get("barcode")
+    if value is None:
+        return None
+    if not gtin.is_well_formed(value):
+        raise _invalid_query("barcode", "invalid_format")
+    return value
+
+
 def _category_filter() -> int | None:
     value = request.args.get("category_id")
     if value is None:
@@ -297,6 +313,7 @@ def create_app() -> Flask:
         filters = {
             "q": _text_filter("q", 150),
             "sku": _text_filter("sku", 40),
+            "barcode": _barcode_filter(),
             "category_id": _category_filter(),
             "active": _active_filter(),
             "ids": _ids_filter(),
@@ -402,7 +419,8 @@ def create_app() -> Flask:
                 row = store.get_details(connection, product_id)
         except psycopg.errors.IntegrityError as error:
             raise _map_write_error(error) from None
-        # A status change moves is_active, which the cached reads carry.
+        # A status change moves is_active, which the cached reads carry, and a
+        # barcode change moves what the barcode filter selects.
         invalidate()
         return Representation("ProductDetails", _details(row, settings.photo_base_url))
 

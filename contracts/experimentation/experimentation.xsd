@@ -509,6 +509,19 @@
     </xs:sequence>
   </xs:complexType>
 
+  <!-- What one attribution run did. Running again writes nothing that was
+       written. This is attribution, not effect (ADR-0069). -->
+  <xs:complexType name="AttributionEvaluation">
+    <xs:sequence>
+      <xs:element name="experiment_id" type="xs:long"/>
+      <xs:element name="attributed" type="xs:nonNegativeInteger"/>
+      <xs:element name="already_attributed" type="xs:nonNegativeInteger"/>
+      <xs:element name="pending" type="xs:nonNegativeInteger"/>
+      <xs:element name="label" type="ex:AttributionLabel"/>
+      <xs:element name="as_of" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+
   <!-- One arm's counts over every assigned customer, exposed or not (intent
        to treat). `converted + pending + not_converted` is `analysed`. A
        customer whose only qualifying sale is fully reversed is not
@@ -719,6 +732,7 @@
   <xs:element name="ExperimentAssignment" type="ex:ExperimentAssignment"/>
   <xs:element name="Conversion" type="ex:Conversion"/>
   <xs:element name="ConversionEvaluation" type="ex:ConversionEvaluation"/>
+  <xs:element name="AttributionEvaluation" type="ex:AttributionEvaluation"/>
   <xs:element name="ExperimentResult" type="ex:ExperimentResult"/>
   <xs:element name="SaleAttribution" type="ex:SaleAttribution"/>
   <xs:element name="Experiments" type="ex:Experiments"/>

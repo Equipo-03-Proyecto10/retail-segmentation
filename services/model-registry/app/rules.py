@@ -128,3 +128,21 @@ def distribution_details(body: dict[str, Any]) -> list[Detail]:
 def invalid_details(body: dict[str, Any]) -> list[Detail]:
     """Every refusal of a version request, in a stable order."""
     return method_details(body) + monotonic_details(body) + distribution_details(body)
+
+
+def training_details(body: dict[str, Any]) -> list[Detail]:
+    """What a training request must be that its schema cannot say: it is K-means, so the
+    rule set and the quintile boundaries belong to the other method, and K-means is
+    fitted on
+    min-max normalized variables (ADR-0018). Each refusal is a `method_mismatch` detail
+    of
+    a 422 `invalid_body`."""
+    parameters = body["parameters"]
+    details: list[Detail] = []
+    if parameters["rule_set_id"] is not None or any(
+        parameters[key] is None for key in _FITTED
+    ):
+        details.append(_mismatch("parameters"))
+    elif parameters["normalization"] != "MIN_MAX":
+        details.append(_mismatch("parameters.normalization"))
+    return details

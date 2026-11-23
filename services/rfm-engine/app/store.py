@@ -19,7 +19,7 @@ LOCK_KEY = 295001
 def rule_set(connection: Connection, rule_set_id: int) -> RuleSet | None:
     row = connection.execute(
         "SELECT rule_set_id, window_days, recency_boundaries, frequency_boundaries,"
-        " monetary_boundaries, fallback_label_code"
+        " monetary_boundaries, fallback_label_code, state"
         " FROM rfm.rule_set WHERE rule_set_id = %s",
         (rule_set_id,),
     ).fetchone()
@@ -40,6 +40,7 @@ def rule_set(connection: Connection, rule_set_id: int) -> RuleSet | None:
             Band(b[0], (b[1], b[2]), (b[3], b[4]), (b[5], b[6])) for b in bands
         ),
         fallback_label=row[5],
+        published=row[6] == "PUBLISHED",
     )
 
 
@@ -78,6 +79,30 @@ def measures(
     ).fetchone()
     assert row is not None
     return Measures(row[0], row[1], row[2], row[3])
+
+
+def measures_many(
+    connection: Connection,
+    customer_ids: list[UUID],
+    window_days: int,
+    as_of: datetime,
+) -> dict[UUID, Measures]:
+    """`measures` for several customers in one statement: only those with a net
+    purchase in the window appear, and the rest have none to count."""
+    rows = connection.execute(
+        "WITH sale AS ("
+        " SELECT customer_id, transaction_id, min(occurred_at) AS occurred_at,"
+        "        sum(net_amount) AS net_total"
+        "   FROM api_sales.net_purchase_line_v1"
+        "  WHERE customer_id = ANY(%(customers)s)"
+        "    AND occurred_at >= %(as_of)s - make_interval(days => %(days)s)"
+        "    AND occurred_at <= %(as_of)s"
+        "  GROUP BY customer_id, transaction_id)"
+        " SELECT customer_id, count(*), COALESCE(sum(net_total), 0)::numeric(12,2),"
+        "        min(occurred_at), max(occurred_at) FROM sale GROUP BY customer_id",
+        {"customers": customer_ids, "as_of": as_of, "days": window_days},
+    ).fetchall()
+    return {row[0]: Measures(row[1], row[2], row[3], row[4]) for row in rows}
 
 
 def now(connection: Connection) -> datetime:
@@ -132,3 +157,82 @@ def current(connection: Connection, customer_id: UUID) -> tuple[object, ...] | N
         " WHERE customer_id = %s",
         (customer_id,),
     ).fetchone()
+
+
+def published_version(
+    connection: Connection,
+) -> tuple[int, str, int | None, int] | None:
+    """The published version as (version_id, method, rule_set_id or None,
+    window_days), read from the registry's view and never its table (ADR-0063,
+    ADR-0064). One version is published at a time, whatever its method
+    (`model_version_one_published`); `None` when none is."""
+    row = connection.execute(
+        "SELECT version_id, method, rule_set_id, window_days"
+        " FROM api_models.published_version_v1"
+        " ORDER BY published_at DESC, version_id DESC LIMIT 1"
+    ).fetchone()
+    return None if row is None else (row[0], row[1], row[2], row[3])
+
+
+def profiling_decision(connection: Connection, customer_id: UUID) -> str | None:
+    """The customer's current PROFILING decision, `GRANTED` or `WITHDRAWN`, or None
+    when they have none (api_preferences.consent_state_v1). A view rfm-engine cannot
+    read raises, so the entry is refused and redelivered (ADR-0087)."""
+    row = connection.execute(
+        "SELECT decision FROM api_preferences.consent_state_v1"
+        " WHERE customer_id = %s AND purpose = 'PROFILING'",
+        (customer_id,),
+    ).fetchone()
+    return None if row is None else str(row[0])
+
+
+def profiling_withdrawn(connection: Connection, customer_id: UUID) -> bool:
+    """Whether the customer's current PROFILING decision is WITHDRAWN (ADR-0066).
+
+    Only an explicit withdrawal excludes: a customer with no decision is segmented,
+    because registration does not record consent yet and reading no row as a refusal
+    would stop segmenting everyone registered since (ADR-0087, which supersedes that
+    part of ADR-0066 for this consumer).
+    """
+    return profiling_decision(connection, customer_id) == "WITHDRAWN"
+
+
+def apply_assignment(
+    connection: Connection,
+    batch_id: UUID,
+    customer_id: UUID,
+    profile: Profile,
+    last_purchase_at: datetime | None,
+    cause: str,
+    version_id: int,
+    method: str,
+    window_days: int,
+    rule_set_id: int | None,
+) -> str:
+    """Apply the customer's result to the segment history, in the transaction that
+    writes the profile (contracts/db/api_segments.apply_assignment.v1.md). Returns
+    `opened`, `changed` or `unchanged`. Every argument is cast, because an uncast NULL
+    finds no function."""
+    row = connection.execute(
+        "SELECT api_segments.apply_assignment_v1(%s::uuid, %s::uuid, %s::varchar,"
+        " %s::smallint, %s::smallint, %s::smallint, %s::timestamptz, %s::integer,"
+        " %s::numeric, %s::text, %s::bigint, %s::text, %s::integer, %s::bigint)",
+        (
+            batch_id,
+            customer_id,
+            profile.label_code,
+            profile.r_score,
+            profile.f_score,
+            profile.m_score,
+            last_purchase_at,
+            profile.f_count,
+            profile.m_total,
+            cause,
+            version_id,
+            method,
+            window_days,
+            rule_set_id,
+        ),
+    ).fetchone()
+    assert row is not None
+    return row[0]

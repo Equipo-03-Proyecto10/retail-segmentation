@@ -18,6 +18,32 @@ from psycopg import Connection
 from .config import RETENTION_DAYS
 from .decisions import EXCLUSIONS, SIGNALS, Decision, Item, Reason
 
+_COUNT_SUMMARIES = (
+    "SELECT count(*) FROM recommendations.recommendation_decision"
+    " WHERE computed_at >= now() - (%s * interval '1 day')"
+    " AND (%s::uuid IS NULL OR customer_id = %s::uuid)"
+    " AND (%s::integer IS NULL OR store_id = %s::integer)"
+    " AND (%s::text IS NULL OR status = %s::text)"
+    " AND (%s::timestamptz IS NULL OR computed_at >= %s::timestamptz)"
+    " AND (%s::timestamptz IS NULL OR computed_at < %s::timestamptz)"
+    " AND (%s::integer[] IS NULL OR store_id = ANY(%s::integer[]))"
+)
+_LIST_SUMMARIES = (
+    "SELECT decision_id, customer_id, status, computed_at, store_id,"
+    " store_source, channel_id,"
+    " (SELECT count(*) FROM recommendations.recommendation_item AS i"
+    "  WHERE i.decision_id = d.decision_id) AS item_count"
+    " FROM recommendations.recommendation_decision AS d"
+    " WHERE computed_at >= now() - (%s * interval '1 day')"
+    " AND (%s::uuid IS NULL OR customer_id = %s::uuid)"
+    " AND (%s::integer IS NULL OR store_id = %s::integer)"
+    " AND (%s::text IS NULL OR status = %s::text)"
+    " AND (%s::timestamptz IS NULL OR computed_at >= %s::timestamptz)"
+    " AND (%s::timestamptz IS NULL OR computed_at < %s::timestamptz)"
+    " AND (%s::integer[] IS NULL OR store_id = ANY(%s::integer[]))"
+    " ORDER BY computed_at DESC, decision_id DESC LIMIT %s OFFSET %s"
+)
+
 
 def record(connection: Connection[Any], decision: Decision) -> bool:
     """Store a decision and everything it holds, or nothing. Recording the same
@@ -113,8 +139,9 @@ def read(connection: Connection[Any], decision_id: str) -> Decision | None:
     head = connection.execute(
         "SELECT customer_id, status, computed_at, run_id, model_version_id,"
         " store_id, store_source, channel_id"
-        " FROM recommendations.recommendation_decision WHERE decision_id = %s",
-        (decision_id,),
+        " FROM recommendations.recommendation_decision WHERE decision_id = %s"
+        " AND computed_at >= now() - (%s * interval '1 day')",
+        (decision_id, RETENTION_DAYS),
     ).fetchone()
     if head is None:
         return None
@@ -177,6 +204,88 @@ def read(connection: Connection[Any], decision_id: str) -> Decision | None:
             ) in items
         ),
     )
+
+
+def list_summaries(
+    connection: Connection[Any],
+    *,
+    customer_id: str | None,
+    store_id: int | None,
+    status: str | None,
+    computed_from: datetime | None,
+    computed_to: datetime | None,
+    allowed_stores: list[int] | None,
+    page: int,
+    size: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """A newest-first page of stored decisions and its filtered total.
+
+    ``allowed_stores`` is ``None`` for an unrestricted role and the caller's
+    current assignments for a store manager. The retention predicate makes an
+    expired decision unavailable even if the purge job has not run yet.
+    """
+    parameters = (
+        RETENTION_DAYS,
+        customer_id,
+        customer_id,
+        store_id,
+        store_id,
+        status,
+        status,
+        computed_from,
+        computed_from,
+        computed_to,
+        computed_to,
+        allowed_stores,
+        allowed_stores,
+    )
+    (total,) = connection.execute(
+        _COUNT_SUMMARIES,
+        parameters,
+    ).fetchone()
+    heads = connection.execute(
+        _LIST_SUMMARIES,
+        parameters + (size, (page - 1) * size),
+    ).fetchall()
+    ids = [row[0] for row in heads]
+    exclusions: dict[str, list[dict[str, Any]]] = {}
+    if ids:
+        for decision_id, reason, count in connection.execute(
+            "SELECT decision_id, reason, product_count"
+            " FROM recommendations.recommendation_exclusion"
+            " WHERE decision_id = ANY(%s::uuid[])"
+            " ORDER BY decision_id, array_position(%s::text[], reason)",
+            (ids, list(EXCLUSIONS)),
+        ).fetchall():
+            exclusions.setdefault(str(decision_id), []).append(
+                {"reason": reason, "count": count}
+            )
+    summaries = []
+    for (
+        decision_id,
+        customer,
+        state,
+        computed_at,
+        store,
+        source,
+        channel,
+        count,
+    ) in heads:
+        key = str(decision_id)
+        summaries.append(
+            {
+                "decision_id": key,
+                "customer_id": str(customer) if customer is not None else None,
+                "status": state,
+                "computed_at": computed_at,
+                "store_id": store,
+                "store_source": source,
+                "channel_id": channel,
+                "item_count": count,
+                "exclusions": exclusions.get(key, []),
+            }
+        )
+    return summaries, total
 
 
 def purge_expired(

@@ -18,7 +18,9 @@ from tests.parity.compare import (
     AuditDifference,
     CaseResult,
     Difference,
+    RecommendationDifference,
     ReportDifference,
+    RfmDifference,
     SegmentDifference,
     write_results,
 )
@@ -27,10 +29,23 @@ ROOT = Path(__file__).resolve().parents[2]
 _results: list[CaseResult] = []
 _differences: dict[
     str,
-    list[Difference | SegmentDifference | AuditDifference | ReportDifference],
+    list[
+        Difference
+        | SegmentDifference
+        | AuditDifference
+        | ReportDifference
+        | RfmDifference
+        | RecommendationDifference
+    ],
 ] = {}
 # The files whose cases are parity cases; test_compare.py is not one.
-_CASE_FILES = {"test_parity.py", "test_segment_parity.py", "test_audit_parity.py"}
+_CASE_FILES = {
+    "test_parity.py",
+    "test_segment_parity.py",
+    "test_audit_parity.py",
+    "test_rfm_parity.py",
+    "test_recommendation_parity.py",
+}
 
 
 def _missing(*names: str) -> list[str]:
@@ -128,13 +143,59 @@ def segments() -> stack.SegmentsPath:
     )
 
 
+@pytest.fixture(scope="session")
+def rfm(db) -> stack.RfmPath:
+    absent = [
+        f"services/{n}/"
+        for n in ("auth", "rfm-engine", "sales")
+        if not (ROOT / "services" / n).is_dir()
+    ]
+    if absent:
+        pytest.skip("rfm path: waiting for " + ", ".join(absent))
+    if missing := _missing(
+        "PARITY_GATEWAY_URL", "PARITY_WEB_EMAIL", "PARITY_WEB_PASSWORD"
+    ):
+        pytest.skip("rfm path: not set: " + ", ".join(missing))
+    return stack.RfmPath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_WEB_EMAIL"),
+        stack.env("PARITY_WEB_PASSWORD"),
+        db,
+    )
+
+
+@pytest.fixture(scope="session")
+def recommendations() -> stack.RecommendationsPath:
+    absent = [
+        f"services/{n}/"
+        for n in ("auth", "recommendations", "stock", "customer-preferences")
+        if not (ROOT / "services" / n).is_dir()
+    ]
+    if absent:
+        pytest.skip("recommendations path: waiting for " + ", ".join(absent))
+    if missing := _missing(
+        "PARITY_GATEWAY_URL", "PARITY_WEB_EMAIL", "PARITY_WEB_PASSWORD"
+    ):
+        pytest.skip("recommendations path: not set: " + ", ".join(missing))
+    return stack.RecommendationsPath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_WEB_EMAIL"),
+        stack.env("PARITY_WEB_PASSWORD"),
+    )
+
+
 @pytest.fixture
 def differences(request) -> list[Difference]:
     """Where a case collects what differs, so it is printed and recorded."""
 
-    found: list[Difference | SegmentDifference | AuditDifference | ReportDifference] = (
-        []
-    )
+    found: list[
+        Difference
+        | SegmentDifference
+        | AuditDifference
+        | ReportDifference
+        | RfmDifference
+        | RecommendationDifference
+    ] = []
     _differences[request.node.name] = found
     return found
 

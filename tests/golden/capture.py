@@ -2,7 +2,8 @@
 
     python -m tests.golden.capture --service NAME --out DIR
 
-NAME is sales, recommendations, users or campaigns.
+NAME is sales, recommendations, users, campaigns, segments, model-registry or rfm.
+The rfm port writes reversals as svc_sales, so it needs the database owner's URL.
 
 Runs against a database built by the three scripts, as the web's own role,
 from DATABASE_URL or --database-url, and writes DIR/<service>.json.
@@ -37,7 +38,9 @@ from tests.golden.cases import (
     Case,
     Context,
     campaigns,
+    model_registry,
     recommendations,
+    rfm,
     sales,
     segments,
     users,
@@ -52,6 +55,8 @@ PORTS: dict[str, ModuleType] = {
     "users": users,
     "campaigns": campaigns,
     "segments": segments,
+    "model-registry": model_registry,
+    "rfm": rfm,
 }
 
 

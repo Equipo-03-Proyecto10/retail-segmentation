@@ -1,0 +1,138 @@
+{
+  "experiment_id": 21,
+  "campaign_id": null,
+  "basis": "PRIMARY",
+  "status": "COMPLETE",
+  "as_of": "2026-10-22T08:00:07Z",
+  "elapsed_share": 1,
+  "data_origin": "OBSERVED",
+  "synthetic": false,
+  "design_kind": "CONTROLLED",
+  "design": {
+    "primary_metric": "CONVERSION",
+    "secondary_metric": "REVENUE_PER_CUSTOMER",
+    "estimator": "DIFFERENCE_OF_PROPORTIONS",
+    "alpha": 0.05,
+    "comparison_alpha": 0.05,
+    "power": 0.80,
+    "minimum_detectable_effect": 0.02,
+    "baseline": 0.10,
+    "baseline_std_dev": null,
+    "required_per_arm": 3839,
+    "smallest_detectable_effect": 1.0,
+    "allocation": "EQUAL",
+    "conversion_window_days": 14,
+    "settle_days": 7,
+    "starts_on": "2026-10-01",
+    "analysis_at": "2026-10-22T08:00:00Z"
+  },
+  "arms": [
+    {
+      "arm_id": 31,
+      "kind": "CONTROL",
+      "name": "No offer",
+      "assigned": 1,
+      "analysed": 1,
+      "exposed": 0,
+      "converted": 0,
+      "pending": 0,
+      "not_converted": 1,
+      "conversion_rate": 0.0,
+      "exposed_conversion_rate": null,
+      "net_revenue": "0.00",
+      "revenue_per_customer": "0.00",
+      "revenue_std_dev": 0.0
+    },
+    {
+      "arm_id": 32,
+      "kind": "TREATMENT",
+      "name": "Win-back voucher",
+      "assigned": 5,
+      "analysed": 5,
+      "exposed": 0,
+      "converted": 1,
+      "pending": 0,
+      "not_converted": 4,
+      "conversion_rate": 0.2,
+      "exposed_conversion_rate": 0.0,
+      "net_revenue": "0.00",
+      "revenue_per_customer": "0.00",
+      "revenue_std_dev": 0.0
+    }
+  ],
+  "checks": {
+    "sample_ratio": {
+      "status": "PASSED",
+      "p_value": 0.10247,
+      "threshold": 0.001
+    },
+    "balance": [
+      {
+        "measure": "PRE_RECENCY_DAYS",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.0,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_PURCHASE_COUNT",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.0,
+        "flagged": false,
+        "threshold": 0.25
+      },
+      {
+        "measure": "PRE_NET_SPEND",
+        "arm_id": 32,
+        "reference_arm_id": 31,
+        "standardized_mean_difference": 0.0,
+        "flagged": false,
+        "threshold": 0.25
+      }
+    ]
+  },
+  "comparisons": [
+    {
+      "label": "EFFECT",
+      "metric": "CONVERSION",
+      "role": "PRIMARY",
+      "arm_id": 32,
+      "against_arm_id": 31,
+      "difference": 0.2,
+      "lower": -0.1506,
+      "upper": 0.5506,
+      "confidence_level": 0.95,
+      "test": "POOLED_Z",
+      "p_value": 0.624206,
+      "degrees_of_freedom": null,
+      "conclusion": "INCONCLUSIVE",
+      "incremental_revenue": null,
+      "bootstrap": null
+    }
+  ],
+  "effect_refusal": null,
+  "attribution": null,
+  "assumptions": [
+    {
+      "code": "INTENT_TO_TREAT",
+      "statement": "Every assigned customer counts in the arm they were assigned to, exposed or not."
+    },
+    {
+      "code": "NET_OF_REVERSALS",
+      "statement": "Conversions and revenue count sales net of reversals, as known at `as_of`."
+    },
+    {
+      "code": "SINGLE_LOOK",
+      "statement": "The result is read once, at the analysis instant; stopping early or adding a look needs a new experiment."
+    },
+    {
+      "code": "COMPARISON_WITHHELD_SMALL_ARM",
+      "statement": "REVENUE_PER_CUSTOMER comparison between arm 32 and arm 31 is withheld because Welch's interval needs at least two customers per arm; arm 31 has one customer."
+    }
+  ],
+  "flags": [
+    "UNDERPOWERED"
+  ]
+}

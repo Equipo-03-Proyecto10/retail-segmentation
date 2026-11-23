@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: model-registry-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Keeps every model version immutable and says which one is published. A model version is
     immutable once published, carries its dataset, parameters, metrics and reference distribution,
@@ -14,8 +14,8 @@ info:
     other half of the rule: every report and alert is judged against the reference distribution
     of the version it names, and carries the statistic, the reference, the current window, the
     threshold and the model version (RN-66, ADR-0065). A change of version inside a window is
-    never compared (ADR-0064). The drift operations (F23-09) and training (F22-12) are published
-    ahead of their implementation (ADR-0073) and are marked planned.
+    never compared (ADR-0064). The drift operations (F23-09) are published ahead of their
+    implementation (ADR-0073) and are marked planned.
 security:
 - bearer: []
 tags:
@@ -436,7 +436,6 @@ paths:
         Returns a page of training runs, newest first. `method` and `state` filter on the
         stored values.
       operationId: listModelTrainings
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -494,7 +493,6 @@ paths:
         409 `model_version_name_taken`. Only RFM_RULES versions are registered through `POST
         /v1/model-versions`; `method` here is always KMEANS.
       operationId: createModelTraining
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       parameters:
@@ -586,7 +584,6 @@ paths:
         Returns one training with its parameters, seed, dataset, metrics and the version it
         registered.
       operationId: getModelTraining
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -654,7 +651,6 @@ paths:
         reports on its schedule; no operation here starts a run. `kind`, `model_version_id` and
         `comparison` filter on the stored values and combine.
       operationId: listDriftReports
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -717,7 +713,6 @@ paths:
         and kind that precedes this one, the other window or cohort of the persistence rule, and `alert_ids`
         the alerts this report raised.
       operationId: getDriftReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -795,7 +790,6 @@ paths:
         or `CONCEPT_DRIFT` on an alert of an `OUTCOME_TEST` alone. `kind`, `model_version_id` and `variable`
         filter on the stored values and combine.
       operationId: listDriftAlerts
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -855,7 +849,6 @@ paths:
         so the persistence rule can be read. The full evidence, every bin and every variable, is in the
         report.
       operationId: getDriftAlert
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST

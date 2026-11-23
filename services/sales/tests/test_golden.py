@@ -19,6 +19,8 @@ from typing import Any
 import psycopg
 import pytest
 
+from tests.conftest import CATALOG_PRICE
+
 FIXTURE = json.loads((Path(__file__).parent / "golden/sales.json").read_text())
 CASES = {case["id"]: case for case in FIXTURE["cases"]}
 
@@ -40,6 +42,12 @@ DIFFERS = {
     "known-key": (
         "A known Idempotency-Key replays the original phone sale instead of "
         "appending another line to its transaction."
+    ),
+    "undeclared-discount": (
+        "The web accepts any positive price on a CSV row; the phone endpoint "
+        "refuses a line charged below its list price that names no valid "
+        "promotion (F25-05, #836). The suite lists the catalog at 1.00, so the "
+        "captured cases keep testing the rules they were captured for."
     ),
 }
 
@@ -145,6 +153,7 @@ def test_the_fixture_is_the_sales_port_and_every_refusal_has_a_mapping() -> None
         "error-codes",
         "service-namespace",
         "known-key",
+        "undeclared-discount",
     }
 
 
@@ -201,3 +210,26 @@ def test_a_known_key_replays_instead_of_appending(
         (source_id,),
     ).fetchone()
     assert rows == (1,)
+
+
+def test_the_captured_sale_is_refused_at_the_seeds_list_price(
+    client: Any,
+    token: Callable[..., dict[str, str]],
+    owner: psycopg.Connection,
+) -> None:
+    case = CASES["accepted-line"]
+    product = case["input"]["product_id"]
+    owner.execute(
+        "UPDATE product SET list_price = %s WHERE product_id = %s", ("18.75", product)
+    )
+    try:
+        reply = _post(client, token, _body(case, _anchor(owner)), uuid.uuid4())
+    finally:
+        owner.execute(
+            "UPDATE product SET list_price = %s WHERE product_id = %s",
+            (CATALOG_PRICE, product),
+        )
+    assert (reply.status_code, reply.get_json()["code"]) == (
+        422,
+        "discount_without_promotion",
+    ), DIFFERS["undeclared-discount"]

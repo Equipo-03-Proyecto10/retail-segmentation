@@ -127,19 +127,54 @@ models.model_version_feature
 # version. The history grows only by an administrator's publication (F22-13).
 models.model_publication
 
+# models.drift_report, drift_variable, drift_statistic, drift_bin, drift_alert
+# (F23-09) and drift_outcome_segment (F23-11, ADR-0089): what the drift monitor wrote
+# about the published version's windows and matured cohorts. An outcome test needs
+# 100 customers a side in a segment, which thirty customers cannot hold either.
+# A report needs 200 customers to hold a number and the seeded data holds thirty,
+# so the seed states the one honest report, INSUFFICIENT_DATA, and no statistic,
+# bin or alert exists to seed; thirty invented figures would be a history the
+# monitor never wrote (RNF-09).
+models.drift_report
+models.drift_variable
+models.drift_statistic
+models.drift_bin
+models.drift_alert
+models.drift_outcome_segment
+
+# models.model_training, its variables and its cluster sizes: a training is a run an
+# administrator started and what that fit produced (F22-12). Seeding trainings would
+# invent a history of runs nobody started, and each COMPLETED one would have to be
+# explained by a version, so the seed's two versions stay registered ones. The three
+# tables fill only when a training runs.
+models.model_training
+models.model_training_feature
+models.model_training_cluster
+
 # rfm_events.outbox: relayed rows are purged after seven days, so it is runtime
 # state and never seed data (F22-05). The capture triggers on rfm.customer_profile
 # fill it as the service writes profiles.
 rfm_events.outbox
 
+# rfm.pass_run: one row per daily pass, written as the service runs. A seeded history
+# of passes would claim runs that never happened (F22-07).
+rfm.pass_run
+
+# rfm.recalculation and rfm.recalculation_difference: one row per verification and per
+# customer it found different, written as the service verifies. A seeded history would
+# claim verifications that never ran, or differences that never existed (F22-08).
+rfm.recalculation
+rfm.recalculation_difference
+
 # model-registry's publication outbox is runtime relay state under ADR-0044;
 # committed publications create it and relayed rows are purged after seven days.
 models_events.outbox
 
-# rfm.rule_set: the one rule set rfm-engine starts with, the scoring the published
-# version of the web's last rule-based run froze (F22-05). A rule set is a
-# deliberate, immutable act of creation (F22-09), not a population: padding it
-# with invented rule sets would fake a history of boundaries nobody chose.
+# rfm.rule_set: the published rule set rfm-engine starts with, the scoring the
+# published version of the web's last rule-based run froze (F22-05), and a draft
+# version 2 of it that an analyst edits and publishes (F22-09). A rule set is a
+# deliberate act of an analyst, not a population: padding it with invented rule
+# sets would fake a history of boundaries nobody chose.
 rfm.rule_set
 
 # rfm.customer_profile: runtime state, empty at the seed. The first sale event, or
@@ -158,6 +193,22 @@ experiments.experiment_plan
 experiments.experiment_frame_member
 experiments.experiment_frame_exclusion
 experiments.experiment_flag
+
+# The primary result (F25-13, ADR-0068, ADR-0085) is the one look at an experiment's analysis
+# instant, stored when that look is first read. It exists only for an experiment planned through
+# the service and read after its analysis instant, and the seeded experiments are assignment
+# rule V0, which has no analysis instant. Runtime facts, like a plan.
+experiments.experiment_result
+experiments.experiment_result_arm
+experiments.experiment_result_comparison
+experiments.experiment_result_balance
+
+# The record and balance of an assignment (F25-08, ADR-0068) exist only for an experiment assigned
+# through the service. The thirty seeded experiments were assigned by the web (rule V0), which
+# stored no check, and assigning thirty more only to check them would add customers to every
+# seeded report. Runtime facts, like a plan.
+experiments.experiment_assignment_record
+experiments.experiment_assignment_balance
 
 # experiments.exposure_notice is runtime projection state. Rows exist only as
 # experimentation consumes RECORDED and VOIDED notices from engagement's

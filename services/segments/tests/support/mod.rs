@@ -3,14 +3,20 @@
 //! URL fails the test: nothing here skips.
 #![allow(dead_code)]
 
+use std::path::PathBuf;
+use std::process::Command;
 use std::time::Duration;
 
-use mosaiq_kit::Database;
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+use mosaiq_kit::{Database, KitConfig};
 use redis::aio::MultiplexedConnection;
+use serde_json::json;
 use tokio_postgres::{Client, NoTls};
 use uuid::Uuid;
 
 pub const ACL: &str = "redis/segments.acl";
+pub const ISSUER: &str = "https://auth.test/";
+pub const KID: &str = "segments-test";
 
 /// The owner URL. Absent is a failure, never a skip.
 pub fn owner_url() -> String {
@@ -179,7 +185,8 @@ impl TestCustomer {
         owner
             .execute(
                 "INSERT INTO public.customer_segment_history (customer_id, run_id) \
-                 SELECT $1, max(run_id) FROM public.segmentation_run",
+                 SELECT $1, max(run_id) FROM public.segmentation_run \
+                 WHERE scope = 'FULL'",
                 &[&customer.id],
             )
             .await
@@ -268,7 +275,8 @@ pub async fn expected_sizes(owner: &Client) -> Vec<(String, i64)> {
     owner
         .query(
             "SELECT label_code, count(*) FROM public.customer_segment_history \
-             WHERE run_id = (SELECT max(run_id) FROM public.segmentation_run) \
+             WHERE run_id = (SELECT max(run_id) FROM public.segmentation_run \
+                             WHERE scope = 'FULL') \
                AND label_code IS NOT NULL \
              GROUP BY label_code ORDER BY label_code",
             &[],
@@ -278,4 +286,111 @@ pub async fn expected_sizes(owner: &Client) -> Vec<(String, i64)> {
         .iter()
         .map(|row| (row.get(0), row.get(1)))
         .collect()
+}
+
+pub fn base64url(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let block = chunk.iter().enumerate().fold(0u32, |acc, (i, byte)| {
+            acc | (u32::from(*byte) << (16 - 8 * i))
+        });
+        for i in 0..=chunk.len() {
+            out.push(ALPHABET[((block >> (18 - 6 * i)) & 63) as usize] as char);
+        }
+    }
+    out
+}
+
+pub fn openssl(arguments: &[&str]) -> Vec<u8> {
+    let output = Command::new("openssl")
+        .args(arguments)
+        .output()
+        .expect("openssl is installed");
+    assert!(output.status.success(), "openssl {arguments:?}");
+    output.stdout
+}
+
+/// A throwaway signing key and its public half as a JWKS file.
+pub struct Keys {
+    pub dir: PathBuf,
+    pem: Vec<u8>,
+}
+
+impl Keys {
+    pub fn make() -> Self {
+        let dir = std::env::temp_dir().join(format!("segments-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let key = dir.join("key.pem");
+        let path = key.to_str().unwrap();
+        openssl(&["genrsa", "-out", path, "2048"]);
+        let modulus =
+            String::from_utf8(openssl(&["rsa", "-in", path, "-noout", "-modulus"])).unwrap();
+        let hex = modulus.trim().strip_prefix("Modulus=").unwrap();
+        let bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        let jwks = json!({"keys": [{
+            "kty": "RSA", "use": "sig", "alg": "RS256", "kid": KID,
+            "n": base64url(&bytes), "e": "AQAB",
+        }]});
+        std::fs::write(dir.join("jwks.json"), jwks.to_string()).unwrap();
+        let pem = std::fs::read(&key).unwrap();
+        Self { dir, pem }
+    }
+
+    pub fn token(&self, sub: &str, role: &str, sid: &str) -> String {
+        let now = chrono::Utc::now().timestamp();
+        let claims = json!({
+            "iss": ISSUER, "aud": "mosaiq-api", "sub": sub, "sid": sid,
+            "role": role, "iat": now, "exp": now + 300,
+        });
+        let mut header = Header::new(Algorithm::RS256);
+        header.kid = Some(KID.to_owned());
+        encode(
+            &header,
+            &claims,
+            &EncodingKey::from_rsa_pem(&self.pem).unwrap(),
+        )
+        .unwrap()
+    }
+}
+
+impl Drop for Keys {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+/// The kit's configuration for a router test: the throwaway keys, the test
+/// Redis under the loaded ACL user, and PostgreSQL as `svc_segments`.
+pub fn kit_config(keys: &Keys, redis_url: String, password: String, owner: &str) -> KitConfig {
+    KitConfig {
+        issuer: ISSUER.to_owned(),
+        jwks_path: keys.dir.join("jwks.json"),
+        redis_state_url: redis_url,
+        redis_password: Some(password),
+        rate_limit_enabled: false,
+        rate_limit_requests: 120,
+        rate_limit_window_seconds: 60,
+        database_url: Some(service_url(owner)),
+        database_pool_timeout: Duration::from_secs(2),
+        database_connect_timeout: Duration::from_secs(2),
+    }
+}
+
+/// Validate an XML body against the contract's XSD, as Electron does.
+pub fn assert_valid_xml(xml: &str) {
+    use libxml::parser::Parser;
+    use libxml::schemas::{SchemaParserContext, SchemaValidationContext};
+    let mut schema = SchemaParserContext::from_file("contracts/segments/segments.xsd");
+    let mut context = SchemaValidationContext::from_parser(&mut schema).expect("the XSD compiles");
+    let document = Parser::default()
+        .parse_string(xml)
+        .expect("well-formed XML");
+    if let Err(errors) = context.validate_document(&document) {
+        let messages: Vec<String> = errors.into_iter().filter_map(|e| e.message).collect();
+        panic!("the XML does not validate: {messages:?}\n{xml}");
+    }
 }

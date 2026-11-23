@@ -282,8 +282,11 @@ suite_golden() {
     python3 -m pytest tests/golden -rs -p no:cacheprovider --junitxml=test-results/golden.xml
   local out=/tmp/golden
   rm -rf "$out"
-  check golden capture bash -c "for s in sales recommendations users campaigns; do
-      python3 -m tests.golden.capture --service \$s --out $out || exit 1; done"
+  # rfm records reversals as svc_sales, so its capture runs as the database owner.
+  check golden capture bash -c "for s in sales recommendations users campaigns segments model-registry; do
+      python3 -m tests.golden.capture --service \$s --out $out || exit 1; done
+      DATABASE_URL=postgresql://postgres:postgres@localhost:5432/retail \\
+        python3 -m tests.golden.capture --service rfm --out $out"
   check golden drift python3 -m tests.golden.compare "$out"
   unset DATABASE_URL
   infra_down

@@ -12,8 +12,9 @@
 
 The view publishes exactly one row for every customer in
 `api_customers.customer_ref_v1`, so a customer is never missing and never
-repeated. It reports what the web's segmentation runs recorded and fills in
-nothing from any other source. Consumers name only the columns they read.
+repeated. It reports what the segmentation runs recorded, the web's and the
+incremental ones of `api_segments.apply_assignment_v1`, and fills in nothing from
+any other source. Consumers name only the columns they read.
 
 ## Columns
 
@@ -24,13 +25,14 @@ nothing from any other source. Consumers name only the columns they read.
 | `label_code` | `character varying(40)` | The stable label code; `NULL` unless `state` is `assigned`. |
 | `since` | `timestamp with time zone` | The open row's `valid_from`; `NULL` when `state` is `no_open_assignment`. |
 | `run_id` | `bigint` | The run that wrote the open row; `NULL` when `state` is `no_open_assignment`. |
+| `unassigned_reason` | `text` | Why an `unassigned_result` has no label: `PROFILING_WITHDRAWN` when the open row's cause is `CONSENT_WITHDRAWN` (ADR-0066, ADR-0087), else `NO_PURCHASES` (RN-21). `NULL` for the other two states. Appended by F22-15. |
 
 ## The three states
 
 | State | Meaning | `label_code` | `since`, `run_id` |
 |---|---|---|---|
 | `assigned` | The customer's open row names a label. | set | set |
-| `unassigned_result` | The open row is the run's result of no label (RN-21). | `NULL` | set |
+| `unassigned_result` | The open row is the run's result of no label (RN-21), for the reason `unassigned_reason` names. | `NULL` | set |
 | `no_open_assignment` | The customer has no open row, for instance a customer registered after the latest run. | `NULL` | `NULL` |
 
 A customer with no open row is reported as `no_open_assignment`; the view never

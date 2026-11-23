@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -80,13 +81,51 @@ class ReportDifference:
         )
 
 
+@dataclass(frozen=True)
+class RfmDifference:
+    """One way the web's run and rfm-engine disagree about a customer's raw
+    R, F or M (F20-11). `what` is `recency_days`, `frequency`, `monetary` or
+    `profile`."""
+
+    customer_id: str
+    what: str
+    web: object
+    engine: object
+
+    def __str__(self) -> str:
+        return (
+            f"{self.customer_id}: {self.what}: web={self.web!r} "
+            f"rfm-engine={self.engine!r}"
+        )
+
+
+@dataclass(frozen=True)
+class RecommendationDifference:
+    """One way the web and recommendations-service disagree about a customer's
+    recommendations after a change (F20-10). `change` names the change, such as
+    "sale"."""
+
+    change: str
+    what: str
+    web: object
+    service: object
+
+    def __str__(self) -> str:
+        return f"{self.change}: {self.what}: web={self.web!r} service={self.service!r}"
+
+
 @dataclass
 class CaseResult:
     case: str
     status: str  # passed | failed | skipped
     detail: str = ""
     differences: list[
-        Difference | SegmentDifference | AuditDifference | ReportDifference
+        Difference
+        | SegmentDifference
+        | AuditDifference
+        | ReportDifference
+        | RfmDifference
+        | RecommendationDifference
     ] = field(default_factory=list)
 
 
@@ -505,6 +544,167 @@ def credentials_in(value, path: str = "") -> list[str]:
     elif isinstance(value, str) and value.lower().startswith(_HASH_PREFIXES):
         found.append(path)
     return found
+
+
+# ---------- RFM (F20-11) ----------
+
+ONE_DAY = timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class WebRfm:
+    """What the web's run recorded for one customer in `customer_segment_history`:
+    the instant of the last net purchase in the window, the count of net
+    purchases and their net total. All three are None for a customer with no
+    net purchase in the window (RN-21)."""
+
+    last_purchase_at: datetime | None
+    frequency: int | None
+    monetary: Decimal | None
+
+
+@dataclass(frozen=True)
+class EngineRfm:
+    """One row of rfm-engine's `rfm.customer_profile`: R in whole days to
+    `computed_at`, as the contract states it (ADR-0086)."""
+
+    state: str
+    r_days: int | None
+    f_count: int | None
+    m_total: Decimal | None
+    computed_at: datetime
+
+
+def diff_rfm(
+    web: dict[str, WebRfm], engine: dict[str, EngineRfm]
+) -> list[RfmDifference]:
+    """Every customer whose raw R, F or M differs, over the union of customers.
+
+    R is compared the way the engine measures it: the whole days from the web's
+    last purchase to the profile's own `computed_at`. A customer the web found
+    no purchase for agrees with an `unassigned` profile, and with no profile at
+    all; one with a purchase and no `scored` profile does not, and is printed
+    with both sides' values.
+    """
+
+    found: list[RfmDifference] = []
+    for customer in sorted(set(web) | set(engine)):
+        seen = web.get(customer, WebRfm(None, None, None))
+        held = engine.get(customer)
+        bought = seen.frequency is not None and seen.frequency > 0
+        if held is None or held.state != "scored":
+            if bought:
+                found.append(
+                    RfmDifference(
+                        customer,
+                        "profile",
+                        (seen.last_purchase_at, seen.frequency, seen.monetary),
+                        None if held is None else held.state,
+                    )
+                )
+            continue
+        if not bought:
+            found.append(
+                RfmDifference(
+                    customer,
+                    "profile",
+                    None,
+                    (held.r_days, held.f_count, held.m_total),
+                )
+            )
+            continue
+        assert seen.last_purchase_at is not None
+        days = int((held.computed_at - seen.last_purchase_at) // ONE_DAY)
+        for what, left, right in (
+            ("recency_days", days, held.r_days),
+            ("frequency", seen.frequency, held.f_count),
+            ("monetary", seen.monetary, held.m_total),
+        ):
+            if left != right:
+                found.append(RfmDifference(customer, what, left, right))
+    return found
+
+
+# ---------- recommendations (F20-10) ----------
+
+
+@dataclass(frozen=True)
+class Recommendation:
+    """A customer's recommendations in the web's terms: its status and, in
+    order, each item's product id and the units on hand it was chosen with."""
+
+    status: str  # recommended | no_segment | no_usual_store | none_match
+    items: tuple[tuple[int, int], ...] = ()
+
+    @property
+    def products(self) -> tuple[int, ...]:
+        return tuple(product for product, _ in self.items)
+
+
+# The web reports both of the service's segment statuses as no_segment (RN-40).
+_SERVICE_STATUS = {
+    "no_open_assignment": "no_segment",
+    "unassigned_result": "no_segment",
+}
+# The empty state's title on the web's page, for each status but `recommended`.
+_EMPTY_TITLES = {
+    "No segment available": "no_segment",
+    "No usual store": "no_usual_store",
+    "No eligible products": "none_match",
+}
+_ITEM = re.compile(
+    r'data-recommendation="(\d+)".*?Available stock</dt>\s*'
+    r'<dd class="mq-num">(\d+) units?</dd>',
+    re.DOTALL,
+)
+_EMPTY_TITLE = re.compile(r'<span class="mq-state__title">([^<]+)</span>')
+
+
+def parse_recommendations_page(html: str) -> Recommendation:
+    """What /catalog/customers/<id>/recommendations shows: each item's product
+    and units in stock, in the page's order, or the empty state's reason."""
+
+    items = tuple((int(p), int(q)) for p, q in _ITEM.findall(html))
+    cards = html.count("data-recommendation=")
+    if cards != len(items):
+        # An item without its stock line would be paired with the next item's
+        # and drop it: the units compared would be another product's.
+        raise ValueError(f"{cards} recommendation items, {len(items)} with their stock")
+    if items:
+        return Recommendation("recommended", items)
+    title = _EMPTY_TITLE.search(html)
+    if title is None or title.group(1).strip() not in _EMPTY_TITLES:
+        raise ValueError("the page shows neither recommendations nor a reason")
+    return Recommendation(_EMPTY_TITLES[title.group(1).strip()])
+
+
+def recommendation_from_service(body: dict) -> Recommendation:
+    """GET /v1/recommendations, in the web's terms."""
+
+    return Recommendation(
+        _SERVICE_STATUS.get(body["status"], body["status"]),
+        tuple((i["product_id"], i["quantity_on_hand"]) for i in body["items"]),
+    )
+
+
+def diff_recommendations(
+    change: str, web: Recommendation, service: Recommendation
+) -> list[RecommendationDifference]:
+    """Status, then the ordered products, then each shared item's units."""
+
+    if web.status != service.status:
+        return [RecommendationDifference(change, "status", web.status, service.status)]
+    if web.products != service.products:
+        return [
+            RecommendationDifference(
+                change, "products", list(web.products), list(service.products)
+            )
+        ]
+    return [
+        RecommendationDifference(change, f"product {p} on hand", left, right)
+        for (p, left), (_, right) in zip(web.items, service.items, strict=True)
+        if left != right
+    ]
 
 
 def write_results(results: list[CaseResult], path: Path) -> None:

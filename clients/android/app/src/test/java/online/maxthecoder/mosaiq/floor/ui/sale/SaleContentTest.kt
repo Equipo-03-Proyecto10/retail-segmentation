@@ -1,16 +1,26 @@
 package online.maxthecoder.mosaiq.floor.ui.sale
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -18,23 +28,29 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import online.maxthecoder.mosaiq.floor.FloorTestApp
 import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Channel
 import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.net.Promotion
 import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CustomerSearchState
+import online.maxthecoder.mosaiq.floor.ui.DiscountState
 import online.maxthecoder.mosaiq.floor.ui.RegistrationState
 import online.maxthecoder.mosaiq.floor.ui.SaleBuilderState
 import online.maxthecoder.mosaiq.floor.ui.SaleLine
 import online.maxthecoder.mosaiq.floor.ui.SalesContent
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -89,7 +105,7 @@ class SaleContentTest {
                     sale = SaleBuilderState(lines = listOf(SaleLine(socks, 2)))
                 )
             },
-            SaleActions(onConfirm = { recorded++ }, onSetQuantity = { id, q -> quantity = id to q })
+            SaleActions(onReview = { recorded++ }, onSetQuantity = { id, q -> quantity = id to q })
         )
         compose.onNodeWithText("Ana Torres").assertExists()
         compose.onNodeWithText("ana@example.com").assertExists()
@@ -98,7 +114,8 @@ class SaleContentTest {
         compose.onNodeWithText("Change").assertExists()
         compose.onNodeWithText("$12.50 each").assertExists()
         compose.onNodeWithTag("sale-total").assertTextEquals("$25.00")
-        compose.onNodeWithContentDescription("Increase quantity").performScrollTo().performClick()
+        // Each line's stepper names its product, so TalkBack says which line it changes.
+        compose.onNodeWithContentDescription("Increase quantity of Trail socks").performScrollTo().performClick()
         assertEquals(1 to 3, quantity)
         compose.onNodeWithContentDescription("Remove Trail socks").performScrollTo().performClick()
         assertEquals(1 to 0, quantity)
@@ -166,7 +183,7 @@ class SaleContentTest {
                 row(3, RowState.REFUSED, code = "future_dated")
             )
         show({ SaleUi(store = store, history = rows) })
-        compose.onNodeWithText("Waiting to send").performScrollTo().assertExists()
+        compose.onNodeWithText("Pending").performScrollTo().assertExists()
         compose.onNodeWithText("Sent").performScrollTo().assertExists()
         compose.onNodeWithText("Needs attention").performScrollTo().assertExists()
     }
@@ -192,6 +209,295 @@ class SaleContentTest {
         compose.onNodeWithText("Change").performClick()
         compose.onNodeWithText("New customer").performScrollTo().performClick()
         compose.onNodeWithText("Ben Ruiz").assertDoesNotExist()
+    }
+
+    // ---- F27-05: promotions, the summary, the receipt and a refusal ----
+
+    private val winter = Promotion(51, 12, "Winter 20", "20.00", "2026-11-01", "2026-11-30", listOf(1), listOf(1), true)
+    private val discounts =
+        DiscountState(
+            storeId = 1,
+            channelId = 1,
+            promotions = listOf(winter),
+            maxDiscountPercent = "15.00",
+            loaded = true
+        )
+    private val shirt = Product(2, "SKU2", "Rain shell", 3, "40.00", true)
+
+    private fun cart(vararg lines: SaleLine, reviewing: Boolean = false, queuedRowId: Long? = null) = SaleBuilderState(
+        lines = lines.toList(),
+        discounts = discounts,
+        reviewing = reviewing,
+        queuedRowId = queuedRowId
+    )
+
+    @Test
+    fun aLineOffersTheListedPromotionWithinTheStoreCapAndTheBarShowsTheDiscount() {
+        var chosen: Pair<Int, Int?>? = null
+        show(
+            { SaleUi(customer = ana, store = store, registration = ready, sale = cart(SaleLine(shirt, 1, winter))) },
+            SaleActions(onChoosePromotion = { id, promotion -> chosen = id to promotion })
+        )
+        compose.onNodeWithText("Winter 20").performScrollTo().assertExists()
+        compose.onNodeWithText("15% off, the most this store allows").assertExists()
+        compose.onNodeWithText("$34.00 each, list price $40.00").assertExists()
+        compose.onNodeWithTag("sale-subtotal").assertTextEquals("$40.00")
+        compose.onNodeWithTag("sale-discount").assertTextEquals("−$6.00")
+        compose.onNodeWithTag("sale-total").assertTextEquals("$34.00")
+        compose.onNodeWithText("No promotion").performScrollTo().performClick()
+        assertEquals(2 to null, chosen)
+    }
+
+    @Test
+    fun theSummaryShowsTheLinesTheDiscountAndTheTotalAndOnlyItsButtonConfirms() {
+        var confirmed = 0
+        var back = 0
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    registration = ready,
+                    sale = cart(SaleLine(shirt, 2, winter), SaleLine(socks, 1), reviewing = true)
+                )
+            },
+            SaleActions(onConfirm = { confirmed++ }, onCancelReview = { back++ })
+        )
+        compose.waitForIdle()
+        compose.onNodeWithText("Check the sale").assertExists()
+        compose.onNodeWithText("Customer: Ana Torres").assertExists()
+        compose.onNodeWithText("2 × $34.00").assertExists()
+        compose.onNodeWithText("1 × $12.50").assertExists()
+        compose.onAllNodesWithTag("sale-discount").onFirst().assertTextEquals("−$12.00")
+        compose.onAllNodesWithTag("sale-total").onFirst().assertTextEquals("$80.50")
+        assertEquals(0, confirmed)
+        compose.onNodeWithTag("confirm-sale").performScrollTo().performClick()
+        assertEquals(1, confirmed)
+        compose.onNodeWithText("Back to cart").performScrollTo().performClick()
+        assertEquals(1, back)
+    }
+
+    @Test
+    fun aRecordedSaleShowsItsReceiptWithTheSaleId() {
+        val sent = """{"customer_id":"c1","store_id":1,"channel_id":1,"occurred_at":"2026-11-18T12:00:00Z",""" +
+            """"lines":[{"product_id":2,"quantity":2,"unit_price":"34.00","promotion_id":51}]}"""
+        val answer = """{"sale_id":4812,"customer_id":"c1","store_id":1,"channel_id":1,""" +
+            """"occurred_at":"2026-11-18T18:00:00Z","total":"68.00",""" +
+            """"lines":[{"product_id":2,"quantity":2,"unit_price":"34.00"}]}"""
+        val done = row(7, RowState.DONE).copy(body = sent, status = 201, responseBody = answer)
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    sale = cart(SaleLine(shirt, 2, winter), queuedRowId = 7),
+                    queued = done
+                )
+            }
+        )
+        compose.onNodeWithTag("receipt-sale-id").assertTextEquals("Sale 4812")
+        // Once in the receipt and once in the kept cart below it.
+        compose.onAllNodesWithText("Rain shell").assertCountEquals(2)
+        compose.onAllNodesWithText("Winter 20").assertCountEquals(2)
+        compose.onNodeWithTag("receipt-discount").assertTextEquals("−$12.00")
+        compose.onNodeWithTag("receipt-total").assertTextEquals("$68.00")
+    }
+
+    @Test
+    fun aRefusedSaleSaysWhyNamesTheLineAndOffersTheKeptCart() {
+        var back = 0
+        val sent = """{"customer_id":"c1","store_id":1,"channel_id":1,"occurred_at":"2026-11-18T12:00:00Z",""" +
+            """"lines":[{"product_id":2,"quantity":2,"unit_price":"30.00","promotion_id":51}]}"""
+        val refused = row(7, RowState.REFUSED, code = "discount_above_promotion").copy(
+            body = sent,
+            status = 422,
+            responseBody = """{"code":"discount_above_promotion","message":"x",""" +
+                """"details":[{"field":"lines[0].unit_price","code":"below_promotion"}]}"""
+        )
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    registration = ready,
+                    sale = cart(SaleLine(shirt, 2, winter), queuedRowId = 7),
+                    queued = refused
+                )
+            },
+            SaleActions(onBackToCart = { back++ })
+        )
+        compose.onNodeWithText("A discount is larger than its promotion allows.").assertExists()
+        compose.onNodeWithText("Line: Rain shell").assertExists()
+        compose.onNodeWithText(
+            "Your cart is kept as it was. Fix it and confirm again, or discard this sale."
+        ).assertExists()
+        compose.onNodeWithTag("cart-line-2").performScrollTo().assertExists()
+        compose.onNodeWithTag("back-to-cart").performClick()
+        assertEquals(1, back)
+    }
+
+    // ---- F27-13: drafts, and a refused sale corrected or discarded wherever it sits ----
+
+    private val refusedRow = row(7, RowState.REFUSED, code = "stock_unavailable")
+
+    @Test
+    fun aQueuedSaleIsADraftWaitingForTheServerAndNeverClaimedRecorded() {
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    registration = ready,
+                    sale = cart(SaleLine(shirt, 1), queuedRowId = 7),
+                    queued = row(7, RowState.PENDING),
+                    history = listOf(row(7, RowState.PENDING))
+                )
+            }
+        )
+        compose.onNodeWithTag("sale-saved")
+            .assertTextEquals("Sale kept as a draft on this phone, pending. The server checks it when you are online.")
+        compose.onNodeWithText("Draft, pending. The server checks it when the connection returns.")
+            .performScrollTo().assertExists()
+        compose.onNodeWithText("Pending").performScrollTo().assertExists()
+        compose.onAllNodesWithText("recorded", substring = true, ignoreCase = true).assertCountEquals(0)
+        compose.onAllNodesWithTag("sale-receipt").assertCountEquals(0)
+    }
+
+    @Test
+    fun aRefusedSaleOfTheHistoryCanBeCorrectedOrDiscardedAfterAnotherSaleWasStarted() {
+        val corrected = mutableListOf<Long>()
+        val discarded = mutableListOf<Long>()
+        show(
+            { SaleUi(store = store, registration = ready, history = listOf(refusedRow), kept = setOf("client-7")) },
+            SaleActions(onCorrect = { corrected += it.id }, onDiscard = { discarded += it.id })
+        )
+        compose.onNodeWithText("The store does not have enough units for a line.", substring = true)
+            .performScrollTo().assertExists()
+        compose.onNodeWithTag("correct-7").performScrollTo().performClick()
+        compose.onNodeWithTag("discard-7").performScrollTo().performClick()
+        assertEquals(listOf(7L), corrected)
+        assertEquals(listOf(7L), discarded)
+    }
+
+    @Test
+    fun correctingSaysWhyItIsNotOfferedWhileAnotherSaleIsBeingBuiltOrTheCartIsGone() {
+        var ui by mutableStateOf(
+            SaleUi(
+                store = store,
+                registration = ready,
+                history = listOf(refusedRow),
+                kept = setOf("client-7"),
+                sale = SaleBuilderState(lines = listOf(SaleLine(socks, 1)))
+            )
+        )
+        show({ ui })
+        compose.onNodeWithTag("correct-7").assertDoesNotExist()
+        compose.onNodeWithTag("correct-busy-7").performScrollTo().assertExists()
+        compose.onNodeWithText("Finish or clear the sale in progress to correct this one.").assertExists()
+        // Discarding is always there.
+        compose.onNodeWithTag("discard-7").performScrollTo().assertExists()
+
+        ui = ui.copy(kept = emptySet(), sale = SaleBuilderState())
+        compose.onNodeWithTag("correct-gone-7").performScrollTo().assertExists()
+        compose.onNodeWithTag("correct-7").assertDoesNotExist()
+        compose.onNodeWithTag("discard-7").assertExists()
+
+        ui = ui.copy(sale = SaleBuilderState(corrects = listOf("client-7"), lines = listOf(SaleLine(socks, 1))))
+        compose.onNodeWithTag("correct-open-7").performScrollTo().assertExists()
+        compose.onNodeWithTag("correct-7").assertDoesNotExist()
+    }
+
+    @Test
+    fun theRefusalOfTheSaleOnScreenCanBeDiscardedAsWellAsCorrected() {
+        val discarded = mutableListOf<Long>()
+        val refused = row(7, RowState.REFUSED, code = "stock_unavailable").copy(
+            body = """{"customer_id":"c1","store_id":1,"channel_id":1,"occurred_at":"2026-11-18T12:00:00Z",""" +
+                """"lines":[{"product_id":2,"quantity":1,"unit_price":"40.00"}]}"""
+        )
+        show(
+            {
+                SaleUi(
+                    customer = ana,
+                    store = store,
+                    registration = ready,
+                    sale = cart(SaleLine(shirt, 1), queuedRowId = 7),
+                    queued = refused,
+                    history = listOf(refused),
+                    kept = setOf("client-7")
+                )
+            },
+            SaleActions(onDiscard = { discarded += it.id })
+        )
+        compose.onNodeWithText("Your cart is kept as it was. Fix it and confirm again, or discard this sale.")
+            .assertExists()
+        compose.onNodeWithTag("back-to-cart").assertExists()
+        compose.onNodeWithTag("discard-sale").performScrollTo().performClick()
+        assertEquals(listOf(7L), discarded)
+    }
+
+    // ---- #1156: a refused sale at 375 x 667 dp keeps its reason and its line in view ----
+
+    /** What is left between the top bar and the bottom navigation on a 375 x 667 dp phone. */
+    private val phone = DpSize(375.dp, 432.dp)
+
+    @Test
+    fun aRefusedSaleAt375dpShowsItsReasonAndItsLineAboveAShortBarAndBackToCartFindsTheLine() {
+        val sent = """{"customer_id":"c1","store_id":1,"channel_id":1,"occurred_at":"2026-11-18T12:00:00Z",""" +
+            """"lines":[{"product_id":1,"quantity":1,"unit_price":"12.50"},""" +
+            """{"product_id":2,"quantity":1,"unit_price":"40.00"}]}"""
+        val waiting = row(7, RowState.PENDING).copy(body = sent)
+        val refused = waiting.copy(
+            state = RowState.REFUSED,
+            code = "no_stock_record",
+            status = 422,
+            responseBody = """{"code":"no_stock_record","message":"x",""" +
+                """"details":[{"field":"lines[1].product_id","code":"no_stock_record"}]}"""
+        )
+        val lines = arrayOf(SaleLine(socks, 1), SaleLine(shirt, 1))
+        val queued = SaleUi(
+            customer = ana,
+            store = store,
+            registration = ready,
+            sale = cart(*lines, queuedRowId = 7),
+            queued = waiting,
+            history = listOf(waiting),
+            kept = setOf("client-7")
+        )
+        var ui by mutableStateOf(queued)
+        var back = 0
+        val actions = SaleActions(
+            onBackToCart = {
+                back++
+                ui = ui.copy(sale = cart(*lines).copy(corrects = listOf("client-7")), queued = null)
+            }
+        )
+        compose.setContent {
+            MosaiqTheme(darkTheme = false) {
+                Box(Modifier.size(phone)) { SalesContent(ui, actions, SnackbarHostState()) {} }
+            }
+        }
+        // The seller is down at the history when the refusal arrives.
+        compose.onNodeWithTag("sale-row-7").performScrollTo()
+        ui = queued.copy(queued = refused, history = listOf(refused))
+        compose.waitForIdle()
+
+        val bar = compose.onNodeWithTag("sale-bar").getUnclippedBoundsInRoot()
+        assertTrue("The bar takes ${bar.height}", bar.height <= 667.dp / 4)
+        // Only "Back to cart" stays pinned; the other ways out moved into the refusal card.
+        compose.onNode(hasText("Start another sale") and hasAnyAncestor(hasTestTag("sale-bar"))).assertDoesNotExist()
+        compose.onNodeWithTag("another-sale").assertExists()
+        val reason = compose.onAllNodesWithText(
+            "This store keeps no stock of a product in the sale. Remove it from the cart."
+        ).onFirst().getUnclippedBoundsInRoot()
+        val line = compose.onNodeWithText("Line: Rain shell").getUnclippedBoundsInRoot()
+        assertTrue("The reason is out of view at ${reason.top}", reason.top >= 0.dp && reason.bottom <= bar.top)
+        assertTrue("The line is out of view at ${line.top}", line.top >= 0.dp && line.bottom <= bar.top)
+
+        compose.onNodeWithTag("back-to-cart").performClick()
+        compose.waitForIdle()
+        assertEquals(1, back)
+        val remove = compose.onNodeWithContentDescription("Remove Rain shell").getUnclippedBoundsInRoot()
+        assertTrue("The line to fix is out of view at ${remove.top}", remove.top >= 0.dp && remove.bottom <= bar.top)
     }
 
     private fun row(id: Long, state: RowState, code: String? = null) = OutboxRow(

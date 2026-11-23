@@ -20,10 +20,14 @@ import online.maxthecoder.mosaiq.floor.auth.Tokens
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.session.Profile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsViewModel
+import online.maxthecoder.mosaiq.floor.ui.CustomerRecordViewModel
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.IdentifyViewModel
+import online.maxthecoder.mosaiq.floor.ui.PromotionsViewModel
 import online.maxthecoder.mosaiq.floor.ui.SalesViewModel
 import online.maxthecoder.mosaiq.floor.ui.ScanViewModel
 import online.maxthecoder.mosaiq.floor.ui.SessionState
+import online.maxthecoder.mosaiq.floor.ui.review.ReviewViewModel
 import online.maxthecoder.mosaiq.floor.ui.shell.FloorHome
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -45,6 +49,9 @@ class FloorProfilesTest {
     private lateinit var scan: ScanViewModel
     private lateinit var sales: SalesViewModel
     private lateinit var insights: CustomerInsightsViewModel
+    private val identify by lazy { IdentifyViewModel(app.graph) }
+    private val record by lazy { CustomerRecordViewModel(app.graph) }
+    private val review by lazy { ReviewViewModel(app.graph) }
     private var role by mutableStateOf("STORE_MANAGER")
 
     private val tags =
@@ -52,7 +59,10 @@ class FloorProfilesTest {
             FloorSection.CHECK_IN to "nav-check-in",
             FloorSection.SCAN to "nav-scan",
             FloorSection.SALE to "nav-sale",
-            FloorSection.OUTBOX to "nav-outbox"
+            FloorSection.INDICATORS to "nav-indicators",
+            FloorSection.OUTBOX to "nav-outbox",
+            FloorSection.CUSTOMER to "nav-customer",
+            FloorSection.REVIEW to "nav-review"
         )
 
     @Before
@@ -81,7 +91,11 @@ class FloorProfilesTest {
             scan = scan,
             sales = sales,
             insights = insights,
-            onSignOut = {}
+            identify = identify,
+            record = record,
+            promotions = PromotionsViewModel(app.graph),
+            onSignOut = {},
+            review = review
         )
     }
 
@@ -100,6 +114,25 @@ class FloorProfilesTest {
             compose.waitForIdle()
             assertBarIs(FloorAccess.sections(it))
             compose.onNodeWithTag("nav-check-in").assertIsSelected()
+        }
+    }
+
+    @Test
+    fun theSupervisorOpensTheReviewAndNoOtherStoreRoleHasIt() {
+        role = "COMMERCIAL_SUPERVISOR"
+        compose.setContent { Home() }
+        compose.onNodeWithTag("nav-review").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("review").assertIsDisplayed()
+        compose.onNodeWithTag("review-incidents").assertExists()
+        compose.onNodeWithTag("review-syncs").assertExists()
+        compose.onNodeWithTag("review-promotions").assertExists()
+
+        listOf("SALES_ASSOCIATE", "STORE_MANAGER", "LOYALTY_OFFICER").forEach {
+            role = it
+            compose.waitForIdle()
+            assertTrue("$it: no review tab", compose.onAllNodesWithTag("nav-review").fetchSemanticsNodes().isEmpty())
+            assertTrue("$it: no review screen", compose.onAllNodesWithTag("review").fetchSemanticsNodes().isEmpty())
         }
     }
 

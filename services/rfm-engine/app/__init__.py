@@ -1,30 +1,38 @@
-"""rfm-engine (F22-04, F22-05, RN-65): keeps each customer's R, F and M current.
+"""rfm-engine (F22-04, F22-05, F22-06, RN-65): keeps each customer's R, F and M current.
 
-A sale recorded on `stream:sales.v1.recorded` names a transaction. The service finds
-the customer of that sale and recomputes that one customer's profile from their net
-purchases under the rule set in force, so a duplicate or reordered delivery gives the
-profile one in-order delivery would. A change to the captured values puts one
-profile-changed event in the outbox, in the same transaction (ADR-0063). The other
-operations of contracts/rfm-engine/openapi.yaml are marked planned (ADR-0073) until
-the stories after this one register them. It is ready when PostgreSQL answers and its
+A sale recorded on `stream:sales.v1.recorded`, and a reversal of one on
+`stream:sales.v1.reversed`, each name a transaction. The service finds the customer
+of that sale and recomputes that one customer's profile from their net purchases
+under the rule set in force, so a duplicate, a late or a reordered delivery gives the
+profile one in-order delivery would. A cancelled or returned sale leaves the profile
+as if it had never counted, because the net view no longer lists it (ADR-0062). A
+change to the captured values puts one profile-changed event in the outbox, in the
+same transaction (ADR-0063). The reads return that stored result and never recompute
+it. The other operations of contracts/rfm-engine/openapi.yaml remain marked planned
+(ADR-0073) until their stories register them, except the verification recalculations
+(F22-08, app/verification.py) and the rule sets (F22-09): an analyst
+creates one as a draft, edits it, publishes it, and a published one is never edited,
+only versioned (app/rulesets.py). It is ready when PostgreSQL answers and its
 own schema is there.
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import redis
-from flask import Flask
-from mosaiq_kit import Kit, Page, configure_logging
+from flask import Flask, g, request
+from mosaiq_kit import Kit, Page, Representation, configure_logging
 from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
-from . import recompute
-from .config import SALE_STREAMS, Settings
+from . import ageing, profiles, recompute, rulesets, store, verification
+from .config import CONSENT_STREAM, RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
 SUFFIX = "rfm"
@@ -36,57 +44,6 @@ def _client(url: str, timeout: float) -> redis.Redis:
     client = service_redis(url, SUFFIX)
     client.connection_pool.connection_kwargs["socket_timeout"] = timeout
     return client
-
-
-def _rule_sets(kit: Kit) -> tuple[list[dict[str, Any]], int]:
-    """The rule sets, newest first. `published` is false for every one: it is true
-    only while model-registry's published version points at the rule set, and that
-    view is not published yet."""
-    offset = (kit.page - 1) * kit.size
-    with kit.db.connection() as connection:
-        total = connection.execute("SELECT count(*) FROM rfm.rule_set").fetchone()
-        rows = connection.execute(
-            "SELECT rule_set_id, name, window_days, recency_boundaries,"
-            " frequency_boundaries, monetary_boundaries, fallback_label_code,"
-            " created_at, created_by FROM rfm.rule_set"
-            " ORDER BY rule_set_id DESC LIMIT %s OFFSET %s",
-            (kit.size, offset),
-        ).fetchall()
-        bands = connection.execute(
-            "SELECT rule_set_id, label_code, r_min, r_max, f_min, f_max, m_min, m_max"
-            " FROM rfm.rule_set_band WHERE rule_set_id = ANY(%s)"
-            " ORDER BY rule_set_id, band_no",
-            ([row[0] for row in rows],),
-        ).fetchall()
-    items = [
-        {
-            "rule_set_id": row[0],
-            "name": row[1],
-            "window_days": row[2],
-            "recency_boundaries": list(row[3]),
-            "frequency_boundaries": list(row[4]),
-            "monetary_boundaries": [f"{value:.2f}" for value in row[5]],
-            "bands": [
-                {
-                    "label_code": band[1],
-                    "r_min": band[2],
-                    "r_max": band[3],
-                    "f_min": band[4],
-                    "f_max": band[5],
-                    "m_min": band[6],
-                    "m_max": band[7],
-                }
-                for band in bands
-                if band[0] == row[0]
-            ],
-            "fallback_label_code": row[6],
-            "published": False,
-            "created_at": row[7],
-            "created_by": str(row[8]) if row[8] else None,
-        }
-        for row in rows
-    ]
-    return [wire_value(item) for item in items], int(total[0] if total else 0)
 
 
 def create_app() -> Flask:
@@ -112,13 +69,203 @@ def create_app() -> Flask:
     holder["kit"] = kit
     app.extensions["mosaiq_kit"] = kit
 
+    @kit.operation("listRfmProfiles")
+    def list_profiles() -> Page:
+        selected = profiles.filters(request.args)
+        with kit.db.connection() as connection:
+            items, total = profiles.listing(
+                connection,
+                state=selected["state"],
+                label_code=selected["label_code"],
+                rule_set_id=selected["rule_set_id"],
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "RfmProfiles",
+            "RfmProfile",
+            "profiles",
+            items,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    @kit.operation("getRfmProfile")
+    def get_profile(customer_id: UUID) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation("RfmProfile", profiles.one(connection, customer_id))
+
     @kit.operation("listRfmRuleSets")
     def list_rule_sets() -> Page:
-        items, total = _rule_sets(kit)
+        flag = request.args.get("published")
+        with kit.db.connection() as connection:
+            items, total = rulesets.listing(
+                connection,
+                published_only=None if flag is None else flag == "true",
+                page=kit.page,
+                size=kit.size,
+            )
+        items = [wire_value(rulesets.compact(item)) for item in items]
         return Page(
             "RfmRuleSets",
             "RfmRuleSet",
             "rule_sets",
+            items,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    def scoring(
+        connection: Any, stream: str, fields: dict[str, str], cause: str
+    ) -> tuple[int, recompute.Applying | None]:
+        """The rule set to score under and what to apply the result as. With no
+        version published the profile is still written and nothing is applied, so an
+        entry is never refused for it (ADR-0087)."""
+        version = recompute.in_force(connection, settings.rule_set_id)
+        if version is None:
+            return settings.rule_set_id, None
+        return version.rule_set_id, recompute.Applying(
+            version, cause, recompute.batch_of(stream, fields)
+        )
+
+    def recompute_sale(
+        stream: str, sale: str, fields: dict[str, str], cause: str
+    ) -> None:
+        if not sale.isdigit():
+            LOGGER.warning("Entry of %s without a transaction id: %r", stream, fields)
+            return
+        with kit.db.transaction() as connection:
+            rule_set_id, applying = scoring(connection, stream, fields, cause)
+            recompute.from_sale(connection, int(sale), rule_set_id, applying=applying)
+
+    def author() -> dict[str, Any]:
+        principal = kit.principal
+        assert principal is not None
+        return principal
+
+    @kit.operation("createRfmRuleSet")
+    def create_rule_set() -> Representation:
+        definition = rulesets.check(kit.body)
+        with kit.db.transaction() as connection:
+            rule_set_id = rulesets.create(connection, author(), definition)
+            created = rulesets.one(connection, rule_set_id)
+        response = Representation("RfmRuleSetDetail", wire_value(created), status=201)
+        response.headers = {"Location": f"/v1/rfm-rule-sets/{rule_set_id}"}
+        return response
+
+    @kit.operation("getRfmRuleSet")
+    def get_rule_set(rule_set_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation(
+                "RfmRuleSetDetail", wire_value(rulesets.one(connection, rule_set_id))
+            )
+
+    @kit.operation("updateRfmRuleSet")
+    def update_rule_set(rule_set_id: int) -> Representation:
+        definition = rulesets.check(kit.body)
+        with kit.db.transaction() as connection:
+            rulesets.edit(connection, author(), rule_set_id, definition)
+            edited = rulesets.one(connection, rule_set_id)
+        return Representation("RfmRuleSetDetail", wire_value(edited))
+
+    @kit.operation("createRfmRuleSetVersion")
+    def create_rule_set_version(rule_set_id: int) -> Representation:
+        definition = rulesets.check(kit.body)
+        with kit.db.transaction() as connection:
+            new_id = rulesets.version(connection, author(), rule_set_id, definition)
+            created = rulesets.one(connection, new_id)
+        response = Representation("RfmRuleSetDetail", wire_value(created), status=201)
+        response.headers = {"Location": f"/v1/rfm-rule-sets/{new_id}"}
+        return response
+
+    @kit.operation("publishRfmRuleSet")
+    def publish_rule_set(rule_set_id: int) -> Representation:
+        with kit.db.transaction() as connection:
+            rulesets.publish(connection, author(), rule_set_id)
+            frozen = rulesets.one(connection, rule_set_id)
+        return Representation("RfmRuleSetDetail", wire_value(frozen))
+
+    verifications: list[threading.Thread] = []
+    app.extensions["rfm_verifications"] = verifications
+
+    @kit.operation("createRfmRecalculation")
+    def create_recalculation() -> Representation:
+        principal = author()
+        body = kit.body or {}
+        # The lock is taken before the row is recorded and handed to the thread, which
+        # holds it to the end; a RUNNING row left by a stopped process is reaped here.
+        row, lock = verification.begin(
+            kit.db,
+            trigger="ON_DEMAND",
+            started_by=str(principal["sub"]),
+            rule_set_id=body.get("rule_set_id"),
+            in_force=settings.rule_set_id,
+        )
+        thread = threading.Thread(
+            target=verification.execute,
+            args=(
+                kit.db,
+                row["recalculation_id"],
+                (str(principal["sub"]), str(principal["role"])),
+            ),
+            kwargs={
+                "lock": lock,
+                "correlation_id": getattr(g, "correlation_id", None),
+            },
+            name=f"rfm-verification-{row['recalculation_id']}",
+            daemon=True,
+        )
+        verifications.append(thread)
+        thread.start()
+        response = Representation("RfmRecalculation", wire_value(row), status=201)
+        response.headers = {
+            "Location": f"/v1/rfm-recalculations/{row['recalculation_id']}"
+        }
+        return response
+
+    @kit.operation("listRfmRecalculations")
+    def list_recalculations() -> Page:
+        filters = verification.filters(request.args)
+        with kit.db.connection() as connection:
+            items, total = verification.listing(
+                connection,
+                state=filters["state"],
+                trigger=filters["trigger"],
+                rule_set_id=filters["rule_set_id"],
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "RfmRecalculations",
+            "RfmRecalculation",
+            "recalculations",
+            [wire_value(item) for item in items],
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    @kit.operation("getRfmRecalculation")
+    def get_recalculation(recalculation_id: int) -> Representation:
+        with kit.db.connection() as connection:
+            row = verification.one(connection, recalculation_id)
+        return Representation("RfmRecalculation", wire_value(row))
+
+    @kit.operation("listRfmRecalculationDifferences")
+    def list_recalculation_differences(recalculation_id: int) -> Page:
+        with kit.db.connection() as connection:
+            items, total = verification.differences(
+                connection, recalculation_id, page=kit.page, size=kit.size
+            )
+        return Page(
+            "RfmRecalculationDifferences",
+            "RfmRecalculationDifference",
+            "differences",
             items,
             page=kit.page,
             size=kit.size,
@@ -132,19 +279,57 @@ def create_app() -> Flask:
         `entity_id` names the sale, never the customer. A failure raises, so the
         kit redelivers, up to five times.
         """
-        entity = fields.get("entity_id", "")
-        if not entity.isdigit():
-            LOGGER.warning("Sale entry without a transaction id: %r", fields)
+        recompute_sale(RECORDED_STREAM, fields.get("entity_id", ""), fields, "SALE")
+
+    def handle_reversal(fields: dict[str, str]) -> None:
+        """One entry of `stream:sales.v1.reversed`: recompute the reversed sale's
+        customer. `entity_id` is `sale_id:reversal_id`, and the sale is the part
+        before the colon. The customer comes from the gross view, which still lists
+        a sale that was cancelled in full; the net view no longer does, so the sale
+        stops counting and the customer is recomputed without it."""
+        sale, _, reversal = fields.get("entity_id", "").partition(":")
+        if not reversal.isdigit():
+            LOGGER.warning(
+                "Entry of %s without a reversal id: %r", REVERSED_STREAM, fields
+            )
+            return
+        recompute_sale(REVERSED_STREAM, sale, fields, "REVERSAL")
+
+    def handle_consent(fields: dict[str, str]) -> None:
+        """One entry of `stream:preferences.v1.consent_changed`: re-read the
+        customer's PROFILING decision and act on what it says now. The entry does not
+        say which purpose moved or which way, so a replay or a reordering cannot leave
+        the customer on an older decision (ADR-0066 section 2)."""
+        try:
+            customer_id = UUID(fields.get("entity_id", ""))
+        except ValueError:
+            LOGGER.warning("Entry of %s without a customer: %r", CONSENT_STREAM, fields)
             return
         with kit.db.transaction() as connection:
-            recompute.from_sale(connection, int(entity), settings.rule_set_id)
+            # CONSENT_GRANTED only when PROFILING is granted now: an entry about
+            # another purpose that finds the customer overdue moves them for the
+            # clock, and a withdrawal is recorded as CONSENT_WITHDRAWN anyway.
+            granted = store.profiling_decision(connection, customer_id) == "GRANTED"
+            rule_set_id, applying = scoring(
+                connection,
+                CONSENT_STREAM,
+                fields,
+                "CONSENT_GRANTED" if granted else "AGEING",
+            )
+            recompute.customer(connection, customer_id, rule_set_id, applying=applying)
 
+    app.extensions["rfm_handle_consent"] = handle_consent
     app.extensions["rfm_handle_sale"] = handle_sale
+    app.extensions["rfm_handle_reversal"] = handle_reversal
     if settings.stream_consumer_enabled:
         consumers = []
-        for stream in SALE_STREAMS:
+        for stream, handler in (
+            (RECORDED_STREAM, handle_sale),
+            (REVERSED_STREAM, handle_reversal),
+            (CONSENT_STREAM, handle_consent),
+        ):
             consumer = StreamConsumer(
-                _client(settings.redis_state_url, 10), stream, handle_sale
+                _client(settings.redis_state_url, 10), stream, handler
             )
             consumer.start()
             consumers.append(consumer)
@@ -158,4 +343,24 @@ def create_app() -> Flask:
         )
         relay.start()
         app.extensions["rfm_relay"] = relay
+    if kit.db.dsn:
+        try:
+            verification.reap_orphans(kit.db)
+        except Exception:  # noqa: BLE001 - the schema may not be there yet
+            LOGGER.exception("Could not look for an unfinished verification")
+    if settings.verification_enabled and kit.db.dsn:
+        weekly = verification.WeeklyVerification(
+            kit.db,
+            settings.rule_set_id,
+            settings.verification_weekday,
+            settings.verification_at,
+        )
+        weekly.start()
+        app.extensions["rfm_weekly_verification"] = weekly
+    if settings.pass_enabled and kit.db.dsn:
+        daily = ageing.DailyPass(
+            kit.db, None, settings.pass_at, default_rule_set_id=settings.rule_set_id
+        )
+        daily.start()
+        app.extensions["rfm_daily_pass"] = daily
     return app

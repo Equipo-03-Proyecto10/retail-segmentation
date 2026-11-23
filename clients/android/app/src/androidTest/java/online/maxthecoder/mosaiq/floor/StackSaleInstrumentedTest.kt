@@ -6,13 +6,16 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.work.ListenableWorker
 import androidx.work.testing.TestListenableWorkerBuilder
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.OffsetDateTime
 import kotlinx.coroutines.runBlocking
+import okhttp3.Interceptor
 import online.maxthecoder.mosaiq.floor.auth.InMemoryTokenStore
 import online.maxthecoder.mosaiq.floor.auth.SessionEvents
 import online.maxthecoder.mosaiq.floor.auth.SessionResult
+import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.Network
 import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.net.Sale
@@ -66,7 +69,8 @@ class StackSaleInstrumentedTest {
                 database.outbox(),
                 { null },
                 {},
-                "instrumented stack test"
+                "instrumented stack test",
+                notified = database.notified()
             )
         app.graph = graph
     }
@@ -76,8 +80,15 @@ class StackSaleInstrumentedTest {
         if (::database.isInitialized) database.close()
     }
 
-    @Test
-    fun aSaleQueuedOnTheFloorIsRecordedOnceAndReadsBack() = runBlocking {
+    /** The signed-in manager's pick of a customer, an in-stock product and the in-store channel. */
+    private class Counter(
+        val customer: Customer,
+        val store: Store,
+        val product: Product,
+        val channelId: Int
+    )
+
+    private suspend fun readyToSell(): Counter {
         val signIn = graph.sessions.signIn(EMAIL, PASSWORD)
         assertTrue("sign-in answered $signIn", signIn is SessionResult.SignedIn)
         val network = graph.network
@@ -86,15 +97,24 @@ class StackSaleInstrumentedTest {
         val customer = network.customers.searchCustomers().body()!!.customers.first()
         val (store, product) = stockedPair(network)
         graph.session.choose(ChosenStore(store.storeId, store.name))
+        return Counter(customer, store, product, channel.channelId)
+    }
 
-        val id =
-            graph.writes.queueSale(
-                customer.customerId,
-                store.storeId,
-                channel.channelId,
-                listOf(SaleLineRequest(product.productId, 1, product.listPrice)),
-                OffsetDateTime.now().minusMinutes(1)
-            )
+    private suspend fun queue(counter: Counter): Long = graph.writes.queueSale(
+        counter.customer.customerId,
+        counter.store.storeId,
+        counter.channelId,
+        listOf(SaleLineRequest(counter.product.productId, 1, counter.product.listPrice)),
+        OffsetDateTime.now().minusMinutes(1)
+    )
+
+    @Test
+    fun aSaleQueuedOnTheFloorIsRecordedOnceAndReadsBack() = runBlocking {
+        val counter = readyToSell()
+        val network = graph.network
+        val (customer, store, product) = Triple(counter.customer, counter.store, counter.product)
+
+        val id = queue(counter)
         assertEquals(ListenableWorker.Result.success(), work())
         val row = graph.outbox.find(id)!!
         assertEquals(RowState.DONE, row.state)
@@ -104,13 +124,64 @@ class StackSaleInstrumentedTest {
         val read = network.sales.getSale(recorded.saleId).body()!!
         assertEquals(customer.customerId, read.customerId)
         assertEquals(store.storeId, read.storeId)
-        assertEquals(channel.channelId, read.channelId)
+        assertEquals(counter.channelId, read.channelId)
         assertEquals(listOf(product.productId), read.lines.map { it.productId })
 
         // A second pass has nothing left to send: still one sale.
         assertEquals(ListenableWorker.Result.success(), work())
         val sales = network.sales.listSales(customer.customerId, size = 100).body()!!.sales
         assertEquals(1, sales.count { it.saleId == recorded.saleId })
+    }
+
+    /**
+     * F27-13: the real services commit the sale and the connection drops before the answer reaches the phone.
+     * An interceptor lets the first sale request through, closes its response and fails the call, as a cut
+     * line does; the queue keeps the sale pending, and the replay under the same Idempotency-Key is answered
+     * 200 with the sale the first request made, so the customer has exactly one more sale.
+     */
+    @Test
+    fun aSaleWhoseAnswerIsLostIsReplayedAsTheSameSaleAndNeverTwice() = runBlocking {
+        val counter = readyToSell()
+        val network = graph.network
+        val before = network.sales.listSales(counter.customer.customerId, size = 100).body()!!.sales.map { it.saleId }
+        val id = queue(counter)
+        val key = graph.outbox.find(id)!!.clientId
+
+        val seen = mutableListOf<String?>()
+        val cutting =
+            Interceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val sale = chain.request().header("Idempotency-Key")
+                if (sale != null) seen += sale
+                if (sale != null && seen.size == 1) {
+                    response.close()
+                    throw IOException("the line was cut after the server answered")
+                }
+                response
+            }
+        val client = network.client.newBuilder().addInterceptor(cutting).build()
+        val drain: suspend () -> ListenableWorker.Result = {
+            OutboxWorker.drain(graph.outbox, graph.session, graph.tokens, client, network.gateway)
+        }
+
+        assertEquals(ListenableWorker.Result.retry(), drain())
+        // Never claimed recorded: the phone holds no answer, and the row is still pending.
+        assertEquals(RowState.PENDING, graph.outbox.find(id)!!.state)
+        assertEquals(null, graph.outbox.find(id)!!.responseBody)
+        val committed =
+            network.sales.listSales(counter.customer.customerId, size = 100).body()!!.sales.map { it.saleId }
+        assertEquals("the server committed the sale", before.size + 1, committed.size)
+
+        assertEquals(ListenableWorker.Result.success(), drain())
+        assertEquals(listOf(key, key), seen)
+        val row = graph.outbox.find(id)!!
+        assertEquals(RowState.DONE, row.state)
+        assertEquals(200, row.status)
+        assertEquals("idempotent_replayed", row.code)
+        val recorded = json.decodeFromString(Sale.serializer(), row.responseBody!!)
+        assertEquals((committed - before.toSet()).single(), recorded.saleId)
+        val after = network.sales.listSales(counter.customer.customerId, size = 100).body()!!.sales
+        assertEquals("one sale, not two", before.size + 1, after.size)
     }
 
     /** An active store and an active, priced product it has in stock. */

@@ -2,6 +2,8 @@
 
 import http.client
 import json
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -14,8 +16,13 @@ from tests.parity.compare import (
     AuditShape,
     CaseResult,
     Difference,
+    EngineRfm,
+    Recommendation,
+    RecommendationDifference,
     ReportDifference,
+    RfmDifference,
     SegmentDifference,
+    WebRfm,
     assignment_from_service,
     audit_shape,
     credentials_in,
@@ -23,11 +30,15 @@ from tests.parity.compare import (
     diff_audit,
     diff_levels,
     diff_members,
+    diff_recommendations,
+    diff_rfm,
     parse_customer_current,
     parse_propagation_bound,
+    parse_recommendations_page,
     parse_report_open_members,
     parse_reports_revenue,
     parse_stock_page,
+    recommendation_from_service,
     write_results,
 )
 from tests.parity.stack import ParityClient
@@ -430,3 +441,182 @@ def test_an_index_without_sales_has_no_figures() -> None:
 def test_a_report_difference_names_the_figure() -> None:
     found = ReportDifference("reports index", "revenue", "10.00", "20.00")
     assert "reports index: revenue: web='10.00' expected='20.00'" == str(found)
+
+
+# ---------- RFM (F20-11) ----------
+
+BOUGHT = datetime(2026, 11, 1, 9, 30, tzinfo=UTC)
+COMPUTED = datetime(2026, 11, 21, 12, 0, tzinfo=UTC)
+CUSTOMER = "11111111-1111-1111-1111-111111111111"
+
+
+def _web(frequency=3, monetary="120.50", at=BOUGHT) -> WebRfm:
+    return WebRfm(at, frequency, Decimal(monetary))
+
+
+def _engine(r_days=20, f_count=3, m_total="120.50", state="scored") -> EngineRfm:
+    return EngineRfm(state, r_days, f_count, Decimal(m_total), COMPUTED)
+
+
+def test_the_same_raw_values_are_no_difference() -> None:
+    # 20 days and 2 hours 30 minutes from the last purchase to computed_at.
+    assert diff_rfm({CUSTOMER: _web()}, {CUSTOMER: _engine()}) == []
+
+
+def test_recency_is_the_whole_days_to_the_profiles_own_clock() -> None:
+    just_under = BOUGHT - timedelta(hours=21, minutes=30)  # 21 days to COMPUTED
+    assert (
+        diff_rfm({CUSTOMER: _web(at=just_under)}, {CUSTOMER: _engine(r_days=21)}) == []
+    )
+    found = diff_rfm({CUSTOMER: _web()}, {CUSTOMER: _engine(r_days=21)})
+    assert found == [RfmDifference(CUSTOMER, "recency_days", 20, 21)]
+
+
+def test_each_difference_names_the_customer_and_both_values() -> None:
+    found = diff_rfm(
+        {CUSTOMER: _web(frequency=3, monetary="120.50")},
+        {CUSTOMER: _engine(f_count=4, m_total="150.00")},
+    )
+    assert [str(d) for d in found] == [
+        f"{CUSTOMER}: frequency: web=3 rfm-engine=4",
+        f"{CUSTOMER}: monetary: web=Decimal('120.50') rfm-engine=Decimal('150.00')",
+    ]
+
+
+def test_money_is_compared_as_a_decimal_not_as_text() -> None:
+    assert (
+        diff_rfm(
+            {CUSTOMER: _web(monetary="120.5")}, {CUSTOMER: _engine(m_total="120.50")}
+        )
+        == []
+    )
+
+
+def test_a_customer_with_no_purchase_agrees_with_an_unassigned_profile_or_none() -> (
+    None
+):
+    nothing = WebRfm(None, None, None)
+    unassigned = EngineRfm("unassigned", None, 0, Decimal("0.00"), COMPUTED)
+    assert diff_rfm({CUSTOMER: nothing}, {CUSTOMER: unassigned}) == []
+    assert diff_rfm({CUSTOMER: nothing}, {}) == []
+
+
+def test_a_purchase_with_no_scored_profile_is_a_difference() -> None:
+    found = diff_rfm({CUSTOMER: _web()}, {})
+    assert found == [
+        RfmDifference(CUSTOMER, "profile", (BOUGHT, 3, Decimal("120.50")), None)
+    ]
+    pending = EngineRfm("pending", None, None, None, COMPUTED)
+    assert diff_rfm({CUSTOMER: _web()}, {CUSTOMER: pending})[0].engine == "pending"
+
+
+def test_a_scored_profile_with_no_web_purchase_is_a_difference() -> None:
+    found = diff_rfm({CUSTOMER: WebRfm(None, None, None)}, {CUSTOMER: _engine()})
+    assert found == [
+        RfmDifference(CUSTOMER, "profile", None, (20, 3, Decimal("120.50")))
+    ]
+
+
+def test_a_customer_only_one_side_knows_is_found() -> None:
+    other = "22222222-2222-2222-2222-222222222222"
+    found = diff_rfm({CUSTOMER: _web()}, {other: _engine()})
+    assert [d.customer_id for d in found] == sorted([CUSTOMER, other])
+
+
+def test_differences_are_listed_in_customer_order() -> None:
+    low, high = (
+        "00000000-0000-0000-0000-000000000001",
+        "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    )
+    found = diff_rfm(
+        {high: _web(frequency=1), low: _web(frequency=1)},
+        {high: _engine(f_count=2), low: _engine(f_count=2)},
+    )
+    assert [d.customer_id for d in found] == [low, high]
+
+
+def test_an_rfm_difference_is_written_to_the_results_file(tmp_path) -> None:
+    path = tmp_path / "parity.json"
+    found = RfmDifference(CUSTOMER, "frequency", 3, 4)
+    write_results([CaseResult("rfm", "failed", "x", [found])], path)
+    entry = json.loads(path.read_text())["cases"][0]["differences"][0]
+    assert entry == {
+        "customer_id": CUSTOMER,
+        "what": "frequency",
+        "web": 3,
+        "engine": 4,
+    }
+
+
+# ---------- recommendations (F20-10) ----------
+
+_ITEM_HTML = """
+<article class="mq-panel" data-recommendation="{product}">
+  <dl class="mq-description-list">
+    <dt>Store</dt><dd>Centro</dd>
+    <dt>Available stock</dt><dd class="mq-num">{units}</dd>
+  </dl>
+</article>"""
+
+
+def test_the_recommendations_page_lists_products_in_order_with_their_stock() -> None:
+    html = _ITEM_HTML.format(product=245, units="8 units") + _ITEM_HTML.format(
+        product=120, units="1 unit"
+    )
+    assert parse_recommendations_page(html) == Recommendation(
+        "recommended", ((245, 8), (120, 1))
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "status"),
+    [
+        ("No segment available", "no_segment"),
+        ("No usual store", "no_usual_store"),
+        ("No eligible products", "none_match"),
+    ],
+)
+def test_an_empty_recommendations_page_says_why(title: str, status: str) -> None:
+    html = f'<span class="mq-state__title">{title}</span>'
+    assert parse_recommendations_page(html) == Recommendation(status)
+
+
+def test_a_page_with_neither_items_nor_a_reason_is_refused() -> None:
+    with pytest.raises(ValueError):
+        parse_recommendations_page("<main></main>")
+
+
+def test_an_item_without_its_stock_line_is_refused_not_paired_with_the_next() -> None:
+    first = '<article data-recommendation="245"><dt>Store</dt><dd>Centro</dd></article>'
+    html = first + _ITEM_HTML.format(product=120, units="1 unit")
+    with pytest.raises(ValueError, match="2 recommendation items, 1 with"):
+        parse_recommendations_page(html)
+
+
+def test_the_services_segment_statuses_are_the_webs_no_segment() -> None:
+    for status in ("no_open_assignment", "unassigned_result"):
+        assert recommendation_from_service({"status": status, "items": []}) == (
+            Recommendation("no_segment")
+        )
+    body = {
+        "status": "recommended",
+        "items": [
+            {"product_id": 245, "quantity_on_hand": 8},
+            {"product_id": 120, "quantity_on_hand": 14},
+        ],
+    }
+    assert recommendation_from_service(body).products == (245, 120)
+
+
+def test_recommendations_differ_by_status_then_order_then_stock() -> None:
+    web = Recommendation("recommended", ((1, 5), (2, 3)))
+    assert diff_recommendations("sale", web, web) == []
+    assert diff_recommendations("sale", web, Recommendation("none_match")) == [
+        RecommendationDifference("sale", "status", "recommended", "none_match")
+    ]
+    reordered = Recommendation("recommended", ((2, 3), (1, 5)))
+    assert diff_recommendations("sale", web, reordered)[0].what == "products"
+    restocked = Recommendation("recommended", ((1, 5), (2, 4)))
+    assert diff_recommendations("stock", web, restocked) == [
+        RecommendationDifference("stock", "product 2 on hand", 3, 4)
+    ]

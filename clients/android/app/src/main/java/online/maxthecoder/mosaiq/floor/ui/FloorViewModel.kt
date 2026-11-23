@@ -64,9 +64,12 @@ class FloorViewModel(
                 if (state is CheckInState.Queued) graph.outbox.observe(state.rowId) else emptyFlow()
             }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** Refused rows and rows still waiting, for the outbox screen. */
-    val open: StateFlow<List<OutboxRow>> =
-        graph.outbox.observeOpen().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /**
+     * Refused rows and rows still waiting, for the outbox screen; null until Room first answers, so the
+     * outbox shows a loading state rather than claiming everything is synced.
+     */
+    val open: StateFlow<List<OutboxRow>?> =
+        graph.outbox.observeOpen().stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     /** The rows whose request is on the wire right now. */
     val sending: StateFlow<Set<Long>> = graph.inFlight.ids
@@ -130,10 +133,19 @@ class FloorViewModel(
     }
 
     /** Asks the queue to send what is waiting now; each row goes out as stored, so it cannot become a second write. */
-    fun sendNow() = graph.kick()
+    fun sendNow() = graph.sendNow()
+
+    /** Forgets the session on this phone without a network call, for a role the floor holds nothing for. */
+    fun forgetSession() {
+        viewModelScope.launch { graph.sessions.signOutLocally() }
+    }
 
     fun dismiss(row: OutboxRow) {
-        viewModelScope.launch { graph.outbox.dismiss(row.id) }
+        viewModelScope.launch {
+            // A refused sale's cart is kept for correcting it; once the row is gone the cart has no use.
+            graph.drafts.forget(row.userId, listOf(row.clientId))
+            graph.outbox.dismiss(row.id)
+        }
     }
 
     /** How many of the signed-in user's writes would wait if they signed out. */

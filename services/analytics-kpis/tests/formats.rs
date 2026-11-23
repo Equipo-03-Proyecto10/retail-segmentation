@@ -420,14 +420,9 @@ async fn an_operation_that_is_planned_is_not_served() {
         return;
     };
     let admin = stack.token("ADMIN");
-    for path in [
-        "spend",
-        "retention",
-        "migrations",
-        "conversion",
-        "recommendation-performance",
-        "campaign-performance",
-    ] {
+    // campaign-performance is served since F26-04; the other two wait for their
+    // producers' views (api_recommendations.interaction_v1 and the rest).
+    for path in ["conversion", "recommendation-performance"] {
         let uri = format!("/v1/kpi-reports/{path}?from=2020-03-01&to=2020-03-31");
         let (status, body) = send(&stack.app, "GET", &uri, Some(&admin), JSON).await;
         assert_eq!(status, 404, "{path}: {body}");

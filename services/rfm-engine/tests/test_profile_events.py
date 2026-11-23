@@ -402,12 +402,12 @@ def test_the_rule_sets_listing_shows_the_seeded_rule_set(
     response = build_app().test_client().get("/v1/rfm-rule-sets", headers=token())
     assert response.status_code == 200
     body = response.get_json()
-    first = body["rule_sets"][0]
+    first = next(item for item in body["rule_sets"] if item["rule_set_id"] == 1)
     assert (first["window_days"], first["recency_boundaries"]) == (
         180,
         [20, 44, 68, 92],
     )
     assert first["monetary_boundaries"][0] == "4510.00"
     assert len(first["bands"]) == 30 and first["fallback_label_code"] == "LOST"
-    assert first["published"] is False
+    assert first["published"] is True and "state" not in first
     assert body["page_info"]["total"] >= 1

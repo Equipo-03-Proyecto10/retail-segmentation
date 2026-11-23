@@ -49,11 +49,12 @@ def _capture_all(url: str) -> dict[str, dict[str, Any]]:
 
 
 @pytest.fixture(scope="module")
-def two_captures(app_url: str) -> tuple[Any, ...]:
-    before = _state(app_url)
-    first = _capture_all(app_url)
-    second = _capture_all(app_url)
-    return before, _state(app_url), first, second
+def two_captures(owner_url: str) -> tuple[Any, ...]:
+    # The rfm port records reversals as svc_sales, which only the owner can do.
+    before = _state(owner_url)
+    first = _capture_all(owner_url)
+    second = _capture_all(owner_url)
+    return before, _state(owner_url), first, second
 
 
 def test_a_full_capture_leaves_the_database_unchanged(two_captures) -> None:
@@ -109,6 +110,11 @@ def test_the_cases_cover_what_adr_0045_lists(two_captures) -> None:
     assert "no treatment group" in (
         campaigns["activate-draft-with-control-only-experiment"]["reason"]
     )
+
+    rfm = {c["id"]: c["outcome"]["observed"] for c in fixtures["rfm"]["cases"]}
+    assert len(rfm["seeded-customers"]["customers"]) == 30
+    assert rfm["only-sale-cancelled"]["frequency"] is None
+    assert rfm["cancelled-latest-sale"]["frequency"] == 1
 
     segments = {c["id"]: c["outcome"] for c in fixtures["segments"]["cases"]}
     assert segments["rn39-label-comparison"]["migrations"][0]["direction"] == (

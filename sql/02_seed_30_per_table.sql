@@ -718,6 +718,22 @@ FROM (
 ) AS l
 WHERE l.transaction_id = t.transaction_id;
 
+-- ---------- sales.sale_line_price (30, F25-05) ----------
+-- The list price a phone sale keeps beside each line (RN-13). The seeded sales are
+-- not phone sales, so these rows stand for fifteen sales (101 to 115) as if they
+-- had been recorded through POST /v1/sales on the day of the load, at the
+-- product's list price of that day. They avoid the sales sql/verify_integrity.sql
+-- moves lines between (1 and 2), whose probes must meet their own refusal first.
+-- The seeded promotions belong to campaigns of early 2026, so no line names one.
+-- The rows are illustrative: these sales have no sales.sale_capture row, which is
+-- runtime state and seed-exempt.
+INSERT INTO sales.sale_line_price (transaction_id, product_id, list_price, promotion_id)
+SELECT l.transaction_id, l.product_id, p.list_price, NULL
+FROM transaction_line AS l
+JOIN product AS p USING (product_id)
+WHERE l.transaction_id BETWEEN 101 AND 115
+ORDER BY l.transaction_id, l.product_id;
+
 -- ---------- customer_segment_history (F7-02) ----------
 -- History is a materialized record of each run's RFM input, not a second
 -- illustrative dataset.  Derive every raw value from the transactions that
@@ -870,6 +886,35 @@ INSERT INTO campaigns.campaign_excluded_label (campaign_id, label_code)
 SELECT n, (ARRAY['CHAMPION','LOYAL','POTENTIAL','AT_RISK','HIBERNATING','LOST'])[1+((n+1)%6)]
 FROM generate_series(1,30) n;
 
+-- ---------- campaigns.promotion, promotion_store, promotion_channel (30 each, #1104) ----------
+-- One promotion per seeded campaign, valid inside its campaign's dates (RN-71):
+-- it starts up to four days after the campaign and ends up to two days before.
+-- The identity allocates promotion_id 1 to 30 in campaign order. Promotion n
+-- applies at store n and on channel 1 + (n - 1) % 5. The seeded campaigns are
+-- dated in early 2026, so none of these is in api_campaigns.active_promotion_v1
+-- today; an active one is made by the campaigns flow, not by the seed.
+INSERT INTO campaigns.promotion (campaign_id, name, discount_percent, starts_on, ends_on)
+SELECT c.campaign_id, 'Promotion ' || c.campaign_id,
+       (5 + (c.campaign_id % 6) * 5)::numeric(5,2),
+       c.starts_on + (c.campaign_id % 5),
+       c.ends_on - (c.campaign_id % 3)
+FROM campaign AS c
+ORDER BY c.campaign_id;
+
+INSERT INTO campaigns.promotion_store (promotion_id, store_id)
+SELECT p.promotion_id, s.store_id
+FROM campaigns.promotion AS p
+JOIN store AS s
+  ON s.store_id = (SELECT store_id FROM store ORDER BY store_id
+                   OFFSET (p.promotion_id - 1) % (SELECT count(*) FROM store) LIMIT 1);
+
+INSERT INTO campaigns.promotion_channel (promotion_id, channel_id)
+SELECT p.promotion_id, ch.channel_id
+FROM campaigns.promotion AS p
+JOIN channel AS ch
+  ON ch.channel_id = (SELECT channel_id FROM channel ORDER BY channel_id
+                      OFFSET (p.promotion_id - 1) % (SELECT count(*) FROM channel) LIMIT 1);
+
 -- ---------- checkins.customer_visit (30, consent-authorized customers) ----------
 -- Every seeded customer has a latest PROFILING decision of GRANTED above.
 -- Visit n uses that customer and store n, and even visits name campaign n.
@@ -965,6 +1010,22 @@ FROM (
 WHERE rn = 1
 ORDER BY assignment_id;
 
+-- A second treatment assignee is reached in every even-numbered experiment, three
+-- to seven hours after being assigned, so half the experiments still leave a
+-- treatment customer unexposed (ADR-0019) while the sales that follow these
+-- exposures give F25-12 (ADR-0069) real attributions to hold.
+INSERT INTO experiment_exposure (assignment_id, exposed_at)
+SELECT assignment_id, assigned_at + make_interval(hours => 3 + experiment_id % 5)
+FROM (
+    SELECT a.assignment_id, a.experiment_id, a.assigned_at,
+           ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
+    FROM experiment_assignment a
+    JOIN experiment_group g ON g.group_id = a.group_id
+    WHERE g.kind = 'TREATMENT'
+) ranked
+WHERE rn = 2 AND experiment_id % 2 = 0
+ORDER BY assignment_id;
+
 -- ---------- experiment_conversion (every qualifying sale of every assignee) ----------
 -- What F11-06 evaluates, as web/db/experiment_conversions.py evaluates it: an
 -- assignee's own sale in [assigned_at, assigned_at + conversion_window_days),
@@ -981,6 +1042,13 @@ JOIN transaction t
  AND t.occurred_at >= a.assigned_at
  AND t.occurred_at < a.assigned_at + make_interval(days => x.conversion_window_days)
 ORDER BY a.assignment_id, t.occurred_at, t.transaction_id;
+
+-- ---------- experiments.sale_attribution (one row per attributed sale) ----------
+-- Written by the function the service calls, so the seed holds no second copy of
+-- the holder rule (ADR-0069). A sale whose window is still open stays unwritten.
+DO $attr$ BEGIN
+    PERFORM experiments.attribute_experiment(n) FROM generate_series(1,30) AS n;
+END $attr$;
 
 -- ---------- inventory (30 stores x 5 products = 150) ----------
 INSERT INTO inventory (store_id, product_id, quantity_on_hand)
@@ -1296,6 +1364,35 @@ BEGIN
     UPDATE models.model_version
        SET state = 'PUBLISHED', published_at = created_at
      WHERE method = 'RFM_RULES';
+
+    -- The one drift report the seed can state honestly (F23-09): the report the
+    -- monitor would write if it ran as the seed does (ADR-0088). Its window ends at
+    -- the latest 03:00 UTC, and the version was published after that window began,
+    -- so it is NOT_COMPARED: its profiles were not scored under it. Its customers
+    -- are the scored profiles the seed holds, none (rfm.customer_profile starts
+    -- empty). The variables, statistics, bins and alerts the monitor writes are not
+    -- seeded: a figure here would not come from any window.
+    INSERT INTO models.drift_report
+        (version_id, kind, comparison, not_compared_reason, window_start, window_end,
+         customer_count, computed_at)
+    SELECT v.version_id, 'DATA_DRIFT',
+           CASE WHEN p.published_at > w.window_end - interval '30 days'
+                THEN 'NOT_COMPARED' ELSE 'INSUFFICIENT_DATA' END,
+           CASE WHEN p.published_at > w.window_end - interval '30 days'
+                THEN 'VERSION_CHANGE' END,
+           w.window_end - interval '30 days', w.window_end,
+           (SELECT count(*) FROM rfm.customer_profile WHERE state = 'scored')::int,
+           now()
+    FROM models.model_version AS v
+    CROSS JOIN LATERAL (SELECT max(published_at) AS published_at
+                          FROM models.model_publication
+                         WHERE version_id = v.version_id) AS p
+    CROSS JOIN LATERAL (SELECT date_trunc('day', now() AT TIME ZONE 'UTC')
+                               AT TIME ZONE 'UTC' + interval '3 hours'
+                               - CASE WHEN (now() AT TIME ZONE 'UTC')::time < time '03:00'
+                                      THEN interval '1 day' ELSE interval '0' END
+                               AS window_end) AS w
+    WHERE v.state = 'PUBLISHED';
 END
 $seed_models$;
 
@@ -1304,9 +1401,11 @@ $seed_models$;
 -- web's last rule-based run froze (the quintile boundaries above), and the bands of
 -- the segments valid today, one per segment in segment_id order, with the label of
 -- the segment as the box's label. The fallback is the worst-ranked label, as the
--- web's. A customer is scored under it exactly as the web scored the seed, and
--- F22-09 adds the others. rfm.customer_profile starts empty: the first sale event,
--- or the daily pass, creates a customer's row, and a customer with none is pending.
+-- web's. A customer is scored under it exactly as the web scored the seed, and it is
+-- PUBLISHED, so it is immutable (F22-09): the second row is a DRAFT version 2 of it,
+-- over the last 90 days, which an analyst edits and publishes. rfm.customer_profile
+-- starts empty: the first sale event, or the daily pass, creates a customer's row,
+-- and a customer with none is pending.
 INSERT INTO rfm.rule_set
     (name, window_days, recency_boundaries, frequency_boundaries, monetary_boundaries,
      fallback_label_code)
@@ -1329,6 +1428,27 @@ SELECT (SELECT min(rule_set_id) FROM rfm.rule_set),
 FROM segment AS g
 JOIN segment_rule AS sr ON sr.rule_id = g.rule_id
 WHERE g.valid_from <= CURRENT_DATE AND (g.valid_to IS NULL OR g.valid_to >= CURRENT_DATE);
+
+-- The bands are in, so the first rule set can be frozen: the guard checks they
+-- partition the 125 triples (RN-46) and refuses any later edit.
+UPDATE rfm.rule_set SET state = 'PUBLISHED', published_at = now()
+WHERE rule_set_id = (SELECT min(rule_set_id) FROM rfm.rule_set);
+
+-- Version 2, a draft: the same boundaries and bands over a shorter window, to be
+-- refitted before anyone publishes it.
+INSERT INTO rfm.rule_set
+    (name, window_days, recency_boundaries, frequency_boundaries, monetary_boundaries,
+     fallback_label_code, version_no, parent_rule_set_id)
+SELECT 'web-rfm-rules-90d', 90, recency_boundaries, frequency_boundaries,
+       monetary_boundaries, fallback_label_code, 2, rule_set_id
+FROM rfm.rule_set WHERE version_no = 1;
+
+INSERT INTO rfm.rule_set_band
+    (rule_set_id, band_no, label_code, r_min, r_max, f_min, f_max, m_min, m_max)
+SELECT (SELECT rule_set_id FROM rfm.rule_set WHERE version_no = 2),
+       band_no, label_code, r_min, r_max, f_min, f_max, m_min, m_max
+FROM rfm.rule_set_band
+WHERE rule_set_id = (SELECT rule_set_id FROM rfm.rule_set WHERE version_no = 1);
 
 -- ---------- audit_events.domain_event (32, every kind, ADR-0072) ----------
 -- Runtime history, seeded like app_session rather than exempted (ADR-0051).

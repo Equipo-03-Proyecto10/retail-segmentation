@@ -91,6 +91,16 @@ class Shop:
         self.customers.append(row[0])
         return row[0]
 
+    def consent(self, customer_id: uuid.UUID, decision: str) -> None:
+        """Record a PROFILING decision for a customer of the test, as the log takes it:
+        appended, never rewritten (ADR-0066). `clean` removes them, by the owner."""
+        self.owner.execute(
+            "INSERT INTO preferences.consent_decision (customer_id, purpose, decision,"
+            " recorded_by, source, basis) VALUES (%s, 'PROFILING', %s,"
+            " '11111111-1111-1111-1111-000000000001', 'STAFF_ON_BEHALF', 'EXPLICIT')",
+            (customer_id, decision),
+        )
+
     def sale(
         self,
         customer_id: uuid.UUID,
@@ -149,6 +159,35 @@ class Shop:
                     (transaction_id,),
                 )
 
+    def return_units(self, transaction_id: int, units: int) -> None:
+        """Return `units` of the sale's one line, as svc_sales does (ADR-0062): the
+        reversal, its line and the line's running total commit together."""
+        user = self.owner.execute(
+            "SELECT user_id FROM public.app_user WHERE is_active LIMIT 1"
+        ).fetchone()
+        assert user is not None
+        with psycopg.connect(self.sales_url) as sales:
+            with sales.transaction():
+                reversal = sales.execute(
+                    "INSERT INTO sales.sale_reversal (transaction_id, kind, reason,"
+                    " idempotency_key, request_sha256, recorded_by)"
+                    " VALUES (%s, 'RETURN', NULL, %s, %s, %s) RETURNING reversal_id",
+                    (transaction_id, uuid.uuid4(), uuid.uuid4().bytes * 2, user[0]),
+                ).fetchone()
+                assert reversal is not None
+                sales.execute(
+                    "INSERT INTO sales.sale_reversal_line (reversal_id,"
+                    " transaction_id, product_id, quantity, reason)"
+                    " SELECT %s, transaction_id, product_id, %s, 'rfm-engine test'"
+                    " FROM public.transaction_line WHERE transaction_id = %s",
+                    (reversal[0], units, transaction_id),
+                )
+                sales.execute(
+                    "UPDATE public.transaction_line SET returned_quantity ="
+                    " returned_quantity + %s WHERE transaction_id = %s",
+                    (units, transaction_id),
+                )
+
     def profile(self, customer_id: uuid.UUID) -> tuple[object, ...] | None:
         return self.owner.execute(
             "SELECT state, rule_set_id, r_days, f_count, m_total, r_score, f_score,"
@@ -166,6 +205,45 @@ class Shop:
         return [row[0] for row in rows]
 
     def clean(self) -> None:
+        # The incremental runs and the events a test's customers made (F22-15). The
+        # history goes with the customer; a run goes when no row names it any more.
+        runs = [
+            row[0]
+            for row in self.owner.execute(
+                "SELECT DISTINCT h.run_id FROM public.customer_segment_history AS h"
+                " JOIN public.segmentation_run AS r USING (run_id)"
+                " WHERE h.customer_id = ANY(%s) AND r.scope = 'INCREMENTAL'",
+                (self.customers,),
+            ).fetchall()
+        ]
+        self.owner.execute(
+            "DELETE FROM segments_events.outbox WHERE stream ="
+            " 'stream:segments.v1.assignment_changed' AND entity_id = ANY(%s)",
+            ([str(customer_id) for customer_id in self.customers],),
+        )
+        # The log is append-only and a customer it names cannot be deleted, so the
+        # owner lifts the guard for the rows the test wrote, in one transaction.
+        with self.owner.transaction():
+            self.owner.execute(
+                "ALTER TABLE preferences.consent_decision"
+                " DISABLE TRIGGER consent_decision_append_only"
+            )
+            self.owner.execute(
+                "DELETE FROM preferences.consent_decision WHERE customer_id = ANY(%s)",
+                (self.customers,),
+            )
+            self.owner.execute(
+                "ALTER TABLE preferences.consent_decision"
+                " ENABLE TRIGGER consent_decision_append_only"
+            )
+        self.owner.execute(
+            "DELETE FROM preferences_events.outbox WHERE entity_id = ANY(%s)",
+            ([str(customer_id) for customer_id in self.customers],),
+        )
+        self.owner.execute(
+            "DELETE FROM customers_events.outbox WHERE entity_id = ANY(%s)",
+            ([str(customer_id) for customer_id in self.customers],),
+        )
         for customer_id in self.customers:
             self.owner.execute(
                 "DELETE FROM rfm_events.outbox WHERE entity_id = %s",
@@ -196,6 +274,18 @@ class Shop:
                 self.owner.execute(
                     "DELETE FROM public.customer WHERE customer_id = %s", (customer_id,)
                 )
+        if runs:
+            self.owner.execute(
+                "DELETE FROM segments_events.outbox WHERE stream ="
+                " 'stream:segments.v1.run_recorded' AND entity_id = ANY(%s)",
+                ([str(run) for run in runs],),
+            )
+            self.owner.execute(
+                "DELETE FROM public.segmentation_run AS r WHERE r.run_id = ANY(%s)"
+                " AND NOT EXISTS (SELECT FROM public.customer_segment_history AS h"
+                "                 WHERE h.run_id = r.run_id)",
+                (runs,),
+            )
 
 
 @pytest.fixture
@@ -310,6 +400,8 @@ def build_app(
         monkeypatch.setenv("RATE_LIMIT_ENABLED", "false")
         monkeypatch.setenv("STREAM_CONSUMER_ENABLED", "false")
         monkeypatch.setenv("OUTBOX_RELAY_ENABLED", "false")
+        monkeypatch.setenv("DAILY_PASS_ENABLED", "false")
+        monkeypatch.setenv("VERIFICATION_ENABLED", "false")
         from app import create_app
 
         application = create_app()

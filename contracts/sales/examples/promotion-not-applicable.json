@@ -1,0 +1,11 @@
+{
+  "code": "promotion_not_applicable",
+  "message": "A promotion is not active for this store, channel and date.",
+  "correlation_id": "corr-promotion-not-applicable",
+  "details": [
+    {
+      "field": "lines[0].promotion_id",
+      "code": "not_applicable"
+    }
+  ]
+}

@@ -41,6 +41,9 @@ use uuid::Uuid;
 pub const SERVICE: &str = "segments";
 pub const SUFFIX: &str = "segments";
 pub const STREAM: &str = "stream:segments.v1.run_recorded";
+/// A customer's label changed (F22-15). Produced here and consumed by recommendations;
+/// this service reads no entry of it.
+pub const ASSIGNMENT_STREAM: &str = "stream:segments.v1.assignment_changed";
 const CACHE_SECONDS: u64 = 900;
 /// The run tracker before PostgreSQL has been asked.
 const RUN_UNSET: i64 = i64::MIN;
@@ -124,10 +127,102 @@ impl CurrentAssignment {
     }
 }
 
+/// A current assignment and, for an unassigned result, why it has no label
+/// (ADR-0087): `PROFILING_WITHDRAWN` or `NO_PURCHASES`. The reason is the view's own
+/// column, a function of the open row's cause and label, never stored twice.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CurrentAssignmentState {
+    pub current: CurrentAssignment,
+    pub unassigned_reason: Option<String>,
+}
+
+impl CurrentAssignmentState {
+    fn wire(&self) -> Representation {
+        let current = &self.current;
+        Representation::new(
+            "CurrentAssignmentState",
+            [
+                ("customer_id", Value::from(current.customer_id.clone())),
+                ("state", Value::from(current.state.clone())),
+                ("label_code", Value::from(current.label_code.clone())),
+                ("r_score", Value::from(current.r_score)),
+                ("f_score", Value::from(current.f_score)),
+                ("m_score", Value::from(current.m_score)),
+                ("since", Value::from(current.since)),
+                ("run_id", Value::from(current.run_id)),
+                (
+                    "unassigned_reason",
+                    Value::from(self.unassigned_reason.clone()),
+                ),
+            ],
+        )
+    }
+}
+
+/// A customer's current state as a floor role reads it (ADR-0060): the label
+/// and `since`, never the R, F and M scores or `run_id`. The type has no field
+/// for them, so no code path can render them for a floor role.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FloorAssignment {
+    pub customer_id: String,
+    pub state: String,
+    pub label_code: Option<String>,
+    pub since: Option<DateTime<Utc>>,
+}
+
+impl FloorAssignment {
+    fn wire(&self) -> Representation {
+        Representation::new(
+            "FloorCurrentAssignment",
+            [
+                ("customer_id", Value::from(self.customer_id.clone())),
+                ("state", Value::from(self.state.clone())),
+                ("label_code", Value::from(self.label_code.clone())),
+                ("since", Value::from(self.since)),
+            ],
+        )
+    }
+}
+
+impl From<&CurrentAssignment> for FloorAssignment {
+    /// The floor view keeps the state, the label and `since` exactly as the
+    /// current assignment reports them, and drops everything else.
+    fn from(current: &CurrentAssignment) -> Self {
+        Self {
+            customer_id: current.customer_id.clone(),
+            state: current.state.clone(),
+            label_code: current.label_code.clone(),
+            since: current.since,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Assignment {
     pub customer_id: Uuid,
     pub run_id: i64,
+    pub label_code: Option<String>,
+    pub r_score: Option<i16>,
+    pub f_score: Option<i16>,
+    pub m_score: Option<i16>,
+    pub valid_from: DateTime<Utc>,
+    pub valid_to: Option<DateTime<Utc>>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VersionedAssignmentFilter {
+    pub model_version_id: Option<i64>,
+    pub customer_id: Option<Uuid>,
+    pub label_code: Option<String>,
+    pub open: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct VersionedAssignment {
+    pub customer_id: Uuid,
+    pub run_id: i64,
+    pub model_version_id: Option<i64>,
+    pub cause: Option<String>,
     pub label_code: Option<String>,
     pub r_score: Option<i16>,
     pub f_score: Option<i16>,
@@ -326,6 +421,41 @@ impl Assignment {
     }
 }
 
+impl VersionedAssignment {
+    fn from_row(row: &Row) -> Result<Self, ApiError> {
+        Ok(Self {
+            customer_id: row.try_get(0)?,
+            run_id: row.try_get(1)?,
+            model_version_id: row.try_get(2)?,
+            cause: row.try_get(3)?,
+            label_code: row.try_get(4)?,
+            r_score: row.try_get(5)?,
+            f_score: row.try_get(6)?,
+            m_score: row.try_get(7)?,
+            valid_from: row.try_get(8)?,
+            valid_to: row.try_get(9)?,
+        })
+    }
+
+    fn wire(&self) -> Representation {
+        Representation::new(
+            "VersionedSegmentAssignment",
+            [
+                ("customer_id", Value::from(self.customer_id.to_string())),
+                ("run_id", Value::from(self.run_id)),
+                ("model_version_id", Value::from(self.model_version_id)),
+                ("cause", Value::from(self.cause.clone())),
+                ("label_code", Value::from(self.label_code.clone())),
+                ("r_score", Value::from(self.r_score)),
+                ("f_score", Value::from(self.f_score)),
+                ("m_score", Value::from(self.m_score)),
+                ("valid_from", Value::from(self.valid_from)),
+                ("valid_to", Value::from(self.valid_to)),
+            ],
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Errors and query parsing
 // ---------------------------------------------------------------------------
@@ -364,7 +494,8 @@ fn query_pairs(query: &str) -> HashMap<String, String> {
     values
 }
 
-/// `customer_id` of `getCurrentAssignment`: required, a UUID.
+/// `customer_id` of `getCurrentAssignment` and `getFloorCurrentAssignment`:
+/// required, a UUID.
 pub fn current_customer(query: &str) -> Result<Uuid, ApiError> {
     match query_pairs(query).get("customer_id") {
         None => Err(invalid_query(vec![Detail::new("customer_id", "required")])),
@@ -420,6 +551,63 @@ pub fn assignment_filter(query: &str) -> Result<Filter, ApiError> {
     match filter {
         Some(filter) if details.is_empty() => Ok(filter),
         _ => Err(invalid_query(details)),
+    }
+}
+
+/// Optional filters of `listVersionedSegmentAssignments`. Customer and label
+/// retain the contract parameters' exclusive relationship; every other filter
+/// combines with either one or with an unfiltered history read.
+pub fn versioned_assignment_filter(query: &str) -> Result<VersionedAssignmentFilter, ApiError> {
+    let values = query_pairs(query);
+    let mut details = Vec::new();
+    let model_version_id =
+        values
+            .get("model_version_id")
+            .and_then(|raw| match raw.parse::<i64>() {
+                Ok(version) if version >= 1 => Some(version),
+                Ok(_) => {
+                    details.push(Detail::new("model_version_id", "out_of_range"));
+                    None
+                }
+                Err(_) => {
+                    details.push(Detail::new("model_version_id", "invalid_type"));
+                    None
+                }
+            });
+    let customer_id = values.get("customer_id").and_then(|raw| {
+        parse_customer_id(raw).or_else(|| {
+            details.push(Detail::new("customer_id", "invalid_type"));
+            None
+        })
+    });
+    let label_code = values.get("label_code").and_then(|code| {
+        if code.is_empty() || code.chars().count() > 40 {
+            details.push(Detail::new("label_code", "out_of_range"));
+            None
+        } else {
+            Some(code.clone())
+        }
+    });
+    if values.contains_key("customer_id") && values.contains_key("label_code") {
+        details.push(Detail::new("customer_id", "conflicting_filters"));
+    }
+    let open = match values.get("open").map(String::as_str) {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => {
+            details.push(Detail::new("open", "invalid_type"));
+            false
+        }
+    };
+    if details.is_empty() {
+        Ok(VersionedAssignmentFilter {
+            model_version_id,
+            customer_id,
+            label_code,
+            open,
+        })
+    } else {
+        Err(invalid_query(details))
     }
 }
 
@@ -704,7 +892,10 @@ impl Reader {
         let fresh = read_list(db).await?;
         let actual = fresh.run_id.unwrap_or(NO_RUN);
         self.advance(actual);
-        cache.put(&list_key(actual), &fresh).await;
+        // The list is the latest whole run's, and the tracked run may be a later
+        // incremental one: stored under the key that is asked for, it is found again
+        // until a run moves the tracked id.
+        cache.put(&list_key(run.max(actual)), &fresh).await;
         Ok(fresh)
     }
 
@@ -745,14 +936,17 @@ fn reader() -> &'static Reader {
 // PostgreSQL
 // ---------------------------------------------------------------------------
 
-/// The labels with their sizes in the latest run, in one statement so the run
-/// and its counts come from one snapshot.
+/// The labels with their sizes in the latest whole run, in one statement so the
+/// run and its counts come from one snapshot. An incremental run (F22-15) holds the
+/// few customers an event or the clock moved, not the population, so it never
+/// stands for "the latest run" here (ADR-0087).
 pub async fn read_list(db: &Database) -> Result<SegmentList, ApiError> {
     let connection = db.connection().await?;
     let rows = connection
         .query(
             "WITH latest AS ( \
                  SELECT run_id, run_at FROM public.segmentation_run \
+                 WHERE scope = 'FULL' \
                  ORDER BY run_id DESC LIMIT 1) \
              SELECT l.label_code, l.name, l.description, l.ordinal_position, \
                     (SELECT count(*) FROM public.customer_segment_history AS h \
@@ -792,11 +986,20 @@ pub async fn read_list(db: &Database) -> Result<SegmentList, ApiError> {
 /// The customer's state from the contract view, and the scores from the open
 /// history row. A customer absent from the view is 404.
 pub async fn read_current(db: &Database, customer: Uuid) -> Result<CurrentAssignment, ApiError> {
+    Ok(read_current_state(db, customer).await?.current)
+}
+
+/// `read_current` with the reason an unassigned customer has no label, from the same
+/// row of the contract view.
+pub async fn read_current_state(
+    db: &Database,
+    customer: Uuid,
+) -> Result<CurrentAssignmentState, ApiError> {
     let connection = db.connection().await?;
     let row = connection
         .query_opt(
             "SELECT v.state, v.label_code, v.since, v.run_id, \
-                    h.r_score, h.f_score, h.m_score \
+                    h.r_score, h.f_score, h.m_score, v.unassigned_reason \
              FROM api_segments.current_label_v1 AS v \
              LEFT JOIN public.customer_segment_history AS h \
                     ON h.customer_id = v.customer_id AND h.valid_to IS NULL \
@@ -815,15 +1018,18 @@ pub async fn read_current(db: &Database, customer: Uuid) -> Result<CurrentAssign
             Ok(None)
         }
     };
-    Ok(CurrentAssignment {
-        customer_id: customer.to_string(),
-        r_score: score(4)?,
-        f_score: score(5)?,
-        m_score: score(6)?,
-        label_code: row.try_get(1)?,
-        since: row.try_get(2)?,
-        run_id: row.try_get(3)?,
-        state,
+    Ok(CurrentAssignmentState {
+        current: CurrentAssignment {
+            customer_id: customer.to_string(),
+            r_score: score(4)?,
+            f_score: score(5)?,
+            m_score: score(6)?,
+            label_code: row.try_get(1)?,
+            since: row.try_get(2)?,
+            run_id: row.try_get(3)?,
+            state,
+        },
+        unassigned_reason: row.try_get(7)?,
     })
 }
 
@@ -918,6 +1124,83 @@ pub async fn read_assignments_in<C: GenericClient + Sync>(
     let assignments = rows
         .iter()
         .map(Assignment::from_row)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((assignments, total as u64))
+}
+
+/// One page of assignment history with the immutable model version that scored
+/// each run. A missing run-version link is pending and stays null; it is never
+/// replaced with the currently published version (ADR-0064).
+pub async fn read_versioned_assignments(
+    db: &Database,
+    filter: &VersionedAssignmentFilter,
+    page: u32,
+    size: u32,
+) -> Result<(Vec<VersionedAssignment>, u64), ApiError> {
+    let connection = db.connection().await?;
+    if let Some(customer) = filter.customer_id {
+        if connection
+            .query_opt(
+                "SELECT 1 FROM api_customers.customer_ref_v1 WHERE customer_id = $1",
+                &[&customer],
+            )
+            .await?
+            .is_none()
+        {
+            return Err(customer_not_found());
+        }
+    }
+    if let Some(label) = &filter.label_code {
+        if connection
+            .query_opt(
+                "SELECT 1 FROM public.segment_label WHERE label_code = $1",
+                &[label],
+            )
+            .await?
+            .is_none()
+        {
+            return Err(segment_not_found());
+        }
+    }
+    let limit = i64::from(size);
+    let offset = i64::from(page - 1) * limit;
+    let parameters: [&(dyn tokio_postgres::types::ToSql + Sync); 6] = [
+        &filter.model_version_id,
+        &filter.customer_id,
+        &filter.label_code,
+        &filter.open,
+        &limit,
+        &offset,
+    ];
+    let total: i64 = connection
+        .query_one(
+            "SELECT count(*) FROM public.customer_segment_history AS h \
+             LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
+             WHERE ($1::bigint IS NULL OR rv.version_id = $1) \
+               AND ($2::uuid IS NULL OR h.customer_id = $2) \
+               AND ($3::text IS NULL OR h.label_code = $3) \
+               AND (NOT $4::boolean OR h.valid_to IS NULL)",
+            &parameters[..4],
+        )
+        .await?
+        .try_get(0)?;
+    let rows = connection
+        .query(
+            "SELECT h.customer_id, h.run_id, rv.version_id, h.cause, h.label_code, \
+                    h.r_score, h.f_score, h.m_score, h.valid_from, h.valid_to \
+             FROM public.customer_segment_history AS h \
+             LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
+             WHERE ($1::bigint IS NULL OR rv.version_id = $1) \
+               AND ($2::uuid IS NULL OR h.customer_id = $2) \
+               AND ($3::text IS NULL OR h.label_code = $3) \
+               AND (NOT $4::boolean OR h.valid_to IS NULL) \
+             ORDER BY h.valid_from DESC, h.history_id DESC LIMIT $5 OFFSET $6",
+            &parameters,
+        )
+        .await?;
+    let assignments = rows
+        .iter()
+        .map(VersionedAssignment::from_row)
         .collect::<Result<Vec<_>, _>>()?;
     Ok((assignments, total as u64))
 }
@@ -1118,20 +1401,19 @@ pub async fn read_migrations(
     let connection = db.connection().await?;
     let client: &tokio_postgres::Client = &connection;
     validate_migration_filter(client, &query.filter).await?;
-    // `cause` is NULL for now: nothing records why a history row exists on this schema yet
-    // (ADR-0063's cause column arrives with rfm-engine's apply_assignment), and the contract
-    // reports NULL for a row written before causes were recorded. A `VERSION_CHANGE` cause
-    // is already honoured by `build_migration` once a row carries one.
+    // `cause` is the history row's own column (ADR-0063, ADR-0087): NULL only for a row
+    // written before causes were recorded, which the contract reports as no cause. A
+    // `VERSION_CHANGE` cause is honoured by `build_migration`.
     let rows = connection
         .query(
             "WITH ids AS ( \
                  SELECT customer_id FROM api_customers.customer_ref_v1) \
              SELECT ids.customer_id, \
                     b.run_id, b.label_code, bv.version_id, br.run_at, b.valid_from, \
-                    NULL::text, b.recency_last_purchase_at, \
+                    b.cause, b.recency_last_purchase_at, \
                     b.frequency_count, b.monetary_total::text, b.r_score, b.f_score, b.m_score, \
                     a.run_id, a.label_code, av.version_id, ar.run_at, a.valid_from, \
-                    NULL::text, a.recency_last_purchase_at, \
+                    a.cause, a.recency_last_purchase_at, \
                     a.frequency_count, a.monetary_total::text, a.r_score, a.f_score, a.m_score \
                FROM ids \
                LEFT JOIN public.customer_segment_history AS b \
@@ -1719,10 +2001,36 @@ pub fn current_reply(current: &CurrentAssignment) -> Reply {
     current.wire().into()
 }
 
+pub fn current_state_reply(state: &CurrentAssignmentState) -> Reply {
+    state.wire().into()
+}
+
+pub fn floor_reply(floor: &FloorAssignment) -> Reply {
+    floor.wire().into()
+}
+
 pub fn assignments_reply(assignments: &[Assignment], page: u32, size: u32, total: u64) -> Reply {
     Page::new(
         "SegmentAssignments",
         "SegmentAssignment",
+        "assignments",
+        assignments.iter().map(|row| row.wire().data).collect(),
+        page,
+        total,
+    )
+    .size(size)
+    .into()
+}
+
+pub fn versioned_assignments_reply(
+    assignments: &[VersionedAssignment],
+    page: u32,
+    size: u32,
+    total: u64,
+) -> Reply {
+    Page::new(
+        "VersionedSegmentAssignments",
+        "VersionedSegmentAssignment",
         "assignments",
         assignments.iter().map(|row| row.wire().data).collect(),
         page,
@@ -1962,6 +2270,24 @@ async fn get_current_assignment(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(current_reply(&current))
 }
 
+/// `getCurrentAssignmentState`: the current assignment and why an unassigned customer
+/// has no label. Read from the database each time: the reason changes with a history
+/// row, and the cache holds the plain current assignment only.
+async fn get_current_assignment_state(ctx: Ctx) -> Result<Reply, ApiError> {
+    let customer = current_customer(&request_info().query)?;
+    let state = read_current_state(ctx.db(), customer).await?;
+    Ok(current_state_reply(&state))
+}
+
+/// The floor roles' read (ADR-0060). The kit admits only the roles the
+/// contract lists, and the reply is built from `FloorAssignment`, which holds
+/// no score and no `run_id`, whatever the cache or the database returned.
+async fn get_floor_current_assignment(ctx: Ctx) -> Result<Reply, ApiError> {
+    let customer = current_customer(&request_info().query)?;
+    let current = reader().current(ctx.db(), customer).await?;
+    Ok(floor_reply(&FloorAssignment::from(&current)))
+}
+
 async fn list_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
     let filter = assignment_filter(&request_info().query)?;
     let (rows, total) = match ctx.principal() {
@@ -1981,6 +2307,14 @@ async fn list_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
         None => return Err(audit_unavailable()),
     };
     Ok(assignments_reply(&rows, ctx.page, ctx.size, total))
+}
+
+async fn list_versioned_segment_assignments(ctx: Ctx) -> Result<Reply, ApiError> {
+    let filter = versioned_assignment_filter(&request_info().query)?;
+    let (rows, total) = read_versioned_assignments(ctx.db(), &filter, ctx.page, ctx.size).await?;
+    Ok(versioned_assignments_reply(
+        &rows, ctx.page, ctx.size, total,
+    ))
 }
 
 async fn get_segment_migration_matrix(ctx: Ctx) -> Result<Reply, ApiError> {
@@ -2047,13 +2381,14 @@ async fn redis_connection(
         .await
 }
 
-/// The outbox relay for `stream:segments.v1.run_recorded`. The first
+/// The outbox relay for `stream:segments.v1.run_recorded` and
+/// `stream:segments.v1.assignment_changed`. The first
 /// connection is retried every second, so the service comes up during a Redis
 /// outage; after that the kit rebuilds the connection after every outage.
 pub async fn run_relay(database_url: String, redis_url: String, password: Option<String>) {
     loop {
         if let Ok(redis) = redis_connection(redis_url.clone(), password.clone()).await {
-            match OutboxRelay::new(&database_url, SUFFIX, [STREAM], redis) {
+            match OutboxRelay::new(&database_url, SUFFIX, [STREAM, ASSIGNMENT_STREAM], redis) {
                 Ok(relay) => {
                     relay
                         .run_with_reconnect(|| {
@@ -2140,7 +2475,13 @@ pub fn router(
         .operation("listSegments", list_segments)?
         .operation("getSegment", get_segment)?
         .operation("getCurrentAssignment", get_current_assignment)?
+        .operation("getCurrentAssignmentState", get_current_assignment_state)?
+        .operation("getFloorCurrentAssignment", get_floor_current_assignment)?
         .operation("listSegmentAssignments", list_segment_assignments)?
+        .operation(
+            "listVersionedSegmentAssignments",
+            list_versioned_segment_assignments,
+        )?
         .operation("getSegmentMigrationMatrix", get_segment_migration_matrix)?
         .operation("listSegmentMigrations", list_segment_migrations)?
         .operation(
@@ -2223,6 +2564,63 @@ mod tests {
                 "{query}"
             );
         }
+    }
+
+    #[test]
+    fn the_floor_view_keeps_state_label_and_since_and_drops_the_rest() {
+        use mosaiq_kit::rendering::{render_json, render_xml};
+        let since = "2026-10-12T03:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let assigned = CurrentAssignment {
+            customer_id: "7b3ad781-c5de-4f40-ae50-1fa825ce2b25".to_owned(),
+            state: "assigned".to_owned(),
+            label_code: Some("LOYAL".to_owned()),
+            r_score: Some(4),
+            f_score: Some(5),
+            m_score: Some(4),
+            since: Some(since),
+            run_id: Some(42),
+        };
+        let floor = FloorAssignment::from(&assigned);
+        assert_eq!(floor.state, "assigned");
+        assert_eq!(floor.label_code.as_deref(), Some("LOYAL"));
+        assert_eq!(floor.since, Some(since));
+        let json = render_json(&floor_reply(&floor), 20).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "customer_id": "7b3ad781-c5de-4f40-ae50-1fa825ce2b25",
+                "state": "assigned",
+                "label_code": "LOYAL",
+                "since": "2026-10-12T03:00:00Z",
+            })
+        );
+        let namespace = "https://mosaiq.maxthecoder.online/xml/segments/v1";
+        let xml = render_xml(&floor_reply(&floor), namespace, 20).unwrap();
+        assert!(xml.contains("<FloorCurrentAssignment"), "{xml}");
+        for withheld in ["score", "run_id"] {
+            assert!(!xml.contains(withheld), "{xml}");
+        }
+
+        // The unassigned states stay as they are: nulls in JSON, absent in XML.
+        let none = CurrentAssignment {
+            state: "no_open_assignment".to_owned(),
+            label_code: None,
+            r_score: None,
+            f_score: None,
+            m_score: None,
+            since: None,
+            run_id: None,
+            ..assigned
+        };
+        let json = render_json(&floor_reply(&FloorAssignment::from(&none)), 20).unwrap();
+        assert_eq!(json["state"], "no_open_assignment");
+        assert!(json["label_code"].is_null() && json["since"].is_null());
+        assert_eq!(json.as_object().unwrap().len(), 4);
+        let xml = render_xml(&floor_reply(&FloorAssignment::from(&none)), namespace, 20).unwrap();
+        assert!(
+            !xml.contains("label_code") && !xml.contains("<since>"),
+            "{xml}"
+        );
     }
 
     #[test]

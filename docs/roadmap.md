@@ -82,7 +82,7 @@ have. They are not implemented as part of the QA fixes that identified them.
 | Permission | Follow-up work required before a route exists |
 |---|---|
 | `inventory.write` | Build the separate, auditable stock receipt/transfer/count/adjustment entry point reserved by [ADR-0031](adr/0031-sales-ingestion-decrements-inventory-atomically.md). Define its adjustment reason, idempotency and concurrency rules first; accepted sales already decrement stock in ingestion. |
-| `segment.write` | Define governance for edits to the stable label vocabulary and RFM rule catalog without rewriting the meaning of completed runs. |
+| `segment.write` | Decided by F22-09 (#804): the RFM rule catalog is governed as versioned rule sets in rfm-engine, so a change is a new version and never rewrites a published one or the runs scored under it; it is a validated draft, published once, and audited with its author. The web adds no route and the label vocabulary stays closed, so the permission stays declared, held by `ADMIN` only. |
 | `user.self` | Define how the existing optional `customer.user_id` ownership link is assigned and maintained, populate it for loyalty accounts, then build the customer self-service view over that link. |
 
 `sales_ingest.execute` is no longer in this list: the server-rendered

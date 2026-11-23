@@ -63,7 +63,10 @@ def index() -> str | tuple[str, int]:
     label_code = UNASSIGNED if label == "unassigned" else label
 
     context = dict(
-        runs=list_runs(connection, page=1, per_page=_RUN_OPTIONS)[0],
+        # The picker offers the full runs: the incremental ones will far
+        # outnumber them. A run chosen by id, of either scope, is still read, and
+        # each of its rows says when it is an incremental change (F22-17).
+        runs=list_runs(connection, page=1, per_page=_RUN_OPTIONS, scope="FULL")[0],
         vocabulary=sorted(ordinals, key=ordinals.__getitem__),
         run=request.args.get("run", ""),
         label=label or "",

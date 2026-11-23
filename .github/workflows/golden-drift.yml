@@ -1,6 +1,6 @@
 name: Golden fixture drift
 
-# Captures the web's outcomes for the four ported rules on a fresh database and
+# Captures the web's outcomes for the ported rules on a fresh database and
 # compares them with each service's committed fixtures (ADR-0045, F13-11).
 # A port whose services/<name>/tests/golden/ does not exist yet is skipped as
 # "not yet captured". tests/golden/README.md has the workflow around it.
@@ -16,6 +16,8 @@ on:
       - web/services/users.py
       - web/services/campaigns.py
       - web/services/segment_migration.py
+      - web/services/kmeans.py
+      - web/services/cluster_labels.py
       - web/db/**
       - sql/**
       - tests/golden/**
@@ -62,9 +64,13 @@ jobs:
 
       - name: Capture every port
         run: |
-          for service in sales recommendations users campaigns segments; do
+          for service in sales recommendations users campaigns segments model-registry; do
             python -m tests.golden.capture --service "$service" --out "$RUNNER_TEMP/golden"
           done
+          # rfm records reversals as svc_sales inside its rolled-back cases, which
+          # retail_app may not do, so its capture runs as the database owner.
+          python -m tests.golden.capture --service rfm --out "$RUNNER_TEMP/golden" \
+            --database-url postgresql://postgres:postgres@localhost:5432/retail
 
       - name: Compare with the committed fixtures
         run: python -m tests.golden.compare "$RUNNER_TEMP/golden"

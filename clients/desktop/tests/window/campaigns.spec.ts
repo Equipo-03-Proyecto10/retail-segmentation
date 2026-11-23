@@ -1,7 +1,14 @@
 import { createServer, type Server } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, launchElectron, test, type ElectronApplication, type Page } from './electron-test';
+import {
+  expect,
+  findOnPages,
+  launchElectron,
+  test,
+  type ElectronApplication,
+  type Page,
+} from './electron-test';
 import { PLAIN_MESSAGES } from '../../src/shared/campaign-messages';
 import { shot } from '../support/evidence';
 
@@ -59,12 +66,15 @@ let seen: Seen[] = [];
 let stored: Status = 'DRAFT';
 let activation: 'ok' | 'campaign-ended' | 'experiment-not-ready' = 'ok';
 let nextRefusal: { file: string; status: number } | null = null;
+/** One campaign per page (301, then 302), for the pager. */
+let onePerPage = false;
 
 function reset(): void {
   seen = [];
   stored = 'DRAFT';
   activation = 'ok';
   nextRefusal = null;
+  onePerPage = false;
 }
 
 test.beforeAll(async () => {
@@ -93,7 +103,19 @@ test.beforeAll(async () => {
       }
       if (path === '/api/campaigns/v1/campaigns') {
         if (method === 'POST') return reply(201, example('campaigns', 'campaign'));
-        return reply(200, example('campaigns', 'campaigns'));
+        if (!onePerPage) return reply(200, example('campaigns', 'campaigns'));
+        const at = Number(url.searchParams.get('page') ?? '1');
+        const blocks = example('campaigns', 'campaigns').split(/(?=<Campaign>)|(?<=<\/Campaign>)/);
+        const kept = blocks.filter(
+          (b) => !b.startsWith('<Campaign>') || b.includes(`<campaign_id>${300 + at}<`),
+        );
+        return reply(
+          200,
+          kept
+            .join('')
+            .replace('<common:page>1<', `<common:page>${at}<`)
+            .replace('<common:size>20<', '<common:size>1<'),
+        );
       }
       const match = /^\/api\/campaigns\/v1\/campaigns\/(\d+)(\/transitions)?$/.exec(path);
       // The plan of a campaign (F28-09) has its own spec; here its four sections only have to load.
@@ -192,6 +214,19 @@ test('the list shows label names from segments-service, filters and opens one ca
   await page
     .evaluate(() => window.mosaiq.getCampaign(9999))
     .then((r) => expect(r).toMatchObject({ ok: false, error: { code: 'campaign_not_found' } }));
+  await app.close();
+});
+
+test('findOnPages, which the F20-02 live run uses, pages with Next until the campaign is listed', async () => {
+  onePerPage = true;
+  const { app, page } = await launch('MARKETING');
+  await openScreen(page);
+  await expect(page.getByTestId('campaigns-page')).toHaveText('Page 1 of 2 · 2 campaigns');
+  await expect(page.getByTestId('view-campaign-302')).toHaveCount(0);
+  await findOnPages(page, 'campaigns', 'view-campaign-302');
+  await expect(page.getByTestId('campaigns-page')).toHaveText('Page 2 of 2 · 2 campaigns');
+  expect(seen.filter((s) => s.url.includes('/campaigns?')).at(-1)?.url).toContain('page=2&size=20');
+  await expect(findOnPages(page, 'campaigns', 'view-campaign-999')).rejects.toThrow(/is on no page/);
   await app.close();
 });
 

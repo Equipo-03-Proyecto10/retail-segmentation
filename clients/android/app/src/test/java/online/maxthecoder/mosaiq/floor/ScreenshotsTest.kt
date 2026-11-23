@@ -31,16 +31,23 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.Channel
 import online.maxthecoder.mosaiq.floor.net.CurrentAssignment
 import online.maxthecoder.mosaiq.floor.net.Customer
+import online.maxthecoder.mosaiq.floor.net.FloorCurrentAssignment
+import online.maxthecoder.mosaiq.floor.net.FloorCustomer
+import online.maxthecoder.mosaiq.floor.net.InferredInterest
+import online.maxthecoder.mosaiq.floor.net.InterestProfile
 import online.maxthecoder.mosaiq.floor.net.Product
 import online.maxthecoder.mosaiq.floor.net.RecommendationItem
 import online.maxthecoder.mosaiq.floor.net.RecommendationResult
+import online.maxthecoder.mosaiq.floor.net.RestrictionProfile
 import online.maxthecoder.mosaiq.floor.net.Store
 import online.maxthecoder.mosaiq.floor.outbox.Operation
 import online.maxthecoder.mosaiq.floor.outbox.OutboxRow
 import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.CameraPermission
+import online.maxthecoder.mosaiq.floor.ui.CommercialProfile
 import online.maxthecoder.mosaiq.floor.ui.CustomerInsightsContent
+import online.maxthecoder.mosaiq.floor.ui.FloorProfileState
 import online.maxthecoder.mosaiq.floor.ui.InsightsState
 import online.maxthecoder.mosaiq.floor.ui.RegistrationState
 import online.maxthecoder.mosaiq.floor.ui.SaleBuilderState
@@ -55,6 +62,7 @@ import online.maxthecoder.mosaiq.floor.ui.StoresState
 import online.maxthecoder.mosaiq.floor.ui.checkin.CheckInContent
 import online.maxthecoder.mosaiq.floor.ui.checkin.CheckInStatus
 import online.maxthecoder.mosaiq.floor.ui.checkin.StorePickerContent
+import online.maxthecoder.mosaiq.floor.ui.identify.ProfileBody
 import online.maxthecoder.mosaiq.floor.ui.outbox.OutboxContent
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationFields
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationForm
@@ -313,6 +321,53 @@ class ScreenshotsTest {
         message = if (state == RowState.REFUSED) "The sale has no items." else null,
         correlationId = if (state == RowState.REFUSED) "corr-77" else null
     )
+
+    // Customer: the permitted commercial profile (F27-03), at 375 dp --------------------------------
+
+    @Composable
+    private fun commercialProfile(segment: FloorCurrentAssignment, personalization: Boolean) {
+        val id = "7b3ad781-c5de-4f40-ae50-1fa825ce2b25"
+        ProfileBody(
+            FloorProfileState(
+                id,
+                FloorCustomer(id, "Jordan Lee"),
+                byCard = true,
+                commercial =
+                CommercialProfile(
+                    segment = segment,
+                    interests =
+                    InterestProfile(
+                        id,
+                        listOf(2, 11),
+                        if (personalization) listOf(InferredInterest(12, 42)) else emptyList()
+                    ),
+                    restrictions = RestrictionProfile(id, personalization, listOf(5), listOf(9)),
+                    categoryNames = mapOf(2 to "Dairy", 9 to "Wine", 11 to "Cheese", 12 to "Yogurt"),
+                    channelNames = mapOf(5 to "call_center")
+                )
+            ),
+            onRetry = noop,
+            onBack = noop
+        )
+    }
+
+    @Config(qualifiers = "w375dp-h800dp-xxhdpi")
+    @Test
+    fun commercialProfileAssigned() = shoot("commercial-profile-assigned") {
+        commercialProfile(FloorCurrentAssignment("c1", "assigned", "LOYAL", "2026-10-12T03:00:00Z"), true)
+    }
+
+    @Config(qualifiers = "w375dp-h800dp-xxhdpi")
+    @Test
+    fun commercialProfileObjectedUnassigned() = shoot("commercial-profile-objected-unassigned") {
+        commercialProfile(FloorCurrentAssignment("c1", "unassigned_result", null, "2026-10-12T03:00:00Z"), false)
+    }
+
+    @Config(qualifiers = "w375dp-h800dp-xxhdpi")
+    @Test
+    fun commercialProfileNoOpenAssignment() = shoot("commercial-profile-no-open-assignment") {
+        commercialProfile(FloorCurrentAssignment("c1", "no_open_assignment", null, null), true)
+    }
 
     @Test fun outboxMixed() = shoot("outbox-mixed") {
         OutboxContent(

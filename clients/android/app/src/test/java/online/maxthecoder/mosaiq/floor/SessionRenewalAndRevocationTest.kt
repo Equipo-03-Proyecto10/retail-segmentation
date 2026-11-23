@@ -48,7 +48,11 @@ class SessionRenewalAndRevocationTest {
     private val server = MockWebServer()
     private val refreshes = AtomicInteger()
     private val seen = CopyOnWriteArrayList<RecordedRequest>()
+
+    @Volatile
     private var revoked = false
+
+    private val bothRejected = java.util.concurrent.CountDownLatch(2)
     private lateinit var app: FloorTestApp
     private lateinit var graph: AppGraph
 
@@ -63,14 +67,19 @@ class SessionRenewalAndRevocationTest {
                     return when {
                         path == REFRESH -> {
                             refreshes.incrementAndGet()
-                            // Slow enough that both racing calls are already waiting.
-                            Thread.sleep(200)
+                            // Held until both stale calls were answered 401: a renewal that is not
+                            // single-flight would send a second refresh here instead of waiting.
+                            bothRejected.await(5, java.util.concurrent.TimeUnit.SECONDS)
+                            Thread.sleep(100)
                             ok(200, tokens("fresh-access", "fresh-refresh"))
                         }
                         path == SIGN_IN -> ok(201, tokens("fresh-access", "fresh-refresh"))
                         path == CURRENT_SESSION -> MockResponse().setResponseCode(204)
                         revoked -> error(401, "session_revoked")
-                        request.getHeader("Authorization") != "Bearer fresh-access" -> error(401, "invalid_token")
+                        request.getHeader("Authorization") != "Bearer fresh-access" -> {
+                            bothRejected.countDown()
+                            error(401, "invalid_token")
+                        }
                         path == ME -> ok(200, user("STORE_MANAGER"))
                         path == STORES -> ok(200, """{"stores":[],"page_info":{"page":1,"size":20,"total":0}}""")
                         path == CHECK_INS ->

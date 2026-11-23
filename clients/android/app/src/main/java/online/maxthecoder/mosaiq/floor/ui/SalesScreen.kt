@@ -20,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -27,6 +28,7 @@ import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.net.Channel
 import online.maxthecoder.mosaiq.floor.net.Customer
 import online.maxthecoder.mosaiq.floor.net.Product
+import online.maxthecoder.mosaiq.floor.outbox.RowState
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
 import online.maxthecoder.mosaiq.floor.ui.components.MqButton
@@ -36,11 +38,15 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqSnackbarHost
 import online.maxthecoder.mosaiq.floor.ui.sale.CustomerSection
 import online.maxthecoder.mosaiq.floor.ui.sale.HistorySection
 import online.maxthecoder.mosaiq.floor.ui.sale.ItemsSection
+import online.maxthecoder.mosaiq.floor.ui.sale.PHYSICAL_STORE
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationFields
 import online.maxthecoder.mosaiq.floor.ui.sale.RegistrationSheet
+import online.maxthecoder.mosaiq.floor.ui.sale.ReviewSheet
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleActions
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleBar
+import online.maxthecoder.mosaiq.floor.ui.sale.SaleOutcome
 import online.maxthecoder.mosaiq.floor.ui.sale.SaleUi
+import online.maxthecoder.mosaiq.floor.ui.sale.refusalOf
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
@@ -57,7 +63,8 @@ fun SalesScreen(
     insights: CustomerInsightsViewModel,
     registering: Boolean,
     onRegisteringChange: (Boolean) -> Unit,
-    onOpenProduct: (Int) -> Unit
+    onOpenProduct: (Int) -> Unit,
+    promotions: PromotionsViewModel
 ) {
     val customer by model.selectedCustomer.collectAsStateWithLifecycle()
     val customers by model.customers.collectAsStateWithLifecycle()
@@ -67,17 +74,26 @@ fun SalesScreen(
     val history by model.history.collectAsStateWithLifecycle()
     val status by model.statusMessage.collectAsStateWithLifecycle()
     val statusError by model.statusError.collectAsStateWithLifecycle()
+    val queued by model.queuedSale.collectAsStateWithLifecycle()
+    val kept by model.kept.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val saved = stringResource(R.string.sale_saved)
     val customerId = customer?.customerId
+    val inStore = registration.channels.firstOrNull { it.name == PHYSICAL_STORE }?.channelId
 
     LaunchedEffect(Unit) { model.loadChannels() }
+    LaunchedEffect(store?.storeId, inStore) { model.loadPromotions() }
     LaunchedEffect(customerId) {
         if (customerId != null && insights.state.value.customerId != customerId) insights.load(customerId)
     }
-    LaunchedEffect(sale.queuedRowId) {
-        if (sale.queuedRowId != null) snackbar.showSnackbar(saved)
+    LaunchedEffect(customerId, store?.storeId) {
+        val shown = promotions.state.value
+        if (customerId != null && (shown.customerId != customerId || shown.storeId != store?.storeId)) {
+            promotions.load(customerId)
+        }
     }
+    // Only the tap that saves the sale says so; a restart brings the draft back silently.
+    LaunchedEffect(model) { model.saved.collect { snackbar.showSnackbar(saved) } }
 
     val ui =
         SaleUi(
@@ -89,7 +105,9 @@ fun SalesScreen(
             history = history,
             store = store,
             statusMessage = status,
-            statusError = statusError
+            statusError = statusError,
+            queued = queued?.takeIf { it.id == sale.queuedRowId },
+            kept = kept
         )
     val actions =
         SaleActions(
@@ -103,16 +121,24 @@ fun SalesScreen(
             onSaveInterests = model::saveInterests,
             onLoadInterests = model::loadInterests,
             onSearchProducts = model::searchProducts,
-            onAddProduct = model::addProduct,
-            onSetQuantity = model::setQuantity,
+            onAddProduct = { model.addProduct(it) },
+            onSetQuantity = { id, quantity -> model.setQuantity(id, quantity) },
+            onChoosePromotion = model::choosePromotion,
+            onLoadPromotions = { model.loadPromotions(force = true) },
+            onReview = model::review,
+            onCancelReview = model::cancelReview,
             onConfirm = { model.confirm() },
+            onBackToCart = model::backToCart,
             onNewSale = model::newSale,
+            onCorrect = model::correct,
+            onDiscard = model::discard,
             onRefreshStatus = model::refreshStatus,
             onPickStore = onPickStore,
             rowStatus = model::status
         )
     SalesContent(ui, actions, snackbar, registering, onRegisteringChange) {
         CustomerInsights(insights, onOpenProduct)
+        CustomerPromotions(promotions)
     }
 }
 
@@ -146,20 +172,36 @@ fun SalesContent(
             phone = ""
         }
     }
+    val scroll = rememberScrollState()
+    // A refusal arrives wherever the seller had scrolled; its card at the top says why and names the line (#1156).
+    val refusedRow = ui.queued?.takeIf { it.state == RowState.REFUSED }?.id
+    LaunchedEffect(refusedRow) { if (refusedRow != null) scroll.animateScrollTo(0) }
+    // The product whose line that refusal named, to bring into view once "Back to cart" opens the cart again.
+    var fixLine by rememberSaveable { mutableStateOf<Int?>(null) }
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = Spacing.Lg),
+            Modifier.weight(1f).fillMaxWidth().verticalScroll(scroll).padding(bottom = Spacing.Lg),
             verticalArrangement = Arrangement.spacedBy(Spacing.Xxl)
         ) {
             StoreLine(ui.store, actions.onPickStore)
+            SaleOutcome(ui, actions)
             CustomerSection(ui, actions, onNewCustomer = { onRegisteringChange(true) })
             if (ui.customer != null) insights()
-            ItemsSection(ui, actions)
+            ItemsSection(ui, actions, fixLine, onLineShown = { fixLine = null })
             HistorySection(ui, actions)
         }
         MqSnackbarHost(snackbar)
-        SaleBar(ui, actions)
+        SaleBar(
+            ui,
+            actions,
+            Modifier.testTag("sale-bar"),
+            onBackToCart = {
+                fixLine = refusalOf(ui.queued, ui.sale.lines)?.productId
+                actions.onBackToCart()
+            }
+        )
     }
+    if (ui.sale.reviewing && ui.sale.queuedRowId == null) ReviewSheet(ui, actions)
     if (registering) {
         RegistrationSheet(
             fields = RegistrationFields(name, email, phone),

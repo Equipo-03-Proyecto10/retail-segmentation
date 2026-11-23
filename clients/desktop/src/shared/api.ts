@@ -396,6 +396,7 @@ export const DOMAIN_EVENT_SUBJECT_TYPES = [
   'stock_level',
   'campaign',
   'experiment',
+  'rule_set',
   'audit_entry',
   'domain_event',
 ] as const;

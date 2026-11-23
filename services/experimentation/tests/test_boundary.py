@@ -50,6 +50,22 @@ EXPECTED = {
     ("experiments.experiment_frame_exclusion", "INSERT"),
     ("experiments.experiment_flag", "SELECT"),
     ("experiments.experiment_flag", "INSERT"),
+    # F25-13: the primary result is four more of its own tables, SELECT and INSERT only.
+    ("experiments.experiment_result", "SELECT"),
+    ("experiments.experiment_result", "INSERT"),
+    ("experiments.experiment_result_arm", "SELECT"),
+    ("experiments.experiment_result_arm", "INSERT"),
+    ("experiments.experiment_result_comparison", "SELECT"),
+    ("experiments.experiment_result_comparison", "INSERT"),
+    ("experiments.experiment_result_balance", "SELECT"),
+    ("experiments.experiment_result_balance", "INSERT"),
+    ("experiments.sale_attribution", "SELECT"),
+    ("experiments.sale_attribution", "INSERT"),
+    # F25-08: what the assignment checked, two more of its own tables.
+    ("experiments.experiment_assignment_record", "SELECT"),
+    ("experiments.experiment_assignment_record", "INSERT"),
+    ("experiments.experiment_assignment_balance", "SELECT"),
+    ("experiments.experiment_assignment_balance", "INSERT"),
     # F25-09: the frame is read from published objects only (ADR-0044, ADR-0068).
     ("api_campaigns", "USAGE"),
     ("api_campaigns.campaign_target_v1", "SELECT"),

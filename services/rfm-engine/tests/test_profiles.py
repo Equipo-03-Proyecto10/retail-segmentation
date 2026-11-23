@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -128,6 +128,61 @@ def test_a_registered_customer_without_a_profile_is_pending_in_both_formats(
         "customer_id",
         "state",
     ]
+
+
+@pytest.mark.parametrize("accept", [JSON, XML])
+def test_anonymized_customers_remain_readable_through_single_and_filtered_lists(
+    build_app: Callable[..., Flask],
+    token: Callable[..., dict[str, str]],
+    shop: Shop,
+    owner: psycopg.Connection,
+    now: Any,
+    accept: dict[str, str],
+) -> None:
+    """Anonymization keeps RFM history and the stable customer reference
+    (ADR-0066 section 3); it does not turn a registered customer into unknown."""
+    pending, scored = shop.customer(), shop.customer()
+    app, client, _headers = _client(build_app, token, "ANALYST")
+    _consume(app, shop.sale(scored, days_ago(now, 2), unit_price="25.00"))
+    stored = client.get(
+        f"/v1/rfm-profiles/{scored}", headers={**token("ANALYST"), **JSON}
+    ).get_json()
+    for customer in (pending, scored):
+        owner.execute(
+            "UPDATE public.customer SET name = 'Anonymized customer', email = NULL,"
+            " phone = NULL, user_id = NULL, anonymized_at = clock_timestamp()"
+            " WHERE customer_id = %s",
+            (customer,),
+        )
+
+    headers = {**token("ANALYST"), **accept}
+    for customer, state in ((pending, "pending"), (scored, "scored")):
+        response = client.get(f"/v1/rfm-profiles/{customer}", headers=headers)
+        assert response.status_code == 200
+        if accept == JSON:
+            assert response.get_json()["state"] == state
+        else:
+            root = _assert_xsd(response)
+            assert root.xpath("string(//*[local-name()='state'])") == state
+
+    queries = (
+        ({"size": 100}, scored),
+        ({"state": "scored", "size": 100}, scored),
+        ({"label_code": stored["label_code"], "size": 100}, scored),
+        ({"rule_set_id": stored["rule_set_id"], "size": 100}, scored),
+        ({"state": "pending", "size": 100}, pending),
+    )
+    for query, expected in queries:
+        response = client.get("/v1/rfm-profiles", query_string=query, headers=headers)
+        assert response.status_code == 200
+        if accept == JSON:
+            ids = {
+                profile["customer_id"] for profile in response.get_json()["profiles"]
+            }
+        else:
+            root = _assert_xsd(response)
+            ids = set(root.xpath("//*[local-name()='customer_id']/text()"))
+        assert str(expected) in ids
 
 
 @pytest.mark.parametrize(
@@ -318,7 +373,9 @@ def test_the_sales_consumer_result_and_its_computed_instant_are_read_back(
         2,
         "40.00",
     )
-    assert after["computed_at"] >= before["computed_at"]
+    assert datetime.fromisoformat(after["computed_at"]) > datetime.fromisoformat(
+        before["computed_at"]
+    )
 
 
 def test_reads_write_no_row(

@@ -17,7 +17,11 @@ from psycopg import Connection
 STATES = ("scored", "unassigned", "pending")
 BIGINT_MAX = 2**63 - 1
 
-_SOURCE = (
+_LIST = (
+    "WITH matches AS ("
+    " SELECT c.customer_id, COALESCE(p.state, 'pending') AS state, p.rule_set_id,"
+    " p.r_days, p.f_count, p.m_total, p.r_score, p.f_score, p.m_score,"
+    " p.label_code, p.via_fallback, p.computed_at, p.next_change_at"
     " FROM api_customers.customer_ref_v1 AS c"
     " LEFT JOIN rfm.customer_profile AS p ON p.customer_id = c.customer_id"
     " WHERE ((%(state)s = 'pending' AND p.customer_id IS NULL)"
@@ -25,15 +29,16 @@ _SOURCE = (
     "         AND (%(state)s::text IS NULL OR p.state = %(state)s::text)))"
     " AND (%(label)s::text IS NULL OR p.label_code = %(label)s::text)"
     " AND (%(rule_set)s::bigint IS NULL OR p.rule_set_id = %(rule_set)s::bigint)"
+    "), page_rows AS ("
+    " SELECT * FROM matches ORDER BY customer_id"
+    " LIMIT %(limit)s OFFSET %(offset)s"
+    ")"
+    " SELECT p.customer_id, p.state, p.rule_set_id, p.r_days, p.f_count,"
+    " p.m_total, p.r_score, p.f_score, p.m_score, p.label_code,"
+    " p.via_fallback, p.computed_at, p.next_change_at, totals.total"
+    " FROM (SELECT count(*) AS total FROM matches) AS totals"
+    " LEFT JOIN page_rows AS p ON true ORDER BY p.customer_id"
 )
-_LIST = (
-    "SELECT c.customer_id, COALESCE(p.state, 'pending'), p.rule_set_id, p.r_days,"
-    " p.f_count, p.m_total, p.r_score, p.f_score, p.m_score, p.label_code,"
-    " p.via_fallback, p.computed_at, p.next_change_at"
-    + _SOURCE
-    + " ORDER BY c.customer_id LIMIT %(limit)s OFFSET %(offset)s"
-)
-_COUNT = "SELECT count(*)" + _SOURCE
 _ONE = (
     "SELECT c.customer_id, COALESCE(p.state, 'pending'), p.rule_set_id, p.r_days,"
     " p.f_count, p.m_total, p.r_score, p.f_score, p.m_score, p.label_code,"
@@ -115,9 +120,9 @@ def listing(
         "limit": size,
         "offset": (page - 1) * size,
     }
-    total_row = connection.execute(_COUNT, values).fetchone()
     rows = connection.execute(_LIST, values).fetchall()
-    return [_profile(row) for row in rows], int(total_row[0] if total_row else 0)
+    total = int(rows[0][13]) if rows else 0
+    return [_profile(row) for row in rows if row[0] is not None], total
 
 
 def one(connection: Connection, customer_id: UUID) -> dict[str, Any]:

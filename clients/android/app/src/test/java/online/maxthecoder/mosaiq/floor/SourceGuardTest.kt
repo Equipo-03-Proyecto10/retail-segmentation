@@ -54,6 +54,19 @@ class SourceGuardTest {
         }
     }
 
+    /**
+     * ADR-0057, #1153: a dialog or a text button is a kit component. Material3's stock AlertDialog
+     * and TextButton draw `primary` text, which fails AA, so only `ui/components/` may wrap them.
+     */
+    @Test
+    fun noStockDialogOrTextButtonOutsideTheKit() {
+        val names = "AlertDialog|BasicAlertDialog|TextButton"
+        val stock = Regex("""\b(?:$names)\s*\(|import androidx\.compose\.material3\.(?:$names)\b""")
+        val kit = File(main, "online/maxthecoder/mosaiq/floor/ui/components")
+        val hits = sources.filter { !it.startsWith(kit) && stock.containsMatchIn(it.readText()) }.map { it.name }
+        assertEquals("use MqDialog and MqButton", emptyList<String>(), hits)
+    }
+
     /** ADR-0041: a retry id is generated once, at the tap, never per attempt. */
     @Test
     fun noWorkerGeneratesAClientId() {

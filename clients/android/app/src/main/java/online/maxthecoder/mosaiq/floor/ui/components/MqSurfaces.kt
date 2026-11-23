@@ -1,15 +1,20 @@
 package online.maxthecoder.mosaiq.floor.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.FlowRowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Snackbar
@@ -25,10 +30,14 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.window.Dialog
 import online.maxthecoder.mosaiq.floor.R
+import online.maxthecoder.mosaiq.floor.ui.theme.Elevation
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
+import online.maxthecoder.mosaiq.floor.ui.theme.mosaic
 
 /** A surface with a hairline border and the 4dp radius: no shadow, no tint. */
 @Composable
@@ -114,5 +123,59 @@ fun MqSnackbarHost(hostState: SnackbarHostState, modifier: Modifier = Modifier) 
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             actionColor = MaterialTheme.colorScheme.inversePrimary
         )
+    }
+}
+
+/**
+ * The MOSAIQ modal (ADR-0002, ADR-0057): the raised surface with the default border, the 6dp
+ * radius and the modal shadow, a title that is a heading, a body, and a sunken footer whose
+ * [actions] are [MqButton]s, aligned to the end and wrapping at 375dp. TalkBack announces the
+ * window by its [title]. Never a stock AlertDialog: its text buttons draw `primary` text, which
+ * fails AA on its own container (#1153).
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MqDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    actions: @Composable FlowRowScope.() -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        val scheme = MaterialTheme.colorScheme
+        Surface(
+            modifier = modifier.fillMaxWidth().semantics { paneTitle = title },
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.mosaic.raised,
+            contentColor = scheme.onSurface,
+            border = BorderStroke(Hairline, MaterialTheme.mosaic.borderDefault),
+            shadowElevation = Elevation.Modal
+        ) {
+            Column {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.padding(horizontal = Spacing.Lg, vertical = Spacing.Md).semantics { heading() }
+                )
+                HorizontalDivider(thickness = Hairline, color = scheme.outlineVariant)
+                Column(
+                    Modifier.padding(Spacing.Lg),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Md),
+                    content = content
+                )
+                HorizontalDivider(thickness = Hairline, color = scheme.outlineVariant)
+                FlowRow(
+                    modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .background(scheme.surfaceVariant)
+                        .padding(horizontal = Spacing.Lg, vertical = Spacing.Md),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.Sm, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(Spacing.Sm),
+                    content = actions
+                )
+            }
+        }
     }
 }

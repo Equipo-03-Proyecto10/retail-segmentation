@@ -7,11 +7,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +30,9 @@ import online.maxthecoder.mosaiq.floor.net.KpiMeasure
 import online.maxthecoder.mosaiq.floor.net.KpiReport
 import online.maxthecoder.mosaiq.floor.session.ChosenStore
 import online.maxthecoder.mosaiq.floor.ui.components.MqBadge
+import online.maxthecoder.mosaiq.floor.ui.components.MqButton
+import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
+import online.maxthecoder.mosaiq.floor.ui.components.MqDialog
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
 import online.maxthecoder.mosaiq.floor.ui.components.MqListRow
 import online.maxthecoder.mosaiq.floor.ui.components.MqLoading
@@ -105,15 +106,20 @@ internal fun IndicatorsContent(
         }
     }
     title?.let { shown ->
-        AlertDialog(
-            onDismissRequest = { title = null },
-            title = { Text(shown) },
-            text = { Text(text) },
-            confirmButton = {
-                TextButton(onClick = { title = null }) { Text(stringResource(R.string.indicators_close)) }
+        MqDialog(
+            title = shown,
+            onDismiss = { title = null },
+            actions = {
+                MqButton(
+                    stringResource(R.string.indicators_close),
+                    { title = null },
+                    variant = MqButtonVariant.Secondary
+                )
             },
             modifier = Modifier.testTag("definition")
-        )
+        ) {
+            Text(text, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 

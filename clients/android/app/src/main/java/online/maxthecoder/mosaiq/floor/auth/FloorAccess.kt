@@ -101,14 +101,15 @@ object FloorAccess {
                 ),
             FloorSection.OUTBOX to emptyList(),
             // What went wrong on the floor (F27-14): the incidents of the caller's stores and their review,
-            // the promotions shown by store and campaign, and the names those two need. The phone's own
-            // syncs come from the outbox, which calls nothing.
+            // the promotions shown by store and campaign, the promotions applied in sales by store (F27-16),
+            // and the names those need. The phone's own syncs come from the outbox, which calls nothing.
             FloorSection.REVIEW to
                 listOf(
                     ServiceOperation("engagement", "listCaptureIncidents"),
                     ServiceOperation("engagement", "getCaptureIncident"),
                     ServiceOperation("engagement", "reviewCaptureIncident"),
                     ServiceOperation("engagement", "listEngagementEventsV2"),
+                    ServiceOperation("sales", "listSalePromotionTotals"),
                     ServiceOperation("campaigns", "listPromotions"),
                     ServiceOperation("stores", "listStores")
                 ),

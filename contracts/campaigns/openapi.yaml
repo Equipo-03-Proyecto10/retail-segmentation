@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: campaigns-service
-  version: 1.4.1
+  version: 1.4.2
   description: >-
     Owns the campaign lifecycle rule. A campaign is created as DRAFT, may be
     edited only while it remains DRAFT, and moves only DRAFT to ACTIVE or
@@ -985,7 +985,6 @@ paths:
   /v1/promotions:
     get:
       operationId: listPromotions
-      x-mosaiq-status: planned
       summary: List promotions
       description: >-
         Returns promotions ordered by `promotion_id`. `campaign_id`, `store_id`,
@@ -1050,7 +1049,6 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     post:
       operationId: createPromotion
-      x-mosaiq-status: planned
       summary: Create a promotion
       description: >-
         Creates a promotion of a DRAFT campaign. The server allocates
@@ -1134,7 +1132,6 @@ paths:
   /v1/promotions/{promotion_id}:
     get:
       operationId: getPromotion
-      x-mosaiq-status: planned
       summary: Get a promotion
       description: >-
         Returns one promotion. For the four floor roles a promotion that is not
@@ -1185,7 +1182,6 @@ paths:
           $ref: '#/components/responses/ProtectedDatabaseUnavailable'
     put:
       operationId: replacePromotion
-      x-mosaiq-status: planned
       summary: Replace a promotion of a draft campaign
       description: >-
         Replaces `name`, `discount_percent`, `starts_on`, `ends_on`, `store_ids`

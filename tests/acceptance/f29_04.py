@@ -41,6 +41,8 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from tests.acceptance.evidence import (
+    JWT,
+    Masker,
     Recorder,
     credential,
     edge_from_environment,
@@ -205,8 +207,21 @@ class Ran:
     seconds: float = 0.0
 
 
+# A connection string carries its password between the first colon and the "@".
+_DSN_PASSWORD = re.compile(r"(\b[a-z][a-z0-9+.-]*://[^\s:/@]+:)([^\s@/]+)(@)")
+
+
+def mask_log(masker: Masker, text: str) -> str:
+    """A raw log, with every token and every connection-string password masked.
+
+    A failed connection prints its DSN, so a log can hold a credential the
+    runbook promises no file holds (step 3)."""
+    text = JWT.sub(lambda m: masker.mark(m.group(0)), text)
+    return _DSN_PASSWORD.sub(lambda m: m[1] + masker.mark(m[2]) + m[3], text)
+
+
 def run_command(
-    suite: Suite, out: Path, environment: dict[str, str], index: int
+    suite: Suite, out: Path, environment: dict[str, str], index: int, masker: Masker
 ) -> tuple[Ran, str]:
     stem = f"{index:02d}-{suite.criterion.lower().replace('ó', 'o')}-{suite.cwd}"
     stem = stem.replace(".", "web")
@@ -223,7 +238,7 @@ def run_command(
             text=True,
         )
         if staged.returncode != 0:
-            log.write_text(staged.stdout + staged.stderr)
+            log.write_text(mask_log(masker, staged.stdout + staged.stderr))
             return Ran(staged.returncode), log.name
     started = time.monotonic()
     result = subprocess.run(
@@ -234,7 +249,13 @@ def run_command(
         text=True,
     )
     log.write_text(
-        " ".join(command_for(suite, junit)) + "\n\n" + result.stdout + result.stderr
+        mask_log(
+            masker,
+            " ".join(command_for(suite, junit))
+            + "\n\n"
+            + result.stdout
+            + result.stderr,
+        )
     )
     counts = (
         cargo_counts(result.stdout + result.stderr)
@@ -286,6 +307,30 @@ def check_kmeans(rec: Recorder, out: Path, reproduce: Callable[[], dict]) -> Non
     )
 
 
+def drift_row(item: dict) -> tuple[str, str, str, bool]:
+    """The row of one planted (kind, size): case, expected, actual, held.
+
+    A size no pair detected still gets its row, as F23-10 registers it (the
+    digest pins the figures); a detected size holds only when every pair
+    detected it and each had an alert on the planted variable, moving the
+    planted way."""
+    pairs, alerted, explained = item["pairs"], item["alerted_pairs"], item["explained"]
+    name = f"{item['kind']} planted at {item['size']:g}"
+    if not alerted:
+        return (
+            f"{name}: not detected, as F23-10 registers it",
+            "recorded, not a pass: the digest above pins the figures",
+            f"0 of {pairs} detected",
+            True,
+        )
+    return (
+        f"{name}: detected, with an alert on the planted variable and direction",
+        f"{pairs} of {pairs} detected, and in each an alert on the planted variable",
+        f"{alerted} detected, {explained} with such an alert",
+        alerted == pairs == explained and pairs > 0,
+    )
+
+
 def check_drift(rec: Recorder, out: Path, figures: Callable[[], dict]) -> None:
     import json
 
@@ -301,17 +346,20 @@ def check_drift(rec: Recorder, out: Path, figures: Callable[[], dict]) -> None:
         found["digest"],
         links=["drift-figures.json"],
     )
-    for item in found["detection"]:
-        if item["kind"] in ("SPEND", "FREQUENCY") and item["alerted_pairs"]:
-            rec.check(
-                "Drift",
-                f"{item['kind']} planted at {item['size']:g}: detected, and each alert"
-                " explains the planted change",
-                f"{item['pairs']} of {item['pairs']} detected and explained",
-                f"{item['alerted_pairs']} detected, {item['explained']} explained",
-                item["alerted_pairs"] == item["pairs"] == item["explained"],
-                ["drift-figures.json"],
-            )
+    rows = [i for i in found["detection"] if i["kind"] in ("SPEND", "FREQUENCY")]
+    for item in rows:
+        rec.check("Drift", *drift_row(item), ["drift-figures.json"])
+    for kind in ("SPEND", "FREQUENCY"):
+        # A kind with no detected size would leave the criterion unshown.
+        detected = [i for i in rows if i["kind"] == kind and i["alerted_pairs"]]
+        rec.check(
+            "Drift",
+            f"{kind}: at least one planted size is detected",
+            "at least 1 size detected",
+            f"{len(detected)} of {sum(i['kind'] == kind for i in rows)} sizes",
+            bool(detected),
+            ["drift-figures.json"],
+        )
     fa = found["false_alarms"]
     rec.check(
         "Drift",
@@ -339,7 +387,7 @@ def run_suites(args: argparse.Namespace) -> int:
     for index, suite in enumerate(SUITES, start=1):
         if args.only and suite.criterion not in args.only:
             continue
-        ran, log = run_command(suite, out, environment, index)
+        ran, log = run_command(suite, out, environment, index, rec.masker)
         rec.check(
             suite.criterion,
             f"{suite.name} ({suite.claims})",
@@ -404,17 +452,28 @@ def _verification(rec: Recorder, edge, token: str, timeout: float) -> None:
     while recalculation["state"] == "RUNNING" and time.monotonic() < deadline:
         time.sleep(5)
         reply, number = rec.call(edge, "GET", path, note="poll", token=token)
+        if reply.status != 200:
+            rec.check(
+                "Incremental",
+                "the verification can be polled until it ends",
+                "200",
+                reply.outcome(),
+                False,
+                [rec.link(number)],
+            )
+            return
         recalculation = reply.json()
     rec.check(
         "Incremental",
         "every profile held incrementally against a full recomputation at one instant",
-        "COMPLETED, EQUIVALENT, 0 different",
+        "COMPLETED, EQUIVALENT, 0 different, at least 1 customer checked",
         f"{recalculation['state']}, {recalculation.get('outcome')},"
         f" {recalculation.get('customers_different')} different of"
         f" {recalculation.get('customers_checked')}",
         recalculation["state"] == "COMPLETED"
         and recalculation.get("outcome") == "EQUIVALENT"
-        and recalculation.get("customers_different") == 0,
+        and recalculation.get("customers_different") == 0
+        and (recalculation.get("customers_checked") or 0) >= 1,
         [rec.link(number)],
     )
     if recalculation.get("customers_different"):
@@ -434,21 +493,39 @@ def _migrations(rec: Recorder, edge, token: str, customer: str, since: str) -> N
     items = reply.json().get("migrations", []) if reply.status == 200 else []
     changed = [m for m in items if m.get("changed_at")]
 
-    def kept(m: dict) -> bool:
-        # `new` is a first assignment; a label before must still be named.
-        state = m.get("previous_state")
-        return state in ("new", "unassigned") or (
-            state == "label" and bool(m.get("previous_label_code"))
-        )
-
+    held_, actual = migration_verdict(reply.status, changed)
     rec.check(
         "Migración",
-        "the sale's customer: each change still names the assignment before it",
-        "every changed migration has its previous state (and label)",
-        f"{len(changed)} changed, {sum(map(kept, changed))} with it",
-        reply.status == 200 and all(map(kept, changed)),
+        "the sale's customer: the sale changed the segment, and each change still"
+        " names the assignment before it",
+        "at least 1 changed migration, each with its previous state (and label)",
+        actual,
+        held_,
         [rec.link(number)],
     )
+
+
+def previous_kept(m: dict) -> bool:
+    # `new` is a first assignment; a label before must still be named.
+    state = m.get("previous_state")
+    return state in ("new", "unassigned") or (
+        state == "label" and bool(m.get("previous_label_code"))
+    )
+
+
+def migration_verdict(status: int, changed: list[dict]) -> tuple[bool, str]:
+    """Whether the instance's migration check holds, and what to record.
+
+    No change means the sale did not provoke one: that is recorded and does
+    not hold, because `all([])` would otherwise pass on nothing (the runbook:
+    "Migración" then rests on step 1)."""
+    if status != 200:
+        return False, f"HTTP {status}"
+    kept = sum(map(previous_kept, changed))
+    actual = f"{len(changed)} changed, {kept} with it"
+    if not changed:
+        return False, actual + ": the sale did not provoke a change"
+    return kept == len(changed), actual
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -12,5 +12,5 @@
     "isolatedModules": true,
     "types": ["node"]
   },
-  "include": ["src", "tests", "*.config.ts"]
+  "include": ["src", "tests", "scripts/**/*.ts", "*.config.ts"]
 }

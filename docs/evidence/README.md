@@ -185,6 +185,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F23-04](f23-04-kmeans-stability.md) | A registered K-means result reproduced identically from its recorded parameters, seed and bootstrap stability with stated thresholds, how far the clusters move between adjacent time windows, and what that feeds back into F23-03's choice of k |
 | [F23-05](f23-05-segment-profiles.md) | Each K-means segment at k = 4 in business terms (centroid in raw units, size, revenue share), a commercial action for each with the measure that would show it worked, and the three places a label says more than its customers do |
 | [F23-06](f23-06-method-comparison.md) | RFM rules and K-means compared on interpretability, stability and usefulness for decisions, each defined before the results and scored by the same code on the same customers; the verdict, from the criteria and not from agreement, favours neither method |
+| [F23-11](f23-11-outcome-test.md) | The outcome test of the repurchase relation: matured cohorts only, a planted fall in one segment's rate claimed as concept drift on the second cohort and served with its relation, horizon and cohort, and a change in the population alone never claimed |
 
 ## Review passes
 

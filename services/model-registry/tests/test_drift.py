@@ -192,7 +192,13 @@ def test_no_sentence_the_monitor_can_say_names_the_outcome_claim() -> None:
     for source in (REPO / "services/model-registry/app").glob("*.py"):
         for number, line in enumerate(source.read_text().splitlines(), 1):
             if re.search(r"concept[ _-]?drift", line, re.I):
-                assert source.name == "drift.py" and "never" in line, (source, number)
+                # The one place the claim is made is the outcome test's result
+                # (ADR-0065, ADR-0089); everywhere else it is only disowned.
+                allowed = (source.name == "drift.py" and "never" in line) or (
+                    source.name == "outcome.py"
+                    and line.strip() == 'CLAIM = "CONCEPT_DRIFT"'
+                )
+                assert allowed, (source, number)
     assert drift.review_code("R") == "REVIEW_FEATURE_DISTRIBUTION"
     assert drift.review_code(drift.SEGMENT_SHARES) == "REVIEW_SEGMENT_MIX"
 

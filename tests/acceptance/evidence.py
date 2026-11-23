@@ -36,6 +36,7 @@ from typing import Any
 from tests.negative.stack import ROOT, Edge, Reply, env_bool, registry_names
 
 AUTH_SESSIONS = "/api/auth/v1/sessions"
+MASK_MARK = re.compile(r"<masked #(\d+)>")
 MASKED_HEADERS = {"authorization", "cookie", "set-cookie"}
 MASKED_FIELDS = {
     "access_token",
@@ -72,10 +73,21 @@ class Masker:
 
     def __init__(self) -> None:
         self.seen: dict[str, int] = {}
+        self.taken: set[int] = set()
 
     def mark(self, secret: str) -> str:
-        ordinal = self.seen.setdefault(secret, len(self.seen) + 1)
-        return f"<masked #{ordinal}>"
+        # A value another masker already marked (a client's record) keeps its
+        # number, and no new secret is given that number afterwards.
+        if (kept := MASK_MARK.fullmatch(secret)) is not None:
+            self.taken.add(int(kept.group(1)))
+            return secret
+        if secret not in self.seen:
+            ordinal = 1
+            while ordinal in self.taken:
+                ordinal += 1
+            self.seen[secret] = ordinal
+            self.taken.add(ordinal)
+        return f"<masked #{self.seen[secret]}>"
 
     def header(self, name: str, value: str) -> str:
         if name.lower() not in MASKED_HEADERS:

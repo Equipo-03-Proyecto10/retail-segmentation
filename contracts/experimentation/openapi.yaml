@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: experimentation-service
-  version: 1.2.0
+  version: 1.2.1
   description: >-
     Plans experiments, assigns customers to their arms, evaluates conversions, credits sales to campaigns
     and reports results (RN-67). An experiment's frame and arms are fixed before measurement, assignment,
@@ -617,7 +617,6 @@ paths:
       - ADMIN
       - STORE_MANAGER
       - SALES_ASSOCIATE
-      x-mosaiq-status: planned
       parameters:
       - $ref: '#/components/parameters/CorrelationId'
       - $ref: '#/components/parameters/CustomerIdRequired'

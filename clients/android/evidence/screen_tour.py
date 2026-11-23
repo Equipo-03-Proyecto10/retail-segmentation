@@ -1,8 +1,10 @@
-"""Drive the installed MOSAIQ Floor debug app and capture every screen (#445).
+"""Drive the installed MOSAIQ Floor debug app and capture every screen (#445, #733).
 
-The screenshots of docs/evidence/445-android-screens.md come from this tour. It
-drives the real app, as installed, through uiautomator dumps and adb input,
-and saves each screen half-size into the given directory.
+The screenshots of docs/evidence/733-android-screens-375dp.md come from this
+tour. It drives the real app, as installed, through uiautomator dumps and adb
+input, at 375 x 667 dp, and saves each screen in light and in dark, full size,
+into the given directory. #445 ran the first version of this tour before the
+MOSAIQ refresh (#716); its screenshots are the "before" of #733.
 
 Prerequisites:
 - the local stack with the seed, its gateway on the host's 127.0.0.1:8080, which
@@ -15,17 +17,23 @@ Prerequisites:
 
 ADB names the adb binary, and ADB_CWD the directory it runs in. Steps can also be
 named one by one, for example s01-sign-in s02-refused, and they run in order
-against whatever state the device is in. "all" starts from a cleared app.
+against whatever state the device is in. "all" starts from a cleared app. The
+display is set to 750 x 1334 px at 320 dpi, which is 375 x 667 dp, and put back
+to the device's own size and the light scheme at the end.
+
+profile_outbox_tour.py reuses these helpers.
 """
 
 from __future__ import annotations
 
 import io
+import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -36,6 +44,16 @@ ADB_CWD = os.environ.get("ADB_CWD") or None
 PKG = "online.maxthecoder.mosaiq.floor"
 CONTROLLER = "com.android.permissioncontroller"
 OUT = Path(sys.argv[1])
+PREFIX = "733-android"
+PASSWORD = "Password123!"  # the seed's published demonstration password (ADR-0008)
+# A new customer per run, so the tour can run again against the same database.
+TOUR_EMAIL = f"tour.customer.{int(time.time())}@mosaiq-demo.com"
+
+# At 375 x 667 dp the content sits between the top bar (y < 200) and the bottom
+# navigation (y > 1126), and the sale screen's sticky total starts at y 716 to
+# 880. Every vertical gesture stays inside y 250..700, so it always lands on
+# the scrolling content, never on a bar.
+TOP, BOTTOM = 250, 700
 
 
 def adb(*args: str, binary: bool = False, check: bool = True):
@@ -62,6 +80,8 @@ def nodes() -> list[dict]:
                 "cls": n.get("class", ""),
                 "pkg": n.get("package", ""),
                 "click": n.get("clickable") == "true",
+                "checkable": n.get("checkable") == "true",
+                "checked": n.get("checked") == "true",
                 "center": ((x1 + x2) // 2, (y1 + y2) // 2),
                 "bounds": (x1, y1, x2, y2),
             }
@@ -102,7 +122,7 @@ def find(
             raise AssertionError(
                 f"not found: {text or rid or cls!r}; on screen: {texts()[:40]}"
             )
-        if scroll and swipes < 8:
+        if scroll and swipes < 12:
             swipe_up()
             swipes += 1
         else:
@@ -130,19 +150,46 @@ def clear_field(field_index: int) -> None:
     adb("shell", "input", "keyevent", *(["KEYCODE_DEL"] * 40))
 
 
-def swipe_up() -> None:
-    adb("shell", "input", "swipe", "540", "1500", "540", "700", "350")
+def drag(from_y: int, to_y: int, ms: int = 1200) -> None:
+    """A slow drag: the content follows the finger and does not fling."""
+    adb("shell", "input", "swipe", "375", str(from_y), "375", str(to_y), str(ms))
     time.sleep(0.8)
+
+
+def swipe_up() -> None:
+    drag(BOTTOM, TOP, 350)
 
 
 def swipe_down() -> None:
-    adb("shell", "input", "swipe", "540", "700", "540", "1500", "350")
-    time.sleep(0.8)
+    drag(TOP, BOTTOM, 350)
 
 
 def to_top() -> None:
-    for _ in range(6):
+    for _ in range(8):
         swipe_down()
+
+
+def locate(text: str, **kw) -> dict:
+    """`text` on screen, looked for above the screen first, then below it."""
+    for move in [None] + [swipe_down] * 8 + [swipe_up] * 16:
+        if move:
+            move()
+        try:
+            return find(text, timeout=0, **kw)
+        except AssertionError:
+            pass
+    return find(text, timeout=0, **kw)
+
+
+def bring(text: str, y: int = 300, **kw) -> None:
+    """Scroll until `text`, above, on or below the screen, sits near `y`."""
+    for _ in range(8):
+        at = locate(text, **kw)["center"][1]
+        step = max(-(BOTTOM - TOP), min(BOTTOM - TOP, at - y))
+        if abs(step) < 40:
+            return
+        start = BOTTOM if step > 0 else TOP
+        drag(start, start - step)
 
 
 def back() -> None:
@@ -155,22 +202,62 @@ def hide_keyboard() -> None:
         back()
 
 
+def viewport(on: bool) -> None:
+    if on:
+        adb("shell", "wm", "size", "750x1334")
+        adb("shell", "wm", "density", "320")
+    else:
+        adb("shell", "wm", "size", "reset")
+        adb("shell", "wm", "density", "reset")
+    time.sleep(1)
+
+
+def scheme(dark: bool) -> None:
+    adb("shell", "cmd", "uimode", "night", "yes" if dark else "no")
+    time.sleep(2.5)
+
+
+def airplane(on: bool) -> None:
+    adb("shell", "cmd", "connectivity", "airplane-mode", "enable" if on else "disable")
+    time.sleep(3)
+
+
 def shot(name: str) -> None:
     hide_keyboard()
     time.sleep(0.6)
     png = adb("exec-out", "screencap", "-p", binary=True)
     image = Image.open(io.BytesIO(png)).convert("RGB")
-    image = image.resize((image.width // 2, image.height // 2), Image.LANCZOS)
+    assert image.size == (750, 1334), image.size
     OUT.mkdir(parents=True, exist_ok=True)
-    path = OUT / f"445-android-{name}.png"
+    path = OUT / f"{PREFIX}-{name}.png"
     image.quantize(colors=256, method=Image.Quantize.MEDIANCUT).save(
         path, optimize=True
     )
     print(f"  saved {path.name} ({path.stat().st_size // 1024} KB)")
 
 
-def deny_dialog() -> None:
-    deadline = time.monotonic() + 15
+def both(name: str, ready: str | None = None, frame=None, **kw) -> None:
+    """The screen in light, then in dark, waiting for `ready` after each switch.
+
+    The activity is recreated on each switch. The app keeps its state, but a
+    scrolled screen can come back at another offset while its parts reload, so
+    `frame`, when given, scrolls it into place again before each capture.
+    """
+    for dark in (False, True):
+        scheme(dark)
+        if frame:
+            time.sleep(1)  # the recreated screen settles before it is scrolled
+            frame()
+        find(ready, timeout=20, **kw)
+        shot(f"{name}-{'dark' if dark else 'light'}")
+    scheme(False)
+    if frame:
+        frame()
+    find(ready, timeout=20, **kw)
+
+
+def deny_dialog(timeout: float = 15) -> bool:
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         for n in nodes():
             if n["id"] in (
@@ -182,18 +269,27 @@ def deny_dialog() -> None:
             ):
                 adb("shell", "input", "tap", *map(str, n["center"]))
                 time.sleep(1)
-                return
+                return True
         time.sleep(1)
-    raise AssertionError("no permission dialog to refuse")
+    if timeout >= 15:
+        raise AssertionError("no permission dialog to refuse")
+    return False
 
 
 # --- steps ----------------------------------------------------------------------
+
+RUNTIME_PERMISSIONS = (
+    "CAMERA",
+    "ACCESS_FINE_LOCATION",
+    "ACCESS_COARSE_LOCATION",
+    "POST_NOTIFICATIONS",
+)
 
 
 def fresh() -> None:
     """A clean app: no data, no runtime permission, launched."""
     adb("shell", "pm", "clear", PKG)
-    for p in ("CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"):
+    for p in RUNTIME_PERMISSIONS:
         adb("shell", "pm", "revoke", PKG, f"android.permission.{p}", check=False)
         adb(
             "shell",
@@ -228,207 +324,221 @@ def step(fn):
 
 @step
 def s01_sign_in() -> None:
+    scheme(False)
     fresh()
-    shot("session-01-sign-in")
+    both("session-01-sign-in", "Sign in with your store account to start the shift.")
 
 
 @step
 def s02_refused() -> None:
     sign_in("user3@mosaiq-demo.com", "wrong-password")
-    find("Code:", contains=True, timeout=20)
-    shot("session-02-wrong-password")
+    both("session-02-wrong-password", "That email or password", contains=True)
 
 
 @step
 def s03_role() -> None:
-    sign_in("user14@mosaiq-demo.com", "Password123!")
-    time.sleep(4)
-    print("  on screen:", texts()[:25])
-    shot("session-03-analyst-refused")
+    sign_in("user14@mosaiq-demo.com", PASSWORD)
+    both("session-03-analyst-refused", "You were signed out.", contains=True)
 
 
 @step
 def s04_signed_in() -> None:
-    sign_in("user3@mosaiq-demo.com", "Password123!")
-    find("Store & check-in", timeout=30)
+    sign_in("user3@mosaiq-demo.com", PASSWORD)
+    find("Account menu", timeout=30)
     time.sleep(2)
-    shot("session-04-signed-in-store-picker")
+    both("session-04a-signed-in", "Choose the store you are working in to check in.")
+    tap("Pick a store", index=1)  # the button; the top bar's store chip is another
+    both("session-04b-store-picker", "Page 1 of", contains=True)
 
 
 @step
 def s05_store() -> None:
-    tap("Store 1 · Monterrey, Nuevo León")
-    find("Check in", timeout=15)
-    shot("checkin-05-store-chosen")
+    tap("Store 1")
+    both("checkin-05-store-chosen", "Not checked in")
 
 
 @step
 def s06_location_dialog() -> None:
-    tap("Check in")
-    find(rid=f"{CONTROLLER}:id/permission_deny_button", timeout=15)
-    shot("checkin-06-location-dialog")
+    tap("Check in here")
+    both("checkin-06-location-dialog", rid=f"{CONTROLLER}:id/permission_deny_button")
 
 
 @step
 def s07_location_denied() -> None:
     deny_dialog()
-    find("Location is off for this app", contains=True, timeout=15)
-    time.sleep(
-        6
-    )  # the worker sends the check-in; the server's answer replaces "queued"
-    print("  on screen:", texts()[:20])
-    shot("checkin-07-location-denied")
+    # check-ins-service's answer replaces "Waiting to send".
+    find("No location was sent", contains=True, timeout=30)
+    both("checkin-07-location-denied", "not verified", contains=True)
 
 
 @step
 def s08_scan() -> None:
-    tap("Scan a product")
-    find("Scan", timeout=15)
-    shot("scan-08-before-asking")
+    tap("Scan", index=-1)  # the bottom navigation
+    both(
+        "scan-08-before-asking",
+        "Open the camera to read a product QR code or barcode.",
+    )
 
 
 @step
 def s09_camera_dialog() -> None:
-    tap("Scan")
-    find(rid=f"{CONTROLLER}:id/permission_deny_button", timeout=15)
-    shot("scan-09-camera-dialog")
+    tap("Scan", index=0)  # the screen's own button, above the navigation
+    both("scan-09-camera-dialog", rid=f"{CONTROLLER}:id/permission_deny_button")
 
 
 @step
 def s10_camera_denied() -> None:
     deny_dialog()
-    find("Product id", timeout=15)
-    print("  on screen:", texts()[:20])
-    shot("scan-10-camera-denied")
+    both("scan-10-camera-denied", "The camera is off for this app")
 
 
 @step
 def s11_manual_lookup() -> None:
+    bring("Product number", 500)
+    clear_field(0)
     type_into(0, "2")
     hide_keyboard()
-    tap("Look up")
-    find("in stock at Store 1", contains=True, timeout=20)
-    shot("scan-11-manual-lookup")
+    tap("Look up", scroll=True)
+    find("units at Store 1", contains=True, timeout=20, scroll=True)
+    both(
+        "scan-11-manual-lookup",
+        "units at Store 1",
+        frame=lambda: bring("Demo Product 2", 400),
+        contains=True,
+    )
 
 
 @step
 def s12_customer_search() -> None:
     tap("Add to sale")
-    tap("Customer & sale")
+    tap("Sale", index=-1)
     find("Search customers", timeout=15)
     type_into(0, "Demo Customer 3")
     hide_keyboard()
     tap("Search customers")
-    find("Demo Customer 3", contains=True, index=1, timeout=20)
-    shot("sale-12-customer-search")
+    find("customer3@mosaiq-demo.com", timeout=20, scroll=True)
+    both(
+        "sale-12-customer-search",
+        "customer3@mosaiq-demo.com",
+        frame=lambda: bring("Search customers", 290),
+    )
 
 
 @step
 def s13_registration_form() -> None:
-    tap("Register customer")
-    find("Hide registration", timeout=10)
-    swipe_up()
-    shot("sale-13-registration-form")
+    tap("New customer")
+    find("Registration channel", timeout=10)
+    both("sale-13-registration-form", "Registration channel")
 
 
 @step
 def s14_register() -> None:
     type_into(0, "Tour Customer")
-    type_into(1, "tour.customer@mosaiq-demo.com")
+    type_into(1, TOUR_EMAIL)
     hide_keyboard()
-    tap("physical_store")
-    tap("Register online", scroll=True)
-    find("Registered Tour Customer.", timeout=20, scroll=True)
-    shot("sale-14-registered")
+    tap("In store", scroll=True)
+    tap("Register customer", scroll=True)
+    # The sale screen comes back below the customer, at the new segment part.
+    find("Segment", timeout=20)
+    both("sale-14-registered", TOUR_EMAIL, frame=to_top)
 
 
 @step
 def s15_select_customer() -> None:
-    to_top()
-    tap("Hide registration")
-    tap("Demo Customer 3 · customer3@mosaiq-demo.com", timeout=10)
-    find("Selected: Demo Customer 3", contains=True, timeout=15)
-    time.sleep(2)
-    shot("sale-15-customer-selected")
+    tap("Change")
+    tap("Search customers")
+    # The row, by its email: the search field also reads "Demo Customer 3".
+    tap("customer3@mosaiq-demo.com", timeout=20, scroll=True)
+    find("Champion", timeout=20, scroll=True)
+    both("sale-15-customer-selected", "customer3@mosaiq-demo.com", frame=to_top)
+
+
+def checkbox_of(label: str) -> dict:
+    """The checkable row that holds `label`, which must be on screen."""
+    y = find(label)["center"][1]
+    for n in nodes():
+        x1, y1, x2, y2 = n["bounds"]
+        if n["checkable"] and y1 <= y <= y2:
+            return n
+    raise AssertionError(f"no checkbox for {label!r}")
 
 
 @step
 def s16_interests() -> None:
-    x, y = find("Milk", scroll=True)["center"]
-    adb("shell", "input", "tap", "127", str(y + 33))
-    time.sleep(0.8)
+    to_top()
+    if "Show interests" in texts():
+        tap("Show interests")
+    bring("Milk", 450)
+    if not checkbox_of("Milk")["checked"]:
+        tap("Milk")
+    assert checkbox_of("Milk")["checked"], "Milk did not tick"
     tap("Save interests", scroll=True)
     find("Interests saved.", timeout=20, scroll=True)
-    shot("sale-16-interests-saved")
+    both(
+        "sale-16-interests-saved",
+        "Interests saved.",
+        frame=lambda: bring("Interests saved.", 520),
+    )
 
 
 @step
 def s17_insights() -> None:
-    for _ in range(6):
-        if "Segment" in texts():
-            break
-        adb("shell", "input", "swipe", "540", "900", "540", "1300", "300")
-        time.sleep(0.8)
-    # The section's title near the top, so the segment and the list both show.
-    y = find("Segment")["center"][1]
-    if y > 520:
-        adb("shell", "input", "swipe", "540", str(y), "540", "480", "400")
-        time.sleep(0.8)
-    print("  on screen:", texts()[5:30])
-    shot("insights-17-segment-and-recommendations")
+    to_top()
+    tap("Hide interests")
+    find("Recommendations", timeout=20, scroll=True)
+    both(
+        "insights-17-segment-and-recommendations",
+        "1. ",
+        frame=lambda: bring("Segment", 260),
+        contains=True,
+    )
 
 
 @step
 def s18_sale_lines() -> None:
-    find("Confirm and queue sale", scroll=True, timeout=20)
-    swipe_up()
-    find("Demo Product 2 · 22.50 × 1", timeout=10)
-    shot("sale-18-lines-before-confirm")
+    both(
+        "sale-18a-lines-before-confirm",
+        "$22.50 each",
+        # The cart line; a recommendation reads "1. Demo Product 2".
+        frame=lambda: bring("Demo Product 2", 450),
+    )
+    tap("Record sale")
+    both("sale-18b-check-the-sale", "Check the sale")
 
 
 @step
 def s19_sale_recorded() -> None:
-    tap("Confirm and queue sale", scroll=True)
-    find(
-        "Sale saved on this phone. Its progress appears below.", timeout=15, scroll=True
-    )
-    time.sleep(8)
-    swipe_up()
-    print("  on screen:", texts()[5:30])
-    shot("sale-19-recorded")
+    tap("Confirm sale")
+    recorded = find(r"recorded.", contains=True, timeout=30)["text"]
+    print(" ", recorded)
+    find("Sent", timeout=30, scroll=True)
+    both("sale-19-recorded", "Sent", frame=lambda: bring("Sales on this phone", 300))
 
 
 @step
 def s20_refused_sale() -> None:
-    tap("Start another sale", scroll=True)
-    x, y = find("Product", cls=None, timeout=10, scroll=True)["center"]
-    field = find(cls="android.widget.EditText", index=-1)
-    adb("shell", "input", "tap", *map(str, field["center"]))
-    adb("shell", "input", "text", "Demo%sProduct%s6")
+    tap("Start another sale")
+    bring("Search products", 400)
+    type_into(0, "Demo Product 6")
     hide_keyboard()
-    tap("Search products", index=-1)
-    tap("Add Demo Product 6", contains=True, timeout=20, scroll=True)
-    tap("Confirm and queue sale", scroll=True)
-    find(
-        "Sale saved on this phone. Its progress appears below.", timeout=15, scroll=True
+    tap("Search")
+    tap("Add Demo Product 6", timeout=20, scroll=True)
+    tap("Record sale")
+    tap("Confirm sale")
+    # A refusal raises a notification, and Android asks once whether it may.
+    deny_dialog(timeout=12)
+    find("The sale was not recorded", timeout=30)
+    both(
+        "sale-20-refused",
+        "Needs attention",
+        frame=lambda: bring("Sales on this phone", 270),
     )
-    time.sleep(8)
-    swipe_up()
-    print("  on screen:", texts()[5:40])
-    shot("sale-20-refused")
 
 
 @step
 def s21_outbox_refused() -> None:
-    to_top()
-    adb(
-        "shell", "input", "swipe", "900", "358", "200", "358", "300"
-    )  # the tab row scrolls sideways
-    time.sleep(0.8)
-    tap("Outbox")
-    time.sleep(2)
-    print("  on screen:", texts()[5:30])
-    shot("outbox-21-refused-sale")
+    tap("Outbox", index=-1)
+    both("outbox-21-refused-sale", "1 needs attention")
 
 
 GATEWAY = "http://127.0.0.1:8080"
@@ -436,9 +546,7 @@ CUSTOMER_3 = "00000000-0000-0000-0000-000000000003"
 
 
 def reco_clicks() -> int:
-    """RECO_CLICK events of customer 3, read as the seeded analyst."""
-    import json
-    import urllib.request
+    """RECO_CLICK events of customer 3 on engagement v2, read as the seeded analyst."""
 
     def call(method, path, body=None, token=None):
         request = urllib.request.Request(GATEWAY + path, method=method, data=body)
@@ -453,42 +561,38 @@ def reco_clicks() -> int:
     login = json.dumps(
         {
             "email": "user14@mosaiq-demo.com",
-            "password": "Password123!",
+            "password": PASSWORD,
             "device_label": "screen tour",
         }
     ).encode()
     token = call("POST", "/api/auth/v1/sessions", login)["access_token"]
     page = call(
         "GET",
-        f"/api/engagement/v1/engagement-events?customer_id={CUSTOMER_3}&type=RECO_CLICK&size=100",
+        f"/api/engagement/v2/engagement-events?customer_id={CUSTOMER_3}"
+        "&type=RECO_CLICK&voided=false&size=100",
         token=token,
     )
-    return len([e for e in page["engagement_events"] if not e.get("voided")])
+    return len(page["engagement_events"])
 
 
 @step
 def s22_reco_click() -> None:
     before = reco_clicks()
-    tap("Customer & sale")
+    tap("Sale", index=-1)
+    tap("Start another sale")  # the customer stays chosen
     to_top()
-    # Starting another sale clears the customer: pick customer 3 again.
-    tap("Demo Customer 3 · customer3@mosaiq-demo.com", timeout=15, scroll=True)
-    find("Selected: Demo Customer 3", contains=True, timeout=15, scroll=True)
-    time.sleep(3)  # the segment and recommendations load after the selection
-    first = None
-    for _ in range(14):
-        first = next((t for t in texts() if t.startswith("1. ")), None)
-        if first:
-            break
-        adb("shell", "input", "swipe", "540", "1500", "540", "1050", "300")
-        time.sleep(0.6)
-    assert first, "no recommendation is shown"
+    find("Recommendations", timeout=20, scroll=True)
+    bring("Recommendations", 300)
+    first = find("1. ", contains=True, timeout=20)["text"]
     print("  tapping", first)
-    shot("insights-22a-before-the-tap")
-    tap(first, timeout=10)
-    time.sleep(3)
-    print("  on screen:", texts()[5:20])
-    shot("insights-22b-recommendation-opened")
+    both(
+        "insights-22a-before-the-tap",
+        first,
+        frame=lambda: bring("Recommendations", 300),
+    )
+    tap(f"Open {first.removeprefix('1. ')} in Scan")
+    find("units at Store 1", contains=True, timeout=20)
+    both("insights-22b-recommendation-opened", "units at Store 1", contains=True)
     time.sleep(8)
     after = reco_clicks()
     time.sleep(20)
@@ -499,48 +603,35 @@ def s22_reco_click() -> None:
     )
 
 
-def tabs_to(name: str) -> None:
-    """The tab row scrolls sideways: bring the named tab into view, then tap it."""
-    for direction in (("900", "200"), ("200", "900")):
-        if name in texts():
-            break
-        adb("shell", "input", "swipe", direction[0], "358", direction[1], "358", "300")
-        time.sleep(0.8)
-    tap(name)
-
-
 @step
 def s23_outbox_empty() -> None:
-    tabs_to("Outbox")
+    tap("Outbox", index=-1)
     tap("Dismiss", timeout=10)
-    find("Nothing is waiting, and nothing was refused.", timeout=10)
-    shot("outbox-23-empty")
+    both("outbox-23-empty", "Everything is synced")
 
 
 @step
 def s24_queued_offline() -> None:
-    adb("shell", "cmd", "connectivity", "airplane-mode", "enable")
-    time.sleep(3)
-    if not any(n["pkg"].endswith("permissioncontroller") for n in nodes()):
-        if "Check in" not in texts():
-            tabs_to("Store & check-in")
-        tap("Check in")
-    deny_dialog()  # asked again: one refusal is not yet "don't ask again"
-    find("Check-in queued. It is sent as soon as the network allows.", timeout=20)
-    shot("checkin-24-queued-offline")
+    airplane(True)
+    tap("Check-in", index=-1)
+    tap("Check in here")
+    deny_dialog(timeout=8)  # asked again: one refusal is not yet "don't ask again"
+    both("checkin-24-queued-offline", "Waiting to send")
 
 
 @step
 def s25_sign_out_warning() -> None:
-    tabs_to("Sign out")
-    find("Writes are still waiting", timeout=10)
-    shot("session-25-sign-out-warning")
+    tap("Account menu")
+    tap("Sign out")
+    both("session-25-sign-out-warning", "Writes are still waiting")
     tap("Stay signed in")
-    adb("shell", "cmd", "connectivity", "airplane-mode", "disable")
+    airplane(False)
     time.sleep(12)
     print(
         "  after reconnecting:",
-        [t for t in texts() if "check-in" in t.lower() or "verified" in t.lower()][:4],
+        [t for t in texts() if "checked in" in t.lower() or "verified" in t.lower()][
+            :3
+        ],
     )
 
 
@@ -559,9 +650,14 @@ def dump() -> None:
 
 if __name__ == "__main__":
     names = list(STEPS) if sys.argv[2:] == ["all"] else sys.argv[2:]
-    for name in names:
-        if name == "dump":
-            dump()
-            continue
-        print(f"== {name}")
-        STEPS[name]()
+    viewport(True)
+    try:
+        for name in names:
+            if name == "dump":
+                dump()
+                continue
+            print(f"== {name}")
+            STEPS[name]()
+    finally:
+        scheme(False)
+        viewport(False)

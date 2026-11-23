@@ -194,6 +194,17 @@ CASES = [
         lambda f: ("GET", f"{SALES}/sale-reversals?store_id={f.other}", None),
     ),
     Case(
+        "sales",
+        "GET /v1/sale-promotion-totals (listSalePromotionTotals), another store",
+        "manager",
+        lambda f: (
+            "GET",
+            f"{SALES}/sale-promotion-totals?store_id={f.other}"
+            "&from=2026-01-01T00:00:00Z&to=2027-01-01T00:00:00Z",
+            None,
+        ),
+    ),
+    Case(
         "engagement",
         "POST /v1/engagement-events, another store",
         "seller",

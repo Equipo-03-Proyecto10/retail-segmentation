@@ -14,6 +14,7 @@ import online.maxthecoder.mosaiq.floor.net.ApiError
 import online.maxthecoder.mosaiq.floor.net.CaptureIncident
 import online.maxthecoder.mosaiq.floor.net.EXPOSURE_PAGE_SIZE
 import online.maxthecoder.mosaiq.floor.net.POLL_PAGE_SIZE
+import online.maxthecoder.mosaiq.floor.net.Promotion
 import online.maxthecoder.mosaiq.floor.net.ReviewCaptureIncidentRequest
 import online.maxthecoder.mosaiq.floor.net.call
 import online.maxthecoder.mosaiq.floor.net.totalPages
@@ -66,9 +67,33 @@ data class PromotionsShownState(
     val error: ApiError? = null
 )
 
+/** One promotion applied at one store, net of reversals; [name] is null when the promotion is not active now. */
+data class AppliedPromotion(
+    val storeId: Int,
+    val promotionId: Int,
+    val name: String?,
+    val lines: Int,
+    val units: Int,
+    val discount: String
+)
+
+/**
+ * The promotions applied in sales by store over the last seven days, as sales-service totals them (F27-16):
+ * lines, units and discount, net of returns and cancellations. The service sends only the totals, so no sale and
+ * no customer reaches the phone.
+ */
+data class AppliedPromotionsState(
+    val loading: Boolean = true,
+    val rows: List<AppliedPromotion> = emptyList(),
+    val since: LocalDate? = null,
+    val storeNames: Map<Int, String> = emptyMap(),
+    val error: ApiError? = null
+)
+
 /**
  * The commercial supervisor's review (F27-14): the capture incidents of their stores, which they acknowledge
- * and resolve, and the promotions shown, by store. This phone's syncs come from the outbox. Every read is
+ * and resolve, the promotions shown, by store, and the promotions applied in sales, by store (F27-16). This
+ * phone's syncs come from the outbox. Every read is
  * bounded: a few pages, so the request count does not grow with the data. A review is sent once and never
  * resent by the app: after a lost answer the list is read again, and a second tap on an incident the service
  * already moved is answered 409 and shown as such.
@@ -79,8 +104,10 @@ class ReviewViewModel(
 ) : ViewModel() {
     val incidents = MutableStateFlow(IncidentsState())
     val promotions = MutableStateFlow(PromotionsShownState())
+    val applied = MutableStateFlow(AppliedPromotionsState())
     private var incidentsJob: Job? = null
     private var promotionsJob: Job? = null
+    private var appliedJob: Job? = null
 
     init {
         // Another user's incidents never stay on screen.
@@ -88,8 +115,10 @@ class ReviewViewModel(
             graph.session.userId.collect {
                 incidentsJob?.cancel()
                 promotionsJob?.cancel()
+                appliedJob?.cancel()
                 incidents.value = IncidentsState()
                 promotions.value = PromotionsShownState()
+                applied.value = AppliedPromotionsState()
             }
         }
     }
@@ -97,6 +126,7 @@ class ReviewViewModel(
     fun load() {
         loadIncidents()
         loadPromotions()
+        loadApplied()
     }
 
     fun loadIncidents() {
@@ -243,19 +273,75 @@ class ReviewViewModel(
             }
     }
 
-    /** The active promotions' names by campaign; a campaign no longer active keeps its number. Best effort. */
-    private suspend fun campaignNames(): Map<Int, String> {
-        val names = linkedMapOf<Int, String>()
+    /**
+     * The promotions applied in the caller's stores over the same seven days, one request: sales-service totals
+     * them, so the phone counts nothing and the read does not grow with the number of sales.
+     */
+    fun loadApplied() {
+        val user = graph.session.userId.value ?: return
+        appliedJob?.cancel()
+        val since = LocalDate.now(clock).minusDays(DAYS - 1L)
+        applied.value = applied.value.copy(loading = true, error = null, since = since)
+        appliedJob =
+            viewModelScope.launch {
+                val from = since.atStartOfDay(ZoneOffset.UTC).toInstant().toString()
+                // The window ends at the start of tomorrow, so today's sales are in it.
+                val to = LocalDate.now(clock).plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant().toString()
+                when (val answer = call { graph.network.sales.listSalePromotionTotals(from, to) }) {
+                    is Answer.Refused -> {
+                        if (graph.session.userId.value == user) {
+                            applied.value = applied.value.copy(loading = false, error = answer.error)
+                        }
+                    }
+                    is Answer.Body -> {
+                        val names = promotionNames()
+                        val stores = storeNames()
+                        if (graph.session.userId.value != user) return@launch
+                        applied.value =
+                            AppliedPromotionsState(
+                                loading = false,
+                                rows =
+                                answer.value.totals.map {
+                                    AppliedPromotion(
+                                        it.storeId,
+                                        it.promotionId,
+                                        names[it.promotionId],
+                                        it.lines,
+                                        it.units,
+                                        it.discount
+                                    )
+                                },
+                                since = since,
+                                storeNames = stores
+                            )
+                    }
+                }
+            }
+    }
+
+    /** The active promotions, a few pages at most. Best effort: names only, so a failure leaves numbers. */
+    private suspend fun activePromotions(): List<Promotion> {
+        val found = mutableListOf<Promotion>()
         var page = 1
         while (page <= MAX_NAME_PAGES) {
             val answer = call { graph.network.campaigns.listActivePromotions(null, true, page, POLL_PAGE_SIZE) }
             if (answer !is Answer.Body) break
-            answer.value.promotions.sortedBy { it.promotionId }.forEach { names.putIfAbsent(it.campaignId, it.name) }
+            found += answer.value.promotions
             if (page >= totalPages(answer.value.pageInfo.total, answer.value.pageInfo.size)) break
             page++
         }
+        return found.sortedBy { it.promotionId }
+    }
+
+    /** The active promotions' names by campaign; a campaign no longer active keeps its number. */
+    private suspend fun campaignNames(): Map<Int, String> {
+        val names = linkedMapOf<Int, String>()
+        activePromotions().forEach { names.putIfAbsent(it.campaignId, it.name) }
         return names
     }
+
+    /** The active promotions' names by promotion; a promotion no longer active keeps its number. */
+    private suspend fun promotionNames(): Map<Int, String> = activePromotions().associate { it.promotionId to it.name }
 
     private suspend fun storeNames(): Map<Int, String> =
         (call { graph.network.stores.listStores(true, null, 1, STORE_PAGE) } as? Answer.Body)

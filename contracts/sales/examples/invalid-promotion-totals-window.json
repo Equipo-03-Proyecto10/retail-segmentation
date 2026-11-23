@@ -1,0 +1,11 @@
+{
+  "code": "invalid_query",
+  "message": "The window needs both bounds, with from before to.",
+  "correlation_id": "corr-invalid-promotion-totals-window",
+  "details": [
+    {
+      "field": "to",
+      "code": "required"
+    }
+  ]
+}

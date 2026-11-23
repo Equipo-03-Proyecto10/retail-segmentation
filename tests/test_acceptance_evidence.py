@@ -63,6 +63,29 @@ def test_a_mark_another_masker_made_keeps_its_number_and_is_not_reused() -> None
     assert masker.mark("<masked #2>") == "<masked #2>"
 
 
+def test_a_client_label_that_arrives_after_a_new_secret_is_not_confused_with_it() -> (
+    None
+):
+    masker = Masker()
+    assert masker.mark("new secret") == "<masked #1>"
+    with pytest.raises(ValueError):
+        masker.mark("<masked #1>")
+
+
+def test_the_clients_labels_are_reserved_before_a_new_secret_is_numbered() -> None:
+    masker = Masker()
+    masker.reserve('{"password": "<masked #1>", "access_token": "<masked #2>"}')
+    assert masker.mark("new secret") == "<masked #3>"
+    assert masker.mark("<masked #1>") == "<masked #1>"
+    # A body with a raw token before the client's label in the same text.
+    other = Masker()
+    body = json.dumps({"access_token": TOKEN, "password": "<masked #1>"})
+    assert json.loads(other.body(body)) == {
+        "access_token": "<masked #2>",
+        "password": "<masked #1>",
+    }
+
+
 def test_write_refuses_evidence_that_still_holds_a_token(tmp_path) -> None:
     rec = Recorder(tmp_path, "t", "t")
     rec.add_rows("leak", TOKEN)
@@ -243,6 +266,17 @@ def test_f20_02_counts_only_campaigns_after_the_runs_own_draft(tmp_path) -> None
     for sql, params in checked.db.asked:
         assert "campaign_id > %s" in sql and "name = %s" in sql
         assert params == ("F20-02 evidence draft 20261123T1200Z", 32)
+
+
+def test_f20_02_an_unrecorded_draft_fails_the_check_instead_of_dropping_it(
+    tmp_path,
+) -> None:
+    checked = _checked(tmp_path, 0)
+    del checked.rec.facts["campaign_id"]
+    checked.nothing_created("3")
+    [check] = checked.rec.checks
+    assert not check.held and "no campaign_id" in check.actual
+    assert checked.db.asked == []
 
 
 def test_f20_02_reports_a_campaign_after_the_runs_draft_as_not_held(tmp_path) -> None:

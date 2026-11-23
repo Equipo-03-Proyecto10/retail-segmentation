@@ -75,11 +75,23 @@ class Masker:
         self.seen: dict[str, int] = {}
         self.taken: set[int] = set()
 
+    def reserve(self, text: str) -> None:
+        """Take the numbers of every mark another masker already wrote in
+        `text`, before this masker numbers a new secret: otherwise the same
+        `<masked #n>` could name two different secrets."""
+        self.taken.update(int(n) for n in MASK_MARK.findall(text))
+
     def mark(self, secret: str) -> str:
         # A value another masker already marked (a client's record) keeps its
         # number, and no new secret is given that number afterwards.
         if (kept := MASK_MARK.fullmatch(secret)) is not None:
-            self.taken.add(int(kept.group(1)))
+            number = int(kept.group(1))
+            if number in self.seen.values():
+                raise ValueError(
+                    f"{secret} is already the mark of a secret this run numbered; "
+                    "reserve the client's marks before masking anything"
+                )
+            self.taken.add(number)
             return secret
         if secret not in self.seen:
             ordinal = 1
@@ -92,6 +104,7 @@ class Masker:
     def header(self, name: str, value: str) -> str:
         if name.lower() not in MASKED_HEADERS:
             return value
+        self.reserve(value)
         scheme, _, credential = value.partition(" ")
         if name.lower() == "authorization" and credential:
             return f"{scheme} {self.mark(credential)}"
@@ -115,6 +128,7 @@ class Masker:
         if not raw:
             return ""
         text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw
+        self.reserve(text)
         if "json" in media_type or text.lstrip().startswith(("{", "[")):
             try:
                 return json.dumps(

@@ -333,6 +333,16 @@ class Checked:
         """No campaign of the draft's name came after the run's own draft."""
         created = self.rec.facts.get("campaign_id")
         if created is None:
+            # The draft was not created, so there is nothing to count after:
+            # the check fails instead of dropping out of summary.md.
+            self.rec.check(
+                c,
+                "the refused write created nothing: no campaign of the draft's name "
+                "after the run's own draft",
+                "0",
+                "no campaign_id was recorded for the run's draft",
+                False,
+            )
             return
         # Ids are max + 1 (campaigns-service), so a row the refused write made
         # would come after the run's own draft; an earlier run's draft of the
@@ -373,6 +383,8 @@ def run(args: argparse.Namespace) -> int:
     rec = Recorder(
         Path(args.out), "F20-02 Electron reads the sale and writes a draft", "f20-02"
     )
+    for path in [electron / "result.json", electron / "exchanges.json"]:
+        rec.masker.reserve(path.read_text(encoding="utf-8"))
     checked = Checked(electron, rec, Database.from_environment())
     checked.sale()
     checked.campaign()

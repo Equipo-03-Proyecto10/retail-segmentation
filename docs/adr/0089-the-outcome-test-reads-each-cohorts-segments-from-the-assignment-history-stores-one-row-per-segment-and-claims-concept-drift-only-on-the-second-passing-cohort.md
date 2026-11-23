@@ -1,6 +1,6 @@
 # ADR-0089 — The outcome test reads each cohort's segments from the assignment history, stores one row per segment, and claims concept drift only on the second passing cohort
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-22)
 **Owner:** Estefanía
 **Issue:** #823 (story F23-11)
 **Supersedes:** —

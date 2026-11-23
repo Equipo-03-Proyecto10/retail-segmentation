@@ -227,7 +227,7 @@ Later runtime events must be preserved.
 | [0086](0086-a-verification-compares-a-profile-as-the-incremental-design-promises-it-at-one-instant.md) | A verification compares a profile as the incremental design promises it, at one instant | Accepted |
 | [0087](0087-an-incremental-change-is-applied-to-the-segment-history-in-the-profile-transaction-under-the-published-version.md) | An incremental change is applied to the segment history in the profile's transaction, under the published version, and a withdrawn PROFILING is the unassigned result | Accepted |
 | [0088](0088-the-drift-monitor-reads-the-current-profiles-in-one-snapshot-raises-an-alert-on-the-second-alarming-window-and-is-audited-as-a-calculation-run.md) | The drift monitor reads the current profiles in one snapshot, raises an alert on the second alarming window, and is audited as a calculation run | Accepted |
-| [0089](0089-the-outcome-test-reads-each-cohorts-segments-from-the-assignment-history-stores-one-row-per-segment-and-claims-concept-drift-only-on-the-second-passing-cohort.md) | The outcome test reads each cohort's segments from the assignment history, stores one row per segment, and claims concept drift only on the second passing cohort | Proposed |
+| [0089](0089-the-outcome-test-reads-each-cohorts-segments-from-the-assignment-history-stores-one-row-per-segment-and-claims-concept-drift-only-on-the-second-passing-cohort.md) | The outcome test reads each cohort's segments from the assignment history, stores one row per segment, and claims concept drift only on the second passing cohort | Accepted |
 
 ## Writing one
 

@@ -3,12 +3,12 @@
 > **Status: not yet run on the instance.** This document is the runbook and the
 > template of three of the instructor's sixteen acceptance tests (AC-12
 > "Privacidad", AC-13 "Sesión revocada", AC-14 "Desconexión";
-> [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11). "Desconexión"
-> is blocked by
+> [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11). Nothing blocks
+> them any more: #757, #792, #795 and
 > [#867](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/867)
-> (F27-13, offline drafts with a pending state). "Privacidad" and "Sesión
-> revocada" are not blocked, and run on the instance at the identified version
-> together with the rest. Every `‹fill: …›` below is filled during the live run.
+> (F27-13, offline drafts with a pending state, merged in #1141 on 2026-11-21)
+> are closed. All three run on the instance at the identified version, together
+> with the rest. Every `‹fill: …›` below is filled during the live run.
 > The only results recorded so far are the
 > [local dry run](#local-dry-run-not-the-acceptance), which is **not the
 > acceptance**.
@@ -67,8 +67,11 @@ No step changes code; nothing in `clients/android/` is edited for this run.
 
 ## 0. Before the run
 
-1. **#867 is closed and released** in the Android build used, for step 3.
-   Steps 1 and 2 do not wait for it.
+1. **The Android release build contains #867.** #867 was merged through #1141
+   (`d107b4b7`). Build the release APK from the identified commit, which is
+   later, and record that commit with the APK's SHA-256. `versionName` is still
+   `0.1.0` and does not tell one build from another. Steps 1 and 2 do not need
+   the phone.
 2. **The identified version**: the same commit as F29-03
    ([f29-03-transaction-path.md](f29-03-transaction-path.md) step 0), deployed
    for every service, with the F20-03 runner passed on it.
@@ -140,18 +143,33 @@ store (F29-03 step 1 creates one). Write down the UTC time before 3.1 and after
 3.3: they bound the window of 3.4.
 
 1. **Offline.** Turn the emulator's network off (airplane mode). Record two
-   sales. Each must show as pending, with nothing sent. Screenshot:
-   `f29-06-offline-pending.png`.
+   sales. After each **Confirm** the snackbar reads "Sale kept as a draft on
+   this phone, pending. The server checks it when you are online." In the sale
+   history, each row has the badge **Pending** and reads "Draft, pending. The
+   server checks it when the connection returns." The Outbox screen reads
+   "2 writes waiting to send". Nothing reaches mitmproxy. Screenshot:
+   `f29-06-offline-pending.png` (the history with both rows).
 2. **A lost response.** In the mitmproxy console, set the intercept filter to
    `~u /api/sales/v1/sales & ~s` (sales responses only). Turn the network on.
-   The app sends the pending sales; mitmproxy holds the first 201 before it
-   reaches the phone. Kill that flow (`x`): the server has recorded the sale,
-   and the phone has seen a network error. Clear the intercept filter. The
-   phone resends that sale with the same `Idempotency-Key`, and sales-service
-   answers 200 with `Idempotent-Replayed: true` and the original sale.
-3. **Recovered.** The outbox is empty and both sales show as recorded, each
-   once. Screenshot: `f29-06-recovered.png`. Stop mitmdump and render the
-   exchanges with every token masked:
+   The app sends the pending sales by itself, one at a time, as soon as it has
+   a network: no tap is needed. mitmproxy holds the first 201 before it reaches
+   the phone. Kill that flow (`x`): the server has recorded the sale, and the
+   phone has lost the answer. Clear the intercept filter.
+
+   The phone does not show an error for this. Its outbox treats a lost
+   connection as "send again later" (`OutboxWorker`, `Attempt.Retry`), so both
+   sales stay **Pending**. The app sends again on its own after its backoff,
+   10 s and then doubling. To avoid waiting, tap **Send now** on the Outbox
+   screen. The resend is the same outbox row, so it carries the same
+   `Idempotency-Key`. sales-service answers 200 with `Idempotent-Replayed: true`
+   and the original sale. On the phone, that sale's receipt, opened from the
+   history, reads
+   "Sale ‹id› was already recorded; this is the same sale." Screenshot:
+   `f29-06-replayed.png`. Then the second sale is sent and answered 201.
+3. **Recovered.** The Outbox screen reads "Everything is synced", and both sales
+   show in the history as recorded, each once, with the badge **Sent**.
+   Screenshot: `f29-06-recovered.png`. Stop mitmdump and render the exchanges
+   with every token masked:
 
    ```sh
    python clients/android/evidence/sale_evidence.py har ~/f20-01/capture.har \
@@ -159,7 +177,8 @@ store (F29-03 step 1 creates one). Write down the UTC time before 3.1 and after
    ```
 
    From it, note each sale's `Idempotency-Key`. The killed flow and its resend
-   carry the same key.
+   carry the same key. The exchanges hold three requests for two sales: two
+   answered 201 and one answered 200 with `Idempotent-Replayed: true`.
 4. **The rows**, on the instance:
 
    ```sh
@@ -249,7 +268,8 @@ screenshots. `record.json` stays outside the repository. Delete the HAR.
 > **Local dry run, not the acceptance.** It ran on a throwaway local stack, not
 > on the instance and not on an identified version. It shows that the
 > collectors and the new F18-04 case work, and what they report. "Desconexión"
-> was not run with the phone: #867 is open. Only the server's half of it ran.
+> was not run with the phone: #867 was still open then. Only the server's half of
+> it ran.
 
 ### Where it ran
 
@@ -327,7 +347,14 @@ recovery; that is what step 3.2 tests.
 ### Not run here
 
 - The phone's offline sales and the dropped response (steps 3.1–3.3): #867
-  is open.
+  was still open. #867 later added the same check without a person:
+  `aSaleWhoseAnswerIsLostIsReplayedAsTheSameSaleAndNeverTwice` in
+  `clients/android/app/src/androidTest/.../StackSaleInstrumentedTest.kt`. That
+  test lets the first sale request reach the real services, drops its answer,
+  and expects one sale after the replay. It needs the emulator and the local
+  stack, and its pull request records that it was not run there. It supports
+  step 3 but does not replace it: the acceptance is the release build on the
+  instance.
 - The web's routes (`tests/test_authz.py`): they run in the repository's
   `pytest`, not against a stack.
 - Anything on the instance.

@@ -144,3 +144,10 @@ private fun Dialogs() {
         }
     ) { Text("2 writes have not been sent yet. They wait for you to sign in again.") }
 }
+
+/** Not drawn by the previews: a sheet opens its own window, which a preview cannot show. */
+@Suppress("unused")
+@Composable
+private fun SheetSample(open: Boolean) {
+    if (open) MqSheet(onDismiss = {}) { Text("New customer") }
+}

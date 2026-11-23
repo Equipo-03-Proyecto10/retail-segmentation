@@ -422,4 +422,18 @@ class ComponentsTest {
         assertEquals(1, stayed)
         assertEquals(1, left)
     }
+
+    @Test
+    fun sheetShowsItsContentAndItsActionsWork() {
+        var saved = 0
+        show {
+            MqSheet(onDismiss = {}) {
+                Text("New customer")
+                MqButton("Register customer", { saved++ })
+            }
+        }
+        compose.onNodeWithText("New customer").assertExists()
+        compose.onNodeWithText("Register customer").performClick()
+        assertEquals(1, saved)
+    }
 }

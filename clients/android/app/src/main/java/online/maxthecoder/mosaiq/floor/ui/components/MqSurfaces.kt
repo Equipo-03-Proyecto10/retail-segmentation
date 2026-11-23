@@ -13,15 +13,20 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.ZeroCornerSize
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -178,4 +183,27 @@ fun MqDialog(
             }
         }
     }
+}
+
+/**
+ * The MOSAIQ bottom sheet, opened fully expanded: the raised surface with the 6dp radius on its top
+ * corners and no tonal elevation (ADR-0057). Its top edge stops under the status bar, so the drag
+ * handle never sits between the clock and the status icons and the sheet never paints the bar
+ * (#1154). The New customer form and Check the sale both use it, so both get the same insets.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MqSheet(onDismiss: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        // Outside the sheet's surface: the bar keeps the app's color, and the insets are consumed here.
+        modifier = modifier.statusBarsPadding(),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        shape = MaterialTheme.shapes.medium.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
+        containerColor = MaterialTheme.mosaic.raised,
+        contentColor = scheme.onSurface,
+        tonalElevation = Spacing.None,
+        content = content
+    )
 }

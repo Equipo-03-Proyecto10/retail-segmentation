@@ -7,12 +7,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,18 +26,15 @@ import online.maxthecoder.mosaiq.floor.ui.components.MqButton
 import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
 import online.maxthecoder.mosaiq.floor.ui.components.MqCard
 import online.maxthecoder.mosaiq.floor.ui.components.MqErrorPanel
+import online.maxthecoder.mosaiq.floor.ui.components.MqSheet
 import online.maxthecoder.mosaiq.floor.ui.components.MqTone
 import online.maxthecoder.mosaiq.floor.ui.formatMoney
 import online.maxthecoder.mosaiq.floor.ui.theme.Spacing
 
 /** The summary before the sale is recorded, in a modal bottom sheet; dismissing it goes back to the cart. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReviewSheet(ui: SaleUi, actions: SaleActions) {
-    ModalBottomSheet(
-        onDismissRequest = actions.onCancelReview,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ) {
+    MqSheet(onDismiss = actions.onCancelReview) {
         ReviewContent(ui, actions)
     }
 }

@@ -339,7 +339,25 @@ class ReviewContentTest {
             appliedRetries = retries
         )
         compose.onNodeWithTag("review-applied").performScrollTo().assertExists()
+        // The refusal's own message is on screen, and no total or "nothing applied" line stands beside it.
+        compose.onNodeWithText("The caller is not assigned to this store.").performScrollTo().assertExists()
+        compose.onNodeWithTag("review-applied-none").assertDoesNotExist()
         compose.onAllNodesWithText("Retry")[0].performScrollTo().performClick()
         assertEquals(1, retries.size)
+    }
+
+    @Test
+    fun appliedPromotionsShowLoadingAndHideStaleTotalsWhileTheyReload() {
+        show(
+            applied =
+            AppliedPromotionsState(
+                loading = true,
+                rows = listOf(AppliedPromotion(3, 38, "Loyal customers", 4, 9, "1234.50")),
+                storeNames = mapOf(3 to "Coyoacan")
+            )
+        )
+        compose.onNodeWithText("Totalling promotions applied…").performScrollTo().assertExists()
+        compose.onNodeWithTag("review-applied-store-3").assertDoesNotExist()
+        compose.onNodeWithTag("review-applied-none").assertDoesNotExist()
     }
 }

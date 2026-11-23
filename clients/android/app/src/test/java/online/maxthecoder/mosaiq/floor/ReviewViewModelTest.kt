@@ -420,6 +420,49 @@ class ReviewViewModelTest {
         assertTrue(model.incidents.value.incidents.isNotEmpty())
     }
 
+    private fun assertTotalsRefusedAs(code: String, answer: () -> MockResponse) {
+        totalsAnswer = answer
+        val model = loaded()
+        assertEquals(code, model.applied.value.error?.code)
+        assertTrue("no totals after $code", model.applied.value.rows.isEmpty())
+        assertFalse(model.applied.value.loading)
+        assertNull("the other parts are not blocked by $code", model.promotions.value.error)
+        assertTrue(model.incidents.value.incidents.isNotEmpty())
+    }
+
+    @Test
+    fun aStoreThatIsNotTheCallersIsRefusedWithoutTotals() =
+        assertTotalsRefusedAs("forbidden_store") { ok(403, contract("sales/examples/forbidden-store.json")) }
+
+    @Test
+    fun aWindowTheServiceRefusesIsShownAsInvalidQuery() = assertTotalsRefusedAs("invalid_query") {
+        ok(422, contract("sales/examples/invalid-promotion-totals-window.json"))
+    }
+
+    @Test
+    fun aSalesDatabaseThatIsDownIsShownAsTheServiceUnavailable() = assertTotalsRefusedAs("database_unavailable") {
+        ok(503, contract("sales/examples/database-unavailable.json"))
+    }
+
+    @Test
+    fun aPhoneThatCannotReachTheServiceShowsUnreachable() =
+        assertTotalsRefusedAs("unreachable") { MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE) }
+
+    @Test
+    fun retryingARefusedTotalReadsAgainAndShowsTheTotals() {
+        totalsAnswer = { ok(503, contract("sales/examples/database-unavailable.json")) }
+        val model = loaded()
+        assertEquals("database_unavailable", model.applied.value.error?.code)
+
+        totalsAnswer = { ok(200, contract("sales/examples/list-sale-promotion-totals.json")) }
+        model.loadApplied()
+        settle { !model.applied.value.loading }
+
+        assertNull(model.applied.value.error)
+        assertEquals(3, model.applied.value.rows.size)
+        assertEquals("one request per read", 2, requestsTo("/api/sales/v1/sale-promotion-totals").size)
+    }
+
     @Test
     fun anotherUsersIncidentsNeverStayOnScreen() {
         val model = loaded()

@@ -71,6 +71,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `api_rfm.current_profile_v1` | rfm-engine (the window of the drift monitor, read in one repeatable-read snapshot: every scored customer, F23-09) |
 | Consumes | `api_sales.net_purchase_line_v1` (F21-02, #770) | sales (the net purchases a training fits, read once in a repeatable-read snapshot and streamed) |
 | Consumes | `api_segments.label_v1` (F22-12) | segments (the label vocabulary and its order, so a training never copies the labels) |
+| Consumes | `api_segments.assignment_interval_v1` (F23-11) | segments (each customer's segment at a cohort's as-of date, for the outcome test; ADR-0089) |
 
 ## Events
 

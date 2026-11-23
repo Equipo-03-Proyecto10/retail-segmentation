@@ -516,6 +516,8 @@ svc_models,models.drift_bin,SELECT
 svc_models,models.drift_bin,INSERT
 svc_models,models.drift_alert,SELECT
 svc_models,models.drift_alert,INSERT
+svc_models,models.drift_outcome_segment,SELECT
+svc_models,models.drift_outcome_segment,INSERT
 svc_models,models.model_training,SELECT
 svc_models,models.model_training,INSERT
 svc_models,models.model_training_feature,SELECT
@@ -611,6 +613,7 @@ svc_models,api_sales,USAGE
 svc_models,api_sales.net_purchase_line_v1,SELECT
 svc_models,api_segments,USAGE
 svc_models,api_segments.label_v1,SELECT
+svc_models,api_segments.assignment_interval_v1,SELECT
 svc_models,api_audit,USAGE
 svc_models,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text,bigint,bigint,text,jsonb)",EXECUTE
 svc_customers,api_sales,USAGE

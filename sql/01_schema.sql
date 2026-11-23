@@ -2531,6 +2531,25 @@ WHERE position > 1
   AND label_code IS DISTINCT FROM previous_label_code;
 REVOKE ALL ON api_segments.assignment_change_v1 FROM PUBLIC;
 
+-- contracts/db/api_segments.assignment_interval.v1.md: every assignment with the
+-- half-open interval it was open, [valid_from, valid_to), so a consumer can read the
+-- segment a customer was in at a past instant: the outcome test's cohort (F23-11,
+-- ADR-0089). A NULL label is the run's result of no label (RN-21). The model version of
+-- a run is model-registry's, read by run_id (ADR-0064). Definer rights, so a consumer
+-- needs no privilege on either table.
+CREATE OR REPLACE VIEW api_segments.assignment_interval_v1
+WITH (security_invoker = off) AS
+SELECT h.customer_id,
+       h.label_code,
+       h.run_id,
+       h.valid_from,
+       h.valid_to,
+       r.data_origin::text AS data_origin
+FROM public.customer_segment_history AS h
+JOIN public.segmentation_run AS r ON r.run_id = h.run_id
+JOIN api_customers.customer_ref_v1 AS c ON c.customer_id = h.customer_id;
+REVOKE ALL ON api_segments.assignment_interval_v1 FROM PUBLIC;
+
 -- One event per run the web records, so the service and recommendations move
 -- their caches to the new run's keys.
 CREATE OR REPLACE FUNCTION segments_events.capture_run_recorded() RETURNS trigger
@@ -6410,8 +6429,11 @@ CREATE TABLE IF NOT EXISTS models.drift_report (
 CREATE TABLE IF NOT EXISTS models.drift_variable (
     report_id  BIGINT NOT NULL REFERENCES models.drift_report(report_id)
                ON DELETE RESTRICT,
+    -- REPURCHASE_RATE is the outcome test's one variable (ADR-0089); the trigger
+    -- below keeps it on OUTCOME_TEST reports and the other four on DATA_DRIFT ones.
     variable   VARCHAR(20) NOT NULL
-               CHECK (variable IN ('SEGMENT_SHARES', 'R', 'F', 'M')),
+               CONSTRAINT drift_variable_variable_check
+               CHECK (variable IN ('SEGMENT_SHARES', 'R', 'F', 'M', 'REPURCHASE_RATE')),
     state      VARCHAR(20) NOT NULL
                CHECK (state IN ('NORMAL', 'WATCH', 'ALARM_PENDING', 'ALARM')),
     PRIMARY KEY (report_id, variable)
@@ -6459,18 +6481,114 @@ CREATE TABLE IF NOT EXISTS models.drift_alert (
     previous_report_id  BIGINT NOT NULL REFERENCES models.drift_report(report_id)
                         ON DELETE RESTRICT,
     claim               VARCHAR(30) NOT NULL DEFAULT 'DISTRIBUTION_CHANGE'
-                        CHECK (claim = 'DISTRIBUTION_CHANGE'),
+                        CONSTRAINT drift_alert_claim_check
+                        CHECK (claim IN ('DISTRIBUTION_CHANGE', 'CONCEPT_DRIFT')),
     review_code         VARCHAR(40) NOT NULL
-                        CHECK (review_code IN ('REVIEW_SEGMENT_MIX', 'REVIEW_FEATURE_DISTRIBUTION')),
+                        CONSTRAINT drift_alert_review_code_check
+                        CHECK (review_code IN ('REVIEW_SEGMENT_MIX',
+                                               'REVIEW_FEATURE_DISTRIBUTION',
+                                               'REVIEW_PREDICTIVE_RELATION')),
     raised_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT drift_alert_variable_key UNIQUE (report_id, variable),
     FOREIGN KEY (report_id, variable) REFERENCES models.drift_variable(report_id, variable)
         ON DELETE RESTRICT,
     CHECK (previous_report_id <> report_id),
-    CHECK ((variable = 'SEGMENT_SHARES') = (review_code = 'REVIEW_SEGMENT_MIX'))
+    -- Only the outcome test's variable may claim concept drift, and it claims nothing
+    -- else (ADR-0065, ADR-0089); each variable has its one review.
+    CONSTRAINT drift_alert_claim_variable
+        CHECK ((claim = 'CONCEPT_DRIFT') = (variable = 'REPURCHASE_RATE')),
+    CONSTRAINT drift_alert_review_variable
+        CHECK (review_code = CASE variable
+                                 WHEN 'SEGMENT_SHARES' THEN 'REVIEW_SEGMENT_MIX'
+                                 WHEN 'REPURCHASE_RATE' THEN 'REVIEW_PREDICTIVE_RELATION'
+                                 ELSE 'REVIEW_FEATURE_DISTRIBUTION' END)
 );
 CREATE INDEX IF NOT EXISTS drift_report_version
     ON models.drift_report (version_id, kind, window_end DESC);
+
+-- The outcome test (F23-11, ADR-0065, ADR-0089): one row per segment of the version in
+-- an OUTCOME_TEST report, with the customers and repurchasers of the reference cohort
+-- and of the current one, and the two-proportion z-test between them. The rates, the
+-- difference in points, the thresholds and the claim are functions of these values
+-- and of ADR-0065's constants, so none is stored.
+CREATE TABLE IF NOT EXISTS models.drift_outcome_segment (
+    report_id               BIGINT NOT NULL REFERENCES models.drift_report(report_id)
+                            ON DELETE RESTRICT,
+    label_code              VARCHAR(40) NOT NULL CHECK (length(label_code) >= 1),
+    reference_customers     INTEGER NOT NULL CHECK (reference_customers >= 0),
+    reference_repurchasers  INTEGER NOT NULL CHECK (reference_repurchasers >= 0),
+    current_customers       INTEGER NOT NULL CHECK (current_customers >= 0),
+    current_repurchasers    INTEGER NOT NULL CHECK (current_repurchasers >= 0),
+    z                       DOUBLE PRECISION,
+    p_value                 DOUBLE PRECISION CHECK (p_value BETWEEN 0 AND 1),
+    adjusted_p_value        DOUBLE PRECISION CHECK (adjusted_p_value BETWEEN 0 AND 1),
+    result                  VARCHAR(20) NOT NULL
+                            CHECK (result IN ('PASSED', 'NOT_PASSED', 'NOT_TESTED')),
+    persisted               BOOLEAN NOT NULL,
+    PRIMARY KEY (report_id, label_code),
+    CHECK (reference_repurchasers <= reference_customers),
+    CHECK (current_repurchasers <= current_customers),
+    -- A segment below the minimum on either side has no statistic at all.
+    CHECK ((result = 'NOT_TESTED') = (z IS NULL)),
+    CHECK ((z IS NULL) = (p_value IS NULL) AND (z IS NULL) = (adjusted_p_value IS NULL)),
+    CHECK (adjusted_p_value IS NULL OR adjusted_p_value >= p_value),
+    -- Two consecutive passing cohorts: only a segment that passed here can persist.
+    CHECK (NOT persisted OR result = 'PASSED')
+);
+
+CREATE OR REPLACE TRIGGER trg_drift_outcome_segment_immutable
+BEFORE UPDATE OR DELETE ON models.drift_outcome_segment
+FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
+-- A database built before ADR-0089 holds the tables with the data-drift constraints
+-- only; this widens them in place, so applying the section again is enough.
+ALTER TABLE models.drift_variable
+    DROP CONSTRAINT IF EXISTS drift_variable_variable_check,
+    ADD CONSTRAINT drift_variable_variable_check
+        CHECK (variable IN ('SEGMENT_SHARES', 'R', 'F', 'M', 'REPURCHASE_RATE'));
+ALTER TABLE models.drift_alert
+    DROP CONSTRAINT IF EXISTS drift_alert_claim_check,
+    DROP CONSTRAINT IF EXISTS drift_alert_review_code_check,
+    DROP CONSTRAINT IF EXISTS drift_alert_check1,
+    DROP CONSTRAINT IF EXISTS drift_alert_claim_variable,
+    DROP CONSTRAINT IF EXISTS drift_alert_review_variable,
+    ADD CONSTRAINT drift_alert_claim_check
+        CHECK (claim IN ('DISTRIBUTION_CHANGE', 'CONCEPT_DRIFT')),
+    ADD CONSTRAINT drift_alert_review_code_check
+        CHECK (review_code IN ('REVIEW_SEGMENT_MIX', 'REVIEW_FEATURE_DISTRIBUTION',
+                               'REVIEW_PREDICTIVE_RELATION')),
+    ADD CONSTRAINT drift_alert_claim_variable
+        CHECK ((claim = 'CONCEPT_DRIFT') = (variable = 'REPURCHASE_RATE')),
+    ADD CONSTRAINT drift_alert_review_variable
+        CHECK (review_code = CASE variable
+                                 WHEN 'SEGMENT_SHARES' THEN 'REVIEW_SEGMENT_MIX'
+                                 WHEN 'REPURCHASE_RATE' THEN 'REVIEW_PREDICTIVE_RELATION'
+                                 ELSE 'REVIEW_FEATURE_DISTRIBUTION' END);
+
+-- A variable belongs to one kind of report: REPURCHASE_RATE to an OUTCOME_TEST, the
+-- other four to a DATA_DRIFT. A CHECK cannot see the report, so a trigger does; it is
+-- what keeps a data-drift alert from ever claiming concept drift (ADR-0065).
+CREATE OR REPLACE FUNCTION models.guard_drift_variable_kind() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $guard$
+DECLARE
+    report_kind text;
+BEGIN
+    SELECT kind INTO report_kind FROM models.drift_report WHERE report_id = NEW.report_id;
+    IF (NEW.variable = 'REPURCHASE_RATE') <> (report_kind = 'OUTCOME_TEST') THEN
+        RAISE EXCEPTION 'variable % does not belong to a % report', NEW.variable, report_kind
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'drift_variable_kind';
+    END IF;
+    RETURN NEW;
+END
+$guard$;
+REVOKE EXECUTE ON FUNCTION models.guard_drift_variable_kind() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_drift_variable_kind
+BEFORE INSERT ON models.drift_variable
+FOR EACH ROW EXECUTE FUNCTION models.guard_drift_variable_kind();
 
 CREATE OR REPLACE TRIGGER trg_drift_report_immutable
 BEFORE UPDATE OR DELETE ON models.drift_report
@@ -6499,6 +6617,8 @@ GRANT SELECT ON models.run_version TO svc_models;
 -- Drift reports are appended by the monitor and never change (F23-09).
 GRANT SELECT, INSERT ON models.drift_report, models.drift_variable,
     models.drift_statistic, models.drift_bin, models.drift_alert TO svc_models;
+-- The outcome test's rows are appended by the same monitor (F23-11, ADR-0089).
+GRANT SELECT, INSERT ON models.drift_outcome_segment TO svc_models;
 -- A training is written by the registry alone: it inserts the RUNNING row and its
 -- variables, and then moves the row once, changing only the columns of its outcome.
 GRANT SELECT, INSERT ON models.model_training, models.model_training_feature,
@@ -6522,6 +6642,8 @@ GRANT SELECT ON api_models.published_version_v1 TO svc_models;
 GRANT USAGE ON SCHEMA api_sales, api_segments TO svc_models;
 GRANT SELECT ON api_sales.net_purchase_line_v1 TO svc_models;
 GRANT SELECT ON api_segments.label_v1 TO svc_models;
+-- The segment of each customer at a cohort's as-of date (F23-11, ADR-0089).
+GRANT SELECT ON api_segments.assignment_interval_v1 TO svc_models;
 GRANT USAGE ON SCHEMA api_models TO svc_segments;
 GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
 -- A change is scored under the version in force (ADR-0063), read from the registry's

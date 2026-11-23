@@ -586,9 +586,9 @@ def run(
     passed through `monitor.run_once` and read back from `models.drift_*`."""
     if windows % 2 or windows < 2 * detection_pairs:
         raise ValueError("windows must be even and hold every detection pair")
-    database_url = database_url or os.environ.get("TEST_DATABASE_URL")
+    database_url = database_url or os.environ.get("DRIFT_STUDY_DATABASE_URL")
     if not database_url:
-        raise ValueError("TEST_DATABASE_URL or --database-url is required")
+        raise ValueError("DRIFT_STUDY_DATABASE_URL or --database-url is required")
     base = generate(reference_seed, customers)
     rule_set = freeze(base)
     reference = reference_of(score(rule_set, base.sales))
@@ -981,12 +981,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "--database-url",
-        default=os.environ.get("TEST_DATABASE_URL"),
+        default=os.environ.get("DRIFT_STUDY_DATABASE_URL"),
         help="owner URL of a throwaway database loaded from sql/00, 01 and 02",
     )
     args = parser.parse_args(argv)
     if not args.database_url:
-        parser.error("--database-url or TEST_DATABASE_URL is required")
+        parser.error("--database-url or DRIFT_STUDY_DATABASE_URL is required")
     print(report(run(database_url=args.database_url)))
     return 0
 

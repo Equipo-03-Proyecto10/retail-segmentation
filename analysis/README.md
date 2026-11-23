@@ -57,7 +57,9 @@ A URL that is not on this machine is refused: this data must never reach the ins
 
 F23-10 also requires a local throwaway database built from those scripts. It writes
 the generated profiles through model-registry's real drift-monitor path and leaves
-the reports there as reproducibility evidence:
+the reports there as reproducibility evidence, so give it a database of its own,
+never one that other test suites share (`--database-url`, or
+`DRIFT_STUDY_DATABASE_URL`, which `tests/test_drift_detection_study.py` also reads):
 
 ```bash
 python -m analysis.drift_detection_study \

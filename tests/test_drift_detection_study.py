@@ -121,11 +121,13 @@ def test_the_upper_bound_is_clopper_pearson():
 
 
 def test_with_a_fixed_seed_the_figures_repeat_and_are_pinned():
-    database_url = os.environ.get("TEST_DATABASE_URL")
+    # The study writes immutable drift reports and audit events, so it runs only on
+    # a database named for it, never on the TEST_DATABASE_URL the other suites share:
+    # 32 reports left there fail model-registry's own monitor tests afterwards.
+    database_url = os.environ.get("DRIFT_STUDY_DATABASE_URL")
     if database_url is None:
-        # CI's root Python job has no PostgreSQL service. Determinism of all random
-        # inputs is still checked there; the service job and the required local gate
-        # take the database-backed branch below without a skip.
+        # Without one, determinism of all random inputs is still checked; the
+        # database-backed branch below runs where a throwaway database is given.
         first = study._experiment_start(REFERENCE, 4, 1, 600)
         second = study._experiment_start(REFERENCE, 4, 1, 600)
         assert first == second

@@ -114,7 +114,11 @@ fun SaleOutcome(ui: SaleUi, actions: SaleActions = SaleActions()) {
     val refusal = refusalOf(ui.queued, ui.sale.lines)
     when {
         receipt != null -> ReceiptCard(receipt)
-        refusal != null -> RefusalCard(refusal, onDiscard = { ui.queued?.let(actions.onDiscard) })
+        refusal != null -> RefusalCard(
+            refusal,
+            onDiscard = { ui.queued?.let(actions.onDiscard) },
+            onNewSale = actions.onNewSale
+        )
     }
 }
 
@@ -173,18 +177,21 @@ private fun ReceiptCard(receipt: Receipt) {
 }
 
 @Composable
-private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit) {
+private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit, onNewSale: () -> Unit) {
     Column(Modifier.fillMaxWidth().testTag("sale-refused"), verticalArrangement = Arrangement.spacedBy(Spacing.Sm)) {
         Text(
             stringResource(R.string.sale_refused_title),
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.semantics { heading() }
+            modifier = Modifier.semantics {
+                heading()
+                liveRegion = LiveRegionMode.Polite
+            }
         )
         MqErrorPanel(refusal.error, friendly = refusal.reason)
         refusal.line?.let {
             Text(stringResource(R.string.sale_refused_line, it), style = MaterialTheme.typography.bodyLarge)
         }
-        // "Back to cart" sits in the bar below, always in reach.
+        // "Back to cart" sits alone in the bar below, always in reach; the other ways out stay here (#1156).
         Text(stringResource(R.string.sale_refused_kept), style = MaterialTheme.typography.bodyMedium)
         MqButton(
             stringResource(R.string.sale_discard),
@@ -192,6 +199,13 @@ private fun RefusalCard(refusal: SaleRefusal, onDiscard: () -> Unit) {
             variant = MqButtonVariant.Quiet,
             fullWidth = true,
             modifier = Modifier.testTag("discard-sale")
+        )
+        MqButton(
+            stringResource(R.string.sale_another),
+            onNewSale,
+            variant = MqButtonVariant.Quiet,
+            fullWidth = true,
+            modifier = Modifier.testTag("another-sale")
         )
     }
 }

@@ -1,15 +1,21 @@
 package online.maxthecoder.mosaiq.floor.ui.sale
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -22,6 +28,9 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.height
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import online.maxthecoder.mosaiq.floor.FloorTestApp
 import online.maxthecoder.mosaiq.floor.net.ApiError
@@ -41,6 +50,7 @@ import online.maxthecoder.mosaiq.floor.ui.SaleLine
 import online.maxthecoder.mosaiq.floor.ui.SalesContent
 import online.maxthecoder.mosaiq.floor.ui.theme.MosaiqTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -423,6 +433,71 @@ class SaleContentTest {
         compose.onNodeWithTag("back-to-cart").assertExists()
         compose.onNodeWithTag("discard-sale").performScrollTo().performClick()
         assertEquals(listOf(7L), discarded)
+    }
+
+    // ---- #1156: a refused sale at 375 x 667 dp keeps its reason and its line in view ----
+
+    /** What is left between the top bar and the bottom navigation on a 375 x 667 dp phone. */
+    private val phone = DpSize(375.dp, 432.dp)
+
+    @Test
+    fun aRefusedSaleAt375dpShowsItsReasonAndItsLineAboveAShortBarAndBackToCartFindsTheLine() {
+        val sent = """{"customer_id":"c1","store_id":1,"channel_id":1,"occurred_at":"2026-11-18T12:00:00Z",""" +
+            """"lines":[{"product_id":1,"quantity":1,"unit_price":"12.50"},""" +
+            """{"product_id":2,"quantity":1,"unit_price":"40.00"}]}"""
+        val waiting = row(7, RowState.PENDING).copy(body = sent)
+        val refused = waiting.copy(
+            state = RowState.REFUSED,
+            code = "no_stock_record",
+            status = 422,
+            responseBody = """{"code":"no_stock_record","message":"x",""" +
+                """"details":[{"field":"lines[1].product_id","code":"no_stock_record"}]}"""
+        )
+        val lines = arrayOf(SaleLine(socks, 1), SaleLine(shirt, 1))
+        val queued = SaleUi(
+            customer = ana,
+            store = store,
+            registration = ready,
+            sale = cart(*lines, queuedRowId = 7),
+            queued = waiting,
+            history = listOf(waiting),
+            kept = setOf("client-7")
+        )
+        var ui by mutableStateOf(queued)
+        var back = 0
+        val actions = SaleActions(
+            onBackToCart = {
+                back++
+                ui = ui.copy(sale = cart(*lines).copy(corrects = listOf("client-7")), queued = null)
+            }
+        )
+        compose.setContent {
+            MosaiqTheme(darkTheme = false) {
+                Box(Modifier.size(phone)) { SalesContent(ui, actions, SnackbarHostState()) {} }
+            }
+        }
+        // The seller is down at the history when the refusal arrives.
+        compose.onNodeWithTag("sale-row-7").performScrollTo()
+        ui = queued.copy(queued = refused, history = listOf(refused))
+        compose.waitForIdle()
+
+        val bar = compose.onNodeWithTag("sale-bar").getUnclippedBoundsInRoot()
+        assertTrue("The bar takes ${bar.height}", bar.height <= 667.dp / 4)
+        // Only "Back to cart" stays pinned; the other ways out moved into the refusal card.
+        compose.onNode(hasText("Start another sale") and hasAnyAncestor(hasTestTag("sale-bar"))).assertDoesNotExist()
+        compose.onNodeWithTag("another-sale").assertExists()
+        val reason = compose.onAllNodesWithText(
+            "This store keeps no stock of a product in the sale. Remove it from the cart."
+        ).onFirst().getUnclippedBoundsInRoot()
+        val line = compose.onNodeWithText("Line: Rain shell").getUnclippedBoundsInRoot()
+        assertTrue("The reason is out of view at ${reason.top}", reason.top >= 0.dp && reason.bottom <= bar.top)
+        assertTrue("The line is out of view at ${line.top}", line.top >= 0.dp && line.bottom <= bar.top)
+
+        compose.onNodeWithTag("back-to-cart").performClick()
+        compose.waitForIdle()
+        assertEquals(1, back)
+        val remove = compose.onNodeWithContentDescription("Remove Rain shell").getUnclippedBoundsInRoot()
+        assertTrue("The line to fix is out of view at ${remove.top}", remove.top >= 0.dp && remove.bottom <= bar.top)
     }
 
     private fun row(id: Long, state: RowState, code: String? = null) = OutboxRow(

@@ -98,6 +98,37 @@ const UNRECORDED_BODIES = /\/api\/auth\/v1\/sessions(\/refresh)?$/;
 
 export class UnmaskedSecret extends Error {}
 
+/** The ways a secret can appear in a file: as itself, inside a JSON string, and as XML text. */
+function written(secret: string): Set<string> {
+  const xml = secret.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return new Set([secret, JSON.stringify(secret).slice(1, -1), xml, xml.replace(/"/g, '&quot;')]);
+}
+
+/** `--sale-id`: a positive integer, written as one, or null. */
+export function saleIdFrom(raw: string | undefined): number | null {
+  if (raw === undefined || !/^[1-9]\d*$/.test(raw.trim())) return null;
+  const id = Number(raw.trim());
+  return Number.isSafeInteger(id) ? id : null;
+}
+
+/**
+ * The folder the app's `app.getPath('userData')` names. Electron takes it from the packaged
+ * package.json's productName, else its name; electron-builder.yml's productName names only the
+ * bundle and is not written there (checked on a `--mac dir` build: Application Support/mosaiq-desktop).
+ */
+export function configDirFor(
+  pkg: { name: string; productName?: string },
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  home: string,
+): string {
+  if (env.MOSAIQ_DESKTOP_CONFIG_DIR) return env.MOSAIQ_DESKTOP_CONFIG_DIR;
+  const folder = pkg.productName ?? pkg.name;
+  if (platform === 'darwin') return join(home, 'Library', 'Application Support', folder);
+  if (platform === 'win32') return join(env.APPDATA ?? home, folder);
+  return join(env.XDG_CONFIG_HOME ?? join(home, '.config'), folder);
+}
+
 /** Each distinct secret becomes `<masked #n>`, as tests/acceptance/evidence.py marks them. */
 export class Masker {
   private readonly seen = new Map<string, number>();
@@ -122,7 +153,7 @@ export class Masker {
   leaks(text: string): boolean {
     JWT.lastIndex = 0;
     if (JWT.test(text)) return true;
-    for (const secret of this.known) if (text.includes(secret)) return true;
+    for (const secret of this.known) for (const form of written(secret)) if (text.includes(form)) return true;
     return false;
   }
 

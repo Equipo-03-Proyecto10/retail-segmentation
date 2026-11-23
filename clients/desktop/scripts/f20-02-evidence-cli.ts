@@ -6,7 +6,15 @@ import { createInterface } from 'node:readline';
 import { parseArgs } from 'node:util';
 import { loadBundle } from '../src/main/bundle';
 import { loadSettings } from '../src/main/settings';
-import { collect, STEPS, verdict, type Account, type Step } from './f20-02-evidence';
+import {
+  collect,
+  configDirFor,
+  saleIdFrom,
+  STEPS,
+  verdict,
+  type Account,
+  type Step,
+} from './f20-02-evidence';
 
 // npm run evidence:f20-02 -- --out <dir> --sale-id <id> [--config-dir <dir>]
 //   [--name <campaign name>] [--label <label_code>] [--starts-on YYYY-MM-DD] [--ends-on YYYY-MM-DD]
@@ -17,13 +25,6 @@ import { collect, STEPS, verdict, type Account, type Step } from './f20-02-evide
 // a password is never echoed, never an argument, and never written.
 
 const ROOT = resolve(__dirname, '..');
-
-function defaultConfigDir(): string {
-  if (process.env.MOSAIQ_DESKTOP_CONFIG_DIR) return process.env.MOSAIQ_DESKTOP_CONFIG_DIR;
-  if (process.platform === 'darwin') return join(homedir(), 'Library/Application Support/mosaiq-desktop');
-  if (process.platform === 'win32') return join(process.env.APPDATA ?? homedir(), 'mosaiq-desktop');
-  return join(process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config'), 'mosaiq-desktop');
-}
 
 function ask(prompt: string, hidden: boolean): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
@@ -73,7 +74,17 @@ async function main(): Promise<number> {
     process.stderr.write('usage: npm run evidence:f20-02 -- --out <dir> --sale-id <id> [options]\n');
     return 2;
   }
-  const configDir = values['config-dir'] ?? defaultConfigDir();
+  const saleId = saleIdFrom(values['sale-id']);
+  if (saleId === null) {
+    process.stderr.write(`--sale-id must be a positive integer, not ${JSON.stringify(values['sale-id'])}\n`);
+    return 2;
+  }
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+    name: string;
+    productName?: string;
+    version: string;
+  };
+  const configDir = values['config-dir'] ?? configDirFor(pkg, process.platform, process.env, homedir());
   const { baseUrl } = loadSettings(configDir);
   const today = new Date();
   const day = (offset: number): string =>
@@ -81,13 +92,12 @@ async function main(): Promise<number> {
   const stamp = today.toISOString().replace(/[-:]/g, '').slice(0, 13);
   const accounts = {} as Record<Step, Account>;
   for (const step of STEPS) accounts[step] = await account(step);
-  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { version: string };
   const out = resolve(values.out);
   const evidence = await collect({
     bundle: loadBundle(join(ROOT, 'bundled')),
     baseUrl,
     out,
-    saleId: Number(values['sale-id']),
+    saleId,
     draft: {
       name: values.name ?? `F20-02 evidence draft ${stamp}Z`,
       label_code: values.label ?? 'CHAMPION',

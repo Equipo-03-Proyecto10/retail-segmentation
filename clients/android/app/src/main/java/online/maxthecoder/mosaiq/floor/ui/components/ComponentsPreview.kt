@@ -50,6 +50,14 @@ private fun FeedbackLight() = Sheet(dark = false) { Feedback() }
 @Composable
 private fun FeedbackDark() = Sheet(dark = true) { Feedback() }
 
+@Preview(name = "Dialog, light", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT / 2, showBackground = true)
+@Composable
+private fun DialogLight() = Sheet(dark = false) { Dialogs() }
+
+@Preview(name = "Dialog, dark", widthDp = PREVIEW_WIDTH, heightDp = PREVIEW_HEIGHT / 2, showBackground = true)
+@Composable
+private fun DialogDark() = Sheet(dark = true) { Dialogs() }
+
 @Composable
 private fun Sheet(dark: Boolean, content: @Composable () -> Unit) = MosaiqTheme(darkTheme = dark) {
     Surface(color = MaterialTheme.colorScheme.background) {
@@ -123,4 +131,23 @@ private fun Feedback() {
         snackbar.showSnackbar("Sale saved on this phone.", actionLabel = "Undo", duration = SnackbarDuration.Indefinite)
     }
     MqSnackbarHost(snackbar)
+}
+
+@Composable
+private fun Dialogs() {
+    MqDialog(
+        title = "Writes are still waiting",
+        onDismiss = {},
+        actions = {
+            MqButton("Stay signed in", {}, variant = MqButtonVariant.Secondary)
+            MqButton("Sign out anyway", {}, variant = MqButtonVariant.Danger)
+        }
+    ) { Text("2 writes have not been sent yet. They wait for you to sign in again.") }
+}
+
+/** Not drawn by the previews: a sheet opens its own window, which a preview cannot show. */
+@Suppress("unused")
+@Composable
+private fun SheetSample(open: Boolean) {
+    if (open) MqSheet(onDismiss = {}) { Text("New customer") }
 }

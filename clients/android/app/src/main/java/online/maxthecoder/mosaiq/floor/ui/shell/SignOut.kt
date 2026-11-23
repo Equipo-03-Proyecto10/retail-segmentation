@@ -1,8 +1,7 @@
 package online.maxthecoder.mosaiq.floor.ui.shell
 
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -16,6 +15,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import online.maxthecoder.mosaiq.floor.R
 import online.maxthecoder.mosaiq.floor.ui.FloorViewModel
+import online.maxthecoder.mosaiq.floor.ui.components.MqButton
+import online.maxthecoder.mosaiq.floor.ui.components.MqButtonVariant
+import online.maxthecoder.mosaiq.floor.ui.components.MqDialog
 
 /**
  * Signing out with writes still queued warns first: they wait for this user.
@@ -41,20 +43,27 @@ fun SignOutHost(
         }
     }
     if (pending > 0) {
-        AlertDialog(
-            onDismissRequest = { pending = 0 },
-            title = { Text(stringResource(R.string.signout_title)) },
-            text = {
-                Text(pluralStringResource(R.plurals.signout_body, pending, pending))
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    pending = 0
-                    onSignOut()
-                }) { Text(stringResource(R.string.signout_confirm)) }
-            },
-            dismissButton = { TextButton(onClick = { pending = 0 }) { Text(stringResource(R.string.signout_stay)) } }
-        )
+        MqDialog(
+            title = stringResource(R.string.signout_title),
+            onDismiss = { pending = 0 },
+            actions = {
+                // Staying is the safe choice; signing out leaves the writes waiting, so it reads as danger.
+                MqButton(stringResource(R.string.signout_stay), { pending = 0 }, variant = MqButtonVariant.Secondary)
+                MqButton(
+                    stringResource(R.string.signout_confirm),
+                    {
+                        pending = 0
+                        onSignOut()
+                    },
+                    variant = MqButtonVariant.Danger
+                )
+            }
+        ) {
+            Text(
+                pluralStringResource(R.plurals.signout_body, pending, pending),
+                style = MaterialTheme.typography.bodyMedium
+            )
+        }
     }
 }
 
@@ -62,6 +71,6 @@ fun SignOutHost(
 @Composable
 fun SignOutButton(model: FloorViewModel, onSignOut: () -> Unit) {
     SignOutHost(model, onSignOut) { request ->
-        TextButton(onClick = request) { Text(stringResource(R.string.session_sign_out)) }
+        MqButton(stringResource(R.string.session_sign_out), request, variant = MqButtonVariant.Quiet)
     }
 }

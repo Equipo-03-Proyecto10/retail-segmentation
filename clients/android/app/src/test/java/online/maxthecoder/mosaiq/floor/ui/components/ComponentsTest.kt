@@ -399,4 +399,41 @@ class ComponentsTest {
         val samples = Regex("""private fun (\w+)\(\) \{""").findAll(preview).map { it.groupValues[1] }.toSet()
         assertEquals("sample sheets without a preview", emptySet<String>(), samples - sheets.keys)
     }
+
+    @Test
+    fun dialogNamesItsWindowHeadsItsTitleAndItsActionsAreTouchTargets() {
+        var stayed = 0
+        var left = 0
+        show {
+            MqDialog(
+                title = "Leave?",
+                onDismiss = {},
+                actions = {
+                    MqButton("Stay", { stayed++ }, variant = MqButtonVariant.Secondary)
+                    MqButton("Leave anyway", { left++ }, variant = MqButtonVariant.Danger)
+                }
+            ) { Text("Two writes are waiting.") }
+        }
+        compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.PaneTitle, "Leave?")).assertExists()
+        compose.onNode(hasText("Leave?") and SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)).assertExists()
+        compose.onNodeWithText("Two writes are waiting.").assertExists()
+        compose.onNodeWithText("Stay").assertHeightIsAtLeast(Spacing.X5l).performClick()
+        compose.onNodeWithText("Leave anyway").assertHeightIsAtLeast(Spacing.X5l).performClick()
+        assertEquals(1, stayed)
+        assertEquals(1, left)
+    }
+
+    @Test
+    fun sheetShowsItsContentAndItsActionsWork() {
+        var saved = 0
+        show {
+            MqSheet(onDismiss = {}) {
+                Text("New customer")
+                MqButton("Register customer", { saved++ })
+            }
+        }
+        compose.onNodeWithText("New customer").assertExists()
+        compose.onNodeWithText("Register customer").performClick()
+        assertEquals(1, saved)
+    }
 }

@@ -54,6 +54,10 @@ class ThemeDriftTest {
         check("dark error", d.error, "dark", "--mq-danger")
         assertEquals(MosaiqPalette["light/--mq-text-link"], MosaiqLightExtras.link)
         assertEquals(MosaiqPalette["dark/--mq-text-link"], MosaiqDarkExtras.link)
+        assertEquals(MosaiqPalette["light/--mq-bg-raised"], MosaiqLightExtras.raised)
+        assertEquals(MosaiqPalette["dark/--mq-bg-raised"], MosaiqDarkExtras.raised)
+        assertEquals(MosaiqPalette["light/--mq-border-default"], MosaiqLightExtras.borderDefault)
+        assertEquals(MosaiqPalette["dark/--mq-border-default"], MosaiqDarkExtras.borderDefault)
         assertEquals(8, MosaiqLightExtras.segment.size)
         assertEquals(8, MosaiqDarkExtras.segment.size)
     }

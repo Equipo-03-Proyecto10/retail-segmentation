@@ -25,10 +25,11 @@ operator applies that section alone.
 |---|---|---|
 | `customer_id` | `uuid` | The customer, as in `api_customers.customer_ref_v1`. |
 | `label_code` | `character varying(40)` | The label of this assignment; `NULL` when the run found no label (RN-21). |
-| `run_id` | `bigint` | The run that wrote the assignment. Its model version is model-registry's, read by `run_id` (ADR-0064). |
+| `run_id` | `bigint` | The run that wrote the assignment. A legacy web run's model version is model-registry's, read by `run_id` (ADR-0064). |
 | `valid_from` | `timestamp with time zone` | The instant the assignment opened. |
 | `valid_to` | `timestamp with time zone` | The instant it closed; `NULL` while it is the customer's current assignment. |
 | `data_origin` | `text` | `SEEDED` when the run that wrote it is seeded, else `OBSERVED` (ADR-0052). |
+| `model_version_id` | `bigint` | The version recorded by an incremental run; `NULL` for a legacy web run, whose version model-registry resolves by `run_id`. |
 
 ## What is a row
 

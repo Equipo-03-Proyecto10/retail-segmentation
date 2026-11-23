@@ -49,15 +49,17 @@ current tenure:
   `tₖ + H` is in the past, so its outcome is known and two consecutive cohorts never
   share an outcome day.
 - **Members.** A cohort's customers are those whose assignment open at `t` carries a
-  label and was written by a run of this version (`models.run_version`). An unassigned
-  customer has no segment and is not in it.
+  label and was written by a run of this version. A legacy web run is resolved through
+  `models.run_version`; an incremental run carries `model_version_id` in its parameters,
+  which the assignment view publishes while that link is pending (ADR-0087). An
+  unassigned customer has no segment and is not in it.
 - **Outcome.** A member repurchases if at least one line of theirs in
   `api_sales.net_purchase_line_v1` has `occurred_at` in `(t, t + H]`. That view is net of
   reversals, so a fully returned sale does not count (ADR-0062).
 - **Reading the segment at `t`.** segments publishes a new read-only view,
-  `api_segments.assignment_interval_v1`: one row per assignment, with its label, its run
-  and its half-open interval `[valid_from, valid_to)`. svc_models is granted `SELECT` on
-  it.
+  `api_segments.assignment_interval_v1`: one row per assignment, with its label, its run,
+  the version an incremental run recorded, and its half-open interval
+  `[valid_from, valid_to)`. svc_models is granted `SELECT` on it.
 - **Storage.** A test is a `drift_report` of kind `OUTCOME_TEST`, whose window is the
   cohort's outcome window `(tₖ, tₖ + H]`, so `window_start` is the cohort's as-of date.
   Each segment of the version is a row of a new insert-only table,

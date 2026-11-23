@@ -2544,7 +2544,8 @@ SELECT h.customer_id,
        h.run_id,
        h.valid_from,
        h.valid_to,
-       r.data_origin::text AS data_origin
+       r.data_origin::text AS data_origin,
+       (r.parameters ->> 'model_version_id')::bigint AS model_version_id
 FROM public.customer_segment_history AS h
 JOIN public.segmentation_run AS r ON r.run_id = h.run_id
 JOIN api_customers.customer_ref_v1 AS c ON c.customer_id = h.customer_id;
@@ -6529,16 +6530,75 @@ CREATE TABLE IF NOT EXISTS models.drift_outcome_segment (
     CHECK (reference_repurchasers <= reference_customers),
     CHECK (current_repurchasers <= current_customers),
     -- A segment below the minimum on either side has no statistic at all.
+    CONSTRAINT drift_outcome_segment_result_counts
+        CHECK ((result = 'NOT_TESTED') =
+               (reference_customers < 100 OR current_customers < 100)),
     CHECK ((result = 'NOT_TESTED') = (z IS NULL)),
     CHECK ((z IS NULL) = (p_value IS NULL) AND (z IS NULL) = (adjusted_p_value IS NULL)),
     CHECK (adjusted_p_value IS NULL OR adjusted_p_value >= p_value),
+    -- PASSED is derived from the stored counts and adjusted p-value; it cannot be
+    -- asserted by a writer when either threshold did not pass. The difference is
+    -- computed in points exactly as app/outcome.py does (100 * (rate - rate) >= 5),
+    -- so the two agree to the last bit: 6/100 against 1/100 is 5 points there,
+    -- while 0.06 - 0.01 >= 0.05 is false in floating point.
+    CONSTRAINT drift_outcome_segment_pass_threshold
+        CHECK ((result = 'PASSED') = CASE
+                   WHEN adjusted_p_value IS NULL
+                        OR reference_customers = 0 OR current_customers = 0 THEN false
+                   ELSE adjusted_p_value < 0.05
+                        AND abs(100 * (current_repurchasers::double precision
+                                       / current_customers
+                                       - reference_repurchasers::double precision
+                                         / reference_customers)) >= 5
+               END),
     -- Two consecutive passing cohorts: only a segment that passed here can persist.
     CHECK (NOT persisted OR result = 'PASSED')
 );
 
+-- A database on which part 1 was applied already has this new table. Named
+-- constraints make reapplying this section install the tightened invariants too.
+ALTER TABLE models.drift_outcome_segment
+    DROP CONSTRAINT IF EXISTS drift_outcome_segment_result_counts,
+    DROP CONSTRAINT IF EXISTS drift_outcome_segment_pass_threshold,
+    ADD CONSTRAINT drift_outcome_segment_result_counts
+        CHECK ((result = 'NOT_TESTED') =
+               (reference_customers < 100 OR current_customers < 100)),
+    ADD CONSTRAINT drift_outcome_segment_pass_threshold
+        CHECK ((result = 'PASSED') = CASE
+                   WHEN adjusted_p_value IS NULL
+                        OR reference_customers = 0 OR current_customers = 0 THEN false
+                   ELSE adjusted_p_value < 0.05
+                        AND abs(100 * (current_repurchasers::double precision
+                                       / current_customers
+                                       - reference_repurchasers::double precision
+                                         / reference_customers)) >= 5
+               END);
+
 CREATE OR REPLACE TRIGGER trg_drift_outcome_segment_immutable
 BEFORE UPDATE OR DELETE ON models.drift_outcome_segment
 FOR EACH ROW EXECUTE FUNCTION models.refuse_change();
+
+-- Segment results belong only to an OUTCOME_TEST. The report kind is in the parent
+-- row, so this cross-row invariant needs the same trigger pattern as the variable.
+CREATE OR REPLACE FUNCTION models.guard_drift_outcome_segment_kind() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $guard$
+BEGIN
+    IF NOT EXISTS (SELECT FROM models.drift_report
+                    WHERE report_id = NEW.report_id AND kind = 'OUTCOME_TEST') THEN
+        RAISE EXCEPTION 'outcome segment does not belong to an outcome-test report'
+            USING ERRCODE = 'check_violation',
+                  CONSTRAINT = 'drift_outcome_segment_kind';
+    END IF;
+    RETURN NEW;
+END
+$guard$;
+REVOKE EXECUTE ON FUNCTION models.guard_drift_outcome_segment_kind() FROM PUBLIC;
+
+CREATE OR REPLACE TRIGGER trg_drift_outcome_segment_kind
+BEFORE INSERT ON models.drift_outcome_segment
+FOR EACH ROW EXECUTE FUNCTION models.guard_drift_outcome_segment_kind();
 
 -- A database built before ADR-0089 holds the tables with the data-drift constraints
 -- only; this widens them in place, so applying the section again is enough.

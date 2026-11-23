@@ -1188,7 +1188,9 @@ decision that matters is how a product's many-valued facts are split:
   report, which is why it is stored: it is the result of a step over the report, not a
   function of the row. The rates, the difference in points, the thresholds, the horizon
   (the report's window) and the claim (any `persisted` row) are derived and not stored,
-  so no row can disagree with ADR-0065's constants. A segment is one fact per report,
+  and CHECKs derive `NOT_TESTED` and `PASSED` from the counts and adjusted p-value,
+  so no row can disagree with ADR-0065's constants. A trigger admits rows only for an
+  `OUTCOME_TEST` report. A segment is one fact per report,
   independent of the report's variable state, so it is a table of its own and not a
   repetition inside `drift_variable` (4NF).
   All six tables are insert-only, by trigger, and nothing is deleted.

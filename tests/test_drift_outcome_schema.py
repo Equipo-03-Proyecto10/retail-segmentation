@@ -13,6 +13,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from psycopg import sql
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (ROOT / "contracts/db/api_segments.assignment_interval.v1.md").read_text()
@@ -23,6 +24,7 @@ COLUMNS = [
     "valid_from",
     "valid_to",
     "data_origin",
+    "model_version_id",
 ]
 
 pytestmark = pytest.mark.postgres
@@ -43,11 +45,12 @@ def rolled_back(owner_url: str) -> Iterator[psycopg.Connection]:
 
 def _read_as(connection: psycopg.Connection, role: str) -> list[tuple]:
     with connection.cursor() as cur:
-        cur.execute(f"SET ROLE {role}")
+        cur.execute(sql.SQL("SET ROLE {}").format(sql.Identifier(role)))
         try:
             cur.execute(
                 "SELECT customer_id, label_code, run_id, valid_from, valid_to,"
-                " data_origin FROM api_segments.assignment_interval_v1"
+                " data_origin, model_version_id"
+                " FROM api_segments.assignment_interval_v1"
             )
             return cur.fetchall()
         finally:
@@ -178,6 +181,15 @@ def test_a_data_drift_report_can_never_claim_concept_drift(
     data = _report(rolled_back, "DATA_DRIFT")
     _savepoint_refuses(
         rolled_back,
+        "INSERT INTO models.drift_outcome_segment (report_id, label_code,"
+        " reference_customers, reference_repurchasers, current_customers,"
+        " current_repurchasers, z, p_value, adjusted_p_value, result, persisted)"
+        " VALUES (%s, 'LOYAL', 100, 40, 100, 20, -3, 0.0027, 0.0027,"
+        " 'PASSED', false)",
+        (data,),
+    )
+    _savepoint_refuses(
+        rolled_back,
         "INSERT INTO models.drift_variable (report_id, variable, state)"
         " VALUES (%s, 'REPURCHASE_RATE', 'ALARM')",
         (data,),
@@ -215,15 +227,36 @@ def test_an_outcome_report_holds_no_distribution_variable(
         )
 
 
+def test_a_pass_of_exactly_five_points_is_kept_as_the_service_judges_it(
+    rolled_back: psycopg.Connection,
+) -> None:
+    """6 of 100 against 1 of 100 is five points in app/outcome.py, so a pass. The
+    schema must agree: in floating point 0.06 - 0.01 is just under 0.05."""
+    report = _report(rolled_back, "OUTCOME_TEST")
+    rolled_back.execute(
+        "INSERT INTO models.drift_outcome_segment (report_id, label_code,"
+        " reference_customers, reference_repurchasers, current_customers,"
+        " current_repurchasers, z, p_value, adjusted_p_value, result, persisted)"
+        " VALUES (%s, 'LOYAL', 100, 1, 100, 6, 2.0, 0.04, 0.04, 'PASSED', false)",
+        (report,),
+    )
+
+
 @pytest.mark.parametrize(
     "values",
     [
         # A segment below the minimum has no statistic.
         (50, 5, 400, 40, 1.0, 0.3, 0.6, "NOT_TESTED", False),
+        # A segment below the minimum cannot claim to have been tested.
+        (50, 5, 400, 40, 1.0, 0.3, 0.6, "NOT_PASSED", False),
         # A tested segment has all three.
         (500, 50, 400, 40, 1.0, None, None, "NOT_PASSED", False),
         # Only a segment that passed here can persist.
         (500, 50, 400, 80, 3.0, 0.002, 0.004, "NOT_PASSED", True),
+        # A large p-value cannot be called a pass.
+        (500, 50, 400, 80, 3.0, 0.2, 0.4, "PASSED", False),
+        # A difference below five points cannot be called a pass.
+        (500, 50, 400, 48, 1.0, 0.001, 0.002, "PASSED", False),
         # More repurchasers than customers.
         (500, 501, 400, 40, 1.0, 0.3, 0.6, "NOT_PASSED", False),
         # Holm never lowers a p-value.

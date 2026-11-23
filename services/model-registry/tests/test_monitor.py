@@ -663,3 +663,42 @@ def test_an_outcome_test_may_be_insufficient_with_many_customers(
             " now() - interval '31 days', now() - interval '1 day', 500"
             " FROM models.model_version WHERE state = 'PUBLISHED'"
         )
+
+
+@pytest.mark.parametrize(
+    ("variable", "plant", "moved"),
+    [
+        # F23-10: spend planted four times higher, every purchase count unchanged.
+        ("M", lambda row: (row[0], row[1], row[2], float(row[3]) * 4), "rose"),
+        # F23-10: two purchases in three removed, recency and spend unchanged.
+        ("F", lambda row: (row[0], row[1], max(1, row[2] // 3), row[3]), "fell"),
+    ],
+)
+def test_a_planted_shift_alerts_on_its_variable_and_the_alert_names_it(
+    client: FlaskClient,
+    token: Any,
+    service_db: psycopg.Connection,
+    owner: psycopg.Connection,
+    reference: dict[str, Any],
+    after_publication: datetime,
+    feed: Any,
+    variable: str,
+    plant: Any,
+    moved: str,
+) -> None:
+    feed([plant(row) for row in profiles(reference, 1000)])
+    first = one_pass(service_db, after_publication)
+    second = one_pass(service_db, after_publication + timedelta(days=1))
+    assert report(owner, first)["states"][variable] == "ALARM_PENDING"
+    states = report(owner, second)["states"]
+    assert states[variable] == "ALARM"
+    assert {name for name, state in states.items() if state == "ALARM"} == {variable}
+    (alert_id,) = owner.execute(
+        "SELECT alert_id FROM models.drift_alert WHERE report_id = %s", (second,)
+    ).fetchone()
+    alert = get(client, token, f"/v1/drift-alerts/{alert_id}").get_json()
+    assert alert["variable"] == variable
+    assert alert["claim"] == "DISTRIBUTION_CHANGE"
+    assert alert["suggested_review"]["code"] == "REVIEW_FEATURE_DISTRIBUTION"
+    assert f"The {variable} values moved" in alert["suggested_review"]["text"]
+    assert f" {moved} from " in alert["suggested_review"]["text"]

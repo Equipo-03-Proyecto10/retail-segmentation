@@ -187,8 +187,14 @@ def test_an_assisted_task_says_what_the_hint_was_and_only_an_assisted_one_has_on
         _parse(raw)
     raw = _session()
     raw["tasks"]["A-S1"]["hint"] = "Showed the search."
-    with pytest.raises(RecordError, match="so it is assisted"):
+    with pytest.raises(RecordError, match="assisted or failed, not complete"):
         _parse(raw)
+
+
+def test_a_hint_that_did_not_get_the_participant_there_is_a_failed_task():
+    raw = _session()
+    raw["tasks"]["A-S4"]["hint"] = "Pointed at the explanation."
+    assert _parse(raw).tasks["A-S4"].outcome == "failed"
 
 
 def test_no_consent_to_take_notes_means_no_record():
@@ -204,6 +210,8 @@ def test_a_participant_who_built_the_client_is_refused():
 def test_the_moderator_does_not_read_their_own_notes():
     with pytest.raises(RecordError, match="second team member"):
         _parse(_session(second_reader="github-login"))
+    with pytest.raises(RecordError, match="second team member"):
+        _parse(_session(second_reader="GitHub-Login"))
 
 
 @pytest.mark.parametrize(

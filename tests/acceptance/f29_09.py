@@ -266,8 +266,12 @@ def parse_task(where: str, raw: object) -> Task:
         raise RecordError(
             f"{where} reached the five-minute cap, so it is failed (plan §4.1)"
         )
-    if hint and outcome != "assisted":
-        raise RecordError(f"{where} has a hint, so it is assisted (plan §4.1)")
+    # A hint given and the end state still not reached is a failed task, not an
+    # unaided one: only "complete" says no hint was needed (plan §4.1).
+    if hint and outcome == "complete":
+        raise RecordError(
+            f"{where} has a hint, so it is assisted or failed, not complete (plan §4.1)"
+        )
     return Task(outcome, seconds, errors, hint, _text(f"{where}.note", raw.get("note")))
 
 
@@ -300,7 +304,8 @@ def parse_session(name: str, raw: Mapping[str, object]) -> Session:
         if not isinstance(login, str) or not GITHUB_LOGIN.match(login):
             raise RecordError(f"{name}: {key} must be a team member's GitHub login")
         logins[key] = login
-    if logins["moderator"] == logins["second_reader"]:
+    # GitHub logins are not case-sensitive: "Max" and "max" are one person.
+    if logins["moderator"].casefold() == logins["second_reader"].casefold():
         raise RecordError(
             f"{name}: a second team member reads the notes, not the moderator "
             "(plan §5)"

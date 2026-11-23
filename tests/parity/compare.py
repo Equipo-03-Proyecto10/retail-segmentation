@@ -665,6 +665,11 @@ def parse_recommendations_page(html: str) -> Recommendation:
     and units in stock, in the page's order, or the empty state's reason."""
 
     items = tuple((int(p), int(q)) for p, q in _ITEM.findall(html))
+    cards = html.count("data-recommendation=")
+    if cards != len(items):
+        # An item without its stock line would be paired with the next item's
+        # and drop it: the units compared would be another product's.
+        raise ValueError(f"{cards} recommendation items, {len(items)} with their stock")
     if items:
         return Recommendation("recommended", items)
     title = _EMPTY_TITLE.search(html)

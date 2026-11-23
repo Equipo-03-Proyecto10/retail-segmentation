@@ -174,6 +174,9 @@ def _after(
     on_web = web.recommendations(customer)
     if must_change is not None:
         assert on_web != must_change, f"{change} did not change the web's answer"
+        # Agreeing on an empty answer compares no product: the case's customer
+        # keeps at least one recommendation after each of these changes.
+        assert on_web.items, f"{change} left the web with nothing to compare"
     deadline = started + bound
     on_service, _ = recommendations.read(customer)
     while on_service != on_web and time.monotonic() < deadline:

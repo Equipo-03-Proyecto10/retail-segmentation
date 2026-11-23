@@ -586,6 +586,13 @@ def test_a_page_with_neither_items_nor_a_reason_is_refused() -> None:
         parse_recommendations_page("<main></main>")
 
 
+def test_an_item_without_its_stock_line_is_refused_not_paired_with_the_next() -> None:
+    first = '<article data-recommendation="245"><dt>Store</dt><dd>Centro</dd></article>'
+    html = first + _ITEM_HTML.format(product=120, units="1 unit")
+    with pytest.raises(ValueError, match="2 recommendation items, 1 with"):
+        parse_recommendations_page(html)
+
+
 def test_the_services_segment_statuses_are_the_webs_no_segment() -> None:
     for status in ("no_open_assignment", "unassigned_result"):
         assert recommendation_from_service({"status": status, "items": []}) == (

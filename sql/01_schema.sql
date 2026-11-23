@@ -4785,6 +4785,14 @@ GRANT USAGE ON SCHEMA api_campaigns TO svc_campaigns, svc_sales;
 GRANT SELECT ON api_campaigns.active_promotion_v1 TO svc_campaigns;
 GRANT SELECT ON api_campaigns.promotion_window_v1 TO svc_campaigns, svc_sales;
 -- END F25-05 promotions
+
+-- BEGIN F25-16 promotion store scope (#1164)
+-- Floor-role promotion reads re-read current assignments on every request
+-- (ADR-0060). The producer creates this view earlier in the users boundary;
+-- campaigns receives only its versioned read contract, never the base table.
+GRANT USAGE ON SCHEMA api_users TO svc_campaigns;
+GRANT SELECT ON api_users.store_assignment_v1 TO svc_campaigns;
+-- END F25-16 promotion store scope
 -- END BOUNDARY campaigns
 
 -- BEGIN BOUNDARY audit-trail

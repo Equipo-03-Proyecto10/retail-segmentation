@@ -17,6 +17,8 @@ from tests.parity.compare import (
     CaseResult,
     Difference,
     EngineRfm,
+    Recommendation,
+    RecommendationDifference,
     ReportDifference,
     RfmDifference,
     SegmentDifference,
@@ -28,12 +30,15 @@ from tests.parity.compare import (
     diff_audit,
     diff_levels,
     diff_members,
+    diff_recommendations,
     diff_rfm,
     parse_customer_current,
     parse_propagation_bound,
+    parse_recommendations_page,
     parse_report_open_members,
     parse_reports_revenue,
     parse_stock_page,
+    recommendation_from_service,
     write_results,
 )
 from tests.parity.stack import ParityClient
@@ -541,3 +546,70 @@ def test_an_rfm_difference_is_written_to_the_results_file(tmp_path) -> None:
         "web": 3,
         "engine": 4,
     }
+
+
+# ---------- recommendations (F20-10) ----------
+
+_ITEM_HTML = """
+<article class="mq-panel" data-recommendation="{product}">
+  <dl class="mq-description-list">
+    <dt>Store</dt><dd>Centro</dd>
+    <dt>Available stock</dt><dd class="mq-num">{units}</dd>
+  </dl>
+</article>"""
+
+
+def test_the_recommendations_page_lists_products_in_order_with_their_stock() -> None:
+    html = _ITEM_HTML.format(product=245, units="8 units") + _ITEM_HTML.format(
+        product=120, units="1 unit"
+    )
+    assert parse_recommendations_page(html) == Recommendation(
+        "recommended", ((245, 8), (120, 1))
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "status"),
+    [
+        ("No segment available", "no_segment"),
+        ("No usual store", "no_usual_store"),
+        ("No eligible products", "none_match"),
+    ],
+)
+def test_an_empty_recommendations_page_says_why(title: str, status: str) -> None:
+    html = f'<span class="mq-state__title">{title}</span>'
+    assert parse_recommendations_page(html) == Recommendation(status)
+
+
+def test_a_page_with_neither_items_nor_a_reason_is_refused() -> None:
+    with pytest.raises(ValueError):
+        parse_recommendations_page("<main></main>")
+
+
+def test_the_services_segment_statuses_are_the_webs_no_segment() -> None:
+    for status in ("no_open_assignment", "unassigned_result"):
+        assert recommendation_from_service({"status": status, "items": []}) == (
+            Recommendation("no_segment")
+        )
+    body = {
+        "status": "recommended",
+        "items": [
+            {"product_id": 245, "quantity_on_hand": 8},
+            {"product_id": 120, "quantity_on_hand": 14},
+        ],
+    }
+    assert recommendation_from_service(body).products == (245, 120)
+
+
+def test_recommendations_differ_by_status_then_order_then_stock() -> None:
+    web = Recommendation("recommended", ((1, 5), (2, 3)))
+    assert diff_recommendations("sale", web, web) == []
+    assert diff_recommendations("sale", web, Recommendation("none_match")) == [
+        RecommendationDifference("sale", "status", "recommended", "none_match")
+    ]
+    reordered = Recommendation("recommended", ((2, 3), (1, 5)))
+    assert diff_recommendations("sale", web, reordered)[0].what == "products"
+    restocked = Recommendation("recommended", ((1, 5), (2, 4)))
+    assert diff_recommendations("stock", web, restocked) == [
+        RecommendationDifference("stock", "product 2 on hand", 3, 4)
+    ]

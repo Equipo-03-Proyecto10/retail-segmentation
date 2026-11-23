@@ -711,3 +711,16 @@ def test_f24_08_shape_ignores_what_a_decision_does_not_keep():
     assert f24_08.shape(stored) == f24_08.shape(answer)
     stored["exclusions"][0]["count"] += 1
     assert f24_08.shape(stored) != f24_08.shape(answer)
+
+
+def test_a_run_with_no_checks_does_not_hold(tmp_path) -> None:
+    rec = Recorder(tmp_path, "t", "t")
+    assert rec.write() is False
+    rec.check("c", "a case", 1, 1)
+    assert rec.write() is True
+
+
+def test_f24_08_says_how_to_restore_a_product_left_at_zero() -> None:
+    notice = f24_08.left_at_zero_notice(3, 2, 10)
+    assert "product 2" in notice and "store 3" in notice
+    assert '"quantity": 10' in notice and "RECEIPT" in notice

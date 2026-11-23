@@ -15,10 +15,11 @@ import online.maxthecoder.mosaiq.floor.net.Promotion
 import online.maxthecoder.mosaiq.floor.net.call
 
 /**
- * A refused promotions list, in the app's own words when the list is not there at all. campaigns'
- * `listPromotions` is still `planned`, so it answers 404 with the framework's default text, envelope
- * or not; that text must not reach the floor (#1155). The code and correlation id are kept for
- * "Details". Any other refusal keeps its own message, which [ApiError] has already made plain.
+ * A refused promotions list, in the app's own words when the list is not there at all. campaigns serves
+ * `listPromotions` now (F25-16), but an instance still on an older release answers 404 with the
+ * framework's default text, envelope or not; that text must not reach the floor (#1155). The code and
+ * correlation id are kept for "Details". Any other refusal keeps its own message, which [ApiError] has
+ * already made plain.
  */
 fun promotionsRefusal(error: ApiError, @StringRes missing: Int): ApiError =
     if (error.status == NOT_FOUND) error.copy(message = AppText.get(missing)) else error

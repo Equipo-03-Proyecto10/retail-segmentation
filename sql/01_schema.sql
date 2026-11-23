@@ -6317,6 +6317,76 @@ FOR EACH ROW EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
 CREATE OR REPLACE TRIGGER trg_experiment_assignment_never_truncated
 BEFORE TRUNCATE ON public.experiment_assignment
 FOR EACH STATEMENT EXECUTE FUNCTION experiments.fn_assignment_is_fixed();
+
+-- contracts/db/api_experiments.campaign_effect.v1.md (F26-04, #849): one row per
+-- experiment of a campaign whose result is stored. Attributed sales and the incremental
+-- effect stay two columns and are never merged (ADR-0069, F25-02's record). The effect
+-- and its interval are the stored REVENUE_PER_CUSTOMER comparison of the one treatment
+-- arm against the control, so the interval is a 1 - comparison_alpha one and says so in
+-- `confidence`; an experiment without a control, or with more than one treatment arm,
+-- has no single effect and shows none. The attributed amount is net of reversals. A
+-- definer-rights view: a consumer needs no privilege on any table it reads.
+CREATE OR REPLACE VIEW api_experiments.campaign_effect_v1
+WITH (security_invoker = off) AS
+WITH arms AS (
+    SELECT g.experiment_id,
+           count(*) FILTER (WHERE g.kind = 'TREATMENT') AS treatment_arms,
+           count(*) FILTER (WHERE g.kind = 'CONTROL') AS control_arms
+      FROM public.experiment_group AS g
+     GROUP BY g.experiment_id
+), assigned AS (
+    SELECT a.experiment_id,
+           count(*) FILTER (WHERE g.kind = 'TREATMENT') AS treated,
+           count(*) FILTER (WHERE g.kind = 'CONTROL') AS control
+      FROM public.experiment_assignment AS a
+      JOIN public.experiment_group AS g
+        ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+     GROUP BY a.experiment_id
+), attributed AS (
+    SELECT a.experiment_id,
+           sum(n.net_amount) AS amount,
+           bool_or(n.data_origin = 'SEEDED') AS seeded
+      FROM experiments.sale_attribution AS s
+      JOIN public.experiment_assignment AS a ON a.assignment_id = s.assignment_id
+      JOIN api_sales.net_purchase_line_v1 AS n ON n.transaction_id = s.sale_id
+     GROUP BY a.experiment_id
+), effect AS (
+    SELECT c.experiment_id, c.difference, c.lower, c.upper
+      FROM experiments.experiment_result_comparison AS c
+      JOIN public.experiment_group AS reference
+        ON reference.group_id = c.against_group_id
+       AND reference.experiment_id = c.experiment_id
+       AND reference.kind = 'CONTROL'
+     WHERE c.metric = 'REVENUE_PER_CUSTOMER'
+)
+SELECT e.campaign_id,
+       e.experiment_id,
+       e.starts_on AS window_start,
+       coalesce(e.ends_on, (r.computed_at AT TIME ZONE 'UTC')::date) AS window_end,
+       coalesce(x.treated, 0)::integer AS treated_customers,
+       coalesce(x.control, 0)::integer AS control_customers,
+       coalesce(t.amount, 0)::numeric(14,2) AS attributed_sales_amount,
+       CASE WHEN m.control_arms = 1 AND m.treatment_arms = 1 THEN f.difference END
+           AS incremental_effect,
+       CASE WHEN m.control_arms = 1 AND m.treatment_arms = 1 THEN f.lower END AS effect_lower,
+       CASE WHEN m.control_arms = 1 AND m.treatment_arms = 1 THEN f.upper END AS effect_upper,
+       CASE WHEN m.control_arms = 1 AND m.treatment_arms = 1 AND f.difference IS NOT NULL
+            THEN (1 - p.comparison_alpha)::numeric(12,10) END AS confidence,
+       r.computed_at,
+       (r.synthetic OR e.data_origin <> 'OBSERVED' OR coalesce(t.seeded, false)) AS synthetic,
+       e.data_origin::text AS data_origin
+  FROM public.experiment AS e
+  JOIN experiments.experiment_result AS r ON r.experiment_id = e.experiment_id
+  JOIN arms AS m ON m.experiment_id = e.experiment_id
+  LEFT JOIN assigned AS x ON x.experiment_id = e.experiment_id
+  LEFT JOIN attributed AS t ON t.experiment_id = e.experiment_id
+  LEFT JOIN effect AS f
+    ON f.experiment_id = e.experiment_id
+   AND m.control_arms = 1
+   AND m.treatment_arms = 1
+  LEFT JOIN experiments.experiment_plan AS p ON p.experiment_id = e.experiment_id
+ WHERE e.campaign_id IS NOT NULL;
+REVOKE ALL ON api_experiments.campaign_effect_v1 FROM PUBLIC;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry
@@ -7338,6 +7408,10 @@ GRANT SELECT ON api_products.product_ref_v1 TO svc_kpis;
 GRANT SELECT ON api_segments.assignment_change_v1 TO svc_kpis;
 GRANT USAGE ON SCHEMA api_models TO svc_kpis;
 GRANT SELECT ON api_models.run_version_v1 TO svc_kpis;
+-- Campaign performance (F26-04, #849): each measured campaign's attributed sales and
+-- incremental effect, read from experimentation's view.
+GRANT USAGE ON SCHEMA api_experiments TO svc_kpis;
+GRANT SELECT ON api_experiments.campaign_effect_v1 TO svc_kpis;
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

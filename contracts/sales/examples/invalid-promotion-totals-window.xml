@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Error xmlns="https://mosaiq.maxthecoder.online/xml/common/v1">
+  <code>invalid_query</code>
+  <message>The window needs both bounds, with from before to.</message>
+  <correlation_id>corr-invalid-promotion-totals-window</correlation_id>
+  <details>
+    <field>to</field>
+    <code>required</code>
+  </details>
+</Error>

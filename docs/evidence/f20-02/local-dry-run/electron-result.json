@@ -1,0 +1,94 @@
+{
+  "started_at": "2026-11-22T22:41:04Z",
+  "finished_at": "2026-11-22T22:41:09Z",
+  "base_url": "http://127.0.0.1:18760",
+  "sale_id": 30,
+  "draft": {
+    "name": "F20-02 evidence draft 20261122T2241Z",
+    "label_code": "CHAMPION",
+    "starts_on": "2026-11-29",
+    "ends_on": "2026-12-29"
+  },
+  "build": {
+    "desktop version": "0.1.0",
+    "checkout commit": "5cbbd2fef5e45c0c7557c1a7fb05c303257b7cca",
+    "checkout describe": "kit-py/v0.1.8-601-g5cbbd2fe",
+    "settings.json": "<scratch>/cfg/settings.json"
+  },
+  "steps": {
+    "staff": {
+      "account": "user3@mosaiq-demo.com",
+      "role": "STORE_MANAGER",
+      "signed_in": true,
+      "may_call": true,
+      "ok": true,
+      "status": 200,
+      "correlation_id": "92cdcdc1-e61a-46d2-b746-9e06b7ea4883",
+      "exchange": 3,
+      "sale": {
+        "sale_id": 30,
+        "customer_id": "00000000-0000-0000-0000-000000000004",
+        "store_id": 1,
+        "store_name": "Store 1",
+        "channel_id": 1,
+        "channel_name": "mobile_app",
+        "occurred_at": "2026-09-11T19:32:54.573565Z",
+        "total": "74.00",
+        "lines": [
+          {
+            "product_id": 31,
+            "product_name": "Demo Product 31",
+            "quantity": 1,
+            "unit_price": "20.00",
+            "line_total": "20.00"
+          },
+          {
+            "product_id": 32,
+            "product_name": "Demo Product 32",
+            "quantity": 2,
+            "unit_price": "27.00",
+            "line_total": "54.00"
+          }
+        ]
+      }
+    },
+    "marketing": {
+      "account": "user4@mosaiq-demo.com",
+      "role": "MARKETING",
+      "signed_in": true,
+      "may_call": true,
+      "ok": true,
+      "status": 201,
+      "correlation_id": "ecb9a505-55b5-43f2-b68e-f02f59c29edd",
+      "exchange": 10,
+      "campaign": {
+        "campaign_id": 32,
+        "name": "F20-02 evidence draft 20261122T2241Z",
+        "label_code": "CHAMPION",
+        "starts_on": "2026-11-29",
+        "ends_on": "2026-12-29",
+        "status": "DRAFT",
+        "allowed_transitions": [
+          "ACTIVE",
+          "CANCELLED"
+        ]
+      }
+    },
+    "forbidden": {
+      "account": "user2@mosaiq-demo.com",
+      "role": "ANALYST",
+      "signed_in": true,
+      "may_call": false,
+      "ok": false,
+      "status": 403,
+      "correlation_id": "0cad30e7-0c5d-498e-9594-4c54caf240f2",
+      "exchange": 14,
+      "error": {
+        "code": "forbidden_role",
+        "message": "Your role is not allowed to do this. Ask an administrator if you need access.",
+        "correlation_id": "0cad30e7-0c5d-498e-9594-4c54caf240f2",
+        "details": []
+      }
+    }
+  }
+}

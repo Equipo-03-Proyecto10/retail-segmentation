@@ -40,7 +40,7 @@ Android" and then flows through the segmentation path.
 | "Migración": a provoked change of segment keeps the previous assignment | rfm-engine's `test_assignment.py` (a change closes the previous assignment and opens a new one, F22-15) and segments' `migration_validation` and `assignment_cause` (six customers moved by each cause, the matrix compared with a table worked out on paper, F29-02); on the instance, the F29-03 customer's migrations | [1](#1-the-five-at-the-identified-commit), [2](#2-incremental-and-migración-on-the-instance) |
 | "Incremental": after a recorded sale, the incremental update equals the full recalculation | rfm-engine's `test_verification.py` (F22-08: a sale, the profile before and after, a full recomputation at the same instant); on the instance, a verification over every profile after F29-03's sale | [1](#1-the-five-at-the-identified-commit), [2](#2-incremental-and-migración-on-the-instance) |
 | "K-means": reproduced with the registered seed and configuration, the groups are the same | F23-04's registered result (k = 4, seed 11, 100 iterations, tolerance 0.0001, 180 days) fitted three times from scratch, and its partition digest compared with the registered one; model-registry's `test_training.py`, whose golden fixtures pin the registry's fit to the web's (F22-12) | [1](#1-the-five-at-the-identified-commit) |
-| "Drift": a controlled change is detected and the alert is explained | F23-10's study through the production monitor on its own throwaway database: every planted spend and frequency shift that alerts is detected in every pair, and every alert names the planted variable and direction; no-shift windows stay within 1%; the figures' digest equals F23-10's. model-registry's `test_monitor.py` plants a shift through `run_once` and reads the alert back | [1](#1-the-five-at-the-identified-commit) |
+| "Drift": a controlled change is detected and the alert is explained | F23-10's study through the production monitor on its own throwaway database: every planted spend and frequency shift that alerts is detected in every pair, and in each pair an alert is raised on the planted variable and moves the planted way (other variables may alert too); a planted size no pair detects still gets its own row, and each kind needs at least one detected size; no-shift windows stay within 1%; the figures' digest equals F23-10's. model-registry's `test_monitor.py` plants a shift through `run_once` and reads the alert back | [1](#1-the-five-at-the-identified-commit) |
 | The evidence names the version and links what supports each check | `f29_04` writes `summary.md` (the commit, then every check with its log or exchange), one log and JUnit file per suite, `kmeans-reproduction.txt` and `drift-figures.json` | [The record](#the-record) |
 
 ## Who does what
@@ -128,16 +128,21 @@ expects every change to name the assignment before it. At the end it signs out.
 
 Only one verification runs at a time, so a 409 `recalculation_in_progress` means
 the weekly one is running: wait, and run the command again. If the sale did not
-change the customer's segment, the migrations check has nothing to compare. The
-record then says so, and "Migración" rests on step 1.
+change the customer's segment, the migrations check does not hold: its line says
+the sale did not provoke a change, and the command exits 1. "Migración" then
+rests on step 1, and the record says so. An error while polling the verification
+is recorded as a failed check, and `summary.md` is still written. A verification
+that checked no customer does not hold either.
 
 ### 3. Afterwards
 
 Commit `summary.md`, the logs, the JUnit files, `kmeans-reproduction.txt` and
 `drift-figures.json` of `$RUN/suites`, and `summary.md` and `exchanges.md` of
-`$RUN/instance`, with the filled record. `record.json` stays outside the
-repository. No file holds a credential: `Recorder.write` refuses to write
-anything shaped like a token.
+`$RUN/instance`, with the filled record. `$RUN` is inside the repository, so do
+not commit `record.json` (it holds every exchange in full); delete it or move
+it out. No committed file holds a credential: `Recorder.write` refuses to write
+anything shaped like a token, and the suite logs have every token and every
+connection-string password masked before they are written.
 
 ---
 
@@ -170,7 +175,13 @@ anything shaped like a token.
 
 ## Local dry run (not the acceptance)
 
-> **Local dry run, not the acceptance.** It ran on a throwaway local database,
+> **Local dry run, not the acceptance.** It predates the reviewed commit and the
+> review's fixes: the tree it names (`6e435419`) was a local commit that was
+> never pushed, so it is not in this repository, and the collector it ran did not
+> yet have the checks added in review (a migration check that needs at least one
+> change, an incremental check that needs at least one customer, a drift row for
+> every planted size, masked logs). Its figures are what that run printed, not a
+> run of this commit. It ran on a throwaway local database,
 > not on the identified version's machine, and step 2 did not run (no instance
 > access). It shows that the collector runs every suite, refuses a skip, and
 > compares the two registered results. It also shows what a wrong environment
@@ -193,7 +204,7 @@ anything shaped like a token.
 |---|---|
 | RFM | Held. Web 4 of 4 and rfm-engine 2 of 2 against the 14 hand-worked customers, none skipped |
 | K-means | Held. The registered configuration was fitted 3 times with no difference, and the partition digest `040e8e1a…26e0` equals F23-04's. model-registry's golden tests passed 35 of 35 |
-| Drift | Held. The study ran through the production monitor in 593 s, and its figures' digest `cfb2ddcf…0f25` equals F23-10's. Spend ×2 and frequency −50% were each detected in 50 of 50 pairs, and every alert explained the planted change. With no shift, 0 alerts in 200 pairs, 95% upper bound 0.75%. The monitor tests passed 40 of 40 |
+| Drift | Held. The study ran through the production monitor in 593 s, and its figures' digest `cfb2ddcf…0f25` equals F23-10's. Spend ×2 and frequency −50% were each detected in 50 of 50 pairs, and in each pair an alert was raised on the planted variable, moving the planted way. With no shift, 0 alerts in 200 pairs, 95% upper bound 0.75%. The monitor tests passed 40 of 40 |
 | Migración | Partly held. segments' `migration_validation` passed 3 of 3, including `a_change_keeps_the_previous_assignment_and_names_its_cause` and the matrix against the table worked out on paper. The cases that set up a Redis user errored (see below): 5 in rfm-engine's `test_assignment.py` and 2 in segments' `assignment_cause` |
 | Incremental | Not shown. 17 of rfm-engine's `test_verification.py` cases passed, but the 18 that set up a Redis user errored, among them `test_the_acceptance_run_shows_the_customer_before_after_and_the_reference` |
 

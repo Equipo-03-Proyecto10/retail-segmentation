@@ -821,6 +821,44 @@ def create_app(*, start_relay: bool | None = None) -> Flask:
             raise imports.not_found(import_id)
         return Representation("SaleImportQuality", report)
 
+    @kit.operation("listSalePromotionTotals")
+    def list_sale_promotion_totals() -> Representation:
+        store_id = _query_integer("store_id")
+        bounds = {}
+        for name in ("from", "to"):
+            if name not in request.args:
+                raise _error(
+                    422,
+                    "invalid_query",
+                    "The window needs both bounds, with from before to.",
+                    name,
+                    "required",
+                )
+            bounds[name] = _parse_timestamp(request.args[name], name)
+        if bounds["from"] >= bounds["to"]:
+            raise _error(
+                422,
+                "invalid_query",
+                "The window needs both bounds, with from before to.",
+                "from",
+                "not_before_to",
+            )
+        with kit.db.connection() as connection:
+            # A floor role is totalled over its own stores only, read in this
+            # request (ADR-0060); a store outside them is a 403 with no totals.
+            stores = scope.readable_stores(connection, kit.principal, store_id)
+            totals = store.promotion_totals(
+                connection,
+                store_id=store_id,
+                store_ids=stores,
+                occurred_from=bounds["from"],
+                occurred_to=bounds["to"],
+            )
+        return Representation(
+            "SalePromotionTotals",
+            {"from": bounds["from"], "to": bounds["to"], "totals": totals},
+        )
+
     @kit.operation("listChannels")
     def list_channels() -> Collection:
         with kit.db.connection() as connection:

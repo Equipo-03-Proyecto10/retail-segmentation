@@ -1,4 +1,5 @@
-"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #891, #462).
+"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #889, #891,
+#462).
 
 What they say about a live system is shown by running them (the runbooks in
 docs/evidence/f29-03-*.md and f29-06-*.md, docs/demo-distributed.md); these
@@ -284,6 +285,184 @@ def test_f20_02_reports_a_campaign_after_the_runs_draft_as_not_held(tmp_path) ->
     checked.nothing_created("3")
     [check] = checked.rec.checks
     assert not check.held and check.actual == "1"
+
+
+# ---------- F29-04 (#889) ----------
+
+
+def test_f29_04_a_skip_or_an_empty_run_is_never_a_pass() -> None:
+    from tests.acceptance.f29_04 import held
+
+    ok = {"tests": 12, "failures": 0, "errors": 0, "skipped": 0}
+    assert held(0, ok)
+    assert not held(0, ok | {"skipped": 1})  # a missing database skips
+    assert not held(0, ok | {"tests": 0})
+    assert not held(1, ok)
+    assert not held(0, {})
+
+
+def test_f29_04_adds_every_cargo_result_line() -> None:
+    from tests.acceptance.f29_04 import cargo_counts
+
+    log = (
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured\n"
+        "test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured\n"
+        "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured\n"
+    )
+    assert cargo_counts(log) == {"tests": 11, "failures": 2, "errors": 0, "skipped": 1}
+
+
+def test_f29_04_runs_each_kind_where_it_lives(tmp_path) -> None:
+    from tests.acceptance.f29_04 import SUITES, command_for
+
+    junit = tmp_path / "j.xml"
+    kinds = {s.kind: command_for(s, junit) for s in SUITES}
+    assert kinds["service"][:3] == ["uv", "run", "--frozen"]
+    assert kinds["cargo"][:4] == ["cargo", "test", "--locked", "--no-fail-fast"]
+    assert "--test" in kinds["cargo"]
+    assert kinds["pytest"][1:3] == ["-m", "pytest"]
+    assert {s.criterion for s in SUITES} == {
+        "RFM",
+        "Migración",
+        "Incremental",
+        "K-means",
+        "Drift",
+    }
+
+
+def test_f29_04_names_the_registered_kmeans_and_drift_results() -> None:
+    from pathlib import Path
+
+    from tests.acceptance.f29_04 import REGISTERED_DRIFT, REGISTERED_PARTITION
+
+    root = Path(__file__).resolve().parents[1] / "docs" / "evidence"
+    assert REGISTERED_PARTITION in (root / "f23-04-kmeans-stability.md").read_text()
+    assert REGISTERED_DRIFT in (root / "f23-10-drift-detection.md").read_text()
+
+
+class _Reply:
+    def __init__(self, status: int, body: dict | None = None) -> None:
+        self.status = status
+        self._body = body or {}
+
+    def json(self) -> dict:
+        return self._body
+
+    def outcome(self) -> str:
+        return f"HTTP {self.status}"
+
+
+def _recorder(tmp_path, replies):
+    """A Recorder whose calls answer from a script, nothing leaves the process."""
+    from tests.acceptance.evidence import Recorder
+
+    class Scripted(Recorder):
+        def call(self, edge, method, path, **kwargs):
+            return replies.pop(0), len(replies) + 1
+
+    return Scripted(tmp_path, "t", "f29-04")
+
+
+def test_f29_04_a_verification_that_compared_nobody_does_not_hold(tmp_path) -> None:
+    from tests.acceptance.f29_04 import _verification
+
+    done = {
+        "recalculation_id": "r",
+        "state": "COMPLETED",
+        "outcome": "EQUIVALENT",
+        "customers_different": 0,
+    }
+    for checked, expected in ((0, False), (None, False), (30, True)):
+        rec = _recorder(tmp_path, [_Reply(201, done | {"customers_checked": checked})])
+        _verification(rec, None, "t", 1.0)
+        assert rec.checks[0].held is expected, checked
+
+
+def test_f29_04_an_error_while_polling_is_recorded_not_raised(
+    tmp_path, monkeypatch
+) -> None:
+    from tests.acceptance import f29_04
+
+    monkeypatch.setattr(f29_04.time, "sleep", lambda _s: None)
+    running = {"recalculation_id": "r", "state": "RUNNING"}
+    rec = _recorder(tmp_path, [_Reply(201, running), _Reply(502)])
+    f29_04._verification(rec, None, "t", 60.0)
+    assert [(c.criterion, c.held) for c in rec.checks] == [("Incremental", False)]
+    assert rec.write() is False  # summary.md is still written
+    assert (tmp_path / "summary.md").exists()
+
+
+def test_f29_04_a_sale_that_changed_nothing_is_not_a_held_migration() -> None:
+    from tests.acceptance.f29_04 import migration_verdict
+
+    kept = {"previous_state": "label", "previous_label_code": "LOYAL"}
+    lost = {"previous_state": "label"}
+    assert migration_verdict(200, [kept]) == (True, "1 changed, 1 with it")
+    assert migration_verdict(200, [kept, lost])[0] is False
+    held, actual = migration_verdict(200, [])
+    assert held is False and "did not provoke" in actual
+    assert migration_verdict(503, [kept])[0] is False
+
+
+def test_f29_04_every_planted_size_has_its_row_and_a_kind_needs_a_detection() -> None:
+    from tests.acceptance.f29_04 import drift_row
+
+    seen = {
+        "kind": "SPEND",
+        "size": 2.0,
+        "pairs": 50,
+        "alerted_pairs": 50,
+        "explained": 50,
+    }
+    assert drift_row(seen)[3] is True
+    assert drift_row(seen | {"explained": 49})[3] is False
+    assert drift_row(seen | {"alerted_pairs": 49})[3] is False
+    missed = drift_row(seen | {"size": 1.5, "alerted_pairs": 0, "explained": 0})
+    assert "not detected" in missed[0] and missed[2] == "0 of 50 detected"
+
+
+def test_f29_04_checks_drift_for_every_size_and_every_kind(tmp_path) -> None:
+    from tests.acceptance.evidence import Recorder
+    from tests.acceptance.f29_04 import check_drift
+
+    def entry(kind, size, alerted):
+        return {
+            "kind": kind,
+            "size": size,
+            "pairs": 50,
+            "alerted_pairs": alerted,
+            "explained": alerted,
+        }
+
+    figures = {
+        "digest": "x",
+        "detection": [
+            entry("SPEND", 1.5, 0),
+            entry("SPEND", 2.0, 50),
+            entry("FREQUENCY", 0.9, 0),
+        ],
+        "false_alarms": {"alerted_pairs": 0, "pairs": 200, "alert_upper": 0.0075},
+    }
+    rec = Recorder(tmp_path, "t", "f29-04")
+    check_drift(rec, tmp_path, lambda: figures)
+    cases = [c.case for c in rec.checks]
+    assert sum("planted at" in c for c in cases) == 3  # the undetected sizes show
+    frequency = [c for c in rec.checks if c.case.startswith("FREQUENCY: at least")]
+    assert frequency[0].held is False  # no frequency size detected
+
+
+def test_f29_04_logs_hide_tokens_and_connection_passwords() -> None:
+    from tests.acceptance.evidence import Masker
+    from tests.acceptance.f29_04 import mask_log
+
+    jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxIn0.c2ln"
+    log = (
+        f"FAILED connect postgresql://owner:s3cret-pw@db:5432/retail Bearer {jwt}\n"
+        "redis://127.0.0.1:6379/0 stays\n"
+    )
+    out = mask_log(Masker(), log)
+    assert "s3cret-pw" not in out and jwt not in out
+    assert "postgresql://owner:<masked #" in out and "redis://127.0.0.1:6379/0" in out
 
 
 # ---------- the rehearsal's preconditions (acceptance/demo.py, #462, #896) ----------

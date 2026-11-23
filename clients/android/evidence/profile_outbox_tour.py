@@ -141,7 +141,7 @@ def outbox() -> None:
         tour.find("1 write waiting to send · 1 needs attention", timeout=15)
         both("729-android-outbox-02-refused-and-waiting", "Needs attention")
         tour.tap("Details")
-        # screen_tour's swipe is for the device's own 1080 x 1920; this is 750 x 1334.
+        # A slow drag from y 1000, which on this screen is still the scrolling list.
         tour.adb("shell", "input", "swipe", "375", "1000", "375", "450", "400")
         time.sleep(1)
         both("729-android-outbox-03-details-and-waiting", "Check-in at Store 1")

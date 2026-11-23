@@ -21,6 +21,10 @@ The captions cite the story and its issue.
 ADB=adb uv run --with pillow python clients/android/evidence/screen_tour.py <out_dir> all
 ```
 
+The tour as it ran here is `clients/android/evidence/screen_tour.py` as
+committed in `9bd6f0eb`. #733 rewrote it for the refreshed app, and its screenshots of the
+same screens are in [`733-android-screens-375dp.md`](733-android-screens-375dp.md).
+
 [`screen_tour.py`](../../clients/android/evidence/screen_tour.py) clears the
 app's data, revokes its runtime permissions, and walks the screens below in
 order. It finds each control by its text in a `uiautomator dump`, taps it with

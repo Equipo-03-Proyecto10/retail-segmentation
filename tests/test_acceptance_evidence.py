@@ -8,6 +8,7 @@ what they read: masking, bind parameters, page parsing and the counts.
 from __future__ import annotations
 
 import json
+import shutil
 
 import pytest
 
@@ -125,3 +126,61 @@ def test_replay_refuses_anything_but_a_local_stack(monkeypatch) -> None:
     assert not is_local("https://127.0.0.1")
     monkeypatch.setenv("MOSAIQ_TARGET", "instance")
     assert not is_local("http://127.0.0.1:18080")
+
+
+# ---------- F20-02 (#760) ----------
+
+
+def test_f20_02_reads_elements_whatever_their_prefix() -> None:
+    from tests.acceptance.f20_02 import element
+
+    xml = "<c:Error><c:code>forbidden_role</c:code><correlation_id>x</correlation_id>"
+    assert element(xml, "code") == "forbidden_role"
+    assert element(xml, "correlation_id") == "x"
+    assert element(xml, "message") is None
+
+
+def test_f20_02_reads_the_roles_from_the_committed_contracts() -> None:
+    from tests.acceptance.f20_02 import roles
+
+    assert roles("campaigns", "POST", "/v1/campaigns") == ["ADMIN", "MARKETING"]
+    assert "STORE_MANAGER" in roles("sales", "GET", "/v1/sales/{sale_id}")
+
+
+@pytest.mark.skipif(shutil.which("xmllint") is None, reason="xmllint is not installed")
+def test_f20_02_validates_an_error_against_common_xsd_and_a_body_against_its_own(
+    tmp_path,
+) -> None:
+    from tests.acceptance.f20_02 import xmllint
+    from tests.negative.stack import ROOT
+
+    examples = ROOT / "contracts/campaigns/examples"
+    valid, detail = xmllint(examples / "forbidden-role.xml", "campaigns")
+    assert valid and detail.startswith("contracts/common/v1/common.xsd: ")
+    valid, detail = xmllint(examples / "campaign.xml", "campaigns")
+    assert valid and detail.startswith("contracts/campaigns/campaigns.xsd: ")
+    broken = tmp_path / "broken.xml"
+    broken.write_text(
+        (examples / "campaign.xml").read_text().replace("DRAFT", "PAUSED", 1)
+    )
+    assert not xmllint(broken, "campaigns")[0]
+
+
+def test_f20_02_refuses_a_client_directory_that_holds_a_token_in_any_file(
+    tmp_path,
+) -> None:
+    from tests.acceptance.f20_02 import refuse_tokens
+
+    token = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdGFmZiJ9.c2lnbmF0dXJl"
+    (tmp_path / "bodies").mkdir()
+    (tmp_path / "result.json").write_text("{}")
+    (tmp_path / "exchanges.json").write_text("[]")
+    (tmp_path / "bodies" / "003-staff-response.xml").write_text("<Sale/>")
+    refuse_tokens(tmp_path)
+    for name in ("result.json", "exchanges.json", "bodies/003-staff-response.xml"):
+        path = tmp_path / name
+        clean = path.read_text()
+        path.write_text(f"{clean}{token}")
+        with pytest.raises(SystemExit, match="holds a token"):
+            refuse_tokens(tmp_path)
+        path.write_text(clean)

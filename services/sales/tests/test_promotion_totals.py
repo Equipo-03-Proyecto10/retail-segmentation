@@ -13,12 +13,13 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from lxml import etree
 
 from tests import test_pricing, test_store_scope
-from tests.conftest import idempotency_headers
+from tests.conftest import ROLES, idempotency_headers
 from tests.test_pricing import body, post, promotion
 from tests.test_store_scope import other_store
 
@@ -310,3 +311,224 @@ def test_a_role_outside_the_policy_is_refused(client, token, role):
     )
     assert response.status_code == 403
     assert response.get_json()["code"] == "forbidden_role"
+
+
+# What the first draft of these tests did not pin: the line definition, the
+# window's edges, the lines that never count, the other roles, and the
+# negotiation and refusal paths in both representations.
+
+ALLOWED = {"ADMIN", "ANALYST", "STORE_MANAGER", "COMMERCIAL_SUPERVISOR"}
+
+
+def as_xml(auth: dict) -> dict:
+    return {**auth, "Accept": "application/xml"}
+
+
+def test_the_totals_equal_what_the_published_promotion_view_carries(
+    client, token, owner, shop
+):
+    """api_sales.promotion_line_v1 is the one definition of a promoted line, and
+    net units are ADR-0062's: both are re-derived here from the view, on sales
+    recorded and reversed through the service."""
+    promoted = promotion(owner, shop, "20.00", stores=[shop["store"]])
+    returned = sell(client, token, shop, "80.00", promoted)
+    cancelled = sell(client, token, shop, "85.00", promoted)
+    sell(client, token, shop, "90.00", promoted)
+    sell(client, token, shop, "100.00")
+    reverse(
+        client,
+        token,
+        {
+            "sale_id": returned,
+            "kind": "RETURN",
+            "lines": [
+                {"product_id": shop["product"], "quantity": 1, "reason": "Defective"}
+            ],
+        },
+    )
+    reverse(
+        client,
+        token,
+        {"sale_id": cancelled, "kind": "CANCELLATION", "reason": "Wrong customer"},
+    )
+
+    published = owner.execute(
+        "SELECT t.store_id, v.promotion_id, count(*), sum(v.net_quantity),"
+        " sum(v.net_quantity * (v.list_price - v.unit_price))"
+        " FROM api_sales.promotion_line_v1 AS v"
+        " JOIN public.transaction AS t USING (transaction_id)"
+        " GROUP BY 1, 2 ORDER BY 1, 2"
+    ).fetchall()
+    expected = [
+        {
+            "store_id": store,
+            "promotion_id": promotion_id,
+            "lines": lines,
+            "units": int(units),
+            "discount": format(discount, ".2f"),
+        }
+        for store, promotion_id, lines, units, discount in published
+    ]
+    assert any(row["promotion_id"] == promoted for row in expected)
+
+    response = client.get(
+        "/v1/sale-promotion-totals",
+        query_string={
+            "from": "2000-01-01T00:00:00Z",
+            "to": "2100-01-01T00:00:00Z",
+        },
+        headers=token("ADMIN"),
+    )
+    assert response.status_code == 200
+    assert response.get_json()["totals"] == expected
+    mine = [row for row in expected if row["promotion_id"] == promoted]
+    assert mine == [
+        {
+            "store_id": shop["store"],
+            "promotion_id": promoted,
+            "lines": 2,
+            "units": 3,
+            # 1 unit at 20.00 off from the returned sale, 2 at 10.00 off.
+            "discount": "40.00",
+        }
+    ]
+
+
+def test_the_window_includes_its_from_instant_and_excludes_its_to_instant(
+    client, token, owner, shop
+):
+    promoted = promotion(owner, shop, "20.00")
+    moment = (datetime.now(UTC) - timedelta(hours=2)).replace(microsecond=0)
+    sell(client, token, shop, "80.00", promoted, occurred_at=moment.isoformat())
+
+    def lines(start: datetime, end: datetime) -> list[int]:
+        rows = totals(
+            client,
+            token("ADMIN"),
+            {"from": start.isoformat(), "to": end.isoformat()},
+            {promoted},
+        )
+        return [row["lines"] for row in rows]
+
+    second = timedelta(seconds=1)
+    assert lines(moment, moment + second) == [1]
+    assert lines(moment - second, moment) == []
+    assert lines(moment + second, moment + 2 * second) == []
+    # The same instants written with another offset select the same sale.
+    local = ZoneInfo("America/Mexico_City")
+    assert lines(moment.astimezone(local), (moment + second).astimezone(local)) == [1]
+    assert lines((moment - second).astimezone(local), moment.astimezone(local)) == []
+
+
+def test_a_line_without_a_recorded_promotion_never_counts(client, token, owner, shop):
+    """Imported and CSV lines have no sales.sale_line_price row, and a priced
+    row that names no promotion or no discount is no applied promotion."""
+    promoted = promotion(owner, shop, "20.00")
+    imported = sell(client, token, shop, "80.00", promoted)
+    unnamed = sell(client, token, shop, "80.00", promoted)
+    at_list = sell(client, token, shop, "80.00", promoted)
+    kept = sell(client, token, shop, "80.00", promoted)
+    assert totals(client, token("ADMIN"), window(), {promoted})[0]["lines"] == 4
+
+    owner.execute(
+        "DELETE FROM sales.sale_line_price WHERE transaction_id = %s", (imported,)
+    )
+    owner.execute(
+        "UPDATE sales.sale_line_price SET promotion_id = NULL"
+        " WHERE transaction_id = %s",
+        (unnamed,),
+    )
+    owner.execute(
+        "UPDATE sales.sale_line_price SET list_price = 80.00"
+        " WHERE transaction_id = %s",
+        (at_list,),
+    )
+
+    rows = totals(client, token("ADMIN"), window(), {promoted})
+    assert [(row["lines"], row["units"], row["discount"]) for row in rows] == [
+        (1, 2, "40.00")
+    ]
+    assert kept
+
+
+def test_a_store_filter_and_the_order_across_stores(client, token, owner, shop):
+    elsewhere = other_store(owner, shop["store"])
+    promoted = promotion(owner, shop, "20.00", stores=[shop["store"], elsewhere])
+    sell(client, token, shop, "80.00", promoted)
+    far = {**shop, "store": elsewhere}
+    owner.execute(
+        "INSERT INTO public.inventory (store_id, product_id, quantity_on_hand)"
+        " VALUES (%s, %s, 50) ON CONFLICT (store_id, product_id) DO UPDATE"
+        " SET quantity_on_hand = GREATEST(public.inventory.quantity_on_hand, 50)",
+        (elsewhere, shop["product"]),
+    )
+    sell(client, token, far, "80.00", promoted)
+
+    both = totals(client, token("ADMIN"), window(), {promoted})
+    assert [row["store_id"] for row in both] == sorted([shop["store"], elsewhere])
+    one = totals(
+        client, token("ANALYST"), {**window(), "store_id": elsewhere}, {promoted}
+    )
+    assert [(row["store_id"], row["discount"]) for row in one] == [(elsewhere, "40.00")]
+
+
+@pytest.mark.parametrize("role", sorted(set(ROLES) - ALLOWED))
+def test_every_other_role_is_refused(client, token, role):
+    response = client.get(
+        "/v1/sale-promotion-totals", query_string=window(), headers=token(role)
+    )
+    assert response.status_code == 403
+    assert response.get_json()["code"] == "forbidden_role"
+
+
+def test_no_token_is_401_in_json_and_in_xml(client):
+    for accept in ("application/json", "application/xml"):
+        response = client.get(
+            "/v1/sale-promotion-totals",
+            query_string=window(),
+            headers={"Accept": accept},
+        )
+        assert response.status_code == 401, accept
+        assert response.mimetype == accept
+
+
+def test_an_unsupported_accept_is_406(client, token):
+    response = client.get(
+        "/v1/sale-promotion-totals",
+        query_string=window(),
+        headers={**token("ADMIN"), "Accept": "text/csv"},
+    )
+    assert response.status_code == 406
+
+
+def test_the_refusals_are_also_answered_in_xml(app, client, token, assign):
+    schema = app.extensions["mosaiq_kit"].contract.xml_schema
+    missing = client.get(
+        "/v1/sale-promotion-totals",
+        query_string={"from": "2026-11-01T00:00:00Z"},
+        headers=as_xml(token("ADMIN")),
+    )
+    assert missing.status_code == 422
+    error = etree.fromstring(missing.data)
+    assert error.tag == f"{{{COMMON}}}Error"
+    assert error.findtext(f"{{{COMMON}}}code") == "invalid_query"
+    assert error.find(f"{{{COMMON}}}details/{{{COMMON}}}field").text == "to"
+
+    subject = assign("STORE_MANAGER", [])
+    elsewhere = client.get(
+        "/v1/sale-promotion-totals",
+        query_string={**window(), "store_id": 1},
+        headers=as_xml(token("STORE_MANAGER", sub=subject)),
+    )
+    assert elsewhere.status_code == 403
+    assert etree.fromstring(elsewhere.data).findtext(f"{{{COMMON}}}code") == (
+        "forbidden_store"
+    )
+    # The window of an empty read is still answered, as an element, in XML.
+    ok = client.get(
+        "/v1/sale-promotion-totals",
+        query_string=window(),
+        headers=as_xml(token("STORE_MANAGER", sub=subject)),
+    )
+    assert ok.status_code == 200
+    schema.assertValid(etree.fromstring(ok.data))

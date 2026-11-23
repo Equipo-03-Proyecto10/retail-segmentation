@@ -387,7 +387,8 @@ class Recorder:
                 )
         for name, text in files.items():
             (self.out / name).write_text(text, encoding="utf-8")
-        return all(c.held for c in self.checks)
+        # A run that checked nothing proves nothing: all([]) is true.
+        return bool(self.checks) and all(c.held for c in self.checks)
 
 
 # ---------- credentials ----------

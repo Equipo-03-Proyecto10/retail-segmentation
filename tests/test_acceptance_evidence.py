@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from tests.acceptance import demo
+from tests.acceptance import demo, f24_08
 from tests.acceptance.evidence import (
     JWT,
     Database,
@@ -607,3 +607,120 @@ def test_demo_judges_each_answer_by_the_fields_the_contracts_name() -> None:
     assert demo.promotions_for(page, first["campaign_id"], store, channel) == [first]
     assert demo.promotions_for(page, first["campaign_id"] + 1, store, channel) == []
     assert demo.promotions_for(page, first["campaign_id"], store + 99, channel) == []
+
+
+# ---------- F24-08 (#831) ----------
+
+
+def test_f24_08_reads_the_bound_from_the_stock_stream_contract() -> None:
+    p95, maximum = f24_08.stream_bound()
+    assert 0 < p95 <= maximum
+    assert f24_08.STREAM_CONTRACT.name == "stock.changed.v1.md"
+
+
+def test_f24_08_a_contract_without_the_group_stops_the_run(tmp_path) -> None:
+    contract = tmp_path / "stock.changed.v1.md"
+    contract.write_text(
+        "## Propagation bound\n\n| Group | p95 (ms) | Max (ms) |\n|---|---:|---:|\n"
+        "| `products` | 3000 | 5000 |\n"
+    )
+    with pytest.raises(SystemExit):
+        f24_08.stream_bound(contract)
+
+
+def test_f24_08_an_elsewhere_entry_is_not_offered_at_the_store() -> None:
+    body = example("recommendations", "v2/recommended-with-alternatives.json")
+    assert f24_08.offered_here(body, 120)  # primary
+    assert f24_08.offered_here(body, 246)  # an alternative, sold here
+    assert not f24_08.offered_here(body, 88)  # held at store 3 only
+    assert f24_08.elsewhere(body, 88)["unavailable_reason"] == "out_of_stock"
+    assert f24_08.primary(body, 246) is None
+    assert not f24_08.offered_here(body, 999)
+    assert f24_08.exclusion_count(body, "out_of_stock") == 2
+    assert f24_08.exclusion_count(body, "PERSONALIZATION_WITHDRAWN") == 0
+    line = f24_08.describe(body, 88)
+    assert "elsewhere" in line and "store 3" in line and "out_of_stock 2" in line
+
+
+def test_f24_08_the_wait_reports_the_first_read_that_holds() -> None:
+    now = [0.0]
+    answers = iter([{"decision_id": "a"}, None, {"decision_id": "b", "ok": True}])
+
+    def read():
+        now[0] += 0.05
+        return next(answers), int(now[0] * 100)
+
+    def sleep(seconds: float) -> None:
+        now[0] += seconds
+
+    wait = f24_08.wait_for(
+        read,
+        lambda body: body.get("ok", False),
+        0.0,
+        5.0,
+        0.1,
+        clock=lambda: now[0],
+        sleep=sleep,
+    )
+    assert [p.held for p in wait.polls] == [False, False, True]
+    assert wait.first_held.decision_id == "b"
+    assert wait.last_before is wait.polls[1]
+    assert wait.as_dict()["delay_ms"] == pytest.approx(250.0)
+
+
+def test_f24_08_the_wait_gives_up_after_the_deadline() -> None:
+    now = [0.0]
+
+    def read():
+        now[0] += 0.4
+        return {"decision_id": "a"}, 1
+
+    wait = f24_08.wait_for(
+        read,
+        lambda _body: False,
+        0.0,
+        1.0,
+        0.1,
+        clock=lambda: now[0],
+        sleep=lambda s: None,
+    )
+    assert wait.first_held is None
+    assert wait.as_dict()["delay_ms"] is None
+    assert len(wait.polls) == 3
+
+
+def test_f24_08_shape_ignores_what_a_decision_does_not_keep():
+    answer = example("recommendations", "v2/recommended-with-alternatives.json")
+    stored = {
+        "items": [
+            {
+                "position": i["position"],
+                "product_id": i["product_id"],
+                "kind": i["kind"],
+                "category_id": i["category_id"],
+                "availability": {
+                    "quantity_on_hand": i["availability"]["quantity_on_hand"]
+                },
+                "alternative_for": i["alternative_for"],
+                "unavailable_reason": i["unavailable_reason"],
+            }
+            for i in reversed(answer["items"])
+        ],
+        "exclusions": [dict(e) for e in reversed(answer["exclusions"])],
+    }
+    assert f24_08.shape(stored) == f24_08.shape(answer)
+    stored["exclusions"][0]["count"] += 1
+    assert f24_08.shape(stored) != f24_08.shape(answer)
+
+
+def test_a_run_with_no_checks_does_not_hold(tmp_path) -> None:
+    rec = Recorder(tmp_path, "t", "t")
+    assert rec.write() is False
+    rec.check("c", "a case", 1, 1)
+    assert rec.write() is True
+
+
+def test_f24_08_says_how_to_restore_a_product_left_at_zero() -> None:
+    notice = f24_08.left_at_zero_notice(3, 2, 10)
+    assert "product 2" in notice and "store 3" in notice
+    assert '"quantity": 10' in notice and "RECEIPT" in notice

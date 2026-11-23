@@ -216,7 +216,7 @@ fun receiptOf(row: OutboxRow?, cart: List<SaleLine>): Receipt? {
 }
 
 /** Why a sale was refused, in words, and the cart line the refusal names, when it names one. */
-data class SaleRefusal(val error: ApiError, val reason: String, val line: String?)
+data class SaleRefusal(val error: ApiError, val reason: String, val line: String?, val productId: Int? = null)
 
 /** The refusal of a queued sale, for the seller; null unless the row was refused. */
 fun refusalOf(row: OutboxRow?, cart: List<SaleLine>): SaleRefusal? {
@@ -228,6 +228,11 @@ fun refusalOf(row: OutboxRow?, cart: List<SaleLine>): SaleRefusal? {
         .orEmpty()
     val sent = runCatching { json.decodeFromString(SaleRequest.serializer(), row.body) }.getOrNull()
     val productId = refusedLineIndex(details)?.let { sent?.lines?.getOrNull(it)?.productId }
-    val line = productId?.let { id -> cart.firstOrNull { it.product.productId == id }?.product?.name }
-    return SaleRefusal(error.copy(details = details), refusalReason(row.code) ?: error.message, line)
+    val named = productId?.let { id -> cart.firstOrNull { it.product.productId == id } }
+    return SaleRefusal(
+        error.copy(details = details),
+        refusalReason(row.code) ?: error.message,
+        named?.product?.name,
+        named?.product?.productId
+    )
 }

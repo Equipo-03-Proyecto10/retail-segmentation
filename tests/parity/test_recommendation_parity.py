@@ -30,10 +30,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 
+from tests.parity import stack
 from tests.parity.compare import Recommendation, diff_recommendations
 from tests.parity.stack import occurred_at, stream_bound
 
@@ -42,9 +43,9 @@ GROUP = "recommendations"
 # recommendations/app/config.py), the web's defaults too.
 WINDOW_DAYS = 180
 LIMIT = 10
-# Between the two reads that prove an answer is cached: computed_at is given to
-# the second, so two reads a second apart only match when the second is a hit.
-CACHE_PROOF_GAP = 1.1
+# Between the two reads that prove an answer is cached: two computations never
+# share a computed_at, which carries microseconds, so only a hit repeats it.
+CACHE_PROOF_GAP = 0.2
 
 
 @dataclass
@@ -52,6 +53,9 @@ class Subject:
     customer_id: str
     usual_store_id: int
     channel_id: int
+    # The category the preference case adds: one of an eligible product that
+    # no signal chooses yet, so adding it changes the answer.
+    added_category_id: int
 
 
 def _report(found) -> str:
@@ -71,18 +75,69 @@ def _candidates(db) -> list[str]:
     return [r[0] for r in rows]
 
 
+def _interests(db, customer: str) -> list[int]:
+    return [
+        r[0]
+        for r in db(
+            "SELECT category_id FROM api_preferences.interest_category_v1 "
+            "WHERE customer_id = %s",
+            (customer,),
+        )
+    ]
+
+
+def _unchosen_category(db, customer: str, store_id: int, recommended) -> int | None:
+    """The category of an active product in stock at the usual store that the
+    customer has not bought in the window, is not recommended, and is outside
+    every category the customer already declared."""
+
+    rows = db(
+        "SELECT p.category_id FROM product AS p "
+        "JOIN inventory AS i ON i.product_id = p.product_id AND i.store_id = %s "
+        "WHERE p.is_active AND i.quantity_on_hand > 0 "
+        "AND NOT (p.product_id = ANY(%s)) AND NOT (p.category_id = ANY(%s)) "
+        "AND NOT EXISTS (SELECT 1 FROM transaction AS t "
+        "JOIN transaction_line AS l ON l.transaction_id = t.transaction_id "
+        "WHERE t.customer_id = %s AND l.product_id = p.product_id "
+        "AND t.occurred_at >= now() - make_interval(days => %s)) "
+        "ORDER BY p.product_id LIMIT 1",
+        (store_id, list(recommended), _interests(db, customer), customer, WINDOW_DAYS),
+    )
+    return rows[0][0] if rows else None
+
+
 @pytest.fixture(scope="module")
 def subject(db, web, recommendations) -> Subject:
-    """The first candidate with 2 to 7 recommendations, so a sale and a stock
-    change each have one to remove and an added interest has room to show."""
+    """The first candidate with 2 to 7 recommendations and an eligible product
+    no signal chooses, so a sale and a stock change each have one to remove and
+    an added interest has room to show."""
 
+    [[channel]] = db("SELECT min(channel_id) FROM channel")
     for customer in _candidates(db):
         seen = web.recommendations(customer)
-        if seen.status == "recommended" and 2 <= len(seen.items) <= LIMIT - 3:
-            _, body = recommendations.read(customer)
-            [[channel]] = db("SELECT min(channel_id) FROM channel")
-            return Subject(customer, body["usual_store_id"], channel)
-    pytest.fail("no seeded customer with consent has 2 to 7 recommendations")
+        if seen.status != "recommended" or not 2 <= len(seen.items) <= LIMIT - 3:
+            continue
+        _, body = recommendations.read(customer)
+        store = body["usual_store_id"]
+        added = _unchosen_category(db, customer, store, seen.products)
+        if added is not None:
+            return Subject(customer, store, channel, added)
+    pytest.fail(
+        "no seeded customer with consent has 2 to 7 recommendations and an "
+        "eligible product no signal chooses"
+    )
+
+
+@pytest.fixture(scope="module")
+def admin_sales(recommendations) -> stack.ServicePath:
+    """sales-service as ADMIN, who may sell at any store; a STORE_MANAGER only
+    sells at the stores they are assigned to."""
+
+    return stack.ServicePath(
+        stack.env("PARITY_GATEWAY_URL"),
+        stack.env("PARITY_WEB_EMAIL"),
+        stack.env("PARITY_WEB_PASSWORD"),
+    )
 
 
 def _warm(web, recommendations, customer: str, change: str, differences):
@@ -151,11 +206,14 @@ def _after(
     return body
 
 
-def _now() -> tuple[datetime, float]:
-    """When a write's answer came back, which follows its commit. computed_at is
-    given to the second, so the wall clock is truncated the same way."""
+def _now(db) -> tuple[datetime, float]:
+    """When a write's answer came back, which follows its commit, on the
+    stack's clock: computed_at is the service's clock, and a laptop's Docker VM
+    can run more than a minute behind or ahead of the host (it did on the first
+    local run), so the host's clock is never compared with it."""
 
-    return datetime.now(UTC).replace(microsecond=0), time.monotonic()
+    [[now]] = db("SELECT clock_timestamp()")
+    return now, time.monotonic()
 
 
 def test_a_preference_change_reaches_the_service_within_the_bound(
@@ -163,37 +221,10 @@ def test_a_preference_change_reaches_the_service_within_the_bound(
 ) -> None:
     customer = subject.customer_id
     before, cached = _warm(web, recommendations, customer, "preference", differences)
-    interests = [
-        r[0]
-        for r in db(
-            "SELECT category_id FROM api_preferences.interest_category_v1 "
-            "WHERE customer_id = %s",
-            (customer,),
-        )
-    ]
-    # A category of an active product in stock at the usual store that the
-    # customer has not bought in the window and is not recommended.
-    rows = db(
-        "SELECT p.category_id FROM product AS p "
-        "JOIN inventory AS i ON i.product_id = p.product_id AND i.store_id = %s "
-        "WHERE p.is_active AND i.quantity_on_hand > 0 "
-        "AND NOT (p.product_id = ANY(%s)) AND NOT (p.category_id = ANY(%s)) "
-        "AND NOT EXISTS (SELECT 1 FROM transaction AS t "
-        "JOIN transaction_line AS l ON l.transaction_id = t.transaction_id "
-        "WHERE t.customer_id = %s AND l.product_id = p.product_id "
-        "AND t.occurred_at >= now() - make_interval(days => %s)) "
-        "ORDER BY p.product_id LIMIT 1",
-        (
-            subject.usual_store_id,
-            list(before.products),
-            interests,
-            customer,
-            WINDOW_DAYS,
-        ),
+    recommendations.replace_interests(
+        customer, _interests(db, customer) + [subject.added_category_id]
     )
-    assert rows, "no eligible product outside the recommendations to add"
-    recommendations.replace_interests(customer, interests + [rows[0][0]])
-    changed_at, started = _now()
+    changed_at, started = _now(db)
     _after(
         web,
         recommendations,
@@ -209,7 +240,7 @@ def test_a_preference_change_reaches_the_service_within_the_bound(
 
 
 def test_a_sale_reaches_the_service_within_the_bound(
-    db, web, recommendations, service, subject, differences
+    db, web, recommendations, admin_sales, subject, differences
 ) -> None:
     customer = subject.customer_id
     before, cached = _warm(web, recommendations, customer, "sale", differences)
@@ -217,7 +248,7 @@ def test_a_sale_reaches_the_service_within_the_bound(
     [[price]] = db(
         "SELECT list_price::text FROM product WHERE product_id = %s", (product,)
     )
-    reply = service.record_sale(
+    reply = admin_sales.record_sale(
         {
             "customer_id": customer,
             "store_id": subject.usual_store_id,
@@ -227,7 +258,7 @@ def test_a_sale_reaches_the_service_within_the_bound(
         }
     )
     assert reply.status == 201, f"{reply.status} {reply.body!r}"
-    changed_at, started = _now()
+    changed_at, started = _now(db)
     _after(
         web,
         recommendations,
@@ -243,12 +274,12 @@ def test_a_sale_reaches_the_service_within_the_bound(
 
 
 def test_a_stock_change_reaches_the_service_within_the_bound(
-    web, recommendations, subject, differences
+    db, web, recommendations, subject, differences
 ) -> None:
     customer = subject.customer_id
     before, cached = _warm(web, recommendations, customer, "stock", differences)
     recommendations.count_stock(subject.usual_store_id, before.products[0], 0)
-    changed_at, started = _now()
+    changed_at, started = _now(db)
     _after(
         web,
         recommendations,
@@ -270,7 +301,7 @@ def test_a_new_run_reaches_the_service_within_the_bound(
     _, cached = _warm(web, recommendations, customer, "run", differences)
     [[previous]] = db("SELECT coalesce(max(run_id), 0) FROM segmentation_run")
     web.run_segmentation()
-    changed_at, started = _now()
+    changed_at, started = _now(db)
     [[run_id]] = db("SELECT max(run_id) FROM segmentation_run")
     assert run_id > previous, "the web recorded no run"
     # A run may leave the answer's items as they were; the run behind the

@@ -1,5 +1,6 @@
 """The F23-10 study: planted drift, detection and false alarms (#822)."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -14,11 +15,10 @@ RULES = study.freeze(SMALL)
 REFERENCE = study.reference_of(study.score(RULES, SMALL.sales))
 
 
-def _states(variables):
-    return {v.variable: v.state for v in variables}
-
-
 def test_the_monitor_and_the_scoring_are_the_production_modules():
+    assert Path(study.monitor.__file__) == (
+        ROOT / "services" / "model-registry" / "app" / "monitor.py"
+    )
     assert Path(study.drift.__file__) == (
         ROOT / "services" / "model-registry" / "app" / "drift.py"
     )
@@ -38,25 +38,25 @@ def test_the_reference_is_in_the_shape_the_monitor_reads():
         assert sum(feature["proportions"]) == pytest.approx(1)
 
 
-def test_the_reference_population_judged_against_itself_is_normal():
-    variables = study.judge(REFERENCE, study.score(RULES, SMALL.sales), {})
-    assert [v.variable for v in variables] == ["SEGMENT_SHARES", "R", "F", "M"]
-    assert set(_states(variables).values()) == {"NORMAL"}
+def test_the_study_calls_run_once_and_reads_the_persisted_monitor_tables():
+    window_source = Path(study.__file__).read_text()
+    assert "monitor.run_once(connection, end)" in window_source
+    for table in (
+        "models.drift_report",
+        "models.drift_variable",
+        "models.drift_statistic",
+        "models.drift_bin",
+        "models.drift_alert",
+    ):
+        assert table in window_source
+    # The earlier defect was a local `judge()` that copied monitor.run_once's
+    # orchestration. The study may contain scoring helpers, but not that copy.
+    assert "def judge(" not in window_source
 
 
-def test_fewer_customers_than_the_minimum_are_not_compared():
-    few = study.score(RULES, SMALL.sales)[: study.drift.MIN_CUSTOMERS - 1]
-    assert study.judge(REFERENCE, few, {}) == []
-
-
-def test_an_alarm_alerts_only_in_the_second_window_as_the_monitor_does():
-    profiles = study.score(RULES, study.plant(WINDOW, "FREQUENCY", 0.6, 0))
-    first = study.judge(REFERENCE, profiles, {})
-    assert "F" in study.alarming(first)
-    assert study.alerting(first) == []
-    second = study.judge(REFERENCE, profiles, _states(first))
-    assert "F" in study.alerting(second)
-    assert study._explains("FREQUENCY", second)
+def test_the_database_harness_refuses_a_nonlocal_database():
+    with pytest.raises(ValueError, match="only against a local database"):
+        study.MonitorStudy("postgresql://example.com/retail", REFERENCE)
 
 
 def test_spend_multiplies_every_amount_and_moves_nothing_else():
@@ -90,10 +90,10 @@ def test_frequency_keeps_each_customers_newest_sale_so_recency_holds():
 def test_a_category_or_channel_shift_leaves_what_the_monitor_reads_unchanged(kind):
     planted = study.plant(WINDOW, kind, 0.5, 0)
     assert study.planted_effect(kind, WINDOW.sales, planted) > 0.3
-    same = study.judge(REFERENCE, study.score(RULES, WINDOW.sales), {})
-    shifted = study.judge(REFERENCE, study.score(RULES, planted), {})
-    assert [(v.variable, v.statistics) for v in shifted] == [
-        (v.variable, v.statistics) for v in same
+    same = study.score(RULES, WINDOW.sales)
+    shifted = study.score(RULES, planted)
+    assert [profile.values() for profile in shifted] == [
+        profile.values() for profile in same
     ]
 
 
@@ -121,8 +121,31 @@ def test_the_upper_bound_is_clopper_pearson():
 
 
 def test_with_a_fixed_seed_the_figures_repeat_and_are_pinned():
-    first = study.figures(study.run(windows=4, detection_pairs=1, customers=600))
-    second = study.figures(study.run(windows=4, detection_pairs=1, customers=600))
+    database_url = os.environ.get("TEST_DATABASE_URL")
+    if database_url is None:
+        # CI's root Python job has no PostgreSQL service. Determinism of all random
+        # inputs is still checked there; the service job and the required local gate
+        # take the database-backed branch below without a skip.
+        first = study._experiment_start(REFERENCE, 4, 1, 600)
+        second = study._experiment_start(REFERENCE, 4, 1, 600)
+        assert first == second
+        return
+    first = study.figures(
+        study.run(
+            windows=4,
+            detection_pairs=1,
+            customers=600,
+            database_url=database_url,
+        )
+    )
+    second = study.figures(
+        study.run(
+            windows=4,
+            detection_pairs=1,
+            customers=600,
+            database_url=database_url,
+        )
+    )
     assert first == second
     assert study.digest(first) == study.digest(second)
     assert study.digest(first) == (
@@ -131,7 +154,59 @@ def test_with_a_fixed_seed_the_figures_repeat_and_are_pinned():
 
 
 def test_the_report_states_every_criterion():
-    text = study.report(study.run(windows=4, detection_pairs=1, customers=600))
+    class EmptyMonitor:
+        def __init__(self, _database_url, _reference):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_error):
+            pass
+
+        def window(self, profiles, _end):
+            assert len(profiles) >= study.drift.MIN_CUSTOMERS
+            variables = tuple(
+                study.drift.judge(
+                    name,
+                    (
+                        study.drift.segment_bins(
+                            REFERENCE["labels"],
+                            [profile.label_code for profile in profiles],
+                        )
+                        if name == study.drift.SEGMENT_SHARES
+                        else study.drift.feature_bins(
+                            next(
+                                feature
+                                for feature in REFERENCE["features"]
+                                if feature["feature"] == name
+                            ),
+                            [
+                                getattr(
+                                    profile,
+                                    {"R": "r_days", "F": "f_count", "M": "m_total"}[
+                                        name
+                                    ],
+                                )
+                                for profile in profiles
+                            ],
+                        )
+                    ),
+                    len(profiles),
+                    None,
+                )
+                for name in (study.drift.SEGMENT_SHARES, "R", "F", "M")
+            )
+            return study.Observation(variables, frozenset())
+
+    result = study.run(
+        windows=2,
+        detection_pairs=1,
+        customers=600,
+        database_url="postgresql://unused/unused",
+        monitor_type=EmptyMonitor,
+    )
+    text = study.report(result)
     for heading in (
         "## False alarms: windows with no shift",
         "## Detection: windows with a planted shift",

@@ -3,18 +3,19 @@
 
     python -m analysis.drift_detection_study
 
-Regenerates every table in `docs/evidence/f23-10-drift-detection.md`. It reads no
-database and writes no file: the tables go to standard output, and nothing here is
-deployed or imported by anything that runs.
+Regenerates every table in `docs/evidence/f23-10-drift-detection.md`. It writes its
+reports and alerts through model-registry to a throwaway database loaded from the
+three SQL scripts; the tables go to standard output, and nothing here is deployed or
+imported by anything that runs.
 
-**The monitor is the production one.** Each window is judged by model-registry's own
-`app/drift.py`, called in the order `monitor.run_once` calls it: the segment shares
-first, then R, F and M, each against the version's reference, with the state of the
-window before as the persistence rule's memory, and an alert where
-`drift.raises_alert` says so (ADR-0065, ADR-0088). The profiles it judges are built
-by rfm-engine's own `app/profile.py`, which is what fills `current_profile_v1`, and
-the reference histograms by model-registry's own `training._histogram`. Those three
-modules are loaded from their files; nothing is copied.
+**The monitor is the production one.** Each window is fed to model-registry's own
+`monitor.run_once`, which judges it and writes `models.drift_report`,
+`drift_variable`, `drift_statistic`, `drift_bin` and `drift_alert`; the study reads
+those rows back. The profiles it feeds are built by rfm-engine's own `app/profile.py`,
+which is what fills `current_profile_v1`, and the reference histograms by
+model-registry's own `training._histogram`. Those modules are loaded from their
+files; the monitor's orchestration, persistence rule and alert decision are not
+copied.
 
 **The version.** An RFM_RULES version frozen on the evaluation dataset (F23-01, seed
 20261031): its quintile boundaries are that population's, by the production query's
@@ -69,17 +70,22 @@ import hashlib
 import importlib
 import json
 import math
+import os
 import random
 import statistics
 import sys
 import types
+from argparse import ArgumentParser
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+import psycopg
 
 from analysis.dataset import (
     AS_OF,
@@ -91,6 +97,7 @@ from analysis.dataset import (
     generate,
 )
 from analysis.k_study import VOCABULARY
+from analysis.load import is_local
 from analysis.method_comparison import _cut, rules
 from analysis.normalization_study import table
 
@@ -130,10 +137,27 @@ def _service_module(service: str, name: str) -> types.ModuleType:
         module = types.ModuleType(package)
         module.__path__ = [str(_ROOT / "services" / service / "app")]
         sys.modules[package] = module
-    return importlib.import_module(f"{package}.{name}")
+    # The root study environment intentionally does not install a service's private
+    # package dependencies. monitor imports audit.py, whose drift path does not use
+    # ApiError; supply only that unused import while loading the production modules.
+    temporary_kit = False
+    if service == "model-registry" and name == "monitor":
+        try:
+            importlib.import_module("mosaiq_kit")
+        except ModuleNotFoundError:
+            kit = types.ModuleType("mosaiq_kit")
+            kit.ApiError = type("ApiError", (Exception,), {})
+            sys.modules["mosaiq_kit"] = kit
+            temporary_kit = True
+    try:
+        return importlib.import_module(f"{package}.{name}")
+    finally:
+        if temporary_kit:
+            del sys.modules["mosaiq_kit"]
 
 
 drift = _service_module("model-registry", "drift")
+monitor = _service_module("model-registry", "monitor")
 training = _service_module("model-registry", "training")
 profile = _service_module("rfm-engine", "profile")
 
@@ -241,45 +265,198 @@ def reference_of(profiles: Sequence[Any]) -> dict[str, Any]:
     }
 
 
-# ---------- the monitor's judgement of one window ----------
+# ---------- the production monitor over a throwaway database ----------
 
 
-def judge(
-    reference: dict[str, Any], profiles: Sequence[Any], previous: dict[str, str]
-) -> list[Any]:
-    """The variables of one window, as `monitor.run_once` judges a COMPARED one:
-    the segment shares, then each feature of the reference, each given the state
-    it had in the window before. Fewer than the minimum is not compared."""
-    n = len(profiles)
-    if n < drift.MIN_CUSTOMERS:
-        return []
-    found = [
-        drift.judge(
-            drift.SEGMENT_SHARES,
-            drift.segment_bins(reference["labels"], [p.label_code for p in profiles]),
-            n,
-            previous.get(drift.SEGMENT_SHARES),
+@dataclass(frozen=True, slots=True)
+class Observation:
+    """One persisted monitor report, read back from its service-owned tables."""
+
+    variables: tuple[Any, ...]
+    alerts: frozenset[str]
+
+
+def _role_url(owner_url: str, role: str) -> str:
+    parts = urlsplit(owner_url)
+    host = parts.hostname or "127.0.0.1"
+    netloc = f"{role}:{role}@{host}"
+    if parts.port:
+        netloc += f":{parts.port}"
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+
+
+def _experiment_start(
+    reference: dict[str, Any], windows: int, detection_pairs: int, customers: int
+) -> datetime:
+    """A repeatable, isolated range of future windows for this exact experiment.
+
+    The service keys a report by version and window end. Including the production
+    sources in the key makes a rerun reuse reports only when both the inputs and the
+    code under test are unchanged.
+    """
+    payload = {
+        "reference": reference,
+        "windows": windows,
+        "detection_pairs": detection_pairs,
+        "customers": customers,
+        "shifts": SHIFTS,
+        "study_seed": STUDY_SEED,
+        "monitor": Path(monitor.__file__).read_text(),
+        "drift": Path(drift.__file__).read_text(),
+    }
+    key = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).digest()
+    # 2,000,000 days leaves ample room below datetime.max for all condition blocks.
+    offset = int.from_bytes(key[:8], "big") % 2_000_000
+    return datetime(2200, 1, 1, 3, tzinfo=UTC) + timedelta(days=offset)
+
+
+class MonitorStudy:
+    """Feed profiles to `monitor.run_once`, then read what it persisted.
+
+    Only session-local feed and version tables are created. The actual reports,
+    variables, statistics, bins, alerts and audit events go through model-registry's
+    production write path. The caller supplies a throwaway database loaded from the
+    repository's three SQL scripts.
+    """
+
+    def __init__(self, database_url: str, reference: dict[str, Any]) -> None:
+        if not database_url:
+            raise ValueError("a throwaway database URL is required")
+        if not is_local(database_url):
+            raise ValueError("the drift study runs only against a local database")
+        self.connection = psycopg.connect(
+            _role_url(database_url, "svc_models"), autocommit=True
         )
-    ]
-    columns = {"R": "r_days", "F": "f_count", "M": "m_total"}
-    for feature in reference["features"]:
-        name = feature["feature"]
-        values = [getattr(p, columns[name]) for p in profiles]
-        found.append(
-            drift.judge(
-                name, drift.feature_bins(feature, values), n, previous.get(name)
+        self.reference = reference
+        self._originals: dict[str, str] = {}
+
+    def __enter__(self) -> MonitorStudy:
+        connection = self.connection
+        connection.execute(
+            "CREATE TEMP TABLE drift_study_version ("
+            "version_id bigint, name text, reference_distribution jsonb)"
+        )
+        connection.execute(
+            "INSERT INTO pg_temp.drift_study_version "
+            "(version_id, name, reference_distribution) "
+            "SELECT version_id, name, %s::jsonb FROM models.model_version "
+            "WHERE state = 'PUBLISHED'",
+            (json.dumps(self.reference),),
+        )
+        connection.execute(
+            "CREATE TEMP TABLE drift_study_profile ("
+            "label_code text, r_days int, f_count int, m_total numeric, "
+            "computed_at timestamptz)"
+        )
+        replacements = {
+            "_PUBLISHED": (
+                "SELECT version_id, name, reference_distribution "
+                "FROM pg_temp.drift_study_version"
+            ),
+            "_PROFILES": (
+                "SELECT label_code, r_days, f_count, m_total, computed_at "
+                "FROM pg_temp.drift_study_profile"
+            ),
+            # This experiment holds the version fixed; publication behavior has its
+            # own monitor integration tests.
+            "_VERSION_CHANGES": (
+                "SELECT count(*) FROM models.model_publication "
+                "WHERE published_at > %s AND false"
+            ),
+        }
+        for name, value in replacements.items():
+            self._originals[name] = getattr(monitor, name)
+            setattr(monitor, name, value)
+        return self
+
+    def __exit__(self, *_error: object) -> None:
+        for name, value in self._originals.items():
+            setattr(monitor, name, value)
+        self.connection.close()
+
+    def window(self, profiles: Sequence[Any], end: datetime) -> Observation:
+        """Run and read one real report at a scheduled window end."""
+        connection = self.connection
+        connection.execute("TRUNCATE pg_temp.drift_study_profile")
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO pg_temp.drift_study_profile "
+                "(label_code, r_days, f_count, m_total, computed_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                [(p.label_code, p.r_days, p.f_count, p.m_total, end) for p in profiles],
             )
+        report_id = monitor.run_once(connection, end)
+        if report_id is None:
+            raise RuntimeError("the throwaway database has no published model version")
+        return self._read(report_id)
+
+    def _read(self, report_id: int) -> Observation:
+        connection = self.connection
+        (customers,) = connection.execute(
+            "SELECT customer_count FROM models.drift_report WHERE report_id = %s",
+            (report_id,),
+        ).fetchone()
+        states = connection.execute(
+            "SELECT variable, state FROM models.drift_variable "
+            "WHERE report_id = %s ORDER BY "
+            "CASE variable WHEN 'SEGMENT_SHARES' THEN 0 WHEN 'R' THEN 1 "
+            "WHEN 'F' THEN 2 ELSE 3 END",
+            (report_id,),
+        ).fetchall()
+        statistics_by: dict[str, list[Any]] = {}
+        for variable, name, value, p_value, dof, level in connection.execute(
+            "SELECT variable, statistic, value, p_value, degrees_of_freedom, level "
+            "FROM models.drift_statistic WHERE report_id = %s "
+            "ORDER BY variable, statistic DESC",
+            (report_id,),
+        ).fetchall():
+            statistics_by.setdefault(variable, []).append(
+                drift.Statistic(name, value, p_value, dof, level)
+            )
+        bins_by: dict[str, list[Any]] = {}
+        for (
+            variable,
+            label,
+            lower,
+            upper,
+            reference_share,
+            current_share,
+        ) in connection.execute(
+            "SELECT variable, label, lower_bound, upper_bound, reference_share, "
+            "current_share FROM models.drift_bin WHERE report_id = %s "
+            "ORDER BY variable, position",
+            (report_id,),
+        ).fetchall():
+            bins_by.setdefault(variable, []).append(
+                drift.Bin(
+                    label,
+                    lower,
+                    upper,
+                    reference_share,
+                    current_share,
+                    round(current_share * customers),
+                )
+            )
+        variables = tuple(
+            drift.Variable(
+                variable,
+                state,
+                tuple(statistics_by[variable]),
+                tuple(bins_by[variable]),
+            )
+            for variable, state in states
         )
-    return found
+        alerts = frozenset(
+            variable
+            for (variable,) in connection.execute(
+                "SELECT variable FROM models.drift_alert WHERE report_id = %s",
+                (report_id,),
+            ).fetchall()
+        )
+        return Observation(variables, alerts)
 
 
-def alarming(variables: Sequence[Any]) -> list[str]:
-    """The variables whose alarm holds in this window (pending or confirmed)."""
-    return [v.variable for v in variables if v.state in drift.PENDING_STATES]
-
-
-def alerting(variables: Sequence[Any]) -> list[str]:
-    return [v.variable for v in variables if drift.raises_alert(v.state)]
+# ---------- readings from a persisted monitor window ----------
 
 
 def direction(variable: Any) -> int:
@@ -380,13 +557,15 @@ class Tally:
     psi: dict[str, list[float]] = field(default_factory=dict)
     example: dict[str, Any] | None = None
 
-    def window(self, variables: Sequence[Any]) -> None:
+    def window(self, observation: Observation) -> None:
         self.windows += 1
-        found = alarming(variables)
+        found = [
+            v.variable for v in observation.variables if v.state in drift.PENDING_STATES
+        ]
         if found:
             self.alarmed_windows += 1
             self.alarmed_by.update(found)
-        for v in variables:
+        for v in observation.variables:
             self.psi.setdefault(v.variable, []).append(v.statistics[0].value)
 
 
@@ -399,49 +578,57 @@ def run(
     detection_pairs: int = DETECTION_PAIRS,
     customers: int = DEFAULT_CUSTOMERS,
     reference_seed: int = DEFAULT_SEED,
+    database_url: str | None = None,
+    monitor_type: type[MonitorStudy] = MonitorStudy,
 ) -> dict[str, Any]:
     """The whole experiment. The no-shift tally covers `windows` draws; each shift
-    is planted on the first `2 * detection_pairs` of the same draws."""
+    is planted on the first `2 * detection_pairs` of the same draws. Every draw is
+    passed through `monitor.run_once` and read back from `models.drift_*`."""
     if windows % 2 or windows < 2 * detection_pairs:
         raise ValueError("windows must be even and hold every detection pair")
+    database_url = database_url or os.environ.get("TEST_DATABASE_URL")
+    if not database_url:
+        raise ValueError("TEST_DATABASE_URL or --database-url is required")
     base = generate(reference_seed, customers)
     rule_set = freeze(base)
     reference = reference_of(score(rule_set, base.sales))
     tallies: dict[tuple[str, float], Tally] = {("NONE", 0.0): Tally()}
     for condition in _conditions():
         tallies[condition] = Tally()
-    previous: dict[tuple[str, float], list[Any]] = {}
-    for index in range(windows):
-        dataset = generate(window_seed(index), customers)
-        conditions = [("NONE", 0.0)]
-        if index < 2 * detection_pairs:
-            conditions += _conditions()
-        for condition in conditions:
-            kind, size = condition
-            sales = (
-                list(dataset.sales)
-                if kind == "NONE"
-                else plant(dataset, kind, size, index)
-            )
-            tally = tallies[condition]
-            if kind != "NONE":
-                tally.effects.append(planted_effect(kind, dataset.sales, sales))
-            second = index % 2 == 1
-            before = previous.get(condition, []) if second else []
-            states = {v.variable: v.state for v in before}
-            variables = judge(reference, score(rule_set, sales), states)
-            tally.window(variables)
-            if second:
-                tally.pairs += 1
-                found = alerting(variables)
-                if found:
-                    tally.alerted_pairs += 1
-                    tally.alerted_by.update(found)
-                    if _explains(kind, variables):
-                        tally.explained += 1
-                    if tally.example is None:
-                        tally.example = _example(kind, size, index, variables)
-            previous[condition] = variables
+    start = _experiment_start(reference, windows, detection_pairs, customers)
+    stride = windows + 2
+    positions = {
+        condition: position
+        for position, condition in enumerate([("NONE", 0.0), *_conditions()])
+    }
+    with monitor_type(database_url, reference) as monitored:
+        for index in range(windows):
+            dataset = generate(window_seed(index), customers)
+            conditions = [("NONE", 0.0)]
+            if index < 2 * detection_pairs:
+                conditions += _conditions()
+            for condition in conditions:
+                kind, size = condition
+                sales = (
+                    list(dataset.sales)
+                    if kind == "NONE"
+                    else plant(dataset, kind, size, index)
+                )
+                tally = tallies[condition]
+                if kind != "NONE":
+                    tally.effects.append(planted_effect(kind, dataset.sales, sales))
+                end = start + timedelta(days=positions[condition] * stride + index)
+                observation = monitored.window(score(rule_set, sales), end)
+                tally.window(observation)
+                if index % 2 == 1:
+                    tally.pairs += 1
+                    if observation.alerts:
+                        tally.alerted_pairs += 1
+                        tally.alerted_by.update(observation.alerts)
+                        if _explains(kind, observation):
+                            tally.explained += 1
+                        if tally.example is None:
+                            tally.example = _example(kind, size, index, observation)
     return {
         "reference": reference,
         "rule_set": rule_set,
@@ -452,22 +639,22 @@ def run(
     }
 
 
-def _explains(kind: str, variables: Sequence[Any]) -> bool:
+def _explains(kind: str, observation: Observation) -> bool:
     """An alert explains the planted change when it is raised on the variable the
     shift acts on and that variable's values moved the planted way."""
     if kind not in EXPECTED:
         return False
     name, way = EXPECTED[kind]
-    for v in variables:
-        if v.variable == name and drift.raises_alert(v.state):
+    for v in observation.variables:
+        if v.variable == name and name in observation.alerts:
             return direction(v) == way
     return False
 
 
-def _example(kind: str, size: float, index: int, variables: Sequence[Any]) -> dict:
+def _example(kind: str, size: float, index: int, observation: Observation) -> dict:
     alerts = []
-    for v in variables:
-        if drift.raises_alert(v.state):
+    for v in observation.variables:
+        if v.variable in observation.alerts:
             alerts.append(
                 {
                     "variable": v.variable,
@@ -791,8 +978,16 @@ def report(result: dict[str, Any] | None = None) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    del argv
-    print(report())
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--database-url",
+        default=os.environ.get("TEST_DATABASE_URL"),
+        help="owner URL of a throwaway database loaded from sql/00, 01 and 02",
+    )
+    args = parser.parse_args(argv)
+    if not args.database_url:
+        parser.error("--database-url or TEST_DATABASE_URL is required")
+    print(report(run(database_url=args.database_url)))
     return 0
 
 

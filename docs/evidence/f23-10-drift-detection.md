@@ -1,21 +1,21 @@
 # F23-10 (#822): planted drift, detection and false alarms
 
 Whether an alert from the drift monitor is worth believing. Every table below is printed
-by `python -m analysis.drift_detection_study` (about five and a half minutes on the
-machine that produced it, no database) over the F23-01 evaluation dataset, fingerprint
+by `python -m analysis.drift_detection_study` over a throwaway PostgreSQL 18 database
+built from the three SQL scripts, using the F23-01 evaluation dataset, fingerprint
 `8a73b618d299d8abf08fd22d2cd10901b8222a0ca536bf015a77378e44e3826a`, and fresh draws of
 its generator. **All of it is synthetic** (ADR-0052). Governing records: ADR-0065
 (F23-07), ADR-0088 (F23-09).
 
 ## How the monitor is put to the test
 
-**The monitor is the production code.** Each window is judged by model-registry's
-`app/drift.py` in the order `monitor.run_once` calls it (segment shares, then R, F and M,
-each with the state of the window before), and an alert is raised where
-`drift.raises_alert` says so. The profiles it judges are built by rfm-engine's
-`app/profile.py`, which fills `current_profile_v1`, and the reference histograms by
-model-registry's `training._histogram`. The study loads those modules from their files
-and copies nothing.
+**The monitor is the production code.** Each window is passed to model-registry's
+`monitor.run_once`, which writes `models.drift_report`, `drift_variable`,
+`drift_statistic`, `drift_bin` and `drift_alert`; the study reads those rows back to
+make the tables below. The profiles it feeds are built by rfm-engine's `app/profile.py`,
+which fills `current_profile_v1`, and the reference histograms by model-registry's
+`training._histogram`. The study loads those modules from their files and does not copy
+the monitor's orchestration, persistence rule or alert decision.
 
 **The version.** An RFM_RULES version frozen on the evaluation dataset: its quintile
 boundaries are that population's (the production query's distinct-value ntile, #352),
@@ -137,8 +137,8 @@ The noise is far below the threshold. The largest PSI on any variable in 400 win
   shift leaves every customer's R, F and M as they were, so the monitor reads the same
   numbers as without the shift. The study shows this: the PSI of those rows equals the
   no-shift row to the fourth decimal, and `tests/test_drift_detection_study.py` checks
-  that the statistics are identical. The planted change itself is real: up to 43 points
-  of share for the category and 37 for the channel.
+  that the profiles fed to the monitor are identical. The planted change itself is real:
+  up to 43 points of share for the category and 37 for the channel.
 
 ## 4. What an alert says (criterion 3)
 
@@ -164,8 +164,8 @@ did, in 50 of 50 pairs each. A frequency shift also moves the segment mix, becau
 bands score F. The alert says so in its own words, and it never claims more than a
 distribution change.
 
-**The same through the running monitor.** The same two planted shifts, M four times higher
-and F cut to a third, were fed to `monitor.run_once` on a throwaway PostgreSQL 16.15
+**Focused integration cases.** The same two planted shifts, M four times higher
+and F cut to a third, were also fed to `monitor.run_once` on a throwaway PostgreSQL 18
 built from the three SQL scripts. There were two passes, a day apart, and the alert was
 read back through `GET /v1/drift-alerts/{id}`:
 
@@ -183,16 +183,17 @@ Each test checks the following:
 - Its text names the variable and the planted direction ("rose" for M, "fell" for F).
 
 The database was discarded afterwards. The rest of `test_monitor.py` passed on the same
-database (24 of 24).
+database.
 
 ## 5. Repeatability (criterion 4)
 
 Study seed 822, reference seed 20261031, 5000 customers a window. SHA-256 of the figures: `cfb2ddcfacaa1cef431f6a2ae54294fa8138e44f73a31facc4d5be6d51630f25`
 
-The study was run twice from scratch, and the two outputs were identical byte for byte.
-Every random choice comes from a seed: the reference draw, each window's draw, and each
-planted change (study seed, window, kind and size). The test pins the digest of a small
-configuration, so a change to any figure has to be deliberate.
+The database-backed study reproduced the same digest as the original run. A small
+database-backed configuration is run twice by the root test and pins its digest, while
+every random choice comes from a seed: the reference draw, each window's draw, and each
+planted change (study seed, window, kind and size). A change to any figure therefore has
+to be deliberate.
 
 ## Leads for the owner of ADR-0065
 

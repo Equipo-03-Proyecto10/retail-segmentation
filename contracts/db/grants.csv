@@ -395,6 +395,8 @@ svc_campaigns,campaigns.promotion_channel,INSERT
 svc_campaigns,campaigns.promotion_channel,DELETE
 svc_campaigns,api_campaigns.active_promotion_v1,SELECT
 svc_campaigns,api_campaigns.promotion_window_v1,SELECT
+svc_campaigns,api_users,USAGE
+svc_campaigns,api_users.store_assignment_v1,SELECT
 svc_campaigns,api_segments,USAGE
 svc_campaigns,api_segments.current_label_v1,SELECT
 svc_campaigns,api_customers,USAGE

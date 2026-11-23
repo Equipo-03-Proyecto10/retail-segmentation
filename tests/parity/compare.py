@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
 from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
@@ -80,13 +81,35 @@ class ReportDifference:
         )
 
 
+@dataclass(frozen=True)
+class RfmDifference:
+    """One way the web's run and rfm-engine disagree about a customer's raw
+    R, F or M (F20-11). `what` is `recency_days`, `frequency`, `monetary` or
+    `profile`."""
+
+    customer_id: str
+    what: str
+    web: object
+    engine: object
+
+    def __str__(self) -> str:
+        return (
+            f"{self.customer_id}: {self.what}: web={self.web!r} "
+            f"rfm-engine={self.engine!r}"
+        )
+
+
 @dataclass
 class CaseResult:
     case: str
     status: str  # passed | failed | skipped
     detail: str = ""
     differences: list[
-        Difference | SegmentDifference | AuditDifference | ReportDifference
+        Difference
+        | SegmentDifference
+        | AuditDifference
+        | ReportDifference
+        | RfmDifference
     ] = field(default_factory=list)
 
 
@@ -504,6 +527,85 @@ def credentials_in(value, path: str = "") -> list[str]:
             found.extend(credentials_in(item, f"{path}[{index}]"))
     elif isinstance(value, str) and value.lower().startswith(_HASH_PREFIXES):
         found.append(path)
+    return found
+
+
+# ---------- RFM (F20-11) ----------
+
+ONE_DAY = timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class WebRfm:
+    """What the web's run recorded for one customer in `customer_segment_history`:
+    the instant of the last net purchase in the window, the count of net
+    purchases and their net total. All three are None for a customer with no
+    net purchase in the window (RN-21)."""
+
+    last_purchase_at: datetime | None
+    frequency: int | None
+    monetary: Decimal | None
+
+
+@dataclass(frozen=True)
+class EngineRfm:
+    """One row of rfm-engine's `rfm.customer_profile`: R in whole days to
+    `computed_at`, as the contract states it (ADR-0086)."""
+
+    state: str
+    r_days: int | None
+    f_count: int | None
+    m_total: Decimal | None
+    computed_at: datetime
+
+
+def diff_rfm(
+    web: dict[str, WebRfm], engine: dict[str, EngineRfm]
+) -> list[RfmDifference]:
+    """Every customer whose raw R, F or M differs, over the union of customers.
+
+    R is compared the way the engine measures it: the whole days from the web's
+    last purchase to the profile's own `computed_at`. A customer the web found
+    no purchase for agrees with an `unassigned` profile, and with no profile at
+    all; one with a purchase and no `scored` profile does not, and is printed
+    with both sides' values.
+    """
+
+    found: list[RfmDifference] = []
+    for customer in sorted(set(web) | set(engine)):
+        seen = web.get(customer, WebRfm(None, None, None))
+        held = engine.get(customer)
+        bought = seen.frequency is not None and seen.frequency > 0
+        if held is None or held.state != "scored":
+            if bought:
+                found.append(
+                    RfmDifference(
+                        customer,
+                        "profile",
+                        (seen.last_purchase_at, seen.frequency, seen.monetary),
+                        None if held is None else held.state,
+                    )
+                )
+            continue
+        if not bought:
+            found.append(
+                RfmDifference(
+                    customer,
+                    "profile",
+                    None,
+                    (held.r_days, held.f_count, held.m_total),
+                )
+            )
+            continue
+        assert seen.last_purchase_at is not None
+        days = int((held.computed_at - seen.last_purchase_at) // ONE_DAY)
+        for what, left, right in (
+            ("recency_days", days, held.r_days),
+            ("frequency", seen.frequency, held.f_count),
+            ("monetary", seen.monetary, held.m_total),
+        ):
+            if left != right:
+                found.append(RfmDifference(customer, what, left, right))
     return found
 
 

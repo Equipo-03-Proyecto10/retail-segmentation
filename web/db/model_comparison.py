@@ -42,7 +42,7 @@ def list_run_label_rows(
 
 
 _RUNS_OF_METHOD = RUN_COLUMNS + """
-            WHERE r.method = %s
+            WHERE r.method = %s AND r.scope = 'FULL'
             ORDER BY r.run_at DESC, r.run_id DESC
             LIMIT %s
 """
@@ -51,7 +51,8 @@ _RUNS_OF_METHOD = RUN_COLUMNS + """
 def list_runs_of_method(
     connection: Connection[Any], method: str, *, limit: int
 ) -> list[SegmentationRun]:
-    """The newest runs of one kind, most recent first."""
+    """The newest full runs of one kind, most recent first. A comparison reads
+    whole populations, so an incremental batch of changes is not offered."""
     with connection.cursor() as cursor:
         cursor.execute(_RUNS_OF_METHOD, (method, limit))
         rows = cursor.fetchall()

@@ -24,3 +24,7 @@ entries:
     service: audit-trail
     version: 1.5.0
     values: [DRIFT]
+  - adr: ADR-0087
+    service: segments
+    version: 1.6.0
+    values: [CONSENT_WITHDRAWN, CONSENT_GRANTED]

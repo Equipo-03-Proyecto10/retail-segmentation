@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: segments-service
-  version: 1.5.1
+  version: 1.6.1
   description: >-
     Serves what the segmentation runs recorded: the label vocabulary, each
     customer's current assignment and the history, the assignments of each model
@@ -176,6 +176,77 @@ paths:
                   externalValue: ./examples/current-unassigned-result.xml
                 no_open_assignment:
                   externalValue: ./examples/current-no-open-assignment.xml
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CustomerNotFound'
+        '406':
+          $ref: '#/components/responses/NotAcceptable'
+        '422':
+          $ref: '#/components/responses/CurrentInvalidQuery'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/OperationUnavailable'
+  /v1/segment-assignments/current-state:
+    get:
+      tags: [Segments]
+      summary: Get a customer's current assignment and why it has no label
+      description: >-
+        Returns what `getCurrentAssignment` returns and, when the state is
+        `unassigned_result`, `unassigned_reason`: `PROFILING_WITHDRAWN` when the
+        customer withdrew the `PROFILING` purpose (ADR-0066) and `NO_PURCHASES`
+        when they had no purchase in the window (ADR-0087). A customer who
+        withdrew profiling is therefore never read as one with no purchases.
+        `unassigned_reason` is null (omitted in XML) in every other state. It is
+        a separate read because the response of `getCurrentAssignment` is closed
+        to additions within v1. `SALES_ASSOCIATE` and `LOYALTY_OFFICER` use the
+        floor view, which says nothing of scores or consent. A customer absent from
+        `api_customers.customer_ref_v1` is 404 `customer_not_found`; a missing or
+        malformed `customer_id` is 422 `invalid_query`.
+      operationId: getCurrentAssignmentState
+      x-mosaiq-roles:
+        - ADMIN
+        - ANALYST
+        - STORE_MANAGER
+        - MARKETING
+        - AUDITOR
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - $ref: '#/components/parameters/CurrentCustomerId'
+      responses:
+        '200':
+          description: The customer's current state with the reason it has no label.
+          headers:
+            X-Correlation-ID:
+              $ref: '#/components/headers/CorrelationId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CurrentAssignmentState'
+              examples:
+                assigned:
+                  externalValue: ./examples/current-state-assigned.json
+                no_purchases:
+                  externalValue: ./examples/current-state-no-purchases.json
+                profiling_withdrawn:
+                  externalValue: ./examples/current-state-profiling-withdrawn.json
+                no_open_assignment:
+                  externalValue: ./examples/current-state-no-open-assignment.json
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/CurrentAssignmentState'
+              examples:
+                assigned:
+                  externalValue: ./examples/current-state-assigned.xml
+                no_purchases:
+                  externalValue: ./examples/current-state-no-purchases.xml
+                profiling_withdrawn:
+                  externalValue: ./examples/current-state-profiling-withdrawn.xml
+                no_open_assignment:
+                  externalValue: ./examples/current-state-no-open-assignment.xml
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -990,6 +1061,84 @@ components:
       xml:
         name: CurrentAssignment
         namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
+    UnassignedReason:
+      type: string
+      enum:
+        - PROFILING_WITHDRAWN
+        - NO_PURCHASES
+      description: >-
+        Why a customer in `unassigned_result` has no label (ADR-0087):
+        `PROFILING_WITHDRAWN` is a customer who withdrew the `PROFILING`
+        purpose, `NO_PURCHASES` one with no purchase in the window.
+    CurrentAssignmentState:
+      type: object
+      additionalProperties: false
+      description: >-
+        A `CurrentAssignment` and the reason an unassigned customer has no label.
+      required:
+        - customer_id
+        - state
+        - label_code
+        - r_score
+        - f_score
+        - m_score
+        - since
+        - run_id
+        - unassigned_reason
+      properties:
+        customer_id:
+          type: string
+          pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+        state:
+          type: string
+          enum:
+            - assigned
+            - unassigned_result
+            - no_open_assignment
+        label_code:
+          type:
+            - string
+            - 'null'
+          description: Set only when `state` is `assigned`.
+        r_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        f_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        m_score:
+          type:
+            - integer
+            - 'null'
+          minimum: 1
+          maximum: 5
+        since:
+          type:
+            - string
+            - 'null'
+          format: date-time
+          description: The open row's `valid_from`; null for `no_open_assignment`.
+        run_id:
+          type:
+            - integer
+            - 'null'
+          format: int64
+        unassigned_reason:
+          oneOf:
+            - $ref: '#/components/schemas/UnassignedReason'
+            - type: 'null'
+          description: >-
+            Set only when `state` is `unassigned_result`; null otherwise
+            (omitted in XML).
+      xml:
+        name: CurrentAssignmentState
+        namespace: https://mosaiq.maxthecoder.online/xml/segments/v1
     FloorCurrentAssignment:
       type: object
       additionalProperties: false
@@ -1100,9 +1249,16 @@ components:
         - AGEING
         - VERSION_CHANGE
         - FULL_RUN
+        - CONSENT_WITHDRAWN
+        - CONSENT_GRANTED
       description: >-
         Why the row exists (ADR-0063). `FULL_RUN` is the web's administrator
-        run.
+        run. `CONSENT_WITHDRAWN` is the row that leaves a customer without a
+        label because they withdrew the `PROFILING` purpose, and
+        `CONSENT_GRANTED` the one written when they grant it again (ADR-0066,
+        ADR-0087). The vocabulary grows inside v1 by that record
+        (`contracts/vocabulary-growth.yaml`); a client that validates against the
+        schema takes the new XSD with this version.
     VersionedSegmentAssignment:
       type: object
       additionalProperties: false

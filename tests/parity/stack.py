@@ -3,12 +3,13 @@ HTTP and SQL only.
 
 The web path is the browser's: sign in, upload a sales CSV, read /catalog/stock,
 submit the administrator's forms, read a customer's segment timeline and the
-segment history report, run a segmentation. The service path is a client's:
+segment history report, run a segmentation, and (F20-11) read the raw R, F and M
+that run recorded. The service path is a client's:
 sign in to auth-service, POST /v1/sales, POST /v1/sale-reversals, GET
 /v1/stock-levels/{store_id}/{product_id}, write through a service's contract,
-read GET /v1/audit-entries, register a customer and read the two reads of
-/v1/segment-assignments. Neither imports web/ or services/ (ADR-0045). Every
-SQL statement is parameterized.
+read GET /v1/audit-entries, register a customer, read the two reads of
+/v1/segment-assignments and start a rfm-engine recalculation. Neither imports
+web/ or services/ (ADR-0045). Every SQL statement is parameterized.
 
 Configuration (all optional; a path without its settings is skipped):
 
@@ -48,7 +49,9 @@ from tests.parity.compare import (
     NO_OPEN_ASSIGNMENT,
     UNASSIGNED_RESULT,
     Assignment,
+    EngineRfm,
     Pair,
+    WebRfm,
     assignment_from_service,
     parse_customer_current,
     parse_propagation_bound,
@@ -276,8 +279,8 @@ class WebPath:
                 return members
             page = shown + 1
 
-    def run_segmentation(self) -> None:
-        """One RFM run, confirmed, over the form's default window."""
+    def run_segmentation(self, window_days: int | None = None) -> None:
+        """One RFM run, confirmed, over `window_days` or the form's default."""
 
         page = self._get("/segment-run/")
         window = _WINDOW.search(page)
@@ -288,7 +291,7 @@ class WebPath:
             {
                 "csrf_token": _token(page),
                 "method": "RFM_RULES",
-                "window": window.group(1),
+                "window": str(window_days) if window_days else window.group(1),
                 "confirm": "yes",
             },
         )
@@ -460,6 +463,114 @@ class SegmentsPath:
             if page * info["size"] >= info["total"]:
                 return members
             page += 1
+
+
+class RfmPath:
+    """rfm-engine as the harness reads it (F20-11): a verification recalculation
+    through the gateway, and the profiles it holds through SQL.
+
+    `GET /v1/rfm-profiles` is still planned in the contract, so the profiles
+    are read from `rfm.customer_profile` on the throwaway stack, the way the
+    web's run is read from `customer_segment_history`. The recalculation is
+    ADMIN's (RN-05) and writes no profile (ADR-0086)."""
+
+    def __init__(self, gateway_url: str, email: str, password: str, db) -> None:
+        self.client = ParityClient(
+            gateway_url, load_contract(ROOT / "contracts/rfm-engine")
+        )
+        self.token = sign_in(gateway_url, email, password)
+        self.db = db
+
+    def _call(self, method: str, path: str, **kwargs):
+        return self.client.call(
+            method, f"/api/rfm-engine/v1/{path}", token=self.token, **kwargs
+        )
+
+    def pass_completed(self) -> bool:
+        """Whether the daily pass has run once, so a seeded customer no event
+        ever reached holds a profile (ADR-0086)."""
+
+        rows = self.db("SELECT count(*) FROM rfm.pass_run WHERE status = 'COMPLETED'")
+        return rows[0][0] > 0
+
+    def published_rule_set(self) -> tuple[int, int] | None:
+        """The most recently published rule set and its window in days: the
+        version the profiles are held under and the web's run is measured
+        over (same data, same rule version)."""
+
+        rows = self.db(
+            "SELECT rule_set_id, window_days FROM rfm.rule_set "
+            "WHERE state = 'PUBLISHED' ORDER BY rule_set_id DESC LIMIT 1"
+        )
+        return (rows[0][0], rows[0][1]) if rows else None
+
+    def recalculate(self, rule_set_id: int, bound: float = 120.0) -> dict:
+        """Start a full recalculation under one rule set and wait for it."""
+
+        started = self._call(
+            "POST",
+            "rfm-recalculations",
+            content_type="application/json",
+            body=json.dumps({"rule_set_id": rule_set_id}).encode(),
+        )
+        assert started.status == 201, f"{started.status} {started.body!r}"
+        recalculation_id = started.json()["recalculation_id"]
+        deadline = time.monotonic() + bound
+        while True:
+            reply = self._call("GET", f"rfm-recalculations/{recalculation_id}")
+            assert reply.status == 200, f"{reply.status} {reply.body!r}"
+            body = reply.json()
+            if body["state"] != "RUNNING" or time.monotonic() >= deadline:
+                return body
+            time.sleep(1)
+
+    def differences(self, recalculation_id: int) -> list[dict]:
+        """What the recalculation itself found, over all its pages."""
+
+        found: list[dict] = []
+        page = 1
+        while True:
+            reply = self._call(
+                "GET",
+                f"rfm-recalculations/{recalculation_id}/differences"
+                f"?page={page}&size=100",
+            )
+            assert reply.status == 200, f"{reply.status} {reply.body!r}"
+            body = reply.json()
+            found.extend(body["differences"])
+            info = body["page_info"]
+            if page * info["size"] >= info["total"]:
+                return found
+            page += 1
+
+    def profiles(self, rule_set_id: int, customers: list[str] | None = None):
+        """Each customer's stored profile under the rule set, in the harness's
+        terms."""
+
+        query = (
+            "SELECT customer_id::text, state, r_days, f_count, m_total, computed_at "
+            "FROM rfm.customer_profile WHERE rule_set_id = %s"
+        )
+        params: tuple = (rule_set_id,)
+        if customers is not None:
+            query += " AND customer_id::text = ANY(%s)"
+            params += (customers,)
+        return {row[0]: EngineRfm(*row[1:]) for row in self.db(query, params)}
+
+
+def web_rfm(db, run_id: int, customers: list[str] | None = None) -> dict:
+    """What the web's run `run_id` recorded: the raw values of every customer
+    it scored, and None of them for a customer with no purchase (RN-21)."""
+
+    query = (
+        "SELECT customer_id::text, recency_last_purchase_at, frequency_count, "
+        "monetary_total FROM customer_segment_history WHERE run_id = %s"
+    )
+    params: tuple = (run_id,)
+    if customers is not None:
+        query += " AND customer_id::text = ANY(%s)"
+        params += (customers,)
+    return {row[0]: WebRfm(*row[1:]) for row in db(query, params)}
 
 
 def occurred_at() -> datetime:

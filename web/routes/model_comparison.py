@@ -81,6 +81,13 @@ def index() -> tuple[str, int] | str | Response:
             if run.method != kind:
                 error, chosen[slot] = f"Run #{run_id} is not a {name}.", None
                 continue
+            if run.scope != "FULL":
+                error, chosen[slot] = (
+                    f"Run #{run_id} is an incremental change, not a snapshot of "
+                    "the population. Choose a full run.",
+                    None,
+                )
+                continue
             options[slot].append(run)
         chosen[slot] = run
 

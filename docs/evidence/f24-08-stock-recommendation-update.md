@@ -202,9 +202,15 @@ has agreed. Nothing here has run there.
    When there is none, discontinuing one is a business change, not a test
    movement. It needs the team's agreement and the administrator
    (`PATCH /api/products/v1/products/{id}/details` with
-   `{"commercial_status": "discontinued"}`). Run step 2 first, without
-   `--before-decision`, if nobody agrees, and record that the product was
-   already discontinued.
+   `{"commercial_status": "discontinued"}`). Before that `PATCH`, read
+   `/v2/recommendations` for the customer and store once while the product is
+   still offered, and keep that answer's `decision_id` for
+   `--before-decision` in step 2, as the local run did. Keep the flag: a
+   decision counts exclusions per reason, not per product, so without it
+   `not_sellable ≥ 1` cannot tell this product from any other inactive one.
+   When the only discontinued product was discontinued earlier, there is no
+   such decision: run step 2 without the flag and write in the record that
+   the `not_sellable` count is not tied to the product.
 4. **Two accounts**: an `ANALYST` to read, and an `INVENTORY_PLANNER` to record
    the two movements. Their credentials go into the shell's environment, read at
    a prompt; they are never arguments.
@@ -260,7 +266,8 @@ restricted category with products in stock at the store; neither the
 discontinued product nor any restricted product is among the items (of any
 kind); and the decision, as answered and as stored, counts `not_sellable` and
 `PERSONALIZATION_WITHDRAWN`. With `--before-decision`, the earlier decision
-offered the product and the later one counts one more `not_sellable`.
+offered the product and the later one counts one more `not_sellable`. That
+check is what ties `not_sellable` to this product (step 0.3).
 
 ### The record
 

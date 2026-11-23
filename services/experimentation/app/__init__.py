@@ -173,6 +173,17 @@ def create_app() -> Flask:
             total=total,
         )
 
+    @kit.operation("getCurrentAssignment")
+    def get_current_assignment() -> Representation:
+        customer_id, campaign_id = assignment.parse_current(request.args)
+        with kit.db.connection() as connection:
+            current = assignment.get_current(
+                connection,
+                customer_id,
+                campaign_id,
+            )
+        return Representation("ExperimentAssignment", current)
+
     @kit.operation("getExperiment")
     def get_experiment(experiment_id: int) -> Representation:
         with kit.db.connection() as connection:

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: sales-service
-  version: 1.10.0
+  version: 1.10.1
   description: >-
     Records a sale exactly once, all or nothing, and reads sales and the channel
     vocabulary back (RN-11 to RN-13, RN-37). A sale is never edited or deleted:
@@ -1375,7 +1375,6 @@ paths:
         `forbidden_store`, with no totals (ADR-0060). `ADMIN` and `ANALYST` are
         not confined. Reading it changes nothing and records nothing.
       operationId: listSalePromotionTotals
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

@@ -276,6 +276,59 @@ def list_sales(
     return [sale for sale in sales if sale is not None], total
 
 
+def promotion_totals(
+    connection: psycopg.Connection,
+    *,
+    store_id: int | None,
+    store_ids: list[int] | None,
+    occurred_from: datetime,
+    occurred_to: datetime,
+) -> list[dict[str, Any]]:
+    """Per store and promotion, the lines that applied it in the window (F27-16).
+
+    A line applied a promotion when sales.sale_line_price records one and the
+    price charged is below the list price of the sale's day, the definition
+    api_sales.promotion_line_v1 publishes. Every figure is net of reversals
+    (ADR-0062): a line counts with quantity - returned_quantity units, and not
+    at all once none remain. Nothing that names a sale or a customer is read
+    out, only the grouped sums (ADR-0060).
+    """
+    rows = connection.execute(
+        "SELECT t.store_id, p.promotion_id, count(*),"
+        " sum(l.quantity - l.returned_quantity),"
+        " sum((l.quantity - l.returned_quantity) * (p.list_price - l.unit_price))"
+        " FROM public.transaction AS t"
+        " JOIN public.transaction_line AS l ON l.transaction_id = t.transaction_id"
+        " JOIN sales.sale_line_price AS p"
+        "   ON p.transaction_id = l.transaction_id AND p.product_id = l.product_id"
+        " WHERE p.promotion_id IS NOT NULL"
+        " AND p.list_price > l.unit_price"
+        " AND l.quantity > l.returned_quantity"
+        " AND t.occurred_at >= %(occurred_from)s"
+        " AND t.occurred_at < %(occurred_to)s"
+        " AND (%(store_id)s::smallint IS NULL OR t.store_id = %(store_id)s)"
+        " AND (%(store_ids)s::smallint[] IS NULL OR t.store_id = ANY(%(store_ids)s))"
+        " GROUP BY t.store_id, p.promotion_id"
+        " ORDER BY t.store_id, p.promotion_id",
+        {
+            "store_id": store_id,
+            "store_ids": store_ids,
+            "occurred_from": occurred_from,
+            "occurred_to": occurred_to,
+        },
+    ).fetchall()
+    return [
+        {
+            "store_id": row[0],
+            "promotion_id": row[1],
+            "lines": row[2],
+            "units": int(row[3]),
+            "discount": _money(row[4]),
+        }
+        for row in rows
+    ]
+
+
 def channels(connection: psycopg.Connection) -> list[dict[str, Any]]:
     rows = connection.execute(
         "SELECT channel_id, name FROM public.channel ORDER BY channel_id"

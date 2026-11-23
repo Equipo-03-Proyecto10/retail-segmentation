@@ -295,6 +295,20 @@ data class Sale(
 @Serializable
 data class SalePage(val sales: List<Sale>, @SerialName("page_info") val pageInfo: PageInfo)
 
+/** One store and promotion of `SalePromotionTotals` (contracts/sales): lines, units and discount, net. */
+@Serializable
+data class SalePromotionTotal(
+    @SerialName("store_id") val storeId: Int,
+    @SerialName("promotion_id") val promotionId: Int,
+    val lines: Int,
+    val units: Int,
+    val discount: String
+)
+
+/** The window as asked, and its totals by store then promotion. Nothing in it names a sale or a customer. */
+@Serializable
+data class SalePromotionTotals(val from: String, val to: String, val totals: List<SalePromotionTotal>)
+
 /** `StoreCommercialRules` of contracts/stores: a null cap means the store imposes none of its own. */
 @Serializable
 data class StoreCommercialRules(

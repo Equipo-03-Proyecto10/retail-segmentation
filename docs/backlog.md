@@ -1129,6 +1129,9 @@ flowchart TD
     F25-12 --> F25-14
     F25-13 --> F25-14
     F25-05 --> F25-15
+    F25-03 --> F25-16
+    F25-05 --> F25-16
+    F25-08 --> F25-17
     F19-02 --> F26-01
     F19-03 --> F26-01
     F19-08 --> F26-02
@@ -1247,6 +1250,8 @@ flowchart TD
     F25-08 --> F29-10
     F25-10 --> F29-10
     F25-13 --> F29-10
+    F25-16 --> F29-10
+    F25-17 --> F29-10
     F27-05 --> F29-10
     F27-07 --> F29-10
     F28-06 --> F29-10
@@ -1404,6 +1409,8 @@ Epic #746.
 | F25-13 | #844 | Measure incremental effect with its uncertainty | P0 | F25-11 |
 | F25-14 | #845 | Validate the experiment pipeline: A/A, injected effect, stability and contamination | P0 | F25-08, F25-10, F25-12, F25-13 |
 | F25-15 | #1048 | Report what a campaign has spent against its budget | P1 | F25-05 |
+| F25-16 | #1164 | Serve promotions from campaigns-service: list, create, read and replace | P0 | F25-03, F25-05 |
+| F25-17 | #1165 | Serve one customer's experiment arm from experimentation-service | P0 | F25-08 |
 
 ## Phase 26 — KPIs, planning and data quality
 
@@ -1482,7 +1489,7 @@ Epic #750.
 | F29-07 | #895 | Run the deployed-integration and reproducibility tests on a clean environment | P0 | F20-12, F29-12 |
 | F29-08 | #892 | Plan the usability tests with store staff, analysts and administrators | P0 | — |
 | F29-09 | #893 | Run the usability sessions and act on what they find | P0 | F27-05, F27-08, F27-09, F27-13, F28-11, F28-14, F29-08 |
-| F29-10 | #896 | Demonstrate the complete loop on the deployed system, from purchase to measured effect | P0 | #462, F22-15, F24-04, F25-05, F25-08, F25-10, F25-13, F27-05, F27-07, F28-06, F28-11, F29-12 |
+| F29-10 | #896 | Demonstrate the complete loop on the deployed system, from purchase to measured effect | P0 | #462, F22-15, F24-04, F25-05, F25-08, F25-10, F25-13, F25-16, F25-17, F27-05, F27-07, F28-06, F28-11, F29-12 |
 | F29-11 | #897 | Publish the service catalog compliance and update the delivery documents | P0 | F29-07, F29-09, F29-10, F15-03 |
 | F29-12 | #894 | Release the third delivery to the instance | P0 | F29-03, F29-04, F29-05, F29-06, F29-09 |
 

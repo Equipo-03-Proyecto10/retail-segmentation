@@ -164,6 +164,34 @@ SELECT count(*)
    AND (%(kind)s::text IS NULL OR g.kind = %(kind)s::text)
 """
 
+# A floor read only applies while the campaign's experiment is assigned and its
+# primary result has not been stored. Historical bad data may put a customer in
+# two such experiments; the contract resolves that deterministically.
+CURRENT = """
+SELECT a.assignment_id, a.experiment_id, e.campaign_id, a.customer_id, g.group_id,
+       g.kind, g.name, p.salt, a.assigned_at, seen.count, seen.first
+  FROM public.experiment_assignment AS a
+  JOIN public.experiment AS e ON e.experiment_id = a.experiment_id
+  JOIN public.experiment_group AS g
+    ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+  LEFT JOIN experiments.experiment_plan AS p ON p.experiment_id = a.experiment_id
+  CROSS JOIN LATERAL (
+        SELECT count(*) AS count, min(x.exposed_at) AS first
+          FROM public.experiment_exposure AS x
+         WHERE x.assignment_id = a.assignment_id
+           AND NOT EXISTS (
+               SELECT FROM experiments.exposure_notice AS v
+                WHERE v.source_event_id = x.source_event_id
+                  AND v.notice = 'VOIDED')) AS seen
+ WHERE a.customer_id = %s::uuid
+   AND e.campaign_id::bigint = %s::bigint
+   AND NOT EXISTS (
+       SELECT FROM experiments.experiment_result AS r
+        WHERE r.experiment_id = a.experiment_id)
+ ORDER BY a.assigned_at DESC, a.assignment_id
+ LIMIT 1
+"""
+
 
 def already_assigned() -> ApiError:
     return ApiError(
@@ -199,6 +227,43 @@ def assignment_conflict(count: int) -> ApiError:
         "period overlaps this one's. The experiment planned first keeps them "
         "(ADR-0068), so nothing was assigned.",
     )
+
+
+def assignment_not_found() -> ApiError:
+    return ApiError(
+        404,
+        "assignment_not_found",
+        "The customer holds no arm in a running experiment of this campaign.",
+    )
+
+
+def invalid_current_query(field: str, code: str) -> ApiError:
+    return ApiError(
+        422,
+        "invalid_query",
+        "A required query field is missing or malformed.",
+        [{"field": field, "code": code}],
+    )
+
+
+def parse_current(args: Any) -> tuple[str, int]:
+    customer = args.get("customer_id")
+    if customer is None:
+        raise invalid_current_query("customer_id", "required")
+    try:
+        customer = str(UUID(customer))
+    except ValueError:
+        raise invalid_current_query("customer_id", "invalid_format") from None
+    campaign = args.get("campaign_id")
+    if campaign is None:
+        raise invalid_current_query("campaign_id", "required")
+    if (
+        not campaign.isascii()
+        or not campaign.isdigit()
+        or not 1 <= int(campaign) <= 2**63 - 1
+    ):
+        raise invalid_current_query("campaign_id", "out_of_range")
+    return customer, int(campaign)
 
 
 def balance_rows(
@@ -399,3 +464,46 @@ def list_assignments(
             first,
         ) in rows
     ], total
+
+
+def get_current(
+    connection: Connection, customer_id: str, campaign_id: int
+) -> dict[str, Any]:
+    """Read the customer's frozen arm without assigning or recording exposure."""
+    row = connection.execute(CURRENT, (customer_id, campaign_id)).fetchone()
+    if row is None:
+        raise assignment_not_found()
+    (
+        assignment_id,
+        experiment_id,
+        found_campaign_id,
+        found_customer_id,
+        arm_id,
+        kind,
+        name,
+        salt,
+        assigned_at,
+        exposure_count,
+        first_exposed_at,
+    ) = row
+    return {
+        "assignment_id": assignment_id,
+        "experiment_id": experiment_id,
+        "campaign_id": found_campaign_id,
+        "customer_id": str(found_customer_id),
+        "arm_id": arm_id,
+        "arm_kind": kind,
+        "arm_name": name,
+        "assignment_key": (
+            None
+            if salt is None
+            else verify.assignment_key(salt, experiment_id, str(found_customer_id))
+        ),
+        "assigned_at": conversions.instant(assigned_at),
+        "exposure_count": 0 if kind == plan.CONTROL else exposure_count,
+        "first_exposed_at": (
+            None
+            if kind == plan.CONTROL or first_exposed_at is None
+            else conversions.instant(first_exposed_at)
+        ),
+    }

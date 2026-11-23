@@ -15,10 +15,13 @@ import json
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import psycopg
 import pytest
+import redis
+from lxml import etree
 
 from app import verify
 from tests.conftest import ADMIN, ANALYST, AUDITOR, MARKETING
@@ -662,9 +665,305 @@ def test_the_contract_serves_both_operations() -> None:
         for op in item.values()
         if isinstance(op, dict) and "operationId" in op
     }
-    for operation in ("assignExperiment", "listExperimentAssignments"):
+    for operation in (
+        "assignExperiment",
+        "listExperimentAssignments",
+        "getCurrentAssignment",
+    ):
         assert "x-mosaiq-status" not in served[operation], operation
-    assert served["getCurrentAssignment"]["x-mosaiq-status"] == "planned"
+
+
+# ---------------------------------------------------------- current floor read
+
+
+def _campaign(scene: Scenario) -> int:
+    campaign = scene.owner.execute(
+        "SELECT max(campaign_id) + 1 FROM campaign"
+    ).fetchone()[0]
+    scene.owner.execute(
+        "INSERT INTO campaign"
+        " (campaign_id, name, label_code, starts_on, ends_on, status)"
+        " VALUES (%s, 'F25-17 current arm',"
+        " (SELECT min(label_code) FROM segment_label), %s, %s, 'ACTIVE')",
+        (campaign, START.date(), (START + timedelta(days=30)).date()),
+    )
+    scene.owner.execute(
+        "UPDATE experiment SET campaign_id = %s WHERE experiment_id = %s",
+        (campaign, scene.experiment),
+    )
+    return campaign
+
+
+def _current(api: Any, customer: str, campaign: int, **kwargs: Any) -> Any:
+    return api(
+        "GET",
+        "/v1/experiment-assignments/current"
+        f"?customer_id={customer}&campaign_id={campaign}",
+        **kwargs,
+    )
+
+
+@pytest.mark.parametrize("media_type", ["application/json", "application/xml"])
+@pytest.mark.parametrize("kind", ["CONTROL", "TREATMENT"])
+def test_the_frozen_current_arm_is_served_in_both_representations(
+    api: Any, scene: Scenario, media_type: str, kind: str
+) -> None:
+    campaign = _campaign(scene)
+    assert scene.assign(api).status_code == 201
+    dealt = scene.dealt()
+    arm = next(
+        arm
+        for arm in scene.arms
+        if scene.owner.execute(
+            "SELECT kind FROM experiment_group WHERE group_id = %s", (arm,)
+        ).fetchone()[0]
+        == kind
+    )
+    customer = next(customer for customer, group in dealt.items() if group == arm)
+
+    reply = _current(api, customer, campaign, headers={"Accept": media_type})
+
+    assert reply.status_code == 200
+    if media_type == "application/json":
+        body = reply.get_json()
+        assert body["customer_id"] == customer
+        assert body["campaign_id"] == campaign
+        assert body["experiment_id"] == scene.experiment
+        assert body["arm_id"] == arm
+        assert body["arm_kind"] == kind
+        assert body["assignment_key"] == _key(SALT, scene.experiment, customer)
+        assert body["exposure_count"] == 0
+        assert body["first_exposed_at"] is None
+    else:
+        contract = Path(__file__).resolve().parents[1] / "contracts/experimentation"
+        schema = etree.XMLSchema(etree.parse(str(contract / "experimentation.xsd")))
+        root = etree.fromstring(reply.data)
+        schema.assertValid(root)
+        assert root.findtext(NS + "customer_id") == customer
+        assert root.findtext(NS + "arm_kind") == kind
+
+
+@pytest.mark.parametrize("media_type", ["application/json", "application/xml"])
+def test_outside_the_frame_and_a_campaign_without_an_assignment_are_not_found(
+    api: Any, scene: Scenario, media_type: str
+) -> None:
+    unassigned_experiment = scene.experiment
+    scene = Scenario(scene.owner, size=29)
+    campaign = _campaign(scene)
+    assert scene.assign(api).status_code == 201
+    outsider = scene.owner.execute(
+        "SELECT customer_id::text FROM customer"
+        " WHERE customer_id <> ALL(%s::uuid[]) ORDER BY customer_id LIMIT 1",
+        (scene.customers,),
+    ).fetchone()[0]
+    no_assignment = campaign + 1
+    scene.owner.execute(
+        "INSERT INTO campaign"
+        " (campaign_id, name, label_code, starts_on, ends_on, status)"
+        " VALUES (%s, 'F25-17 no assignment',"
+        " (SELECT min(label_code) FROM segment_label), %s, %s, 'ACTIVE')",
+        (no_assignment, START.date(), (START + timedelta(days=30)).date()),
+    )
+    scene.owner.execute(
+        "UPDATE experiment SET campaign_id = %s WHERE experiment_id = %s",
+        (no_assignment, unassigned_experiment),
+    )
+
+    for customer, asked_campaign in (
+        (outsider, campaign),
+        (scene.customers[0], no_assignment),
+    ):
+        reply = _current(api, customer, asked_campaign, headers={"Accept": media_type})
+        assert reply.status_code == 404
+        assert reply.headers["X-Correlation-ID"]
+        if media_type == "application/json":
+            assert reply.get_json()["code"] == "assignment_not_found"
+        else:
+            root = ET.fromstring(reply.data)
+            assert (
+                root.findtext("{https://mosaiq.maxthecoder.online/xml/common/v1}code")
+                == "assignment_not_found"
+            )
+
+
+def test_an_analysed_experiment_has_no_current_arm(api: Any, scene: Scenario) -> None:
+    campaign = _campaign(scene)
+    assert scene.assign(api).status_code == 201
+    scene.owner.execute(
+        "INSERT INTO experiments.experiment_result"
+        " (experiment_id, computed_at, sample_ratio_p_value, synthetic)"
+        " VALUES (%s, %s, 1, false)",
+        (scene.experiment, START),
+    )
+
+    assert _code(_current(api, scene.customers[0], campaign)) == (
+        404,
+        "assignment_not_found",
+    )
+
+
+def test_current_assignment_roles_and_invalid_requests(
+    api: Any, scene: Scenario
+) -> None:
+    campaign = _campaign(scene)
+    assert scene.assign(api).status_code == 201
+    roles = [
+        "ADMIN",
+        "ANALYST",
+        "STORE_MANAGER",
+        "MARKETING",
+        "INVENTORY_PLANNER",
+        "AUDITOR",
+        "CUSTOMER",
+        "SALES_ASSOCIATE",
+        "LOYALTY_OFFICER",
+        "COMMERCIAL_SUPERVISOR",
+    ]
+    for role in roles:
+        reply = _current(
+            api,
+            scene.customers[0],
+            campaign,
+            as_user=(ADMIN, role),
+        )
+        if role in ("ADMIN", "STORE_MANAGER", "SALES_ASSOCIATE"):
+            assert reply.status_code == 200, role
+        else:
+            assert _code(reply) == (403, "forbidden_role"), role
+
+    for query in (
+        f"campaign_id={campaign}",
+        f"customer_id=not-a-uuid&campaign_id={campaign}",
+        f"customer_id={scene.customers[0]}&campaign_id=0",
+    ):
+        reply = api("GET", "/v1/experiment-assignments/current?" + query)
+        assert _code(reply) == (422, "invalid_query"), query
+    assert (
+        _current(
+            api,
+            scene.customers[0],
+            campaign,
+            headers={"Accept": "text/plain"},
+        ).status_code
+        == 406
+    )
+    assert _code(_current(api, scene.customers[0], 2**63 - 1)) == (
+        404,
+        "assignment_not_found",
+    )
+
+
+@pytest.mark.parametrize("media_type", ["application/json", "application/xml"])
+def test_current_assignment_shared_refusals_use_each_representation(
+    service: Any,
+    api: Any,
+    scene: Scenario,
+    sessions: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    media_type: str,
+) -> None:
+    campaign = _campaign(scene)
+    assert scene.assign(api).status_code == 201
+    path = (
+        "/v1/experiment-assignments/current"
+        f"?customer_id={scene.customers[0]}&campaign_id={campaign}"
+    )
+
+    unauthorized = service.test_client().get(path, headers={"Accept": media_type})
+    assert unauthorized.status_code == 401
+    if media_type == "application/json":
+        assert unauthorized.get_json()["code"] == "invalid_token"
+    else:
+        assert (
+            ET.fromstring(unauthorized.data).findtext(
+                "{https://mosaiq.maxthecoder.online/xml/common/v1}code"
+            )
+            == "invalid_token"
+        )
+
+    forbidden = _current(
+        api,
+        scene.customers[0],
+        campaign,
+        as_user=(ADMIN, "AUDITOR"),
+        headers={"Accept": media_type},
+    )
+    assert forbidden.status_code == 403
+    invalid = api(
+        "GET",
+        "/v1/experiment-assignments/current?campaign_id=1",
+        headers={"Accept": media_type},
+    )
+    assert invalid.status_code == 422
+
+    class Pipeline:
+        def set(self, *args: Any, **kwargs: Any) -> Pipeline:
+            return self
+
+        def incr(self, *args: Any, **kwargs: Any) -> Pipeline:
+            return self
+
+        @staticmethod
+        def execute() -> list[Any]:
+            return [True, 1]
+
+    kit = service.extensions["mosaiq_kit"]
+    monkeypatch.setattr(
+        sessions, "pipeline", lambda **_kwargs: Pipeline(), raising=False
+    )
+    kit.rate_limit_enabled = True
+    kit.rate_limit_requests = 0
+    limited = _current(
+        api,
+        scene.customers[0],
+        campaign,
+        headers={"Accept": media_type},
+    )
+    assert limited.status_code == 429
+    kit.rate_limit_enabled = False
+
+    def unavailable(_key: str) -> int:
+        raise redis.RedisError("unavailable")
+
+    monkeypatch.setattr(sessions, "exists", unavailable)
+    unavailable_reply = _current(
+        api,
+        scene.customers[0],
+        campaign,
+        headers={"Accept": media_type},
+    )
+    assert unavailable_reply.status_code == 503
+
+
+def test_reading_the_current_arm_writes_no_experiment_row(
+    api: Any, scene: Scenario
+) -> None:
+    campaign = _campaign(scene)
+    assert scene.assign(api).status_code == 201
+    counts = """
+SELECT (SELECT count(*) FROM public.experiment),
+       (SELECT count(*) FROM public.experiment_group),
+       (SELECT count(*) FROM public.experiment_assignment),
+       (SELECT count(*) FROM public.experiment_exposure),
+       (SELECT count(*) FROM public.experiment_conversion),
+       (SELECT count(*) FROM experiments.experiment_plan),
+       (SELECT count(*) FROM experiments.experiment_frame_member),
+       (SELECT count(*) FROM experiments.experiment_frame_exclusion),
+       (SELECT count(*) FROM experiments.experiment_flag),
+       (SELECT count(*) FROM experiments.experiment_assignment_record),
+       (SELECT count(*) FROM experiments.experiment_assignment_balance),
+       (SELECT count(*) FROM experiments.experiment_result),
+       (SELECT count(*) FROM experiments.experiment_result_arm),
+       (SELECT count(*) FROM experiments.experiment_result_comparison),
+       (SELECT count(*) FROM experiments.experiment_result_balance),
+       (SELECT count(*) FROM experiments.sale_attribution),
+       (SELECT count(*) FROM experiments.exposure_notice)
+"""
+    before = scene.owner.execute(counts).fetchone()
+
+    assert _current(api, scene.customers[0], campaign).status_code == 200
+
+    assert scene.owner.execute(counts).fetchone() == before
 
 
 _ = (json, uuid)

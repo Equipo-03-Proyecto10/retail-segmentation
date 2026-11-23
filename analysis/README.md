@@ -13,6 +13,7 @@ from a seed, with its results in [`docs/evidence/`](../docs/evidence/).
 | `stability_study.py` | F23-04: a registered result reproduced, seed and bootstrap stability with thresholds, and the movement between adjacent windows, for k from 2 to 8. Reads no database |
 | `segment_profile.py` | F23-05: each segment at k = 4 in raw units with its revenue share, and each label's claim put to its cluster. Reads no database |
 | `method_comparison.py` | F23-06: RFM rules and K-means scored on the same three criteria, with a Python replica of the RFM query, and the verdict they give. Reads no database |
+| `drift_detection_study.py` | F23-10: shifts of stated size in spend, frequency, category and channel planted in fresh draws, run through model-registry's monitor on a throwaway database with rfm-engine's own scoring, with the detection rate per shift, the false-alarm rate on windows with no shift, and what each persisted alert says |
 
 ## The evaluation dataset
 
@@ -53,3 +54,14 @@ python -m analysis.load --database-url postgresql://postgres@localhost:5432/reta
 ```
 
 A URL that is not on this machine is refused: this data must never reach the instance.
+
+F23-10 also requires a local throwaway database built from those scripts. It writes
+the generated profiles through model-registry's real drift-monitor path and leaves
+the reports there as reproducibility evidence, so give it a database of its own,
+never one that other test suites share (`--database-url`, or
+`DRIFT_STUDY_DATABASE_URL`, which `tests/test_drift_detection_study.py` also reads):
+
+```bash
+python -m analysis.drift_detection_study \
+  --database-url postgresql://postgres@localhost:5432/retail
+```

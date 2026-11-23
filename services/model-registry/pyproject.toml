@@ -1,6 +1,6 @@
 [project]
 name = "model-registry-service"
-version = "0.4.0"
+version = "0.4.1"
 description = "MOSAIQ model-registry-service: immutable model versions with their dataset, parameters, metrics and reference distribution (RN-66)"
 requires-python = ">=3.12,<3.13"
 dependencies = [

@@ -186,6 +186,7 @@ right place for it, and which the team accepted on 2026-09-07.
 | [F23-04](f23-04-kmeans-stability.md) | A registered K-means result reproduced identically from its recorded parameters, seed and bootstrap stability with stated thresholds, how far the clusters move between adjacent time windows, and what that feeds back into F23-03's choice of k |
 | [F23-05](f23-05-segment-profiles.md) | Each K-means segment at k = 4 in business terms (centroid in raw units, size, revenue share), a commercial action for each with the measure that would show it worked, and the three places a label says more than its customers do |
 | [F23-06](f23-06-method-comparison.md) | RFM rules and K-means compared on interpretability, stability and usefulness for decisions, each defined before the results and scored by the same code on the same customers; the verdict, from the criteria and not from agreement, favours neither method |
+| [F23-10](f23-10-drift-detection.md) | Shifts in spend, frequency, category and channel planted at stated sizes and judged by the production drift monitor: the detection rate per shift, the false-alarm rate over 400 windows with no shift against ADR-0065's 1%, what each alert says beside what was planted, the same figures from the same seeds, and the monitor itself run on a throwaway PostgreSQL |
 
 ## Review passes
 

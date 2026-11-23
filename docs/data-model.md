@@ -1205,9 +1205,26 @@ decision that matters is how a product's many-valued facts are split:
   the report before it", keyed `alert_id`, with `(report_id, variable)` unique and a
   foreign key to the variable. Its kind, version, window and reference are the report's;
   its statistics and bins are the variable's rows; its text is a function of the bins and
-  the review code, so none is stored. The claim is constrained to `DISTRIBUTION_CHANGE`:
-  a data-drift alert cannot make the claim only an outcome test may (ADR-0065).
-  All five tables are insert-only, by trigger, and nothing is deleted.
+  the review code, so none is stored. The claim is tied to the variable: only
+  `REPURCHASE_RATE`, the outcome test's variable, may claim `CONCEPT_DRIFT`, and it
+  claims nothing else; a trigger keeps that variable on `OUTCOME_TEST` reports and the
+  other four on `DATA_DRIFT` reports, so a data-drift alert cannot make the claim only an
+  outcome test may (ADR-0065, ADR-0089). The review code is a function of the variable,
+  and a CHECK says so.
+- **`models.drift_outcome_segment`** is the multivalued fact "this segment's repurchase
+  in the reference cohort and in this matured cohort, and the test between them"
+  (F23-11, ADR-0089), keyed `(report_id, label_code)`. The four counts, z, the p-value,
+  the Holm-adjusted p-value, the result and `persisted` depend on the whole key and on
+  nothing else (BCNF). The adjusted p-value depends on the other segments of the same
+  report, which is why it is stored: it is the result of a step over the report, not a
+  function of the row. The rates, the difference in points, the thresholds, the horizon
+  (the report's window) and the claim (any `persisted` row) are derived and not stored,
+  and CHECKs derive `NOT_TESTED` and `PASSED` from the counts and adjusted p-value,
+  so no row can disagree with ADR-0065's constants. A trigger admits rows only for an
+  `OUTCOME_TEST` report. A segment is one fact per report,
+  independent of the report's variable state, so it is a table of its own and not a
+  repetition inside `drift_variable` (4NF).
+  All six tables are insert-only, by trigger, and nothing is deleted.
 
 ---
 

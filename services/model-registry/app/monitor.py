@@ -279,9 +279,26 @@ def run_once(
 
 
 def run(db: Any, now: datetime | None = None) -> int | None:
-    """One pass on a connection of the pool, audited as FAILED when it cannot
-    finish."""
+    """One pass on a connection of the pool: the data-drift window, then every
+    matured cohort of the outcome test (F23-11). Each is audited as FAILED when it
+    cannot finish, and one failing does not stop the other."""
     moment = now or datetime.now(UTC)
+    report_id = _run_data_drift(db, moment)
+    from . import outcome  # here: outcome reads this module's schedule
+
+    try:
+        with db.connection() as connection:
+            outcome.run_once(connection, moment)
+    except Exception:
+        LOGGER.exception("outcome test pass failed")
+        try:
+            outcome.audit_failure(db, moment)
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("the failed outcome test pass could not be audited")
+    return report_id
+
+
+def _run_data_drift(db: Any, moment: datetime) -> int | None:
     try:
         with db.connection() as connection:
             return run_once(connection, moment)

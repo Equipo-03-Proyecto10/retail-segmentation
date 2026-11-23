@@ -13,7 +13,9 @@ was run against a throwaway PostgreSQL 16.15 built from the three SQL scripts, a
   version's latest publication or rollback. A current cohort comes every 30 days after
   it. A cohort is tested only once its outcome window `(t, t + 30 days]` is in the past.
 - **Members.** A cohort is every customer whose assignment open at `t` has a label and
-  was written under the published version (`api_segments.assignment_interval_v1`).
+  was written under the published version (`api_segments.assignment_interval_v1`). The
+  assignment view carries the version recorded by an incremental run, so a pending
+  `models.run_version` link does not remove that customer from the cohort.
 - **Outcome.** A member repurchased when a net purchase line of theirs falls in the
   window (`api_sales.net_purchase_line_v1`, net of reversals).
 - **The test.** For each segment, the current rate is compared with the reference rate by
@@ -45,7 +47,7 @@ The reference cohort holds CHAMPION 300 (60%), LOYAL 500 (48%) and LOST 400 (8%)
 | Planted | Cohort 1 | Cohort 2 | Claim |
 |---|---|---|---|
 | LOYAL drops from 48% to 30%; the others stay the same | LOYAL `PASSED`, report `ALARM_PENDING`, no alert | LOYAL `PASSED` and persisted, report `ALARM`, one alert | `CONCEPT_DRIFT`, on cohort 2 only |
-| Three times the champions, a fifth of the loyal, three times the lost, each at its own rate | every segment `NOT_PASSED`, report `NORMAL` | the same | none |
+| Three times the champions, a fifth of the loyal, three times the lost, each at its own rate | every tested segment `NOT_PASSED`, report `NORMAL` | the same | none |
 
 For the planted change, the served report shows:
 
@@ -85,7 +87,7 @@ TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5433/retail \
   python -m pytest -v services/model-registry/tests/test_outcome.py
 ```
 
-All 16 pass:
+All 17 pass:
 
 ```
 test_the_z_test_is_the_contracts_example
@@ -104,6 +106,7 @@ test_a_cohort_with_no_segment_of_100_a_side_is_insufficient
 test_repeating_a_pass_writes_nothing_and_a_later_pass_continues
 test_a_publication_inside_a_cohort_is_not_compared
 test_the_real_cohort_read_runs_as_the_service
+test_the_real_cohort_keeps_an_incremental_run_while_its_link_is_pending
 ```
 
 The z-test reproduces the published contract's example: LOYAL, 5,714 customers with

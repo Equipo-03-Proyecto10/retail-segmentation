@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import psycopg
 import pytest
@@ -287,7 +287,8 @@ def test_a_change_in_the_population_alone_is_never_concept_drift(
     for report_id in written:
         found = _report(owner, report_id)
         assert found["state"] == "NORMAL" and found["alerts"] == []
-        assert set(found["segments"].values()) == {"NOT_PASSED"}
+        assert all(result != "PASSED" for result in found["segments"].values())
+        assert {found["segments"][label] for label in REFERENCE} == {"NOT_PASSED"}
         view = _get(client, token, f"/v1/drift-reports/{report_id}")
         assert view["outcome_test"]["claim"] is None
         assert "concept drift" not in str(view).lower()
@@ -373,3 +374,74 @@ def test_the_real_cohort_read_runs_as_the_service(
         cohort = outcome._cohort(service_db, version_id, now - timedelta(days=1))
     assert all(side.repurchasers <= side.customers for side in cohort.values())
     assert sum(side.customers for side in cohort.values()) <= 30
+
+
+def test_the_real_cohort_keeps_an_incremental_run_while_its_link_is_pending(
+    owner_url: str,
+) -> None:
+    """ADR-0087 records the version on an incremental run before model-registry has
+    linked that run. The assignment contract must preserve the member meanwhile."""
+    with psycopg.connect(owner_url) as connection:
+        try:
+            version_id, method, window_days, rule_set_id = connection.execute(
+                "SELECT version_id, method, window_days, rule_set_id"
+                " FROM models.model_version WHERE state = %s",
+                ("PUBLISHED",),
+            ).fetchone()
+            customer_id, old_label = connection.execute(
+                "SELECT customer_id, label_code FROM public.customer_segment_history"
+                " WHERE valid_to IS NULL AND label_code IS NOT NULL LIMIT %s",
+                (1,),
+            ).fetchone()
+            (new_label,) = connection.execute(
+                "SELECT label_code FROM public.segment_label WHERE label_code <> %s"
+                " ORDER BY label_code LIMIT %s",
+                (old_label, 1),
+            ).fetchone()
+            (before_at,) = connection.execute("SELECT clock_timestamp()").fetchone()
+            before = sum(
+                side.customers
+                for side in outcome._cohort(connection, version_id, before_at).values()
+            )
+            connection.execute(
+                "SELECT api_segments.apply_assignment_v1(%s, %s, %s, %s, %s, %s,"
+                " %s, %s, %s, %s, %s, %s, %s, %s)",
+                (
+                    uuid4(),
+                    customer_id,
+                    new_label,
+                    1,
+                    1,
+                    1,
+                    before_at,
+                    1,
+                    1,
+                    "SALE",
+                    version_id,
+                    method,
+                    window_days,
+                    rule_set_id,
+                ),
+            )
+            run_id, recorded_version = connection.execute(
+                "SELECT run_id, model_version_id"
+                " FROM api_segments.assignment_interval_v1"
+                " WHERE customer_id = %s AND valid_to IS NULL",
+                (customer_id,),
+            ).fetchone()
+            assert recorded_version == version_id
+            assert (
+                connection.execute(
+                    "SELECT version_id FROM models.run_version WHERE run_id = %s",
+                    (run_id,),
+                ).fetchone()
+                is None
+            )
+            (after_at,) = connection.execute("SELECT clock_timestamp()").fetchone()
+            after = sum(
+                side.customers
+                for side in outcome._cohort(connection, version_id, after_at).values()
+            )
+            assert after == before
+        finally:
+            connection.rollback()

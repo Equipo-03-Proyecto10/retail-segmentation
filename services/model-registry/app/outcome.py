@@ -24,7 +24,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 import psycopg
 
-from . import audit, monitor, store
+from . import audit, monitor
 
 KIND = "OUTCOME_TEST"
 VARIABLE = "REPURCHASE_RATE"
@@ -37,7 +37,8 @@ REVIEW_CODE = "REVIEW_PREDICTIVE_RELATION"
 CLAIM = "CONCEPT_DRIFT"
 
 _PUBLISHED = (
-    "SELECT v.version_id, max(p.published_at) FROM models.model_version AS v"
+    "SELECT v.version_id, max(p.published_at), v.reference_distribution"
+    " FROM models.model_version AS v"
     " JOIN models.model_publication AS p USING (version_id)"
     " WHERE v.state = 'PUBLISHED' GROUP BY v.version_id"
 )
@@ -51,8 +52,9 @@ _COHORT = (
     "   WHERE n.customer_id = a.customer_id"
     "   AND n.occurred_at > %(as_of)s AND n.occurred_at <= %(end)s))::int"
     " FROM api_segments.assignment_interval_v1 AS a"
-    " JOIN models.run_version AS rv ON rv.run_id = a.run_id"
-    " WHERE rv.version_id = %(version)s AND a.label_code IS NOT NULL"
+    " LEFT JOIN models.run_version AS rv ON rv.run_id = a.run_id"
+    " WHERE coalesce(rv.version_id, a.model_version_id) = %(version)s"
+    " AND a.label_code IS NOT NULL"
     " AND a.valid_from <= %(as_of)s"
     " AND (a.valid_to IS NULL OR a.valid_to > %(as_of)s)"
     " GROUP BY a.label_code"
@@ -263,7 +265,7 @@ def _read(connection: psycopg.Connection[Any], now: datetime) -> dict[str, Any] 
         published = connection.execute(_PUBLISHED).fetchone()
         if published is None:
             return None
-        version_id, since = published
+        version_id, since, version_reference = published
         t0 = first_cohort(since)
         cohorts = matured(t0, now)
         if not cohorts:
@@ -280,7 +282,7 @@ def _read(connection: psycopg.Connection[Any], now: datetime) -> dict[str, Any] 
         read: dict[str, Any] = {
             "version_id": version_id,
             "t0": t0,
-            "labels": store.label_vocabulary(connection),
+            "labels": [item["label_code"] for item in version_reference["labels"]],
             "reference": _cohort(connection, version_id, t0),
             "cohorts": [],
         }
@@ -411,7 +413,7 @@ def run_once(
             comparison = "NOT_COMPARED"
         else:
             segments = judge(
-                [n for n in names if n in reference or n in current],
+                names,
                 reference,
                 current,
                 passed_before,

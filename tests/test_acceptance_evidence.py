@@ -687,3 +687,27 @@ def test_f24_08_the_wait_gives_up_after_the_deadline() -> None:
     assert wait.first_held is None
     assert wait.as_dict()["delay_ms"] is None
     assert len(wait.polls) == 3
+
+
+def test_f24_08_shape_ignores_what_a_decision_does_not_keep():
+    answer = example("recommendations", "v2/recommended-with-alternatives.json")
+    stored = {
+        "items": [
+            {
+                "position": i["position"],
+                "product_id": i["product_id"],
+                "kind": i["kind"],
+                "category_id": i["category_id"],
+                "availability": {
+                    "quantity_on_hand": i["availability"]["quantity_on_hand"]
+                },
+                "alternative_for": i["alternative_for"],
+                "unavailable_reason": i["unavailable_reason"],
+            }
+            for i in reversed(answer["items"])
+        ],
+        "exclusions": [dict(e) for e in reversed(answer["exclusions"])],
+    }
+    assert f24_08.shape(stored) == f24_08.shape(answer)
+    stored["exclusions"][0]["count"] += 1
+    assert f24_08.shape(stored) != f24_08.shape(answer)

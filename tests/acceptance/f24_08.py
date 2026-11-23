@@ -14,8 +14,11 @@ subcommand writes an evidence directory with a summary.md:
                 offered, and the recorded decision counts both reasons
                 (`not_sellable`, `PERSONALIZATION_WITHDRAWN`). With
                 `--before-decision`, a decision recorded while the product
-                was still active is read back too: it offered the product,
-                and the later one counts one more `not_sellable`.
+                was still active is read back too (from its table): it
+                offered the product, and the later one counts one more
+                `not_sellable`. Decisions are read from schema
+                `recommendations`, read-only: the `/v2/recommendation-decisions`
+                reads are still planned.
 
 **The bound** is not a figure of this file. It is the `recommendations`
 group's row in `contracts/streams/stock.changed.v1.md`, `## Propagation bound`
@@ -83,7 +86,6 @@ STREAM_CONTRACT = ROOT / "contracts/streams/stock.changed.v1.md"
 GROUP = "recommendations"
 OFFERED_KINDS = ("primary", "alternative")
 RECOMMENDATIONS = "/api/recommendations/v2/recommendations"
-DECISIONS = "/api/recommendations/v2/recommendation-decisions"
 MOVEMENTS = "/api/stock/v1/stock-movements"
 # Reads go on past the bound by this much before a run gives up, so a delay
 # over the bound is measured and reported instead of cut off.
@@ -143,6 +145,30 @@ def exclusion_count(body: dict[str, Any], reason: str) -> int:
         ),
         0,
     )
+
+
+def shape(body: dict[str, Any]) -> dict[str, Any]:
+    """What a decision keeps of an answer (ADR-0067): each item's position,
+    product, kind, category, quantity, `alternative_for` and
+    `unavailable_reason`, and the exclusion count per reason. An answer and the
+    decision stored for it agree when their shapes are equal."""
+    return {
+        "items": sorted(
+            (
+                int(i["position"]),
+                int(i["product_id"]),
+                i["kind"],
+                int(i["category_id"]),
+                int(i["availability"]["quantity_on_hand"]),
+                None if i.get("alternative_for") is None else int(i["alternative_for"]),
+                i.get("unavailable_reason") or None,
+            )
+            for i in body.get("items") or []
+        ),
+        "exclusions": {
+            e["reason"]: int(e["count"]) for e in body.get("exclusions") or []
+        },
+    }
 
 
 def describe(body: dict[str, Any], product_id: int) -> str:
@@ -278,12 +304,60 @@ class Session:
         return (reply.json() if reply.status == 200 else None), number
 
     def decision(
-        self, decision_id: str, note: str
-    ) -> tuple[dict[str, Any] | None, int]:
-        reply, number = self.rec.call(
-            self.edge, "GET", f"{DECISIONS}/{decision_id}", note=note, token=self.reader
+        self, decision_id: str, title: str
+    ) -> tuple[dict[str, Any] | None, str]:
+        """The decision as stored in schema `recommendations` (F24-05, #828), in
+        the answer's own shape. Read from the tables, read-only: the
+        `/v2/recommendation-decisions` reads are still planned
+        (docs/services/recommendations.md), and the table is the record they
+        will serve."""
+        head = (
+            "SELECT decision_id, customer_id, status, computed_at, store_id, "
+            "store_source, channel_id FROM recommendations.recommendation_decision "
+            "WHERE decision_id = %s"
         )
-        return (reply.json() if reply.status == 200 else None), number
+        items = (
+            "SELECT position, product_id, kind, category_id, quantity_on_hand, "
+            "held_at_store_id, alternative_for, unavailable_reason "
+            "FROM recommendations.recommendation_item WHERE decision_id = %s "
+            "ORDER BY position"
+        )
+        exclusions = (
+            "SELECT reason, product_count "
+            "FROM recommendations.recommendation_exclusion "
+            "WHERE decision_id = %s ORDER BY reason"
+        )
+        key = (decision_id,)
+        anchor = self.rec.add_rows(
+            title,
+            "\n".join(self.db.table(sql, key) for sql in (head, items, exclusions)),
+        )
+        found = self.db.rows(head, key)
+        if not found:
+            return None, anchor
+        store = int(found[0][4]) if found[0][4] else None
+        return {
+            "decision_id": decision_id,
+            "items": [
+                {
+                    "position": int(r[0]),
+                    "product_id": int(r[1]),
+                    "kind": r[2],
+                    "category_id": int(r[3]),
+                    "availability": {
+                        "store_id": int(r[5]) if r[5] else store,
+                        "quantity_on_hand": int(r[4]),
+                    },
+                    "alternative_for": int(r[6]) if r[6] else None,
+                    "unavailable_reason": r[7] or None,
+                }
+                for r in self.db.rows(items, key)
+            ],
+            "exclusions": [
+                {"reason": r[0], "count": int(r[1])}
+                for r in self.db.rows(exclusions, key)
+            ],
+        }, anchor
 
     def stock_level(
         self, store: int, product: int, note: str
@@ -419,21 +493,19 @@ def _after_bound(
                 f"unavailable_reason {entry.get('unavailable_reason')}: not offered "
                 f"at store {args.store}"
             )
-    recorded, recorded_number = s.decision(
-        body["decision_id"], f"decision ({criterion})"
+    recorded, recorded_anchor = s.decision(
+        body["decision_id"], f"stored decision ({criterion})"
     )
     rec.check(
         criterion,
-        "the decision read back is the answer's: same items and exclusions",
+        "the stored decision is the answer's: same items and exclusions",
         "same",
         (
             "same"
-            if recorded is not None
-            and recorded.get("items") == body.get("items")
-            and recorded.get("exclusions") == body.get("exclusions")
-            else "different"
+            if recorded is not None and shape(recorded) == shape(body)
+            else "absent" if recorded is None else "different"
         ),
-        links=[rec.link(number), rec.link(recorded_number)],
+        links=[rec.link(number), recorded_anchor],
     )
     level, level_number = s.stock_level(
         args.store, product, f"stock level ({criterion})"
@@ -723,26 +795,28 @@ def run_exclusions(args: argparse.Namespace) -> int:
                 count >= 1,
                 [rec.link(number)],
             )
-        recorded, recorded_number = s.decision(body["decision_id"], "the decision")
+        recorded, recorded_anchor = s.decision(
+            body["decision_id"], "the stored decision"
+        )
         rec.check(
             WHY,
             "the stored decision records the same exclusions",
-            body.get("exclusions"),
-            None if recorded is None else recorded.get("exclusions"),
-            links=[rec.link(recorded_number)],
+            shape(body)["exclusions"],
+            None if recorded is None else shape(recorded)["exclusions"],
+            links=[rec.link(number), recorded_anchor],
         )
         if args.before_decision:
-            earlier, earlier_number = s.decision(
-                args.before_decision, "the decision before it was discontinued"
+            earlier, earlier_anchor = s.decision(
+                args.before_decision, "the stored decision before it was discontinued"
             )
             if earlier is None:
                 rec.check(
                     WHY,
-                    "the earlier decision reads back",
-                    200,
-                    "not 200",
+                    "the earlier decision is stored",
+                    "stored",
+                    "absent",
                     False,
-                    [rec.link(earlier_number)],
+                    [earlier_anchor],
                 )
             else:
                 rec.facts["earlier decision"] = describe(earlier, args.discontinued)
@@ -755,14 +829,14 @@ def run_exclusions(args: argparse.Namespace) -> int:
                         if offered_here(earlier, args.discontinued)
                         else "not offered"
                     ),
-                    links=[rec.link(earlier_number)],
+                    links=[earlier_anchor],
                 )
                 rec.check(
                     WHY,
                     "the later decision counts one more `not_sellable`",
                     exclusion_count(earlier, "not_sellable") + 1,
                     exclusion_count(body, "not_sellable"),
-                    links=[rec.link(earlier_number), rec.link(number)],
+                    links=[earlier_anchor, rec.link(number)],
                 )
     finally:
         s.close()

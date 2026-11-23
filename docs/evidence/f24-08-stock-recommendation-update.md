@@ -1,7 +1,7 @@
 # F24-08 (#831): a stock change, and the recommendation that follows it
 
-> **Status: not yet run, locally or on the instance.** The local run of
-> criteria 1 to 3 is still to come ([local run](#local-run)). Criterion 4, "the same
+> **Status: criteria 1 to 3 held on a local stack on 2026-11-23**
+> ([local run](#local-run)): 26 checks, 26 held. Criterion 4, "the same
 > result on the deployed instance", is **pending**: the team agreed not to touch
 > the instance for now, and only its operator can start it. This document is
 > the runbook for that run, and every `‹fill: …›` below is filled during it.
@@ -80,6 +80,21 @@ from the cache (the same `decision_id`). Without the stream, the change would
 only be seen when that entry expired, up to 120 s later. A delay under the bound
 is therefore the stream emptying the cache, not a cold read.
 
+### Where the decision is read back from
+
+ADR-0067 records every answer as a decision, and the contract reads one back
+at `GET /v2/recommendation-decisions/{decision_id}`. That read is still
+*planned* ([`docs/services/recommendations.md`](../services/recommendations.md)):
+the service answers 404 for it today. The collector therefore reads the
+stored decision from its own tables in schema `recommendations`
+(`recommendation_decision`, `recommendation_item`,
+`recommendation_exclusion`, F24-05, #828), read-only and with bind parameters.
+That is the record the planned read will serve. It compares the answer and
+the stored decision on what a decision keeps: each item's position, product,
+kind, category, quantity, `alternative_for` and `unavailable_reason`, and the
+count per exclusion reason (`f24_08.shape`). When the read is built, it should
+replace the query.
+
 ### Writes
 
 Only the two movements, through stock-service as an `INVENTORY_PLANNER`, each
@@ -90,7 +105,8 @@ runs in a read-only transaction with bind parameters.
 
 Criterion 3 needs a discontinued product. The seed has none: every seeded
 product is active (`sql/02_seed_30_per_table.sql`, `product`). The local run
-discontinued one through products-service as a precondition (below). On the
+discontinued one through products-service as a precondition
+([criterion 3](#criterion-3-exclusions-9-checks-9-held)). On the
 instance, see step 0.3.
 
 ## Local run
@@ -98,7 +114,60 @@ instance, see step 0.3.
 > **Local, not the acceptance of criterion 4.** It ran on a throwaway stack,
 > not on the instance.
 
-‹results›
+Stack: the 25 services of `docker/distributed` built from commit `3a8b72b8`
+(the services do not change in this story), as compose project `p831` with its
+own volumes and network, the gateway alone published on `127.0.0.1:18831`, and
+the seed of `sql/02_seed_30_per_table.sql`. Reader `user2` (`ANALYST`), planner
+`user5` (`INVENTORY_PLANNER`). Customer `00000000-0000-0000-0000-000000000003`,
+store 3: before the run, products 2, 1, 3 and 5 are primary items, and the
+customer's restricted category takes product 4 out
+(`PERSONALIZATION_WITHDRAWN` 1).
+
+The run is [`f24-08/local-20261123T1753Z`](f24-08/local-20261123T1753Z/):
+`cycle/` and `exclusions/`, each with `summary.md`, `exchanges.md`, `rows.md`
+and `record.json`, and `cycle/delays.json`.
+
+### Criteria 1 and 2: [`cycle`](f24-08/local-20261123T1753Z/cycle/summary.md), 17 checks, 17 held
+
+| Step | Result |
+|---|---|
+| Before | product 2 is the primary item at position 1, quantity 10 = stock-service = `inventory`; the second read is served from the cache (same `decision_id`) |
+| `COUNT` to 0 | `201` |
+| Delay to "not offered" | **38 ms** (bound: p95 3000 ms, max 5000 ms) |
+| After the bound (5000 ms) | product 2 is an `elsewhere` entry: held at store 13 (25 units), `unavailable_reason: out_of_stock`, so not offered at store 3. `out_of_stock` 21 → 22. The stored decision is the answer's. Stock-service and `inventory` read 0 |
+| `RECEIPT` of 10 | `201` |
+| Delay to "offered again" | **46 ms** |
+| After the bound | product 2 is the primary item at position 1 again, quantity 10. `out_of_stock` back to 21. The stored decision is the answer's. Stock-service and `inventory` read 10 |
+
+In both measurements the first read after the movement had already changed, so
+no unchanged read was seen: the delay is an upper bound, one poll interval
+(100 ms) or less from the true one. The cache had been warmed, so the change
+was the stream emptying it, not an expired entry.
+
+### Criterion 3: [`exclusions`](f24-08/local-20261123T1753Z/exclusions/summary.md), 9 checks, 9 held
+
+The seed has no discontinued product. So, as the precondition, a read was
+recorded while product 5 was active (decision
+`5f3e4e3f-f832-4e04-b5e4-975e530ee231`, product 5 primary at position 4).
+Then product 5 was discontinued as the administrator through products-service
+(`PATCH /api/products/v1/products/5/details`, `200`, `is_active: false`). On
+this throwaway stack only.
+
+| Check | Result |
+|---|---|
+| Product 5 is not sellable | `is_active` false |
+| The customer restricted a category with products in stock at store 3 | product 4 |
+| Neither is among the items, of any kind | absent, and no restricted product |
+| The decision says why | `not_sellable` 1, `PERSONALIZATION_WITHDRAWN` 1, in the answer and in the stored decision alike |
+| Against the earlier decision | product 5 was offered then, and the later decision counts one more `not_sellable` (0 → 1) |
+
+### What happened on the way
+
+The first local run (not committed) had 15 of 17 checks held. The two that
+did not were the decision read-back: `GET /v2/recommendation-decisions/{id}`
+answered 404, because that read is not built yet. The collector was changed to
+read the stored decision from its tables ([above](#where-the-decision-is-read-back-from)),
+and the run above is the second one.
 
 ## On the instance
 
@@ -173,7 +242,7 @@ It holds when:
 - the `COUNT` to zero is `201`; the first read that no longer offers the product
   arrives within the bound's maximum, and that is the measured delay;
 - the read after the bound does not offer it, its decision counts one more
-  `out_of_stock`, the decision read back is the answer's, and stock-service and
+  `out_of_stock`, the stored decision is the answer's, and stock-service and
   `inventory` read 0;
 - the `RECEIPT` is `201`; the product is offered again within the maximum, and
   after the bound it is a primary item with the restocked quantity.

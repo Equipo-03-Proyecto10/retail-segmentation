@@ -1,7 +1,7 @@
 //! Campaign performance through the whole router, on the seeded database as
 //! `svc_kpis` (F26-04, #849).
 //!
-//! Four experiments of three campaigns are written, with their stored results, as
+//! Five experiments of four campaigns are written, with their stored results, as
 //! experimentation leaves them. Every figure below is computed by hand:
 //!
 //! | experiment | campaign | window              | arms                      | attributed sales (net)         | stored effect (95%?)          |
@@ -10,6 +10,7 @@
 //! | E2         | C2       | 2020-03-10 – 03-20  | treatment A 2, B 2        | 30.00                          | none: no control              |
 //! | E3         | C3       | 2020-03-05 – 03-25  | control 1, treatment 1    | none                           | 9.99 [1.00, 18.98], alpha 0.025 |
 //! | E4         | C1       | 2020-06-01 – 06-30  | control 1, treatment 1    | none                           | outside the range             |
+//! | E5         | C5       | 2020-03-08 – 03-28  | control 1, treatments 1+1 | none                           | two comparisons, no single effect |
 //!
 //! So in March 2020: C1 reads 65.00 attributed (40.00 + 35.00 - 10.00 returned), 3
 //! treated, 2 control, effect 14.30 in [3.10, 25.50]; C2 reads 30.00, 4 treated, 0
@@ -181,14 +182,25 @@ async fn plan(owner: &Client, experiment: i32, comparison_alpha: &str) {
 }
 
 async fn effect(owner: &Client, experiment: i32, difference: f64, lower: f64, upper: f64) {
+    effect_for(owner, experiment, 2, difference, lower, upper).await;
+}
+
+async fn effect_for(
+    owner: &Client,
+    experiment: i32,
+    treatment_offset: i32,
+    difference: f64,
+    lower: f64,
+    upper: f64,
+) {
     owner
         .execute(
             "INSERT INTO experiments.experiment_result_comparison (experiment_id, group_id, \
                  against_group_id, metric, difference, lower, upper, p_value, \
                  bootstrap_lower, bootstrap_upper) \
-             VALUES ($1, $1 * 10 + 2, $1 * 10 + 1, 'REVENUE_PER_CUSTOMER', $2, $3, $4, 0.01, \
-                 $3, $4)",
-            &[&experiment, &difference, &lower, &upper],
+             VALUES ($1, $1 * 10 + $2, $1 * 10 + 1, 'REVENUE_PER_CUSTOMER', $3, $4, $5, 0.01, \
+                 $4, $5)",
+            &[&experiment, &treatment_offset, &difference, &lower, &upper],
         )
         .await
         .unwrap();
@@ -239,7 +251,7 @@ async fn fixture(owner: &Client) {
     purge(owner).await;
     let tag = tag();
     let mut people = Vec::new();
-    for _ in 0..11 {
+    for _ in 0..14 {
         people.push(customer(owner).await);
     }
     // E1: C1, control 2 and treatment 3, one sale half returned.
@@ -301,6 +313,27 @@ async fn fixture(owner: &Client) {
     .await;
     plan(owner, BASE + 3, "0.025").await;
     effect(owner, BASE + 3, 9.99, 1.0, 18.98).await;
+    // E5: C5, one control and two treatments. Experimentation stores one
+    // treatment-vs-control comparison per treatment, but this report still has
+    // exactly one experiment row and no single effect.
+    record(
+        owner,
+        &Experiment {
+            id: BASE + 5,
+            campaign: BASE + 5,
+            starts: "2020-03-08",
+            ends: "2020-03-28",
+            arms: vec![
+                (1, "CONTROL", vec![people[11]]),
+                (2, "TREATMENT", vec![people[12]]),
+                (3, "TREATMENT", vec![people[13]]),
+            ],
+        },
+    )
+    .await;
+    plan(owner, BASE + 5, "0.025").await;
+    effect(owner, BASE + 5, 5.0, 1.0, 9.0).await;
+    effect_for(owner, BASE + 5, 3, 7.0, 2.0, 12.0).await;
     // E4: C1 again, in June.
     record(
         owner,
@@ -371,7 +404,9 @@ async fn attribution_and_effect_are_labelled_apart_and_the_effect_shows_its_inte
         .collect();
     assert_eq!(
         campaigns,
-        [BASE + 1, BASE + 3, BASE + 2].map(i64::from).to_vec(),
+        [BASE + 1, BASE + 3, BASE + 5, BASE + 2]
+            .map(i64::from)
+            .to_vec(),
         "ordered by window start; E4 in June is outside"
     );
 
@@ -421,8 +456,20 @@ async fn attribution_and_effect_are_labelled_apart_and_the_effect_shows_its_inte
     );
     assert_eq!(measure_value(c3, "incremental_effect"), None);
 
+    // One control and two treatments: one row, and no arbitrary effect.
+    let c5 = rows[2];
+    assert_eq!(measure_value(c5, "incremental_effect"), None);
+    let (_, multiple_treatments) = json(
+        &stack,
+        &format!("{REPORT}?{MARCH}&campaign_id={}", BASE + 5),
+        "MARKETING",
+    )
+    .await;
+    assert_eq!(multiple_treatments["page_info"]["total"], 1);
+    assert_eq!(multiple_treatments["rows"].as_array().unwrap().len(), 1);
+
     // Two offers and no control: attributed sales, and no effect.
-    let c2 = rows[2];
+    let c2 = rows[3];
     assert_eq!(
         measure_value(c2, "attributed_sales_amount").as_deref(),
         Some("30.00")

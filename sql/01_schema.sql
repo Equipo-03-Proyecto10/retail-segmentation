@@ -6375,7 +6375,10 @@ SELECT e.campaign_id,
   JOIN arms AS m ON m.experiment_id = e.experiment_id
   LEFT JOIN assigned AS x ON x.experiment_id = e.experiment_id
   LEFT JOIN attributed AS t ON t.experiment_id = e.experiment_id
-  LEFT JOIN effect AS f ON f.experiment_id = e.experiment_id
+  LEFT JOIN effect AS f
+    ON f.experiment_id = e.experiment_id
+   AND m.control_arms = 1
+   AND m.treatment_arms = 1
   LEFT JOIN experiments.experiment_plan AS p ON p.experiment_id = e.experiment_id
  WHERE e.campaign_id IS NOT NULL;
 REVOKE ALL ON api_experiments.campaign_effect_v1 FROM PUBLIC;

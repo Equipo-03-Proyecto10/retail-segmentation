@@ -33,7 +33,7 @@ so an operator applies that section alone.
 | `incremental_effect` | `double precision` | Mean net spend per analysed customer of the treatment arm less that of the control: the stored `REVENUE_PER_CUSTOMER` comparison (F25-13). `NULL` without a control, with more than one treatment arm, or when the comparison was withheld. |
 | `effect_lower` | `double precision` | The lower end of the effect's interval; `NULL` exactly when `incremental_effect` is. |
 | `effect_upper` | `double precision` | The upper end; `NULL` exactly when `incremental_effect` is. |
-| `confidence` | `numeric(12,10)` | The interval's level, `1 - comparison_alpha` of the experiment's plan (0.95 for the usual plan). `NULL` exactly when `incremental_effect` is, and when the experiment has no plan. |
+| `confidence` | `numeric(12,10)` | The interval's level, `1 - comparison_alpha` of the experiment's plan (0.95 for the usual plan). `NULL` when `incremental_effect` is `NULL`, and also for an unplanned legacy experiment whose stored effect has no plan from which to recover a confidence. |
 | `computed_at` | `timestamp with time zone` | When the result was computed. |
 | `synthetic` | `boolean` | True when the result was computed over synthetic data, the experiment is not `OBSERVED`, or an attributed sale is `SEEDED` (ADR-0052). |
 | `data_origin` | `text` | The experiment's origin: `OBSERVED`, `SEEDED` or `INJECTED`. |

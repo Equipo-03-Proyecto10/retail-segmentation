@@ -9,10 +9,12 @@
 //! This release serves the catalog (`listKpiDefinitions`), net sales
 //! (`getNetSalesReport`), spend, retention and segment migrations
 //! (`getSpendReport`, `getRetentionReport`, `getMigrationReport`, F26-03) and
-//! demand by segment beside stock (`getDemandCoverageReport`). The other reports
+//! demand by segment beside stock (`getDemandCoverageReport`), and campaign
+//! performance (`getCampaignPerformanceReport`, F26-04). The other reports
 //! of the contract are marked `x-mosaiq-status: planned` (ADR-0073) until the
 //! stories that build them.
 
+pub mod campaign;
 pub mod catalog;
 pub mod demand_coverage;
 pub mod migrations;
@@ -37,8 +39,8 @@ use mosaiq_kit::{
 };
 
 use crate::query::{
-    parse_demand_query, parse_migration_query, parse_retention_query, parse_sales_query,
-    DemandQuery, Dimension, Granularity, MigrationQuery,
+    parse_campaign_query, parse_demand_query, parse_migration_query, parse_retention_query,
+    parse_sales_query, DemandQuery, Dimension, Granularity, MigrationQuery,
 };
 use crate::scope::Scope;
 
@@ -257,6 +259,36 @@ async fn get_migration_report(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(Representation::new("KpiReport", report_wire(envelope, ctx.page, ctx.size)).into())
 }
 
+async fn get_campaign_performance_report(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = parse_campaign_query(&query_string())?;
+    // A campaign has no store, so no store-scoped role reads it: the contract's
+    // roles keep them out, and the report covers every campaign.
+    let scope = Scope {
+        restricted: false,
+        store_ids: Vec::new(),
+        named: None,
+    };
+    let generated_at = Utc::now().trunc_subsecs(0);
+    let report = campaign::read(ctx.db(), &query, ctx.page, ctx.size).await?;
+    let envelope = Envelope {
+        kpi: campaign::KPI,
+        definition_version: campaign::DEFINITION_VERSION,
+        from: query.from,
+        to: query.to,
+        granularity: None,
+        group_by: &[],
+        scope: &scope,
+        generated_at,
+        views: vec![campaign::EFFECT_VIEW],
+        synthetic: report.synthetic,
+        spans_model_versions: false,
+        model_version_ids: Vec::new(),
+        rows: report.rows.iter().map(campaign::Row::wire).collect(),
+        total: report.total,
+    };
+    Ok(Representation::new("KpiReport", report_wire(envelope, ctx.page, ctx.size)).into())
+}
+
 fn demand_coverage_wire(
     query: &DemandQuery,
     scope: &Scope,
@@ -379,6 +411,13 @@ async fn views_ready(db: Arc<Database>) -> bool {
             )
             .await
             .is_ok()
+        && connection
+            .query(
+                "SELECT campaign_id FROM api_experiments.campaign_effect_v1 LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
 }
 
 async fn capture_request(request: Request<Body>, next: Next) -> Response {
@@ -395,6 +434,10 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .operation("getRetentionReport", get_retention_report)?
         .operation("getMigrationReport", get_migration_report)?
         .operation("getDemandCoverageReport", get_demand_coverage_report)?
+        .operation(
+            "getCampaignPerformanceReport",
+            get_campaign_performance_report,
+        )?
         .operation("listKpiDefinitions", list_kpi_definitions)?
         .ready_check(views_ready)
         .into_router()

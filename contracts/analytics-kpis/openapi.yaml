@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.1.3
+  version: 1.2.0
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -61,12 +61,14 @@ info:
     `RECO_CLICK` that is not voided: type, customer, store, instant, data origin),
     `api_experiments.exposure_v1` (one row per `CAMPAIGN_EXPOSURE` that is not
     voided: campaign, customer, store, instant, data origin),
-    `api_recommendations.recommended_purchase_v1` (one row per sale line bought
-    through a recommendation: sale, store, channel, instant) and
-    `api_experiments.campaign_effect_v1` (one row per measured campaign: its
-    window, arm sizes, attributed amount, effect and interval, data origin).
+    and `api_recommendations.recommended_purchase_v1` (one row per sale line bought
+    through a recommendation: sale, store, channel, instant).
     This contract invents none of their columns; each producer's story fixes
-    them, and the service does not deploy before they exist.
+    them, and the reports that read them stay planned until they exist.
+    Consumed and contracted by experimentation: `api_experiments.campaign_effect_v1`
+    (one row per measured experiment of a campaign: its window, arm sizes,
+    attributed amount, effect, interval and the interval's confidence, data
+    origin), read by `getCampaignPerformanceReport`.
 
 
     `getDemandCoverageReport` also consumes two published views, contracted
@@ -446,9 +448,8 @@ paths:
     get:
       summary: Report campaign performance
       description: >-
-        Campaign performance (`campaign-performance`, definition version 1): one row per campaign whose experiment's measurement window overlaps the range. Attributed sales are labelled `ATTRIBUTED` and the incremental effect `INCREMENTAL`, with its 95% interval in `lower` and `upper`; the two are never merged. A campaign without a control has attributed sales and no effect. No dimension groups it. Origin: `api_experiments.campaign_effect_v1`. A campaign has no store, so store-scoped roles do not read it.
+        Campaign performance (`campaign-performance`, definition version 1): one row per campaign whose experiment's measurement window overlaps the range. Attributed sales are labelled `ATTRIBUTED` and the incremental effect `INCREMENTAL`, with its 95% interval in `lower` and `upper`; the two are never merged. A campaign without a control has attributed sales and no effect, and so does one with more than one treatment arm, whose comparisons are each made at a split alpha so no single 95% interval exists. The effect is shown only when its stored interval is a 95% one. A campaign measured by two experiments has a row for each. No dimension groups it. Origin: `api_experiments.campaign_effect_v1`. A campaign has no store, so store-scoped roles do not read it.
       operationId: getCampaignPerformanceReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

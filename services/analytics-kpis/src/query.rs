@@ -419,3 +419,40 @@ pub fn parse_migration_query(query: &str) -> Result<MigrationQuery, ApiError> {
         _ => Err(invalid(details)),
     }
 }
+
+/// Campaign performance's parameters, validated (F26-04). A row is a campaign, so
+/// no dimension groups it and `group_by` is refused.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CampaignQuery {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub campaign_id: Option<i32>,
+}
+
+pub fn parse_campaign_query(query: &str) -> Result<CampaignQuery, ApiError> {
+    let values = values(query);
+    let mut details = Vec::new();
+
+    let from = date(&values, "from", &mut details);
+    let to = date(&values, "to", &mut details);
+    if let (Some(from), Some(to)) = (from, to) {
+        if to < from {
+            details.push(Detail::new("to", "to_before_from"));
+        } else if (to - from).num_days() + 1 > MAX_WINDOW_DAYS {
+            details.push(Detail::new("to", "window_too_long"));
+        }
+    }
+    if values.get("group_by").is_some_and(|text| !text.is_empty()) {
+        details.push(Detail::new("group_by", "dimension_not_supported"));
+    }
+    let campaign_id = positive_i32(&values, "campaign_id", &mut details);
+
+    match (from, to, details.is_empty()) {
+        (Some(from), Some(to), true) => Ok(CampaignQuery {
+            from,
+            to,
+            campaign_id,
+        }),
+        _ => Err(invalid(details)),
+    }
+}

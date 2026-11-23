@@ -38,7 +38,7 @@
 | GET | `/v1/kpi-reports/conversion` | Exposed customers who bought within 7 days (planned) | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/recommendation-performance` | Impressions, clicks, purchases (planned) | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/migrations` | Segment changes within a model version (served, F26-03) | ADMIN, ANALYST, MARKETING, AUDITOR |
-| GET | `/v1/kpi-reports/campaign-performance` | Attributed sales and incremental effect per campaign (planned) | ADMIN, ANALYST, MARKETING, AUDITOR |
+| GET | `/v1/kpi-reports/campaign-performance` | Attributed sales (`ATTRIBUTED`) and incremental effect (`INCREMENTAL`, with its 95% interval) per measured experiment of a campaign, never merged (F26-04) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET | `/v1/kpi-reports/demand-coverage` | Demand by segment and category beside stock on hand, days of cover and units to replenish (served, F26-05) | ADMIN, ANALYST, INVENTORY_PLANNER, AUDITOR, STORE_MANAGER (narrowed) |
 
 Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `channel` and `period`, `granularity`, filters, `page` and `size`; `demand-coverage` instead takes `store_id`, `category_id` and `target_cover_days` (1 to 180, default 14), has no `group_by`, and states its calculation in every response. Meta routes (no token): `GET /health/live`, `GET /health/ready`, `GET /openapi.yaml`, `GET /schema.xsd`. The contract is [`contracts/analytics-kpis/`](../../contracts/analytics-kpis/openapi.yaml). It adds one resource, `kpi-reports`, and no registered resource name appears in its paths.
@@ -64,7 +64,7 @@ Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `chan
 | `api_recommendations.interaction_v1` | recommendations | Required, not contracted: `RECO_IMPRESSION` and `RECO_CLICK` events that are not voided, kept by recommendations from engagement's stream (ADR-0075) |
 | `api_experiments.exposure_v1` | experimentation | Required, not contracted: `CAMPAIGN_EXPOSURE` events that are not voided, kept by experimentation from engagement's stream (ADR-0075) |
 | `api_recommendations.recommended_purchase_v1` | recommendations | Required, not contracted: sale lines bought through a recommendation |
-| `api_experiments.campaign_effect_v1` | experimentation | Required, not contracted: per measured campaign, its window, arm sizes, attributed amount, effect and interval |
+| `api_experiments.campaign_effect_v1` | experimentation | Contracted (`contracts/db/api_experiments.campaign_effect.v1.md`, F26-04): per measured experiment of a campaign, its window, arm sizes, net attributed amount, effect, interval and the interval's confidence |
 
 engagement publishes no `api_*` view; its facts reach recommendations and experimentation on a Redis stream (ADR-0075), so figures built on them are eventually consistent. The contract invents none of the required views' columns. Each producer's story fixes them, adds its grant row for `svc_kpis` to `contracts/db/grants.csv`, and names analytics-kpis as a consumer.
 

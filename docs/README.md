@@ -19,6 +19,7 @@
 | [Business rules](business-rules.md) | The invariants, and where each one is actually enforced |
 | [Architecture](architecture/) | Application, deployment and infrastructure views of the web system and the fifteen services |
 | [System and demonstration guide](demo-system-guide.md) | End-to-end request journey, current capabilities, main process, architecture decisions, limitations, and rehearsal order. The deliverable of F6-08 (#110) |
+| [Distributed demonstration rehearsal](demo-distributed.md) | The instance runbook from Android sale through RFM, migration, recommendations, experiment exposure, conversion and Electron's effect read (F18-05 and F29-10) |
 | [Data model](data-model.md) | The PostgreSQL model: conceptual, 4NF normalization with its justification, ER diagram, data dictionary |
 | [Datastore designs](datastores/) | MongoDB and Redis. Governed by ADR-0037 and ADR-0038, and rewritten as specifications by F13-05 and F13-06 |
 | [Wireframes](wireframes/) | Low-fidelity structure for every screen — what is on each page and how a role reaches it, decided before the visual design |

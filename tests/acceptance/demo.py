@@ -63,6 +63,7 @@ from tests.negative.stack import (
 )
 
 FLOOR_ROLE = "STORE_MANAGER"
+MARKETING_ROLE = "MARKETING"
 IN_STORE_CHANNEL = "physical_store"
 SIZE = 100
 PURPOSES = ("PERSONALIZATION", "MARKETING_CONTACT")
@@ -370,6 +371,21 @@ class Rehearsal:
         experiment: int,
         now: datetime,
     ) -> None:
+        me, link = self.get(
+            "/api/users/v1/users/me", marketing, "who prepares the campaign"
+        )
+        self.check(
+            "P2 accounts",
+            "the campaign account is an active MARKETING user",
+            f"{MARKETING_ROLE}, active",
+            (
+                f"{me.get('role_code')}, active={me.get('is_active')}"
+                if me
+                else self.outcome
+            ),
+            me.get("role_code") == MARKETING_ROLE and me.get("is_active") is True,
+            link,
+        )
         channels, link = self.get("/api/sales/v1/channels", floor, "the sales channels")
         channel = in_store_channel(channels)
         self.check(

@@ -33,6 +33,7 @@ from tests.acceptance.f29_06 import evidence_counts, is_local, junit_counts
 from tests.negative.stack import ROOT, Edge, implemented, registry_names
 
 TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl"
+MARKETING_TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI0NTYifQ.c2lnbmF0dXJl"
 
 
 def test_a_token_is_masked_in_headers_json_and_forms() -> None:
@@ -224,8 +225,7 @@ class Gateway:
                 path = self.path.split("?")[0]
                 gateway.seen.append((self.command, path))
                 length = int(self.headers.get("Content-Length") or 0)
-                if length:
-                    self.rfile.read(length)
+                request_body = self.rfile.read(length) if length else b""
                 status, body, kind = gateway.routes.get(
                     (self.command, path),
                     (
@@ -234,6 +234,30 @@ class Gateway:
                         "application/json",
                     ),
                 )
+                # The ready-instance fixture has two sessions. Give the marketing
+                # sign-in its own opaque token, then make users/me describe that
+                # token's principal, as the real gateway does.
+                if (
+                    self.command == "POST"
+                    and path == SESSION
+                    and b"marketing@example.com" in request_body
+                ):
+                    body = json.dumps(
+                        {
+                            "access_token": MARKETING_TOKEN,
+                            "refresh_token": MARKETING_TOKEN,
+                            "token_type": "Bearer",
+                        }
+                    ).encode()
+                if (
+                    self.command == "GET"
+                    and path == "/api/users/v1/users/me"
+                    and self.headers.get("Authorization") == f"Bearer {MARKETING_TOKEN}"
+                ):
+                    marketing = example(
+                        "users", "current-user.json", role_code="MARKETING"
+                    )
+                    body = json.dumps(marketing).encode()
                 self.send_response(status)
                 self.send_header("Content-Type", kind)
                 self.send_header("Content-Length", str(len(body)))
@@ -412,7 +436,9 @@ def test_demo_part_one_holds_on_a_ready_instance_and_only_reads(
     assert not any("/v1/experiment" in path for _, path in gateway.seen)
     written = "".join(p.read_text() for p in (tmp_path / "out").iterdir())
     assert "P5 customer" in written and "never-in-a-file" not in written
-    assert TOKEN not in written and "<masked" in written
+    assert (
+        TOKEN not in written and MARKETING_TOKEN not in written and "<masked" in written
+    )
 
 
 def test_demo_part_two_reads_the_campaign_the_experiment_and_the_phones_arm(
@@ -429,6 +455,7 @@ def test_demo_part_two_reads_the_campaign_the_experiment_and_the_phones_arm(
         + [("DELETE", SESSION + "/current")] * 2
     )
     paths = {path for _, path in gateway.seen}
+    assert gateway.seen.count(("GET", "/api/users/v1/users/me")) == 2
     assert "/api/experimentation/v1/experiment-assignments/current" in paths
     assert f"/api/experimentation/v1/experiments/{EXPERIMENT}" in paths
 

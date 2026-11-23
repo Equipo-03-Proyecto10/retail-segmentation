@@ -545,7 +545,9 @@ class SalesViewModel(
             } else {
                 val error =
                     (rules as? Answer.Refused)?.error
-                        ?: (promotions as? Answer.Refused)?.error
+                        ?: (promotions as? Answer.Refused)?.error?.let {
+                            promotionsRefusal(it, R.string.sale_promotions_unavailable)
+                        }
                         ?: ApiError.unexpected()
                 sale.value =
                     sale.value.copy(discounts = DiscountState(store.storeId, channel.channelId, error = error))

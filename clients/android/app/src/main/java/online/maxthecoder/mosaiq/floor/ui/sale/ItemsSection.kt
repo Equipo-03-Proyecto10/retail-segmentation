@@ -128,7 +128,11 @@ fun ItemsSection(ui: SaleUi, actions: SaleActions) {
         if (sale.lines.isNotEmpty()) {
             when {
                 sale.discounts.loading -> MqLoading(stringResource(R.string.sale_promotions_loading))
-                sale.discounts.error != null -> MqErrorPanel(sale.discounts.error, onRetry = actions.onLoadPromotions)
+                sale.discounts.error != null ->
+                    MqErrorPanel(
+                        sale.discounts.error,
+                        onRetry = actions.onLoadPromotions.takeIf { sale.discounts.error.retryable }
+                    )
             }
         }
         sale.lines.forEach { line -> CartLine(line, locked, sale.discounts, actions) }

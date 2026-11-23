@@ -401,6 +401,7 @@
     <string name="promotions_none">No active promotion applies to this customer at this store today.</string>
     <string name="promotions_no_store">Check in at your store first, so its promotions can be shown.</string>
     <string name="promotions_no_channel">Sales has no in-store channel, so no promotion can be matched to it.</string>
+    <string name="promotions_unavailable">Promotions are not available yet, so none can be offered to this customer.</string>
     <string name="promotions_arm_unknown">Some promotions are held back: the experiment service did not say whether this customer may see them.</string>
     <string name="promotions_name_and_discount">%1$s · %2$s%% off</string>
     <string name="promotions_validity">Valid from %1$s to %2$s</string>
@@ -469,6 +470,7 @@
     <string name="refusal_inactive_product">A product in the sale is no longer sold. Remove it from the cart.</string>
     <string name="sale_error_promotions_pending">Promotions for this store are still loading. Try again in a moment.</string>
     <string name="sale_promotions_loading">Loading promotions…</string>
+    <string name="sale_promotions_unavailable">Promotions are not available yet, so this sale is recorded at list price.</string>
     <string name="sale_promotion_title">Promotion</string>
     <string name="sale_promotion_none">No promotion</string>
     <string name="sale_percent_off">%1$s%% off</string>

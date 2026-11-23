@@ -52,6 +52,9 @@ private fun promotion(
 class PromotionServices : Dispatcher() {
     var promotions = listOf(promotion(38, 12))
 
+    /** When set, what `GET /v1/promotions` answers instead of the list. */
+    var promotionsAnswer: (() -> MockResponse)? = null
+
     /** The arm per campaign: "control", "treatment", "none" (404) or "down" (503). */
     val arms = mutableMapOf<Int, String>()
     val promotionRequests = CopyOnWriteArrayList<RecordedRequest>()
@@ -69,6 +72,7 @@ class PromotionServices : Dispatcher() {
             "/api/sales/v1/channels" -> ok(200, example("sales/examples/list-channels.json"))
             "/api/campaigns/v1/promotions" -> {
                 promotionRequests += request
+                promotionsAnswer?.let { return it() }
                 val total = promotions.size
                 ok(
                     200,
@@ -190,6 +194,45 @@ class PromotionsViewModelTest {
         assertEquals(listOf(38), shownIds(state))
         assertEquals("operation_unavailable", state.armError?.code)
         assertNull(state.error)
+    }
+
+    @Test
+    fun aListThatIsNotThereIsSaidInTheAppsOwnWordsWithItsCodeKeptForDetails() {
+        val expected = app.getString(R.string.promotions_unavailable)
+        // The kit's envelope carrying the framework's text, and a bare HTML page from a proxy (#1155).
+        val answers =
+            listOf(
+                {
+                    error(
+                        404,
+                        "not_found",
+                        FRAMEWORK_NOT_FOUND
+                    )
+                },
+                {
+                    MockResponse().setResponseCode(404).setHeader("Content-Type", "text/html")
+                        .setBody("<html><body><h1>404 Not Found</h1></body></html>")
+                }
+            )
+        for ((index, answer) in answers.withIndex()) {
+            val code = listOf("not_found", "http_404")[index]
+            services.promotionsAnswer = answer
+            val state = loaded().state.value
+            val error = state.error!!
+            assertEquals("answer $index", expected, error.message)
+            assertEquals("answer $index", 404, error.status)
+            assertEquals("answer $index: the code stays for Details", code, error.code)
+            assertFalse("answer $index: a 404 says the same next time", error.retryable)
+            assertTrue(state.promotions.isEmpty())
+        }
+    }
+
+    @Test
+    fun aListThatIsDownOffersRetry() {
+        services.promotionsAnswer = { error(503, "database_unavailable") }
+        val error = loaded().state.value.error!!
+        assertTrue(error.retryable)
+        assertTrue(error.message, "not answering right now" in error.message)
     }
 
     @Test

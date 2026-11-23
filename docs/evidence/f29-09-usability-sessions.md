@@ -94,6 +94,23 @@ was checked.
    | D-R1 | See [the administrator transfer](#the-administrator-transfer) | ‹fill› |
    | D-R2 | A floor user with no store | ‹fill› |
 
+6. **The role can reach the task.** The plan says no participant is asked to
+   use a module their role cannot open (plan §2.3). On `develop` at the time of
+   writing (2026-11-23) these tasks do not meet that, and the moderator
+   decides before the first session whether to change the plan (allowed until
+   the first session, plan §6) or to record a [deviation](#7-deviations-from-the-plan):
+
+   | Task | Role | What was found |
+   |---|---|---|
+   | A-S3, A-E2 | Store seller | The seller's Android profile has no Sale section (`FloorAccess.profiles`, ADR-0060), so a seller cannot build or confirm a sale. A-E2 asks the same of the loyalty officer and the commercial supervisor, who have no Sale section either |
+   | A-E1 | Commercial supervisor | The profile (Check-in, Review, Outbox) has no customer profile to open |
+   | D-A1 | Analyst | `createSaleImport` and `listSaleImports` are `ADMIN` only (`contracts/sales`) |
+   | D-R2 | Administrator | The console has no store-assignment screen; `replaceStoreAssignment` is not called anywhere in `clients/desktop` |
+   | A-M2, A-M3 | Store manager | Active campaigns show on Indicators with their discount and validity, not their audience. No screen shows a stock threshold |
+
+   Check each row again against the release that is tested (#894), and strike
+   the ones the release has fixed.
+
 ### The administrator transfer
 
 D-R1 moves the one administrator role. The instance has exactly one

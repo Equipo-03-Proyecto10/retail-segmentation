@@ -22,11 +22,11 @@ _COUNT_SUMMARIES = (
     "SELECT count(*) FROM recommendations.recommendation_decision"
     " WHERE computed_at >= now() - (%s * interval '1 day')"
     " AND (%s::uuid IS NULL OR customer_id = %s::uuid)"
-    " AND (%s::smallint IS NULL OR store_id = %s::smallint)"
+    " AND (%s::integer IS NULL OR store_id = %s::integer)"
     " AND (%s::text IS NULL OR status = %s::text)"
     " AND (%s::timestamptz IS NULL OR computed_at >= %s::timestamptz)"
     " AND (%s::timestamptz IS NULL OR computed_at < %s::timestamptz)"
-    " AND (%s::smallint[] IS NULL OR store_id = ANY(%s::smallint[]))"
+    " AND (%s::integer[] IS NULL OR store_id = ANY(%s::integer[]))"
 )
 _LIST_SUMMARIES = (
     "SELECT decision_id, customer_id, status, computed_at, store_id,"
@@ -36,11 +36,11 @@ _LIST_SUMMARIES = (
     " FROM recommendations.recommendation_decision AS d"
     " WHERE computed_at >= now() - (%s * interval '1 day')"
     " AND (%s::uuid IS NULL OR customer_id = %s::uuid)"
-    " AND (%s::smallint IS NULL OR store_id = %s::smallint)"
+    " AND (%s::integer IS NULL OR store_id = %s::integer)"
     " AND (%s::text IS NULL OR status = %s::text)"
     " AND (%s::timestamptz IS NULL OR computed_at >= %s::timestamptz)"
     " AND (%s::timestamptz IS NULL OR computed_at < %s::timestamptz)"
-    " AND (%s::smallint[] IS NULL OR store_id = ANY(%s::smallint[]))"
+    " AND (%s::integer[] IS NULL OR store_id = ANY(%s::integer[]))"
     " ORDER BY computed_at DESC, decision_id DESC LIMIT %s OFFSET %s"
 )
 

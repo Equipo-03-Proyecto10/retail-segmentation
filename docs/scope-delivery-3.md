@@ -222,7 +222,7 @@ campaign caused.
 | SV-11 | recommendations | F24-02, F24-03, F24-04, F24-05, F24-06 |
 | SV-12 | engagement | F21-20, F21-21 |
 | SV-13 | check-ins | F21-22, F21-23 |
-| SV-14 | campaigns | F25-03, F25-04, F25-05, F25-15 |
+| SV-14 | campaigns | F25-03, F25-04, F25-05, F25-15, F25-16 |
 | SV-15 | audit-trail | F21-24, F21-25 |
 
 ### Capabilities 16 to 25
@@ -247,7 +247,7 @@ campaign caused.
 | KC-1 | Incremental update | F22-01, F22-05, F22-06, F22-07, F22-08, F22-15, F29-10 |
 | KC-2 | Consistent history per model version | F22-02, F22-09, F22-13, F22-14, F22-15, F22-16, F22-18, F29-10 |
 | KC-3 | Personalization bound to inventory | F24-02, F24-04, F24-05, F24-07, F29-10 |
-| KC-4 | Experiments with reliable measurement | F25-01, F25-08, F25-10, F25-11, F25-13, F29-10 |
+| KC-4 | Experiments with reliable measurement | F25-01, F25-08, F25-10, F25-11, F25-13, F25-17, F29-10 |
 
 ### Android profiles
 
@@ -277,7 +277,7 @@ campaign caused.
 
 | ID | Requirement | Stories |
 |---|---|---|
-| AR-1 | Android consumes auth, customers, products, stock, sales, recommendations and campaigns | F27-07, F29-10 |
+| AR-1 | Android consumes auth, customers, products, stock, sales, recommendations and campaigns | F25-16, F27-07, F29-10 |
 | AR-2 | No sale from a scan; impressions, visits, interactions, carts and transactions are distinct | F21-20, F21-21, F27-05, F27-06, F27-07 |
 
 ### Desktop modules

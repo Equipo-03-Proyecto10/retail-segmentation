@@ -1,4 +1,4 @@
-"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #891).
+"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #889, #891).
 
 What they say about a live system is shown by running them (the runbooks in
 docs/evidence/f29-03-*.md and f29-06-*.md); these cases pin what they do with
@@ -184,3 +184,56 @@ def test_f20_02_refuses_a_client_directory_that_holds_a_token_in_any_file(
         with pytest.raises(SystemExit, match="holds a token"):
             refuse_tokens(tmp_path)
         path.write_text(clean)
+
+
+# ---------- F29-04 (#889) ----------
+
+
+def test_f29_04_a_skip_or_an_empty_run_is_never_a_pass() -> None:
+    from tests.acceptance.f29_04 import held
+
+    ok = {"tests": 12, "failures": 0, "errors": 0, "skipped": 0}
+    assert held(0, ok)
+    assert not held(0, ok | {"skipped": 1})  # a missing database skips
+    assert not held(0, ok | {"tests": 0})
+    assert not held(1, ok)
+    assert not held(0, {})
+
+
+def test_f29_04_adds_every_cargo_result_line() -> None:
+    from tests.acceptance.f29_04 import cargo_counts
+
+    log = (
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured\n"
+        "test result: ok. 5 passed; 0 failed; 1 ignored; 0 measured\n"
+        "test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured\n"
+    )
+    assert cargo_counts(log) == {"tests": 11, "failures": 2, "errors": 0, "skipped": 1}
+
+
+def test_f29_04_runs_each_kind_where_it_lives(tmp_path) -> None:
+    from tests.acceptance.f29_04 import SUITES, command_for
+
+    junit = tmp_path / "j.xml"
+    kinds = {s.kind: command_for(s, junit) for s in SUITES}
+    assert kinds["service"][:3] == ["uv", "run", "--frozen"]
+    assert kinds["cargo"][:4] == ["cargo", "test", "--locked", "--no-fail-fast"]
+    assert "--test" in kinds["cargo"]
+    assert kinds["pytest"][1:3] == ["-m", "pytest"]
+    assert {s.criterion for s in SUITES} == {
+        "RFM",
+        "Migración",
+        "Incremental",
+        "K-means",
+        "Drift",
+    }
+
+
+def test_f29_04_names_the_registered_kmeans_and_drift_results() -> None:
+    from pathlib import Path
+
+    from tests.acceptance.f29_04 import REGISTERED_DRIFT, REGISTERED_PARTITION
+
+    root = Path(__file__).resolve().parents[1] / "docs" / "evidence"
+    assert REGISTERED_PARTITION in (root / "f23-04-kmeans-stability.md").read_text()
+    assert REGISTERED_DRIFT in (root / "f23-10-drift-detection.md").read_text()

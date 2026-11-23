@@ -268,6 +268,46 @@ def test_validation_refusals_name_the_bad_field(
     assert {"field": field, "code": detail} in response.get_json()["details"]
 
 
+@pytest.mark.parametrize("accept", ["application/json", "application/xml"])
+def test_int32_store_above_smallint_range_is_a_valid_absent_filter(
+    client: FlaskClient,
+    token: Callable[..., dict[str, str]],
+    accept: str,
+) -> None:
+    response = _list(
+        client,
+        {**token("ANALYST"), "Accept": accept},
+        store_id="40000",
+    )
+    assert response.status_code == 200
+    if accept == "application/json":
+        assert response.get_json()["recommendation_decisions"] == []
+    else:
+        document = etree.fromstring(response.data)
+        XSD.assertValid(document)
+        assert document.tag == NS + "RecommendationDecisions"
+        assert document.findall(NS + "recommendation_decision") == []
+
+
+@pytest.mark.parametrize("accept", ["application/json", "application/xml"])
+def test_store_manager_is_forbidden_from_int32_store_above_smallint_range(
+    client: FlaskClient,
+    token: Callable[..., dict[str, str]],
+    accept: str,
+) -> None:
+    response = _list(
+        client,
+        {**token("STORE_MANAGER"), "Accept": accept},
+        store_id="40000",
+    )
+    assert response.status_code == 403
+    if accept == "application/json":
+        assert response.get_json()["code"] == "forbidden_store"
+    else:
+        document = etree.fromstring(response.data)
+        assert document.findtext("{*}code") == "forbidden_store"
+
+
 def test_store_manager_is_narrowed_and_cannot_name_or_open_another_store(
     client: FlaskClient,
     token: Callable[..., dict[str, str]],

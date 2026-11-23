@@ -23,7 +23,10 @@ from typing import Any
 import psycopg
 import pytest
 
+from app import verify
 from tests.conftest import ADMIN, MARKETING
+from tests.test_attribution import START as ATTRIBUTION_START
+from tests.test_attribution import World as AttributionWorld
 
 pytestmark = pytest.mark.postgres
 
@@ -148,6 +151,60 @@ class World:
             json_body={"experiment_id": identifier},
         )
 
+    def backdate(self, experiment: dict[str, Any] | int) -> datetime:
+        """Move an endpoint-created assignment to a completed test window."""
+        identifier = (
+            experiment if isinstance(experiment, int) else experiment["experiment_id"]
+        )
+        assigned_at = datetime(2026, 1, 1, 12, tzinfo=UTC)
+        self.owner.execute("SET session_replication_role = replica")
+        try:
+            self.owner.execute(
+                "UPDATE experiment_assignment SET assigned_at = %s"
+                " WHERE experiment_id = %s",
+                (assigned_at, identifier),
+            )
+        finally:
+            self.owner.execute("SET session_replication_role = origin")
+        return assigned_at
+
+    def sale(
+        self,
+        customer: str,
+        when: datetime,
+        *,
+        origin: str = "OBSERVED",
+        amount: int = 10,
+    ) -> int:
+        """Write one owner-side sale; the service discovers it through its view."""
+        store, channel, product = self.owner.execute(
+            "SELECT (SELECT min(store_id) FROM store),"
+            " (SELECT min(channel_id) FROM channel),"
+            " (SELECT min(product_id) FROM product)"
+        ).fetchone()
+        source = f"f25-14-{self.batch}-{customer}-{when.timestamp()}"
+        with self.owner.transaction():
+            transaction = self.owner.execute(
+                "INSERT INTO transaction (source_transaction_id, customer_id,"
+                " store_id, channel_id, occurred_at, total, data_origin)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING transaction_id",
+                (source, customer, store, channel, when, amount, origin),
+            ).fetchone()[0]
+            self.owner.execute(
+                "INSERT INTO transaction_line (transaction_id, product_id, quantity,"
+                " unit_price) VALUES (%s, %s, 1, %s)",
+                (transaction, product, amount),
+            )
+        return transaction
+
+    def result(self, experiment: dict[str, Any] | int) -> dict[str, Any]:
+        identifier = (
+            experiment if isinstance(experiment, int) else experiment["experiment_id"]
+        )
+        reply = self.api("GET", f"/v1/experiment-results/{identifier}")
+        assert reply.status_code == 200, reply.get_json()
+        return reply.get_json()
+
     def assigned(self, experiment: dict[str, Any] | int) -> dict[str, int]:
         """Who holds which arm, as stored."""
         identifier = (
@@ -176,6 +233,151 @@ def _shared(owner: psycopg.Connection, first: int, second: int) -> int:
         " WHERE x.experiment_id = %s AND y.experiment_id = %s",
         (first, second),
     ).fetchone()[0]
+
+
+def _conversion(result: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        comparison
+        for comparison in result["comparisons"]
+        if comparison["metric"] == "CONVERSION"
+    )
+
+
+# ---------------------------------------------------------- known-answer results
+
+
+def test_a_a_known_answer_runs_through_assignment_sales_and_result(
+    world: World,
+) -> None:
+    world.add_customers(200)
+    experiment = world.plan(effect=0.3, name="A/A real path")
+    assert world.assign(experiment).status_code == 201
+    assigned = world.assigned(experiment)
+    instant = world.backdate(experiment)
+    by_arm: dict[int, list[str]] = {}
+    for customer, arm in assigned.items():
+        by_arm.setdefault(arm, []).append(customer)
+    for customers in by_arm.values():
+        for customer in sorted(customers)[:10]:
+            world.sale(customer, instant + timedelta(days=1))
+
+    result = world.result(experiment)
+    comparison = _conversion(result)
+
+    assert result["status"] == "COMPLETE"
+    assert [arm["converted"] for arm in result["arms"]] == [10, 10]
+    assert comparison["difference"] == 0
+    assert comparison["p_value"] == 1
+    assert comparison["lower"] <= 0 <= comparison["upper"]
+
+
+def test_injected_effect_runs_through_assignment_sales_and_result(
+    world: World,
+) -> None:
+    world.add_customers(400)
+    experiment = world.plan(effect=0.3, name="Injected effect real path")
+    assert world.assign(experiment).status_code == 201
+    assigned = world.assigned(experiment)
+    instant = world.backdate(experiment)
+    arms = experiment["arms"]
+    control = arms[0]["arm_id"]
+    treatment = arms[1]["arm_id"]
+    counts = {control: 20, treatment: 30}
+    for arm, count in counts.items():
+        customers = sorted(
+            c for c, assigned_arm in assigned.items() if assigned_arm == arm
+        )
+        for customer in customers[:count]:
+            world.sale(
+                customer,
+                instant + timedelta(days=1),
+                origin="SEEDED",
+            )
+
+    result = world.result(experiment)
+    comparison = _conversion(result)
+
+    assert result["status"] == "COMPLETE" and result["synthetic"] is True
+    assert comparison["difference"] == pytest.approx(0.05)
+    assert comparison["lower"] <= 0.05 <= comparison["upper"]
+
+
+# -------------------------------------------------------------- stability
+
+
+def test_segment_and_consent_changes_do_not_change_a_verified_assignment(
+    world: World,
+) -> None:
+    customers = world.add_customers(40)
+    experiment = world.plan(effect=0.3, name="Stable assignment")
+    assert world.assign(experiment).status_code == 201
+    identifier = experiment["experiment_id"]
+    before = world.assigned(experiment)
+
+    changed = customers[:2]
+    world.owner.execute(
+        "UPDATE customer_segment_history SET valid_to = clock_timestamp()"
+        " WHERE customer_id = ANY(%s::uuid[]) AND valid_to IS NULL",
+        (changed,),
+    )
+    moved_run = world.owner.execute(
+        "INSERT INTO segmentation_run (method, window_days, customer_count,"
+        " data_origin) VALUES ('RFM_RULES', 90, 2, 'SEEDED') RETURNING run_id"
+    ).fetchone()[0]
+    world.owner.execute(
+        "INSERT INTO customer_segment_history (customer_id, run_id, label_code)"
+        " SELECT c, %s, 'CHAMPION' FROM unnest(%s::uuid[]) AS c",
+        (moved_run, changed),
+    )
+    world.consent(changed[0], "PERSONALIZATION", "WITHDRAWN")
+    world.consent(changed[1], "MARKETING_CONTACT", "WITHDRAWN")
+
+    page = world.api(
+        "GET", f"/v1/experiment-assignments?experiment_id={identifier}&size=100"
+    )
+    shown = world.api("GET", f"/v1/experiments/{identifier}").get_json()
+    rows = page.get_json()["assignments"]
+    document = {
+        "experiment_id": identifier,
+        "salt": shown["salt"],
+        "arms": [arm["arm_id"] for arm in shown["arms"]],
+        "assignments": rows,
+    }
+
+    assert page.status_code == 200
+    assert world.assigned(experiment) == before
+    assert {row["customer_id"]: row["arm_id"] for row in rows} == before
+    assert verify.verify(document) == []
+
+
+# ---------------------------------------------------------- counted once
+
+
+def test_one_sale_qualifying_for_two_campaigns_is_counted_once_in_reports(
+    owner: psycopg.Connection, api: Any
+) -> None:
+    attribution = AttributionWorld(owner)
+    attribution.expose("first", ATTRIBUTION_START + timedelta(hours=1))
+    attribution.expose("second", ATTRIBUTION_START + timedelta(hours=2))
+
+    outcome = attribution.run(api)
+    rows = attribution.held(api)
+    reports = [
+        api("GET", f"/v1/experiment-results/{scene.experiment}").get_json()
+        for scene in (attribution.first, attribution.second)
+    ]
+    counted = sum(
+        (
+            0
+            if report["attribution"] is None
+            else report["attribution"]["attributed_sales"]
+        )
+        for report in reports
+    )
+
+    assert outcome["attributed"] == 1
+    assert len(rows) == 1 and rows[0]["sale_id"] == attribution.sale
+    assert counted == 1
 
 
 # ------------------------------------------------------------------ contamination

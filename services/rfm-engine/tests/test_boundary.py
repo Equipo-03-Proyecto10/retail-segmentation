@@ -48,6 +48,8 @@ def test_the_manifest_names_what_the_profile_needs_and_no_more() -> None:
         ("api_sales", "USAGE"),
         ("api_sales.purchase_line_v1", "SELECT"),
         ("api_sales.net_purchase_line_v1", "SELECT"),
+        ("api_customers", "USAGE"),
+        ("api_customers.customer_ref_v1", "SELECT"),
         ("api_audit", "USAGE"),
         (
             "api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,"

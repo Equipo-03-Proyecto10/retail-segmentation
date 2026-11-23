@@ -5756,6 +5756,11 @@ GRANT USAGE ON SCHEMA rfm_events TO svc_rfm, definer_rfm;
 GRANT INSERT ON rfm_events.outbox TO definer_rfm;
 GRANT SELECT, DELETE, UPDATE (relayed_at) ON rfm_events.outbox TO svc_rfm;
 
+-- Profile reads distinguish a registered customer with no computed row (`pending`)
+-- from an unknown id through the customers boundary's published reference view.
+GRANT USAGE ON SCHEMA api_customers TO svc_rfm;
+GRANT SELECT ON api_customers.customer_ref_v1 TO svc_rfm;
+
 -- model-registry reads the profile; analytics-kpis receives its grant with its role.
 GRANT USAGE ON SCHEMA api_rfm TO svc_models;
 GRANT SELECT ON api_rfm.current_profile_v1 TO svc_models;

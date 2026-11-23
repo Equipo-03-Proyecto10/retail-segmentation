@@ -422,6 +422,8 @@ svc_rfm,api_rfm,USAGE
 svc_rfm,api_sales,USAGE
 svc_rfm,api_sales.purchase_line_v1,SELECT
 svc_rfm,api_sales.net_purchase_line_v1,SELECT
+svc_rfm,api_customers,USAGE
+svc_rfm,api_customers.customer_ref_v1,SELECT
 svc_rfm,rfm.rule_set,SELECT
 svc_rfm,rfm.rule_set,INSERT
 svc_rfm,rfm.rule_set(name),UPDATE

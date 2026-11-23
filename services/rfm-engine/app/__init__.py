@@ -7,9 +7,9 @@ under the rule set in force, so a duplicate, a late or a reordered delivery give
 profile one in-order delivery would. A cancelled or returned sale leaves the profile
 as if it had never counted, because the net view no longer lists it (ADR-0062). A
 change to the captured values puts one profile-changed event in the outbox, in the
-same transaction (ADR-0063). The other
-operations of contracts/rfm-engine/openapi.yaml are marked planned (ADR-0073) until
-the stories after this one register them, except the verification recalculations
+same transaction (ADR-0063). The reads return that stored result and never recompute
+it. The other operations of contracts/rfm-engine/openapi.yaml remain marked planned
+(ADR-0073) until their stories register them, except the verification recalculations
 (F22-08, app/verification.py) and the rule sets (F22-09): an analyst
 creates one as a draft, edits it, publishes it, and a published one is never edited,
 only versioned (app/rulesets.py). It is ready when PostgreSQL answers and its
@@ -31,7 +31,7 @@ from mosaiq_kit.auth import service_redis
 from mosaiq_kit.rendering import wire_value
 from mosaiq_kit.streams import OutboxRelay, StreamConsumer
 
-from . import ageing, recompute, rulesets, store, verification
+from . import ageing, profiles, recompute, rulesets, store, verification
 from .config import CONSENT_STREAM, RECORDED_STREAM, REVERSED_STREAM, Settings
 
 LOGGER = logging.getLogger(__name__)
@@ -68,6 +68,34 @@ def create_app() -> Flask:
     )
     holder["kit"] = kit
     app.extensions["mosaiq_kit"] = kit
+
+    @kit.operation("listRfmProfiles")
+    def list_profiles() -> Page:
+        selected = profiles.filters(request.args)
+        with kit.db.connection() as connection:
+            items, total = profiles.listing(
+                connection,
+                state=selected["state"],
+                label_code=selected["label_code"],
+                rule_set_id=selected["rule_set_id"],
+                page=kit.page,
+                size=kit.size,
+            )
+        return Page(
+            "RfmProfiles",
+            "RfmProfile",
+            "profiles",
+            items,
+            page=kit.page,
+            size=kit.size,
+            total=total,
+            info_key="page_info",
+        )
+
+    @kit.operation("getRfmProfile")
+    def get_profile(customer_id: UUID) -> Representation:
+        with kit.db.connection() as connection:
+            return Representation("RfmProfile", profiles.one(connection, customer_id))
 
     @kit.operation("listRfmRuleSets")
     def list_rule_sets() -> Page:

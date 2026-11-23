@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: rfm-engine-service
-  version: 1.2.0
+  version: 1.2.1
   description: >-
     Keeps each customer's R, F and M current. A customer's profile is a function
     of their accepted, unreversed purchases under one rule-set version; it changes
@@ -38,7 +38,6 @@ paths:
         serves. A customer with no stored profile is `pending` and is listed only
         when `state=pending` is asked for.
       operationId: listRfmProfiles
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -103,7 +102,6 @@ paths:
         `api_customers.customer_ref_v1` is 404 `customer_not_found`. The
         customer id is the resource's own identity, one profile per customer.
       operationId: getRfmProfile
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST

@@ -1,17 +1,24 @@
-"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #891).
+"""The pure parts of the acceptance collectors (tests/acceptance/, #888, #891, #462).
 
 What they say about a live system is shown by running them (the runbooks in
-docs/evidence/f29-03-*.md and f29-06-*.md); these cases pin what they do with
-what they read: masking, bind parameters, page parsing and the counts.
+docs/evidence/f29-03-*.md and f29-06-*.md, docs/demo-distributed.md); these
+cases pin what they do with what they read: masking, bind parameters, page
+parsing and the counts. The rehearsal's preconditions (demo.py) are also run
+against a loopback gateway that answers with the contracts' own examples.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import shutil
+import threading
+from datetime import UTC, date, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
+from tests.acceptance import demo
 from tests.acceptance.evidence import (
     JWT,
     Database,
@@ -23,8 +30,10 @@ from tests.acceptance.evidence import (
 )
 from tests.acceptance.f29_03 import parse_profile, stock_on_page
 from tests.acceptance.f29_06 import evidence_counts, is_local, junit_counts
+from tests.negative.stack import ROOT, Edge, implemented, registry_names
 
 TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJl"
+MARKETING_TOKEN = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI0NTYifQ.c2lnbmF0dXJl"
 
 
 def test_a_token_is_masked_in_headers_json_and_forms() -> None:
@@ -184,3 +193,417 @@ def test_f20_02_refuses_a_client_directory_that_holds_a_token_in_any_file(
         with pytest.raises(SystemExit, match="holds a token"):
             refuse_tokens(tmp_path)
         path.write_text(clean)
+
+
+# ---------- the rehearsal's preconditions (acceptance/demo.py, #462, #896) ----------
+
+SESSION = "/api/auth/v1/sessions"
+STORE, PRODUCT, CAMPAIGN, EXPERIMENT = 11, 2, 301, 31
+
+
+def example(service: str, name: str, **changes: object) -> dict:
+    """A contract's own example, with fields replaced. A replaced field must exist
+    in the example, so a renamed field breaks this test and not a rehearsal."""
+    body = json.loads((ROOT / "contracts" / service / "examples" / name).read_text())
+    for key, value in changes.items():
+        assert key in body, f"{service}/{name} has no {key}"
+        body[key] = value
+    return body
+
+
+class Gateway:
+    """A loopback gateway: answers each (method, path) with one canned reply and
+    remembers every request, so a test can say what the collector did."""
+
+    def __init__(self, routes: dict[tuple[str, str], tuple[int, bytes, str]]) -> None:
+        self.routes = routes
+        self.seen: list[tuple[str, str]] = []
+        gateway = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def handle_all(self) -> None:
+                path = self.path.split("?")[0]
+                gateway.seen.append((self.command, path))
+                length = int(self.headers.get("Content-Length") or 0)
+                request_body = self.rfile.read(length) if length else b""
+                status, body, kind = gateway.routes.get(
+                    (self.command, path),
+                    (
+                        404,
+                        b'{"code":"not_found","message":"no route"}',
+                        "application/json",
+                    ),
+                )
+                # The ready-instance fixture has two sessions. Give the marketing
+                # sign-in its own opaque token, then make users/me describe that
+                # token's principal, as the real gateway does.
+                if (
+                    self.command == "POST"
+                    and path == SESSION
+                    and b"marketing@example.com" in request_body
+                ):
+                    body = json.dumps(
+                        {
+                            "access_token": MARKETING_TOKEN,
+                            "refresh_token": MARKETING_TOKEN,
+                            "token_type": "Bearer",
+                        }
+                    ).encode()
+                if (
+                    self.command == "GET"
+                    and path == "/api/users/v1/users/me"
+                    and self.headers.get("Authorization") == f"Bearer {MARKETING_TOKEN}"
+                ):
+                    marketing = example(
+                        "users", "current-user.json", role_code="MARKETING"
+                    )
+                    body = json.dumps(marketing).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", kind)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = do_POST = do_DELETE = handle_all
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def __enter__(self) -> Edge:
+        self.thread.start()
+        return Edge(f"http://127.0.0.1:{self.server.server_address[1]}")
+
+    def __exit__(self, *exc: object) -> None:
+        self.server.shutdown()
+        self.server.server_close()
+
+
+def served(body: object, status: int = 200) -> tuple[int, bytes, str]:
+    return status, json.dumps(body).encode(), "application/json"
+
+
+def routes_of_a_ready_instance() -> dict[tuple[str, str], tuple[int, bytes, str]]:
+    """What the instance answers when every precondition holds, built from the
+    contracts' examples with the ids of this scenario."""
+    now = datetime.now(UTC)
+    customer = example("customers", "get-customer.json")
+    cid = customer["customer_id"]
+    user = example("users", "current-user.json", role_code="STORE_MANAGER")
+    consent = example("customer-preferences", "get-consent.json")
+    for entry in consent["purposes"]:
+        if entry["purpose"] in demo.PURPOSES:
+            entry["state"] = "GRANTED"
+    experiment = example(
+        "experimentation",
+        "experiment-controlled.json",
+        campaign_id=CAMPAIGN,
+        state="ASSIGNED",
+    )
+    experiment["design"]["analysis_at"] = (now + timedelta(days=8)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    assignment = example("experimentation", "assignments-page.json")
+    assert assignment["assignments"], "the example holds no assignment"
+    row = assignment["assignments"][0] | {"customer_id": cid, "arm_kind": "TREATMENT"}
+    promotions = example("campaigns", "promotions.json")
+    promotion = promotions["promotions"][0] | {
+        "campaign_id": CAMPAIGN,
+        "is_active": True,
+        "store_ids": [STORE],
+        "channel_ids": [3],
+    }
+    routes = {
+        ("POST", SESSION): served(
+            {"access_token": TOKEN, "refresh_token": TOKEN, "token_type": "Bearer"},
+            201,
+        ),
+        ("DELETE", SESSION + "/current"): (204, b"", "application/json"),
+        ("GET", "/api/users/v1/users/me"): served(user),
+        ("GET", f"/api/users/v1/store-assignments/{user['user_id']}"): served(
+            {"user_id": user["user_id"], "store_ids": [STORE]}
+        ),
+        ("GET", f"/api/stores/v1/stores/{STORE}"): served(
+            example("stores", "store-with-location.json", store_id=STORE)
+        ),
+        ("GET", f"/api/products/v1/products/{PRODUCT}"): served(
+            example("products", "product.json", product_id=PRODUCT)
+        ),
+        ("GET", f"/api/stock/v1/stock-levels/{STORE}/{PRODUCT}"): served(
+            example("stock", "stock-level.json", store_id=STORE, product_id=PRODUCT)
+        ),
+        ("GET", f"/api/customers/v1/customers/{cid}"): served(customer),
+        ("GET", "/api/customers/v1/customers"): served(
+            {
+                "customers": [customer],
+                "page_info": {"page": 1, "size": 100, "total": 1},
+            }
+        ),
+        ("GET", "/api/segments/v1/segment-assignments/current"): served(
+            example("segments", "current-assigned.json", customer_id=cid)
+        ),
+        ("GET", "/api/recommendations/v1/recommendations"): served(
+            example(
+                "recommendations",
+                "recommended.json",
+                customer_id=cid,
+                usual_store_id=STORE,
+            )
+        ),
+        (
+            "GET",
+            f"/api/customer-preferences/v1/preference-profiles/{cid}/consent",
+        ): served(consent),
+        ("GET", "/api/sales/v1/channels"): served(
+            example("sales", "list-channels.json")
+        ),
+        ("GET", f"/api/campaigns/v1/campaigns/{CAMPAIGN}"): served(
+            example(
+                "campaigns",
+                "campaign.json",
+                campaign_id=CAMPAIGN,
+                status="ACTIVE",
+                starts_on=(now.date() - timedelta(days=1)).isoformat(),
+                ends_on=(now.date() + timedelta(days=30)).isoformat(),
+            )
+        ),
+        ("GET", "/api/campaigns/v1/promotions"): served(
+            {"promotions": [promotion], "page_info": promotions["page_info"]}
+        ),
+        ("GET", f"/api/experimentation/v1/experiments/{EXPERIMENT}"): served(
+            experiment
+        ),
+        ("GET", "/api/experimentation/v1/experiment-assignments"): served(
+            {"assignments": [row], "page_info": assignment["page_info"]}
+        ),
+        ("GET", "/api/experimentation/v1/experiment-assignments/current"): served(
+            example(
+                "experimentation",
+                "assignment-current-treatment.json",
+                customer_id=cid,
+                campaign_id=CAMPAIGN,
+            )
+        ),
+    }
+    for name in registry_names():
+        if implemented(name):
+            version = demo.checkout_version(name)
+            document = f"openapi: 3.1.0\ninfo:\n  title: {name}\n  version: {version}\n"
+            routes[("GET", f"/api/{name}/openapi.yaml")] = (
+                200,
+                document.encode(),
+                "application/yaml",
+            )
+    return routes
+
+
+def rehearse(
+    tmp_path, routes: dict, monkeypatch: pytest.MonkeyPatch, part_two: bool
+) -> tuple[int, Gateway, list[str]]:
+    for name in ("FLOOR", "MARKETING"):
+        monkeypatch.setenv(f"MOSAIQ_DEMO_{name}_EMAIL", f"{name.lower()}@example.com")
+        monkeypatch.setenv(f"MOSAIQ_DEMO_{name}_PASSWORD", "never-in-a-file")
+    gateway = Gateway(routes)
+    args = argparse.Namespace(
+        out=str(tmp_path / "out"),
+        customer=example("customers", "get-customer.json")["customer_id"],
+        store=STORE,
+        product=PRODUCT,
+        campaign=CAMPAIGN if part_two else None,
+        experiment=EXPERIMENT if part_two else None,
+    )
+    with gateway as edge:
+        code = demo.run(args, edge, pace=0.0)
+    record = json.loads((tmp_path / "out" / "record.json").read_text())
+    failed = [c["case"] for c in record["checks"] if not c["held"]]
+    return code, gateway, failed
+
+
+def test_demo_part_one_holds_on_a_ready_instance_and_only_reads(
+    tmp_path, monkeypatch
+) -> None:
+    code, gateway, failed = rehearse(
+        tmp_path, routes_of_a_ready_instance(), monkeypatch, part_two=False
+    )
+    assert failed == [] and code == 0
+    assert {method for method, _ in gateway.seen} == {"GET", "POST", "DELETE"}
+    assert [r for r in gateway.seen if r[0] != "GET"] == [
+        ("POST", SESSION),
+        ("DELETE", SESSION + "/current"),
+    ]
+    assert not any("/v1/experiment" in path for _, path in gateway.seen)
+    written = "".join(p.read_text() for p in (tmp_path / "out").iterdir())
+    assert "P5 customer" in written and "never-in-a-file" not in written
+    assert (
+        TOKEN not in written and MARKETING_TOKEN not in written and "<masked" in written
+    )
+
+
+def test_demo_part_two_reads_the_campaign_the_experiment_and_the_phones_arm(
+    tmp_path, monkeypatch
+) -> None:
+    code, gateway, failed = rehearse(
+        tmp_path, routes_of_a_ready_instance(), monkeypatch, part_two=True
+    )
+    assert failed == [] and code == 0
+    sessions = [r for r in gateway.seen if r[1].startswith(SESSION)]
+    assert (
+        sessions
+        == [("POST", SESSION), ("POST", SESSION)]
+        + [("DELETE", SESSION + "/current")] * 2
+    )
+    paths = {path for _, path in gateway.seen}
+    assert gateway.seen.count(("GET", "/api/users/v1/users/me")) == 2
+    assert "/api/experimentation/v1/experiment-assignments/current" in paths
+    assert f"/api/experimentation/v1/experiments/{EXPERIMENT}" in paths
+
+
+def test_demo_names_each_precondition_that_does_not_hold(tmp_path, monkeypatch) -> None:
+    routes = routes_of_a_ready_instance()
+    cid = example("customers", "get-customer.json")["customer_id"]
+    routes[("GET", f"/api/stores/v1/stores/{STORE}")] = served(
+        example("stores", "store-without-location.json", store_id=STORE)
+    )
+    routes[("GET", f"/api/stock/v1/stock-levels/{STORE}/{PRODUCT}")] = served(
+        example(
+            "stock",
+            "stock-level.json",
+            store_id=STORE,
+            product_id=PRODUCT,
+            quantity_on_hand=0,
+        )
+    )
+    routes[("GET", "/api/segments/v1/segment-assignments/current")] = served(
+        example("segments", "current-no-open-assignment.json", customer_id=cid)
+    )
+    routes[("GET", "/api/recommendations/v1/recommendations")] = served(
+        example("recommendations", "none-match.json", customer_id=cid)
+    )
+    routes[("GET", "/api/experimentation/v1/experiment-assignments/current")] = (
+        404,
+        json.dumps(example("experimentation", "assignment-not-found.json")).encode(),
+        "application/json",
+    )
+    routes[("GET", "/api/campaigns/v1/promotions")] = served(
+        {"promotions": [], "page_info": {"page": 1, "size": 100, "total": 0}}
+    )
+    first = next(name for name in registry_names() if implemented(name))
+    routes[("GET", f"/api/{first}/openapi.yaml")] = (
+        200,
+        b"openapi: 3.1.0\ninfo:\n  title: x\n  version: 0.0.1\n",
+        "application/yaml",
+    )
+    code, _, failed = rehearse(tmp_path, routes, monkeypatch, part_two=True)
+    assert code == 1
+    assert sorted(failed) == sorted(
+        [
+            f"{first}: the served contract is this checkout's",
+            f"store {STORE} has the location the check-in is judged against",
+            f"store {STORE} holds at least one unit of product {PRODUCT}",
+            "the current assignment state is assigned (#462 step 4)",
+            "the recommendations status is recommended (#462 step 4)",
+            f"the customer's usual store is the demonstration store ({STORE})",
+            f"the floor account reads an active promotion of campaign {CAMPAIGN} "
+            f"for store {STORE}",
+            "the phone's read answers the treatment arm (F25-17)",
+        ]
+    )
+
+
+def test_demo_fails_a_customer_in_control_and_an_analysed_experiment(
+    tmp_path, monkeypatch
+) -> None:
+    routes = routes_of_a_ready_instance()
+    cid = example("customers", "get-customer.json")["customer_id"]
+    page = example("experimentation", "assignments-page.json")
+    page["assignments"] = [
+        page["assignments"][0] | {"customer_id": cid, "arm_kind": "CONTROL"}
+    ]
+    routes[("GET", "/api/experimentation/v1/experiment-assignments")] = served(page)
+    analysed = example(
+        "experimentation",
+        "experiment-controlled.json",
+        campaign_id=CAMPAIGN,
+        state="ANALYZED",
+    )
+    routes[("GET", f"/api/experimentation/v1/experiments/{EXPERIMENT}")] = served(
+        analysed
+    )
+    _, _, failed = rehearse(tmp_path, routes, monkeypatch, part_two=True)
+    assert sorted(failed) == [
+        "the demonstration customer is assigned once, to a treatment arm",
+        "the experiment is ASSIGNED and its analysis instant has not come",
+    ]
+
+
+def test_demo_takes_the_campaign_and_the_experiment_together(
+    tmp_path, monkeypatch
+) -> None:
+    args = argparse.Namespace(
+        out=str(tmp_path),
+        customer="x",
+        store=1,
+        product=1,
+        campaign=1,
+        experiment=None,
+    )
+    with pytest.raises(SystemExit, match="go together"):
+        demo.run(args, Edge("http://127.0.0.1:9"), pace=0.0)
+
+
+def test_demo_judges_each_answer_by_the_fields_the_contracts_name() -> None:
+    located = example("stores", "store-with-location.json")
+    assert demo.store_location(located) == (
+        "latitude 19.432608, longitude -99.133209, geofence_radius_m 150"
+    )
+    assert demo.store_location(example("stores", "store-without-location.json")) is None
+    assert demo.store_location(located | {"location": {"latitude": 1.0}}) is None
+    consent = example("customer-preferences", "get-consent.json")
+    assert demo.granted(consent, "PERSONALIZATION")
+    assert not demo.granted(consent, "MARKETING_CONTACT")
+    assert demo.in_store_channel(example("sales", "list-channels.json")) == 3
+    assert demo.in_store_channel({"channels": []}) is None
+
+    today = date(2026, 11, 23)
+    campaign = example("campaigns", "campaign.json")
+    running = campaign | {
+        "status": "ACTIVE",
+        "starts_on": "2026-11-23",
+        "ends_on": "2026-11-23",
+    }
+    assert demo.campaign_is_running(running, today)
+    assert not demo.campaign_is_running(running | {"ends_on": "2026-11-22"}, today)
+    assert not demo.campaign_is_running(running | {"status": "DRAFT"}, today)
+    assert not demo.campaign_is_running({}, today)
+
+    now = datetime(2026, 11, 23, 12, tzinfo=UTC)
+    planned = example("experimentation", "experiment-controlled.json")
+    assigned = planned | {
+        "state": "ASSIGNED",
+        "design": planned["design"] | {"analysis_at": "2026-11-24T00:00:00Z"},
+    }
+    assert demo.not_analysed_yet(assigned, now)
+    assert not demo.not_analysed_yet(assigned | {"state": "ANALYZED"}, now)
+    assert not demo.not_analysed_yet(
+        assigned | {"design": assigned["design"] | {"analysis_at": None}}, now
+    )
+    assert not demo.not_analysed_yet(
+        assigned
+        | {"design": assigned["design"] | {"analysis_at": "2026-11-23T11:59:59Z"}},
+        now,
+    )
+
+    page = example("experimentation", "assignments-page.json")
+    who = page["assignments"][0]["customer_id"]
+    assert demo.arms_of(page, who) == [page["assignments"][0]["arm_kind"]]
+    assert demo.arms_of(page, "someone-else") == []
+
+    promotions = example("campaigns", "promotions.json")["promotions"]
+    first = promotions[0]
+    page = {"promotions": [first | {"is_active": False}, first]}
+    store, channel = first["store_ids"][0], first["channel_ids"][0]
+    assert demo.promotions_for(page, first["campaign_id"], store, channel) == [first]
+    assert demo.promotions_for(page, first["campaign_id"] + 1, store, channel) == []
+    assert demo.promotions_for(page, first["campaign_id"], store + 99, channel) == []

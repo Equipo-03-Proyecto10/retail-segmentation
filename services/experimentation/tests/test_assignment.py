@@ -31,6 +31,10 @@ pytestmark = pytest.mark.postgres
 NS = "{https://mosaiq.maxthecoder.online/xml/experimentation/v1}"
 # Far from the seeded experiments, which run around today, so no period overlaps.
 START = datetime(2010, 3, 1, 12, 0, tzinfo=UTC)
+# An experiment's period runs from its start to its analysis instant, and these are
+# assigned today (F25-14, ADR-0068 rule 6): planned a year ahead, they do not meet
+# the seeded experiments either.
+STARTS_ON = datetime.now(UTC).date() + timedelta(days=400)
 SALT = "5b" * 32
 WINDOW = 7
 CALLER = (MARKETING, "MARKETING")
@@ -59,7 +63,7 @@ class Scenario:
         planned: bool = True,
     ) -> None:
         self.owner = owner
-        self.experiment = self._new_experiment(starts_on or START.date())
+        self.experiment = self._new_experiment(starts_on or STARTS_ON)
         first = owner.execute(
             "SELECT max(group_id) + 1 FROM experiment_group"
         ).fetchone()[0]
@@ -352,7 +356,7 @@ def test_a_customer_assigned_elsewhere_in_an_overlapping_period_stops_the_assign
     api: Any, scene: Scenario
 ) -> None:
     # Another experiment, over the same dates, already holds two of the frame (RN-23).
-    other = scene._new_experiment(START.date())
+    other = scene._new_experiment(STARTS_ON)
     group = scene.owner.execute(
         "SELECT max(group_id) + 1 FROM experiment_group"
     ).fetchone()[0]
@@ -378,7 +382,7 @@ def test_a_customer_assigned_elsewhere_in_an_overlapping_period_stops_the_assign
 def test_an_experiment_of_a_period_that_does_not_overlap_may_share_customers(
     api: Any, scene: Scenario
 ) -> None:
-    other = scene._new_experiment(START.date() - timedelta(days=400))
+    other = scene._new_experiment(STARTS_ON - timedelta(days=400))
     group = scene.owner.execute(
         "SELECT max(group_id) + 1 FROM experiment_group"
     ).fetchone()[0]
@@ -389,7 +393,7 @@ def test_an_experiment_of_a_period_that_does_not_overlap_may_share_customers(
     )
     scene.owner.execute(
         "UPDATE experiment SET ends_on = %s WHERE experiment_id = %s",
-        (START.date() - timedelta(days=390), other),
+        (STARTS_ON - timedelta(days=390), other),
     )
     scene.owner.execute(
         "INSERT INTO experiment_assignment (experiment_id, group_id, customer_id,"

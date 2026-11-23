@@ -65,7 +65,11 @@ SELECT customer_id::text
 """
 # A frame customer already assigned in another experiment whose period overlaps this
 # one's. A period runs from its start to the later of its end and the last assignment
-# plus the window and the settle days (ADR-0068 §6), as the plan reads it.
+# plus the window and the settle days (ADR-0068 §6), as the plan reads it. This
+# experiment's own last assignment is the one being made, now, so its period reaches
+# at least to `now()::date` plus the window and the settle days: an experiment
+# assigned long after the start written in its plan is analysed after that, not at
+# its planned end.
 CONTAMINATED = """
 SELECT count(DISTINCT m.customer_id)
   FROM experiments.experiment_frame_member AS m
@@ -74,8 +78,10 @@ SELECT count(DISTINCT m.customer_id)
     ON a.customer_id = m.customer_id AND a.experiment_id <> m.experiment_id
   JOIN public.experiment AS other ON other.experiment_id = a.experiment_id
  WHERE m.experiment_id = %(experiment)s
-   AND other.starts_on <= COALESCE(
-           mine.ends_on, mine.starts_on + mine.conversion_window_days + %(settle)s)
+   AND other.starts_on <= GREATEST(
+           COALESCE(mine.ends_on,
+                    mine.starts_on + mine.conversion_window_days + %(settle)s),
+           now()::date + mine.conversion_window_days + %(settle)s)
    AND mine.starts_on <= GREATEST(
            COALESCE(other.ends_on, other.starts_on),
            (SELECT max(x.assigned_at)::date

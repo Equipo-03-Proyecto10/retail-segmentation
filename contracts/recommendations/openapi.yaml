@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: recommendations-service
-  version: 2.0.3
+  version: 2.0.4
   description: >-
     Answers what to recommend to one customer, and why, or why nothing qualifies
     (RN-40, restated by ADR-0067).
@@ -328,7 +328,6 @@ paths:
         stores, a decision with no reference store is not listed, and a `store_id`
         outside them answers 403 `forbidden_store`.
       operationId: listRecommendationDecisions
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST
@@ -397,7 +396,6 @@ paths:
         assigned stores (ADR-0060), and any other, including one with no reference
         store, answers 403 `forbidden_store`.
       operationId: getRecommendationDecision
-      x-mosaiq-status: planned
       x-mosaiq-roles:
       - ADMIN
       - ANALYST

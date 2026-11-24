@@ -2,12 +2,18 @@
 
 > **Status: run on 2026-11-24 (03:36-03:53 UTC, 2026-11-23 evening in Mexico City) on
 > the instance's release #1188 (`main` at `50bf7d5c`, tree identical to `develop` at
-> `fdf0caed`). Every criterion held.** One sale, no. 307, was recorded from the release
-> build through the HTTPS gateway; it took three confirmations and two environment
-> findings (see [Found on the way](#found-on-the-way)). The raw exchanges, the rows and
-> the versions are next to this file in [`f20-01/`](f20-01/). The run was made by the
-> team's automation, with the owner's approval of the live acceptance runs given for
-> that evening.
+> `fdf0caed`). The sale, the rows, the refusals and the versions are recorded and
+> match their raw files; the identity of the installed APK is only partly
+> evidenced.** One sale, no. 307, was recorded from the release build through the
+> HTTPS gateway; it took three confirmations and two environment findings (see
+> [Found on the way](#found-on-the-way)). The raw exchanges, the rows and the versions
+> are next to this file in [`f20-01/`](f20-01/). The APK's hashes, signature, compiled
+> base URL and manifest were re-read from the APK the run installed and are in
+> [`f20-01/build-and-sign.txt`](f20-01/build-and-sign.txt); the output of `adb install`
+> and `dumpsys package` on the emulator was **not retained**, so the link between that
+> file and the package on the device rests on the installed copy's SHA-256 alone. The
+> run was made by the team's automation, with the owner's approval of the live
+> acceptance runs given for that evening.
 
 The acceptance criteria of #759, and where each is answered:
 
@@ -291,9 +297,9 @@ Add a row for every other service whose path appears in the HAR
 | Piece | Here |
 |---|---|
 | Date and time (UTC) | 2026-11-24, 03:36 - 03:53 (the sale at 03:51:17) |
-| App | MOSAIQ Floor 0.1.0, release build of `develop` at `fdf0caed`, APK SHA-256 `319bcbb93f70656d5eba999e4922783a15b7a1a319fd01f745cbe1256cd293dc`, signed with a run-only key (certificate SHA-256 `7e61656cfb17201de880271c1852fb8112ac5cc48f1c263f01754881260ec31b`, 30 days, deleted with the run) |
-| Base URL compiled in | `https://mosaiq.maxthecoder.online/` (found in `classes3.dex` of the signed APK) |
-| Device | Android Emulator 37.2.13.0, AVD `mosaiq-shots`: Android 15 (API 35), `google_apis` x86_64, `userdebug`, `sdk_gphone64_x86_64`. `pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]`, no `DEBUGGABLE`. It is API 35, not the API 33 image the runbook names: the AVD on this machine |
+| App | MOSAIQ Floor 0.1.0, release build (`:app:assembleRelease`) at `fdf0caedb301d5308ea804ff9cb9bb5b43ce73cb`, APK SHA-256 `319bcbb93f70656d5eba999e4922783a15b7a1a319fd01f745cbe1256cd293dc`, signed with a run-only key (certificate SHA-256 `7e61656cfb17201de880271c1852fb8112ac5cc48f1c263f01754881260ec31b`, 30 days). All of it from [`f20-01/build-and-sign.txt`](f20-01/build-and-sign.txt), re-read from the retained APK; the copy pushed to the emulator has the same SHA-256 |
+| Base URL compiled in | `https://mosaiq.maxthecoder.online/` (found in `classes3.dex`, same file) |
+| Device | Android Emulator 37.2.13.0, AVD `mosaiq-shots`: Android 15 (API 35), `google_apis` x86_64, `userdebug`, `sdk_gphone64_x86_64`. It is API 35, not the API 33 image the runbook names: the AVD on this machine. The manifest of the APK sets no `debuggable` (`aapt2`, same file); the device's `dumpsys package` output was not retained |
 | Capture | mitmproxy 12.3.1 (`mitmdump`, HAR on exit) as the system HTTP proxy; its CA in the conscrypt APEX store through the tmpfs and bind mount of step 3.2 |
 | Account | `f20-01-store-manager@example.test`, `STORE_MANAGER`, user `927d1bf9-c8cb-43ca-9841-704e5d0993bb`, created by users-service at 2026-11-24 03:39:01 UTC (correlation id `f20-01-create-user`), assigned to store 30 (correlation id `f20-01-assign-store`) |
 | Approval | The owner approved the live acceptance runs of 2026-11-23 evening before they started; the lead's brief for the batch records it. The run was made by the team's automation |
@@ -338,7 +344,7 @@ From [`f20-01/har-exchanges.md`](f20-01/har-exchanges.md), exchanges 1 and 2, to
        30 |          2 | SKU-00002 |      22.50 | t         |               42
 ```
 
-The customer was Demo Customer 28 (`00000000-0000-0000-0000-000000000028`, `customer28@mosaiq-demo.com`), a LOYAL customer with r/f/m scores 3/3/5 (read at 03:45:14 UTC, before the sale).
+The customer was Demo Customer 28 (`00000000-0000-0000-0000-000000000028`, `customer28@mosaiq-demo.com`).
 
 ### 4. The sale over HTTPS
 
@@ -403,14 +409,14 @@ The `authorization` fingerprint (`<masked #2>`) is the same as the `access_token
  stream:sales.v1.recorded | INSERT     | 307       | 2026-11-24 03:51:17.700846+00 | 2026-11-24 03:51:17.73005+00
 ```
 
-The outbox row was already relayed 30 ms after the commit.
+The outbox row was relayed 29.204 ms after the commit (`relayed_at` 03:51:17.730050, `occurred_at` 03:51:17.700846).
 
 | Product | On hand before | Sold | On hand after |
 |---|---|---|---|
 | 1 (SKU-00001) at store 30 | 41 | 1 | 40 |
 | 2 (SKU-00002) at store 30 | 42 | 1 | 41 |
 
-The sale reached the segmentation path: customer 28's profile went from `LOYAL` (r/f/m 3/3/5, 11 purchases, 5299.50) to `CHAMPION` (5/4/5, 12 purchases, 5340.75) with `computed_at` 03:51:17.77, 66 ms after the sale. [F29-04](f29-04-segmentation-path.md) reads it from there.
+What the sale did downstream, in the segmentation path, is F29-04's to prove, in [its record](f29-04-segmentation-path.md); this record claims the sale, the inventory and the outbox rows only.
 
 ### 6. The refusals
 
@@ -439,7 +445,7 @@ From [`f20-01/versions.txt`](f20-01/versions.txt), read-only on the instance at 
 | customers | `releases/0.4.0` | `mosaiq-customers:0.4.0` | 1.8.1 | customer search |
 | sales | `releases/0.7.0` | `mosaiq-sales:0.7.0` | 1.10.1 | channels, the sale (422 twice, then 201), the 401 |
 | customer-preferences | `releases/0.3.0` | `mosaiq-customer-preferences:0.3.0` | 1.1.2 | customer panel |
-| segments | `releases/0.6.0` | `mosaiq-segments:0.6.0` | 1.6.2 | the customer's segment |
+| segments | `releases/0.6.0` | `mosaiq-segments:0.6.0` | 1.6.2 | the customer panel's segment |
 | recommendations | `releases/0.5.0` | `mosaiq-recommendations:0.5.0` | 2.0.4 | the customer's recommendations |
 | engagement | `releases/0.4.0` | `mosaiq-engagement:0.4.0` | 2.5.0 / v1 | events, the capture after the sale |
 | check-ins | `releases/0.3.0` | `mosaiq-check-ins:0.3.0` | 1.4.0 | the check-in |
@@ -448,7 +454,7 @@ From [`f20-01/versions.txt`](f20-01/versions.txt), read-only on the instance at 
 ### Found on the way
 
 1. **The app refuses to confirm a sale without a check-in at the store** (`check_in_required`, on the phone, no request; [screenshot](f20-01-android-check-in-required.png)). The runbook did not say so; step 4.0 now does. The check-in is a `201` from check-ins-service and needs the location permission and a fix inside the geofence (store 30: radius 400 m).
-2. **sales-service refused the sale twice with 422 `future_dated`** (exchanges 5 and 6 of the HAR, correlation ids `24b2737f-937b-4955-b6f3-1a472a6a4a5f` and the one after it). The phone's `occurred_at` was `2026-11-23T21:48:25.968504-06:00`, which is 03:48:25.97 UTC, and the edge's own `date` header for the refusal is 03:48:25 GMT: the phone's clock was a fraction of a second to seconds ahead of the server's. `services/sales/app/salerules.py:152` compares `occurred_at > datetime.now(UTC)` with no tolerance, so any phone whose clock runs even slightly ahead of the server cannot record a sale. To go on, automatic time was turned off and the emulator's clock set 8.8 s behind WSL's, which gave the 201 above; automatic time was turned back on at once. The two refusals are kept in the HAR extract, not hidden. This is a product finding, not an environment excuse: see the report for a suggested issue.
+2. **sales-service refused the sale twice with 422 `future_dated`** (exchanges 5 and 6 of the HAR, correlation ids `24b2737f-937b-4955-b6f3-1a472a6a4a5f` and the one after it). The phone's `occurred_at` was `2026-11-23T21:48:25.968504-06:00`, which is 03:48:25.97 UTC, and the edge's own `date` header for the refusal is 03:48:25 GMT: the phone's clock was ahead of the server's. This is the behaviour [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md) and [ADR-0041](../adr/0041-android-and-electron-clients-run-different-processes-over-different-formats.md) accept: a sale after the server's `now()` is rejected, and a phone with a fast clock gets 422 `future_dated`. It is a confirmed operational consequence, not a defect. To go on, automatic time was turned off and the emulator's clock set 8.8 s behind WSL's, which gave the 201 above; automatic time was turned back on at once. The two refusals are kept in the HAR extract. A tolerance would need a superseding ADR that settles it and the parity with the CSV import.
 3. **Cloudflare error 1010 refused `sale_evidence.py refusals`** (`Python-urllib/3.x` is a banned signature at the edge). The script now sends `User-Agent: mosaiq-acceptance/1`.
 4. **Emulator capture on API 35.** `-http-proxy` did not carry the app's HTTPS, and the CA has to go into the conscrypt APEX store (steps 3.1 and 3.2 now say how). The first sign-in, made before the system proxy was set, is not in the HAR; the app was signed out, stopped and signed in again, and that is exchange 1.
 5. **The administrator's password in `/root/mosaiq-admin.env`** is the whole line of the file (`MOSAIQ_ADMIN_PASSWORD=...`), as `IFS= read -r` reads it, not the part after the `=`: sourcing it signed in with a 401 `invalid_credentials`. Nothing was changed.

@@ -1,0 +1,38 @@
+# F20-01 release APK: build, signature and identity
+# Re-read on 2026-11-24T05:04:14Z from the APK the run installed (kept in the lane's scratch folder).
+# The Gradle log is the one written during the build on 2026-11-24 ~03:3x UTC. NOT retained from the run:
+# the output of 'adb install' and 'dumpsys package' on the emulator (see the record).
+
+$ git rev-parse HEAD   # the commit Gradle built (the worktree was at it)
+fdf0caedb301d5308ea804ff9cb9bb5b43ce73cb
+
+$ ./gradlew clean :app:assembleRelease   # tail of the build log, paths redacted
+> Task :app:createReleaseApkListingFileRedirect
+> Task :app:assembleRelease
+[Incubating] Problems report is available at: file://<home>/.cache/mosaiq-local/wt/g759/clients/android/build/reports/problems/problems-report.html
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+For more on this, please refer to https://docs.gradle.org/8.13/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+BUILD SUCCESSFUL in 1m 25s
+51 actionable tasks: 50 executed, 1 up-to-date
+
+$ apksigner verify --print-certs mosaiq-floor-release.apk
+Signer #1 certificate DN: CN=MOSAIQ F20-01 evidence
+Signer #1 certificate SHA-256 digest: 7e61656cfb17201de880271c1852fb8112ac5cc48f1c263f01754881260ec31b
+Signer #1 certificate SHA-1 digest: a18e0fb4fd87027559f160ee51a095fb61a2f803
+Signer #1 certificate MD5 digest: 950a685b7b3d1f915f1177c76f6afa3c
+
+$ sha256sum mosaiq-floor-release.apk  (and the copy installed through Windows adb)
+319bcbb93f70656d5eba999e4922783a15b7a1a319fd01f745cbe1256cd293dc  mosaiq-floor-release.apk
+319bcbb93f70656d5eba999e4922783a15b7a1a319fd01f745cbe1256cd293dc  f20-01-release.apk
+
+$ # the base URL compiled into the DEX files
+classes3.dex contains https://mosaiq.maxthecoder.online/
+
+$ aapt2 dump badging mosaiq-floor-release.apk | head -3
+package: name='online.maxthecoder.mosaiq.floor' versionCode='1' versionName='0.1.0' platformBuildVersionName='16' platformBuildVersionCode='36' compileSdkVersion='36' compileSdkVersionCodename='16'
+minSdkVersion:'26'
+targetSdkVersion:'36'
+
+$ aapt2 dump xmltree --file AndroidManifest.xml mosaiq-floor-release.apk | grep -ci debuggable   # the release manifest does not set it
+0

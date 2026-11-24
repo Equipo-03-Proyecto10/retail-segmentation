@@ -57,7 +57,7 @@ never saw the `RECORDED` entry still knows what to stop counting.
 
 | Group | Effect |
 |---|---|
-| `experimentation` | Projects `CAMPAIGN_EXPOSURE` into its own schema as the exposures of a campaign per customer, and ignores the other kinds. A `VOIDED` notice removes the exposure from the count. An exposure is never a conversion. |
+| `experimentation` | Projects `CAMPAIGN_EXPOSURE` into its own schema as the exposures of a campaign per customer, with the store where each happened, and ignores the other kinds. A `VOIDED` notice removes the exposure from the count. An exposure is never a conversion. |
 | `recommendations` | Projects `RECO_IMPRESSION` and `RECO_CLICK`, the interactions with its own recommendations, into its own schema, and ignores `CAMPAIGN_EXPOSURE`. A `VOIDED` notice removes the interaction from the count. |
 
 analytics-kpis never consumes this stream (ADR-0059): it reads the owner of

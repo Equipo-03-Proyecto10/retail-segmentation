@@ -5798,6 +5798,15 @@ ALTER TABLE public.experiment_exposure
 CREATE UNIQUE INDEX IF NOT EXISTS ux_experiment_exposure_source_event
     ON public.experiment_exposure (source_event_id)
     WHERE source_event_id IS NOT NULL;
+-- The store where a projected exposure happened, carried by the event's `store_id`
+-- (#1198), so analytics-kpis can report conversion by the exposure's store. It is a
+-- fact of the exposure and depends on exposure_id alone. Nullable, because the frozen
+-- web writes exposures without a store. No foreign key: stores are another boundary,
+-- and a store this database does not know must not make an at-least-once delivery
+-- fail; the event was already validated by engagement.
+ALTER TABLE public.experiment_exposure
+    ADD COLUMN IF NOT EXISTS store_id SMALLINT
+        CONSTRAINT experiment_exposure_store_id_check CHECK (store_id >= 1);
 
 -- A notice ledger keeps the projection append-only while allowing a VOIDED
 -- notice to remove a source exposure from service counts. It also remembers a
@@ -6387,6 +6396,39 @@ SELECT e.campaign_id,
   LEFT JOIN experiments.experiment_plan AS p ON p.experiment_id = e.experiment_id
  WHERE e.campaign_id IS NOT NULL;
 REVOKE ALL ON api_experiments.campaign_effect_v1 FROM PUBLIC;
+
+-- contracts/db/api_experiments.exposure.v1.md (#1198, for F26-04 #849): one row per
+-- campaign exposure that counts. The projection of F25-10 already keeps one fact per
+-- engagement event (ux_experiment_exposure_source_event) and remembers a VOIDED notice
+-- in experiments.exposure_notice whichever arrives first; this view applies the same
+-- exclusion the service's own counts do. Only a treatment arm is ever exposed (RN-27,
+-- ADR-0050): the trigger refuses a control exposure, and the view filters on the arm's
+-- kind as well, so the published fact never depends on one guard alone. An exposure the
+-- web wrote has no source event and no store, and is never voided. A definer-rights view: a consumer
+-- needs no privilege on any table it reads.
+CREATE OR REPLACE VIEW api_experiments.exposure_v1
+WITH (security_invoker = off) AS
+SELECT x.exposure_id,
+       x.source_event_id,
+       e.campaign_id,
+       a.experiment_id,
+       a.group_id,
+       a.customer_id,
+       x.store_id,
+       x.exposed_at,
+       e.data_origin::text AS data_origin
+  FROM public.experiment_exposure AS x
+  JOIN public.experiment_assignment AS a ON a.assignment_id = x.assignment_id
+  JOIN public.experiment_group AS g
+    ON g.group_id = a.group_id AND g.experiment_id = a.experiment_id
+  JOIN public.experiment AS e ON e.experiment_id = a.experiment_id
+ WHERE e.campaign_id IS NOT NULL
+   AND g.kind = 'TREATMENT'
+   AND NOT EXISTS (
+       SELECT FROM experiments.exposure_notice AS v
+        WHERE v.source_event_id = x.source_event_id
+          AND v.notice = 'VOIDED');
+REVOKE ALL ON api_experiments.exposure_v1 FROM PUBLIC;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry
@@ -7508,6 +7550,9 @@ GRANT SELECT ON api_experiments.campaign_effect_v1 TO svc_kpis;
 GRANT USAGE ON SCHEMA api_recommendations TO svc_kpis;
 GRANT SELECT ON api_recommendations.interaction_v1 TO svc_kpis;
 GRANT SELECT ON api_recommendations.recommended_purchase_v1 TO svc_kpis;
+-- Conversion after exposure (F26-04, #849, #1198): the campaign exposures that count,
+-- read from experimentation's view.
+GRANT SELECT ON api_experiments.exposure_v1 TO svc_kpis;
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

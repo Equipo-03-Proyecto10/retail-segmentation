@@ -285,3 +285,145 @@ def test_other_engagement_kinds_are_ignored(service: Any, scene: Scenario) -> No
         ).fetchone()[0]
         == 0
     )
+
+
+def _published(scene: Scenario) -> list[tuple[Any, ...]]:
+    """This scenario's rows of api_experiments.exposure_v1."""
+    return scene.owner.execute(
+        "SELECT source_event_id, campaign_id, experiment_id, group_id,"
+        " customer_id::text, store_id, exposed_at, data_origin"
+        " FROM api_experiments.exposure_v1 WHERE experiment_id = %s"
+        " ORDER BY exposed_at",
+        (scene.experiment,),
+    ).fetchall()
+
+
+def test_exposure_view_publishes_one_row_per_redelivered_event(
+    service: Any, scene: Scenario
+) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    source = uuid.uuid4()
+    event = scene.fields(scene.customers[1], START, source=source)
+    handler(event)
+    handler(event)
+    handler(dict(event))
+    assert _published(scene) == [
+        (
+            source,
+            scene.campaign,
+            scene.experiment,
+            scene.treatment,
+            scene.customers[1],
+            1,
+            START,
+            "OBSERVED",
+        )
+    ]
+
+
+def test_the_events_store_is_kept_and_published(service: Any, scene: Scenario) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    source = uuid.uuid4()
+    event = scene.fields(scene.customers[1], START, source=source)
+    event["store_id"] = "7"
+    handler(event)
+    stored = scene.owner.execute(
+        "SELECT store_id FROM experiment_exposure WHERE source_event_id = %s",
+        (source,),
+    ).fetchall()
+    assert stored == [(7,)]
+    assert [(row[0], row[5]) for row in _published(scene)] == [(source, 7)]
+
+
+@pytest.mark.parametrize("store", ["0", "-1", "x", "32768", "", "\u0661"])
+def test_a_malformed_store_records_nothing(
+    service: Any, scene: Scenario, store: str
+) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    event = scene.fields(scene.customers[1], START)
+    event["store_id"] = store
+    with pytest.raises(ValueError, match="store_id"):
+        handler(event)
+    assert scene.exposure_rows() == []
+
+
+def test_a_web_written_exposure_is_published_without_a_store(
+    service: Any, scene: Scenario
+) -> None:
+    assignment = scene.assignments[scene.customers[1]]
+    scene.owner.execute(
+        "INSERT INTO experiment_exposure (assignment_id, exposed_at) VALUES (%s, %s)",
+        (assignment, START),
+    )
+    assert [(row[0], row[5]) for row in _published(scene)] == [(None, None)]
+
+
+@pytest.mark.parametrize("void_first", [False, True])
+def test_exposure_view_leaves_out_a_voided_exposure(
+    service: Any, scene: Scenario, void_first: bool
+) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    voided_source, kept_source = uuid.uuid4(), uuid.uuid4()
+    recorded = scene.fields(scene.customers[1], START, source=voided_source)
+    voided = scene.fields(
+        scene.customers[1], START, source=voided_source, notice="VOIDED"
+    )
+    for event in (voided, recorded) if void_first else (recorded, voided):
+        handler(event)
+    later = START + timedelta(minutes=5)
+    handler(scene.fields(scene.customers[1], later, source=kept_source))
+    assert [row[0] for row in _published(scene)] == [kept_source]
+
+
+def test_exposure_view_never_names_the_control_arm(
+    service: Any, scene: Scenario
+) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    handler(scene.fields(scene.customers[0], START))
+    handler(scene.fields(scene.customers[2], START))
+    assert _published(scene) == []
+    control_rows = scene.owner.execute(
+        "SELECT count(*) FROM api_experiments.exposure_v1 AS v"
+        " JOIN experiment_group AS g"
+        " ON g.group_id = v.group_id AND g.experiment_id = v.experiment_id"
+        " WHERE g.kind <> 'TREATMENT' OR v.campaign_id IS NULL"
+    ).fetchone()[0]
+    assert control_rows == 0
+
+
+def test_exposure_view_has_unique_exposures_and_source_events(
+    owner: psycopg.Connection,
+) -> None:
+    total, exposures_, sources, with_source = owner.execute(
+        "SELECT count(*), count(DISTINCT exposure_id),"
+        " count(DISTINCT source_event_id), count(source_event_id)"
+        " FROM api_experiments.exposure_v1"
+    ).fetchone()
+    assert total > 0  # The seeded exposures are published.
+    assert exposures_ == total
+    assert sources == with_source
+
+
+def test_kpis_reads_the_exposure_view_and_not_the_tables(
+    owner: psycopg.Connection,
+) -> None:
+    def can(relation: str) -> bool:
+        return owner.execute(
+            "SELECT has_table_privilege('svc_kpis', %s, 'SELECT')", (relation,)
+        ).fetchone()[0]
+
+    assert can("api_experiments.exposure_v1")
+    assert not can("public.experiment_exposure")
+    assert not can("experiments.exposure_notice")
+    assert not owner.execute(
+        "SELECT has_table_privilege('retail_app', 'api_experiments.exposure_v1',"
+        " 'SELECT')"
+    ).fetchone()[0]
+    with owner.transaction():
+        owner.execute("SET LOCAL ROLE svc_kpis")
+        assert (
+            owner.execute(
+                "SELECT count(*) FROM api_experiments.exposure_v1"
+            ).fetchone()[0]
+            > 0
+        )

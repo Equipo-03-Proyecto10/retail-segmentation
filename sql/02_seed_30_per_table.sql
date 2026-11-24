@@ -997,9 +997,12 @@ ORDER BY n, k;
 -- cannot drift apart if that formula changes. The customer is reached two to
 -- seven hours after being assigned, so the exposure is after the assignment and
 -- inside the experiment's dates; the other treatment assignee stays unexposed
--- (ADR-0019), and a control assignee is never exposed.
-INSERT INTO experiment_exposure (assignment_id, exposed_at)
-SELECT assignment_id, assigned_at + make_interval(hours => 2 + experiment_id % 6)
+-- (ADR-0019), and a control assignee is never exposed. Each exposure happens in
+-- one of the 30 seeded stores (#1198), spread by assignment, so
+-- api_experiments.exposure_v1 can be read by store.
+INSERT INTO experiment_exposure (assignment_id, exposed_at, store_id)
+SELECT assignment_id, assigned_at + make_interval(hours => 2 + experiment_id % 6),
+       (1 + assignment_id % 30)::smallint
 FROM (
     SELECT a.assignment_id, a.experiment_id, a.assigned_at,
            ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn
@@ -1014,8 +1017,9 @@ ORDER BY assignment_id;
 -- to seven hours after being assigned, so half the experiments still leave a
 -- treatment customer unexposed (ADR-0019) while the sales that follow these
 -- exposures give F25-12 (ADR-0069) real attributions to hold.
-INSERT INTO experiment_exposure (assignment_id, exposed_at)
-SELECT assignment_id, assigned_at + make_interval(hours => 3 + experiment_id % 5)
+INSERT INTO experiment_exposure (assignment_id, exposed_at, store_id)
+SELECT assignment_id, assigned_at + make_interval(hours => 3 + experiment_id % 5),
+       (1 + assignment_id % 30)::smallint
 FROM (
     SELECT a.assignment_id, a.experiment_id, a.assigned_at,
            ROW_NUMBER() OVER (PARTITION BY a.experiment_id ORDER BY a.assignment_id) AS rn

@@ -1,16 +1,17 @@
 # F29-06 (#891): the acceptance tests of privacy, revocation and disconnection
 
-> **Status: not yet run on the instance.** This document is the runbook and the
-> template of three of the instructor's sixteen acceptance tests (AC-12
-> "Privacidad", AC-13 "Sesión revocada", AC-14 "Desconexión";
+> **Status: "Privacidad" and "Sesión revocada" ran on the instance on
+> 2026-11-24 (04:00 UTC) and held; "Desconexión" is pending.** This document is
+> the runbook and the record of three of the instructor's sixteen acceptance
+> tests (AC-12 "Privacidad", AC-13 "Sesión revocada", AC-14 "Desconexión";
 > [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11). Nothing blocks
 > them any more: #757, #792, #795 and
 > [#867](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/867)
 > (F27-13, offline drafts with a pending state, merged in #1141 on 2026-11-21)
-> are closed. All three run on the instance at the identified version, together
-> with the rest. Every `‹fill: …›` below is filled during the live run.
-> The only results recorded so far are the
-> [local dry run](#local-dry-run-not-the-acceptance), which is **not the
+> are closed. The two server-side parts are recorded below with their evidence
+> under [`f29-06/20261124T0359Z/`](f29-06/20261124T0359Z/). "Desconexión" needs the
+> Android emulator and a person at the phone: its rows are still `‹fill: …›`.
+> The [local dry run](#local-dry-run-not-the-acceptance) is **not the
 > acceptance**.
 
 Governing decisions:
@@ -204,39 +205,69 @@ screenshots. `record.json` stays outside the repository. Delete the HAR.
 
 ## The record
 
-*Everything below is filled during the live run.*
+*"Privacidad" and "Sesión revocada" are filled from the live run of
+2026-11-24; "Desconexión" is filled during its own run.*
 
 ### Where it ran
 
 | Piece | Value |
 |---|---|
-| Identified version | ‹fill: commit or tag›, F20-03 report ‹fill: link› |
-| Date and time (UTC) | ‹fill: start – end› |
-| Instance | `https://mosaiq.maxthecoder.online/`, web commit ‹fill› |
-| Android build | MOSAIQ Floor ‹fill: versionName›, with #867, APK SHA-256 ‹fill› |
-| Floor account | ‹fill: email, role, store› |
-| Who ran each step | ‹fill: step → name› |
-| Approval | ‹fill: who approved the live run, and where› |
+| Identified version | Release #1188: `main` at `50bf7d5c` (its tree is identical to `develop` at `fdf0caed`), every service at its `services/<name>/VERSION` of that tree, as the "Versions" table shows. F20-03 report: not checked by this run |
+| Date and time (UTC) | 2026-11-24 03:59:30 – 04:04:45: "Privacidad" 03:59:30 – 04:01:43, "Sesión revocada" 04:02:27 – 04:04:45. Desconexión: pending |
+| Instance | `https://mosaiq.maxthecoder.online/`, reached from the instance itself on `https://127.0.0.1` under the published host name; web commit `50bf7d5c48336a39f89f34f9bb8d44a78057fb06` |
+| Tree used | `git archive` of the identified tree (`tests/`, `contracts/`, `pyproject.toml`, each `services/*/compose.yaml`) at `/var/tmp/mosaiq-1124-C1/tree` in a virtualenv with `pytest` 9.2.0 and PyYAML, plus one changed file, [`test_revocation.py`](../../tests/negative/test_revocation.py) (see "Found on the way"). The record's `checkout commit` therefore reads `(unavailable)`: the tree is an archive, not a checkout |
+| Android build | pending (Desconexión) |
+| Floor account | pending (Desconexión) |
+| Who ran each step | An agent of the acceptance batch (lane C1), as the instance operator through `gcloud compute ssh`, holding the batch's instance lock |
+| Approval | The run was requested by the lead of the 2026-11-23 batch (`goal1124`, brief "The instance" and its 22:00 addendum). The administrator's credential was read from the root-only file on the instance into the process environment and never printed |
 
 ### Versions
 
-‹fill: the "Versions" table of `f29-06/<run>/privacy/summary.md`.›
+The "Versions" table of [`privacy/summary.md`](f29-06/20261124T0359Z/privacy/summary.md) (the
+revocation run's table is the same): the served contracts auth 1.1.0, users
+1.4.0, products 1.4.0, categories 1.2.0, stores 1.4.0, stock 1.3.0, customers
+1.8.1, customer-preferences 1.1.2, sales 1.10.1, segments 1.6.2,
+recommendations 2.0.4, engagement 2.5.0, check-ins 1.4.0, campaigns 1.4.2,
+audit-trail 1.5.0, rfm-engine 1.2.1, model-registry 1.3.0, experimentation
+1.2.1 and analytics-kpis 1.2.0; the releases auth 0.1.4, users 0.2.0, products
+0.3.0, categories 0.1.9, stores 0.2.0, stock 0.3.0, customers 0.4.0,
+customer-preferences 0.3.0, sales 0.7.0, segments 0.6.0, recommendations
+0.5.0, engagement 0.4.0, check-ins 0.3.0, campaigns 0.4.0, audit-trail 0.1.5,
+rfm-engine 0.8.0, model-registry 0.5.0, experimentation 0.8.1 and
+analytics-kpis 0.4.0; web commit `50bf7d5c`.
 
 ### AC-12 "Privacidad"
 
+`python -m tests.acceptance.f29_06 privacy`: **52 tests passed, 1 skipped,
+1369 F18-04 cases, 1369 held** ([`summary.md`](f29-06/20261124T0359Z/privacy/summary.md)). The
+contracts have grown since the local dry run, which asked 851 such cases.
+
 | Part | Cases | Held | Not run here, and why | Evidence |
 |---|---|---|---|---|
-| Every role, every customer-data operation, JSON and XML (`test_privacy.py`) | ‹fill› | ‹fill› | ‹fill› | ‹fill: `privacy/negative-evidence.md`› |
-| One role outside every operation of every service (`test_roles.py`) | ‹fill› | ‹fill› | ‹fill› | same |
-| Another store's rows (`test_store_scope.py`) | ‹fill› | ‹fill› | ‹fill› | same |
-| The web's routes (`tests/test_authz.py`, `test_analytics_authz.py`) | ‹fill› | ‹fill› | — | ‹fill: `privacy/web-authz.log`› |
+| Every role, every customer-data operation, JSON and XML (`test_privacy.py`) | 1154 (analytics-kpis 66, audit-trail 80, check-ins 73, customer-preferences 98, customers 128, engagement 133, experimentation 130, recommendations 40, rfm-engine 131, sales 177, segments 98) | 1154 | — | [`privacy/negative-evidence.md`](f29-06/20261124T0359Z/privacy/negative-evidence.md) |
+| One role outside every operation of every service (`test_roles.py`) | 189 | 189 | — | same |
+| Another store's rows (`test_store_scope.py`) | 26 | 26 | The reads and reversals by id of another store's rows: they need a sale, a reversal, an event and a check-in in another store, which persist, so they run on the local stack only (the one skipped test) | same |
+| The web's routes (`tests/test_authz.py`, `test_analytics_authz.py`) | 613 | 613 | — | [`privacy/web-authz.log`](f29-06/20261124T0359Z/privacy/web-authz.log): `pytest` on a workstation at `fdf0caed`, whose tree is the identified one, 613 passed in 14.5 s |
+
+Every refusal in the table is 403 `forbidden_role` (or `forbidden_store`) with
+no data. The store-scope cases wrote nothing: they refuse before any write.
 
 ### AC-13 "Sesión revocada"
 
+`python -m tests.acceptance.f29_06 revocation`: **3 tests passed, 1 skipped,
+40 F18-04 cases, 40 held** ([`summary.md`](f29-06/20261124T0359Z/revocation/summary.md)).
+
 | Part | Cases | Held | Not run here, and why | Evidence |
 |---|---|---|---|---|
-| A signed-out session on every service | ‹fill› | ‹fill› | ‹fill› | ‹fill: `revocation/negative-evidence.md`› |
-| Sign-out and refresh reuse at auth | ‹fill› | ‹fill› | ‹fill› | same |
+| A signed-out session on every service | 38: for each of the nineteen services, the request before the sign-out (authenticated: 15 answered 200 and four, users, engagement, check-ins and audit-trail, 403 `forbidden_role` for the run's role, never 401) and the next request after it, 401 `session_revoked` from every one | 38 | Customers' "no statement logged for a revoked token": it changes the database's logging, so it runs on the local stack only (the one skipped test) | [`revocation/negative-evidence.md`](f29-06/20261124T0359Z/revocation/negative-evidence.md) |
+| Sign-out and refresh reuse at auth | 2: a rotated refresh token reused is 401 `refresh_reused`; that session's access token is then 401 `session_revoked`. A signed-out access token is 401 `session_revoked` at auth | 2 (the sign-out case asserts without a row) | — | same |
+
+The session signed out is a fresh one of an `ANALYST` account the run created
+(`f18-04-<run>-analyst@example.test`), not the administrator's and not a
+seeded account's. The 401 comes before the role check on every service
+(ADR-0037), so a role that one operation refuses shows the revocation as well:
+a service that answered 403 before the sign-out answered 401 `session_revoked`
+after it.
 
 ### AC-14 "Desconexión"
 
@@ -255,11 +286,32 @@ screenshots. `record.json` stays outside the repository. Delete the HAR.
 
 ### Found on the way
 
-‹fill, or "Nothing."›
+- **The revocation case signed out the real administrator.**
+  `test_a_signed_out_session_is_refused_everywhere` signed in as the
+  administrator again and signed that fresh session out. The administrator is
+  not an account a run creates, so the instance run asked for a role it created.
+  `MOSAIQ_REVOCATION_ROLE` (default `ADMIN`, so every other run is unchanged)
+  names the role, the run set `ANALYST`, and the case now records each
+  service's answer before the sign-out so the 401 after it is shown to be the
+  revocation. Committed as `test(negative): let the revocation case sign out a
+  role the run created (#891)`; the instance tree held that one changed file.
+- The two runs of the suite left 20 throwaway accounts, all deactivated
+  (`is_active = false`): `f18-04-58787068e8-*@example.test` (the privacy run,
+  eleven with its two spares) and `f18-04-9aac6c898d-*@example.test` (the
+  revocation run, nine). The store-scope fixture also left two store
+  assignments, on store 2, held by two of the deactivated accounts.
+- Nothing refused a request it should have allowed, and no case failed.
 
 ### What was not done
 
-‹fill›
+- **"Desconexión" (AC-14)**, steps 3.1 to 3.4: it needs the Android emulator
+  and the release build with #867, and stays for the acceptance of the phone.
+  Its record above is unfilled on purpose.
+- The reads by id of another store's rows and the customers "no statement
+  logged" case: they run on the local stack only (see the tables).
+- The F20-03 report was not checked: this run took the identified version
+  from the release (#1188).
+- `check-api-edge.sh` was not run: it trips the sign-in limit.
 
 ---
 

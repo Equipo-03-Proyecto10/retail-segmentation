@@ -1589,6 +1589,24 @@ log, its grants and the backfill are F21-17 (#795). Declared interests are
 replaced as RN-54 says, and each replace that changes a set appends its before and
 after to `preferences.preference_change`. · #794
 
+### RN-74 — A purchase through a recommendation is a net sale line bought within seven days of the customer's click on that product
+
+A sale line counts as bought through a recommendation when the customer who made the
+sale clicked (`RECO_CLICK`) that product no more than seven days before it. An
+impression never earns a purchase, a click without a customer never does, and a line
+counts once, against the earliest such click. The line is read net of reversals
+([RN-70](#rn-70--a-sale-is-never-edited-or-deleted-a-cancellation-or-return-is-recorded-beside-it-and-every-reader-counts-net-units)),
+so a sale reversed in full counts for nothing, and a voided click earns nothing. The
+rule is observational: it says a click preceded a purchase, never that the recommendation
+caused it
+([ADR-0090](adr/0090-a-purchase-through-a-recommendation-is-a-net-sale-line-bought-within-seven-days-of-the-customers-click-on-that-product.md)).
+
+**Enforced:** recommendations-service, ADR-0090 and ADR-0075 — it keeps the interactions
+from engagement's stream and publishes `api_recommendations.interaction_v1` and
+`api_recommendations.recommended_purchase_v1`; analytics-kpis counts impressions, clicks
+and purchases from these, each from its own origin. · #1197
+
+
 ---
 
 ## Where the gaps are

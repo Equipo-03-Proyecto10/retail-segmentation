@@ -93,8 +93,14 @@ From the checkout, as an operator who can run Docker:
 ```bash
 export DATABASE_URL='postgresql://postgres@/retail?host=/run/postgresql'
 export REDIS_URL="redis://ops_console:$(sudo sed -n 's/^REDIS_OPS_CONSOLE_PASSWORD=//p' /etc/mosaiq/svc/ops-console.env)@redis-state:6379/0"
-PROPAGATION_OUT=~/propagation ops/propagation/run.sh measure --check
+PROPAGATION_USER=$(id -u postgres) PROPAGATION_OUT=~/propagation ops/propagation/run.sh measure --check
 ```
+
+On the instance the container runs as the OS user `postgres`
+(`PROPAGATION_USER`), because its PostgreSQL authenticates `postgres` on the
+socket by peer; `PROPAGATION_OUT` must be writable by that user. With SELinux
+enforcing, the tool's directory, `contracts/streams` and `PROPAGATION_OUT` must
+carry the label `container_file_t` to be mounted.
 
 `DATABASE_URL` must name a role that can update the captured tables and read
 every `<suffix>_events.outbox`. `ops_console` can send every command the tool
@@ -106,7 +112,7 @@ if one is not granted.
 The backlog test against `recommendations`, whose unit is `mosaiq-recommendations`:
 
 ```bash
-PROPAGATION_OUT=~/propagation ops/propagation/run.sh backlog \
+PROPAGATION_USER=$(id -u postgres) PROPAGATION_OUT=~/propagation ops/propagation/run.sh backlog \
   'docker compose -p mosaiq-recommendations stop' \
   'docker compose -p mosaiq-recommendations start' \
   --stream stream:products.v1.changed --group recommendations --events 500

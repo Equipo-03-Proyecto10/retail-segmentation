@@ -1,0 +1,184 @@
+{
+  "kind": "measure",
+  "environment": "instance",
+  "started_at": "2026-11-24T04:47:49Z",
+  "events_per_stream": 200,
+  "rate_per_second": 20.0,
+  "poll_interval_ms": 5.0,
+  "results": [
+    {
+      "stream": "stream:categories.v1.changed",
+      "group": "categories",
+      "count": 200,
+      "p50_ms": 629.7,
+      "p95_ms": 984.3,
+      "max_ms": 1057.7,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:categories.v1.changed",
+      "group": "recommendations",
+      "count": 200,
+      "p50_ms": 662.8,
+      "p95_ms": 1002.2,
+      "max_ms": 1057.7,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:preferences.v1.changed",
+      "group": "recommendations",
+      "count": 400,
+      "p50_ms": 697.1,
+      "p95_ms": 1019.8,
+      "max_ms": 1132.8,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:products.v1.changed",
+      "group": "products",
+      "count": 200,
+      "p50_ms": 629.1,
+      "p95_ms": 994.9,
+      "max_ms": 1093.9,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:products.v1.changed",
+      "group": "recommendations",
+      "count": 200,
+      "p50_ms": 661.4,
+      "p95_ms": 1019.8,
+      "max_ms": 1112.9,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:sales.v1.recorded",
+      "group": "recommendations",
+      "count": 200,
+      "p50_ms": 663.7,
+      "p95_ms": 1018.6,
+      "max_ms": 1112.1,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:sales.v1.recorded",
+      "group": "rfm-engine",
+      "count": 200,
+      "p50_ms": 727.4,
+      "p95_ms": 1046.4,
+      "max_ms": 1125.9,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:stock.v1.changed",
+      "group": "recommendations",
+      "count": 200,
+      "p50_ms": 663.1,
+      "p95_ms": 992.4,
+      "max_ms": 1115.3,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:stores.v1.changed",
+      "group": "stores",
+      "count": 200,
+      "p50_ms": 632.1,
+      "p95_ms": 1007.4,
+      "max_ms": 1111.5,
+      "unacknowledged": 0
+    },
+    {
+      "stream": "stream:users.v1.access_changed",
+      "group": "auth",
+      "count": 200,
+      "p50_ms": 626.1,
+      "p95_ms": 989.7,
+      "max_ms": 1097.8,
+      "unacknowledged": 0
+    }
+  ],
+  "not_relayed": 0,
+  "skipped": [
+    {
+      "stream": "stream:customers.v1.anonymized",
+      "group": "customer-preferences",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:customers.v1.anonymized",
+      "group": "users",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:engagement.v1.interaction_recorded",
+      "group": "experimentation",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:engagement.v1.interaction_recorded",
+      "group": "recommendations",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:models.v1.publication_recorded",
+      "group": "rfm-engine",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:preferences.v1.consent_changed",
+      "group": "recommendations",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:preferences.v1.consent_changed",
+      "group": "campaigns",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:preferences.v1.consent_changed",
+      "group": "rfm-engine",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:rfm.v1.profile_changed",
+      "group": "analytics-kpis",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:sales.v1.reversed",
+      "group": "recommendations",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:sales.v1.reversed",
+      "group": "rfm-engine",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:sales.v1.reversed",
+      "group": "experimentation",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:segments.v1.assignment_changed",
+      "group": "recommendations",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:segments.v1.assignment_changed",
+      "group": "analytics-kpis",
+      "reason": "producer not deployed: not captured yet"
+    },
+    {
+      "stream": "stream:segments.v1.run_recorded",
+      "group": "segments",
+      "reason": "opt-in with --allow-append: appends empty segmentation runs; local stack only"
+    },
+    {
+      "stream": "stream:segments.v1.run_recorded",
+      "group": "recommendations",
+      "reason": "opt-in with --allow-append: appends empty segmentation runs; local stack only"
+    }
+  ],
+  "errors": []
+}

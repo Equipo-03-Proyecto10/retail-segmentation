@@ -1,13 +1,15 @@
 # F29-04 (#889): the acceptance tests of the segmentation path, on one version
 
-> **Status: not yet run on the identified version.** This document is the runbook
-> and the template of five of the instructor's sixteen acceptance tests (AC-04
-> "RFM", AC-05 "Migración", AC-06 "Incremental", AC-07 "K-means", AC-08 "Drift";
-> [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11). Nothing blocks
-> them: #782, #808, #816, #822, #886 and #887 are closed. Every `‹fill: …›` below
-> is filled during the run. The only results recorded so far are the
-> [local dry run](#local-dry-run-not-the-acceptance), which is **not the
-> acceptance**.
+> **Status: run on 2026-11-24 (03:25 - 03:57 UTC; the evening of 2026-11-23 in
+> Mexico City) on the identified version `fdf0caed` (the instance's release #1188,
+> `main` at `50bf7d5c`, same tree). All five criteria are accepted.** Step 1 ran 21
+> checks, all held. Step 2 ran on the instance after F20-01's sale (sale 307, the
+> Android release build's, customer 28): the verification found 30 profiles of 30
+> equivalent, and the customer's `LOYAL` -> `CHAMPION` migration names the assignment
+> before it. The record is below; the raw evidence is in
+> [`f29-04/20261124T0334Z/`](f29-04/20261124T0334Z/). The run was made by the team's
+> automation. The [local dry run](#local-dry-run-not-the-acceptance) is kept for what
+> it showed about a wrong environment; it is not the acceptance.
 
 Governing decisions: F22-01's record
 ([ADR-0063](../adr/0063-segments-change-on-events-and-on-a-schedule-scored-against-the-published-version.md)),
@@ -154,22 +156,31 @@ connection-string password masked before they are written.
 
 | Piece | Value |
 |---|---|
-| Identified version | ‹fill: commit or tag›, F20-03 report ‹fill: link› |
-| Date and time (UTC) | ‹fill: start – end› |
-| Step 1 machine | ‹fill: OS, PostgreSQL version, Python, uv, rustc› |
-| Instance | `https://mosaiq.maxthecoder.online/`, versions ‹fill: from `$RUN/instance/summary.md`› |
-| F29-03's sale | ‹fill: sale id, customer, time› |
-| Who ran each step | ‹fill› |
+| Identified version | `fdf0caedb301d5308ea804ff9cb9bb5b43ce73cb` (`develop`), whose tree `0ada000c` is the tree of `main` at `50bf7d5c`, what the instance runs; the F20-03 runner's report is not linked here: this evening's run of release #1188 is the identification (see [f20-01-android-sale.md](f20-01-android-sale.md) for the versions served) |
+| Date and time (UTC) | 2026-11-24. Step 1: 03:34:37 - 03:41:47 (a first run at 03:25 - 03:33 is described under "Found on the way"). Step 2: 03:57:10 - 03:57:18 |
+| Step 1 machine | A WSL2 workstation (Linux 6.18, Ubuntu 26.04): PostgreSQL 18.6, Redis 8.0.5, Python 3.12.13, uv 0.12.3, rustc 1.98.1; two databases from the three scripts (`retail` for the suites, `retail_drift` copied from it for the drift study, never the instance's database) |
+| Instance | `https://mosaiq.maxthecoder.online/`, rfm-engine 0.8.0 (contract 1.2.1), segments 0.6.0 (contract 1.6.2), model-registry 0.5.0 (contract 1.3.0), web commit `50bf7d5c48336a39f89f34f9bb8d44a78057fb06`, from [`instance/summary.md`](f29-04/20261124T0334Z/instance/summary.md) |
+| F29-03's sale | The sale used is F20-01's, sale 307, customer `00000000-0000-0000-0000-000000000028` (Demo Customer 28), at 2026-11-24 03:51:10Z, store 30 ([f20-01-android-sale.md](f20-01-android-sale.md)); F29-03 links it. The customer's profile before: `LOYAL`, 11 purchases, 5299.50, r/f/m 3/3/5 (read at 03:45:14Z, the `--since`) |
+| Who ran each step | Step 0, 1 and 2: the team's automation. Step 2 ran on the instance itself, as ADMIN (`<administrator email, masked>`, the password read there from the root-only file), from an archive of `origin/main` (`50bf7d5c`) in a root-only scratch folder with a virtualenv holding pytest and PyYAML, because the credential is not copied to a workstation |
 
 ### The results
 
+Step 1: [`suites/summary.md`](f29-04/20261124T0334Z/suites/summary.md), 21 checks, 21 held, one log and JUnit file per suite beside it. Step 2: [`instance/summary.md`](f29-04/20261124T0334Z/instance/summary.md), 2 checks, 2 held, the exchanges in [`instance/exchanges.md`](f29-04/20261124T0334Z/instance/exchanges.md).
+
 | Criterion | Step 1 (commit) | Step 2 (instance) | Accepted |
 |---|---|---|---|
-| RFM | ‹fill› | — | ‹fill› |
-| Migración | ‹fill› | ‹fill› | ‹fill› |
-| Incremental | ‹fill› | ‹fill› | ‹fill› |
-| K-means | ‹fill› | — | ‹fill› |
-| Drift | ‹fill› | — | ‹fill› |
+| RFM | Held. The web: 4 of 4 against the 14 hand-worked customers. rfm-engine: 2 of 2. None skipped | - | Yes |
+| Migración | Held. rfm-engine's `test_assignment.py`: 25 of 25 (a change closes the previous assignment and opens one). segments' `migration_validation` and `assignment_cause`: 7 of 7 (six customers moved by each cause, the matrix and history against the table worked on paper) | Held. Customer 28's migration since the sale: `LOYAL` to `CHAMPION`, cause `SALE`, `movement` improved, `previous_run_id` 31, `new_run_id` 41, at 03:51:17.755Z, 1 changed with its previous state and label (exchange 7, correlation id `f29-04-bf7fc36c61c24096`) | Yes |
+| Incremental | Held. `test_verification.py`: 35 of 35 | Held. Verification 1 (`ON_DEMAND`, rule set 1) COMPLETED, EQUIVALENT, 30 customers checked, 0 different, in 39 ms (exchange 6, correlation id `f29-04-378199280b5a4f4d`). The profile the sale changed was among them: 12 purchases, 5340.75, r/f/m 5/4/5, `CHAMPION` | Yes |
+| K-means | Held. Fitted 3 times from scratch with no difference; the partition digest `040e8e1a8171ac792d4e0c6235376b13a45602afa075f67d372a020e677d26e0` equals F23-04's (k 4, seed 11, 100 iterations, tolerance 0.0001, 180 days); model-registry's `test_training.py`: 35 of 35 | - | Yes |
+| Drift | Held. The study ran through the production monitor on `retail_drift` in 405 s; its figures' digest `cfb2ddcfacaa1cef431f6a2ae54294fa8138e44f73a31facc4d5be6d51630f25` equals F23-10's. Spend x2 and frequency -50% detected in 50 of 50 pairs each, with an alert on the planted variable moving the planted way in each; the smaller planted sizes (0 of 50) are recorded as F23-10 registers them. No shift: 0 alerts of 200 pairs, 95% upper bound 0.75% (within 1%). The monitor tests: 40 of 40 | - | Yes |
+
+### Found on the way
+
+1. **A relative `--out` made five checks fail.** The first run (03:25 - 03:33, `RUN=docs/evidence/...` as the runbook writes it) reported 21 checks, 16 held: the service suites run in `services/<name>`, so their JUnit files were written under that directory, the collector found none, and each of the five read `{}`. The suites themselves had exited 0. [`tests/acceptance/f29_04.py`](../../tests/acceptance/f29_04.py) now resolves `--out` first. That first run was discarded; the one recorded here was run again from empty databases with an absolute path, on the unfixed collector, so its `commit` is the identified one.
+2. **The instance step needs the checkout's modules.** `tests/negative` and `tests/conformance` import pytest and PyYAML, which the instance does not have; the run used a virtualenv in the root-only scratch folder. The summary's "checkout commit" reads `(unavailable)` because the archive has no `.git`; the web commit line is the instance's own.
+3. **The administrator's password in `/root/mosaiq-admin.env` is the whole line** of the file, as `IFS= read -r` reads it. Sourcing the file and using the part after `=` is refused with 401.
+4. The instance step ran one verification recalculation (the runbook's only way to compare incremental with full on the deployed system); it wrote no profile and changed no segment. No experiment, campaign or model was created or changed.
 
 ---
 

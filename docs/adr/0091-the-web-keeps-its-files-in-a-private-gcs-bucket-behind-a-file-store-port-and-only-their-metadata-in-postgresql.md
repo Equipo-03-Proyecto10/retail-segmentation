@@ -115,6 +115,11 @@ HMAC-SHA256 of the file id and the expiry under `FLASK_SECRET_KEY` with a fixed 
 that route checks (signature first, then expiry) before serving the bytes; a missing, forged,
 reused-for-another-file or late URL is a 403 and a `file_url_refused ... reason=` line without
 the query string. The route does not exist on the `gcs` backend.
+The local URL is a stand-in for development and tests, and it is the one place a signature can
+reach a log: the application never logs it, but a WSGI server's own access log (gunicorn's
+`--access-logfile`) records the request line, query string included. The `gcs` URL is fetched
+from Google, never from the web, so no log of ours sees it; and the web refuses to run the local
+backend in production unless that is explicitly allowed.
 
 **The database keeps metadata only,** in one table, `stored_file` (schema in
 `sql/01_schema.sql`): `file_id`, `object_path`, `content_type`, `size_bytes`, `sha256`,

@@ -15,6 +15,7 @@ from web.routes.consumption_reports import bp as consumption_reports_bp
 from web.routes.experiment_dashboard import bp as experiment_dashboard_bp
 from web.routes.experiment_report import bp as experiment_report_bp
 from web.routes.experiments import bp as experiments_bp
+from web.routes.files import bp as files_bp
 from web.routes.home import bp as home_bp
 from web.routes.migration_explanation import bp as migration_explanation_bp
 from web.routes.migration_matrix import bp as migration_matrix_bp
@@ -50,3 +51,4 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(experiments_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(files_bp)

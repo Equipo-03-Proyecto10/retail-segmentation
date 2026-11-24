@@ -17,6 +17,7 @@
         <dt>Accepted</dt><dd class="mq-mono">{{ load.accepted_count }}</dd>
         <dt>Rejected</dt><dd class="mq-mono">{{ load.rejected_count }}</dd>
         <dt>Uploaded by</dt><dd>{{ load.loaded_by_name or "System" }}</dd>
+        <dt>Source file</dt><dd>{% if load.source_file_id %}<a href="{{ url_for('files.download', file_id=load.source_file_id) }}">Download the uploaded CSV</a> <span class="mq-field__hint">(a link that works for {{ signed_url_minutes }} minutes)</span>{% else %}Not kept{% endif %}</dd>
       </dl>
     </div>
   </section>

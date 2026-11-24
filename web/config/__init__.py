@@ -43,6 +43,10 @@ FILE_STORE_LOCAL = "local"
 FILE_STORE_GCS = "gcs"
 FILE_STORE_BACKENDS = frozenset({FILE_STORE_LOCAL, FILE_STORE_GCS})
 DEFAULT_FILE_STORE_BACKEND = FILE_STORE_LOCAL
+# A signed URL for a PRIVATE file (F29-14, ADR-0091) lives ten minutes unless
+# configured otherwise, and never longer than fifteen, whatever is configured.
+DEFAULT_SIGNED_URL_TTL_SECONDS = 600
+MAX_SIGNED_URL_TTL_SECONDS = 900
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -129,6 +133,10 @@ class Config:
     development. `from_env` refuses the combinations that would silently put the
     files on the instance's disk or write to no bucket at all.
 
+    `signed_url_ttl_seconds` is how long a signed URL for a PRIVATE file lives
+    (F29-14): clamped to 900, so no configuration can issue one that lasts more
+    than fifteen minutes.
+
     No setting marks figures Synthetic: every page takes the marker from the
     data_origin of the rows it reads (ADR-0052, #560).
     """
@@ -154,6 +162,7 @@ class Config:
     file_store_backend: str = DEFAULT_FILE_STORE_BACKEND
     gcs_bucket: str | None = None
     file_store_allow_local_in_production: bool = False
+    signed_url_ttl_seconds: int = DEFAULT_SIGNED_URL_TTL_SECONDS
     # Login failures are counted per account and client address. NGINX adds a
     # worker-shared client limit in front of the two Gunicorn workers.
     login_throttle_max_attempts: int = DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
@@ -246,6 +255,13 @@ class Config:
             file_store_backend=file_store_backend,
             gcs_bucket=gcs_bucket,
             file_store_allow_local_in_production=allow_local,
+            signed_url_ttl_seconds=min(
+                _int_env(
+                    env.get("SIGNED_URL_TTL_SECONDS"),
+                    default=DEFAULT_SIGNED_URL_TTL_SECONDS,
+                ),
+                MAX_SIGNED_URL_TTL_SECONDS,
+            ),
             login_throttle_max_attempts=_int_env(
                 env.get("LOGIN_THROTTLE_MAX_ATTEMPTS"),
                 default=DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS,

@@ -134,7 +134,7 @@ ANALYTICS_ROUTES: tuple[tuple[str, str, str, str], ...] = (
 # inbox (`@requires()`); what each notification says is gated on its own
 # delivery permission when it is read (ADR-0047), not on the route.
 NOT_ANALYTICS_BLUEPRINTS = frozenset(
-    {"admin", "audit", "auth", "home", "notifications"}
+    {"admin", "audit", "auth", "files", "home", "notifications"}
 )
 ANALYTICS_PERMISSIONS = frozenset(
     {

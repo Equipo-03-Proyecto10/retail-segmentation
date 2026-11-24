@@ -280,7 +280,7 @@ Add a row for every other service whose path appears in the HAR
 
 ### 8. Afterwards
 
-- The account stays active for F20-02 (#760), which reads this sale from
+- The account was kept for F20-02 (#760) and deactivated at the end of that run (`POST /api/users/v1/users/927d1bf9-c8cb-43ca-9841-704e5d0993bb/deactivation`, correlation id `f20-01-deactivate`, 200, `is_active` false; see [F20-02](f20-02-electron-sale-campaign.md)).
   Electron. Once #760 is recorded, deactivate it through
   `POST /api/users/v1/users/{user_id}/deactivation` (RN-04: deactivated, never
   deleted).

@@ -44,13 +44,19 @@ def test_a_signed_out_session_is_refused_everywhere(
     token = session.token()
     for name in IMPLEMENTED:
         before = _probe(deployed_stack, services[name], token)
-        assert before.status != 401, (name, before.outcome())
+        # Authenticated means the service let the token through: a 2xx, or the
+        # role refusal that only an authenticated caller gets. A 500, 404 or
+        # another 403 proves nothing about the session (review of PR #1204).
+        authenticated = 200 <= before.status < 300 or (
+            before.status == 403 and before.code() == "forbidden_role"
+        )
+        assert authenticated, (name, before.outcome())
         evidence.record(
             name,
             "the request before sign-out is authenticated",
-            "not 401",
+            "2xx, or 403 forbidden_role",
             before.outcome(),
-            before.status != 401,
+            authenticated,
         )
 
     require(session.sign_out(), 204)

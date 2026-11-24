@@ -352,6 +352,9 @@ recorded; this is the same sale." and the Outbox "Everything is synced".
   runbook's "tap **Send now**" was not needed (it had been tapped before the
   network was usable, with no effect).
 - Nothing refused a request it should have allowed, and no case failed.
+- **Two checks were tightened after the run (review of PR #1204).**
+  - The revocation case's "before" control accepted any answer but 401, so a 500 or a 404 would have passed as "authenticated". It now holds only for a 2xx or a 403 `forbidden_role`. This run is unaffected: its 19 controls were 15 answers of 200 and 4 of 403 `forbidden_role`.
+  - The store-scope row for the unfiltered engagement list read an empty page (`stores []`). An empty page carries nothing of another store, but it does not exercise the filter. That row counts toward the 26 store-scope cases as "nothing leaked", not as a proof of row filtering. The check now requires at least one row, so a later run records an engagement event at the confined store first.
 
 ### What was not done
 

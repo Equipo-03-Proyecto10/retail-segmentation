@@ -1,9 +1,10 @@
-# Application view of the delivered system: the web system, the fifteen
+# Application view of the delivered system: the web system, the nineteen
 # services, the datastores they meet at, and the two clients.
-# Sources: docs/scope-delivery-2-distributed.md section 3, contracts/registry.yaml,
-# sql/01_schema.sql, deploy/infra/compose.yaml, docker/distributed/gateway/default.conf,
+# Sources: docs/scope-delivery-2-distributed.md section 3, docs/scope-delivery-3.md,
+# contracts/registry.yaml, contracts/streams/, sql/01_schema.sql,
+# deploy/infra/compose.yaml, docker/distributed/gateway/default.conf,
 # bench/README.md, ADR-0034, ADR-0035, ADR-0037, ADR-0038, ADR-0040, ADR-0041,
-# ADR-0042, ADR-0044, ADR-0045, ADR-0046.
+# ADR-0042, ADR-0044, ADR-0045, ADR-0046, ADR-0059.
 #
 # No arrow joins two services. They meet only through the producer's api_*
 # objects in PostgreSQL and through Redis Streams (ADR-0044), so every edge here
@@ -35,6 +36,12 @@ classes: {
       stroke-dash: 4; stroke-width: 2
     }
   }
+  svc3: {
+    style: {
+      fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"
+      double-border: true
+    }
+  }
   store: {
     style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" }
   }
@@ -60,11 +67,11 @@ nginx: "NGINX :443\n/  to the web system\n/api/<name>/ to one loopback port per 
   class: gatenode
 }
 
-web: "WEB SYSTEM — mosaiq.service (systemd)\nFlask + Jinja2 under Gunicorn, 127.0.0.1:8000\nfrozen · server-rendered HTML\nno Redis · no service calls" {
+web: "WEB SYSTEM — mosaiq.service (systemd)\nFlask + Jinja2 under Gunicorn, 127.0.0.1:8000\nserver-rendered HTML · changes only for new facts (Q-17)\nno Redis · no service calls" {
   class: appnode
 }
 
-services: "FIFTEEN SERVICES — each its own compose project mosaiq-<name> under mosaiq-svc@<name>.service (ADR-0040)" {
+services: "NINETEEN SERVICES — each its own compose project mosaiq-<name> under mosaiq-svc@<name>.service (ADR-0040)" {
   class: layer
 
   core: "Core (13)" {
@@ -90,6 +97,14 @@ services: "FIFTEEN SERVICES — each its own compose project mosaiq-<name> under
       "campaigns": "campaigns\nproject mosaiq-campaigns\nFlask · :5014\nSECOND WAVE" { class: svc2 }
       "audit-trail": "audit-trail\nproject mosaiq-audit-trail\nRust · :5015\nSECOND WAVE" { class: svc2 }
   }
+  third: "Third delivery (4), ADR-0059 — double outline" {
+    class: layer
+    grid-columns: 2
+      "rfm-engine": "rfm-engine\nproject mosaiq-rfm-engine\nFlask · :5016\nADR-0059" { class: svc3 }
+      "model-registry": "model-registry\nproject mosaiq-model-registry\nFlask · :5019\nADR-0059" { class: svc3 }
+      "experimentation": "experimentation\nproject mosaiq-experimentation\nFlask · :5020\nADR-0059" { class: svc3 }
+      "analytics-kpis": "analytics-kpis\nproject mosaiq-analytics-kpis\nRust · :5022\nADR-0059" { class: svc3 }
+  }
 }
 
 bench: "BENCH ONLY — Rust twin of the products reads\nbench/products-service-rs · 127.0.0.1:5103\nnot a service: not registered, not routed by NGINX,\nnot deployed (ADR-0042, E-22)" {
@@ -102,15 +117,15 @@ pg: "PostgreSQL — database retail" {
     class: store
     shape: cylinder
   }
-  svcschemas: "service schemas\nstores · sales · checkins" {
+  svcschemas: "service schemas (ADR-0046)\nusers · products · customers · preferences · stores\nstock · sales · checkins · recommendations · campaigns\nrfm · models · experiments · kpis · audit_events" {
     class: store
     shape: cylinder
   }
-  api: "api_* schemas\nversioned *_v1 views, consume_v1\nusers · products · categories · stores · stock\ncustomers · preferences · sales · segments" {
+  api: "17 api_* schemas\nversioned *_v1 views, consume_v1\nusers · products · categories · stores · stock · customers\npreferences · sales · segments · recommendations · campaigns\ncheckins · audit · rfm · models · experiments · kpis" {
     class: store
     shape: cylinder
   }
-  outbox: "eight outboxes — <suffix>_events.outbox\nusers · products · categories · stores\nstock · preferences · sales · segments\nkeys only, filled by capture triggers" {
+  outbox: "eleven outboxes — <suffix>_events.outbox\nusers · products · categories · stores · stock · customers\npreferences · sales · segments · rfm · models\nkeys only, filled by capture triggers" {
     class: store
     shape: cylinder
   }
@@ -122,7 +137,7 @@ infra: "mosaiq-infra — compose project under mosaiq-infra.service" {
     class: store
     shape: cylinder
   }
-  streams: "Redis Streams on redis-state — stream:<name>\nusers.v1.access_changed: users to auth\nproducts.v1.changed: products to products, recommendations\ncategories.v1.changed: categories to categories, recommendations\nstores.v1.changed: stores to stores\nstock.v1.changed: stock to recommendations\npreferences.v1.changed: customer-preferences to recommendations\nsales.v1.recorded: sales to recommendations\nsegments.v1.run_recorded: segments to segments, recommendations" {
+  streams: "Redis Streams on redis-state — stream:<name>, producer to consumer groups\nusers.v1.access_changed: users to auth\nproducts.v1.changed: products to products, recommendations\ncategories.v1.changed: categories to categories, recommendations\nstores.v1.changed: stores to stores\nstock.v1.changed: stock to recommendations\ncustomers.v1.anonymized: customers to customer-preferences, users\npreferences.v1.changed: customer-preferences to recommendations\npreferences.v1.consent_changed: customer-preferences to recommendations, campaigns, rfm-engine\nsales.v1.recorded: sales to recommendations, rfm-engine\nsales.v1.reversed: sales to recommendations, rfm-engine, experimentation\nsegments.v1.run_recorded: segments to segments, recommendations\nsegments.v1.assignment_changed: segments to recommendations, analytics-kpis\nrfm.v1.profile_changed: rfm-engine to analytics-kpis\nmodels.v1.publication_recorded: model-registry to rfm-engine\nengagement.v1.interaction_recorded: engagement to experimentation, recommendations" {
     class: store
     shape: page
   }
@@ -130,7 +145,7 @@ infra: "mosaiq-infra — compose project under mosaiq-infra.service" {
     class: store
     shape: cylinder
   }
-  mongo: "MongoDB\ndatabase engagement" {
+  mongo: "MongoDB\ndatabase engagement\nowned by engagement alone (ADR-0038)" {
     class: store
     shape: cylinder
   }
@@ -161,6 +176,9 @@ infra.streams -> services: "consumer groups · XREADGROUP"
 services -> infra.rs: "session liveness EXISTS · rate limits"
 services -> infra.rc: "cache, falls through to PostgreSQL"
 services.core.engagement -> infra.mongo: "events and rollups"
+infra.mongo -> infra.streams: "engagement relays its captured events · XADD" {
+  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
+}
 
 bench -> pg.public: "reads product as svc_products_bench" {
   style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }

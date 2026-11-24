@@ -192,6 +192,85 @@ def test_poll_skips_a_group_that_does_not_exist_yet():
     assert not tracker.done()
 
 
+def test_an_entry_relayed_before_its_commit_is_recorded_is_still_matched():
+    """#1216: the relay, woken by the commit's pg_notify, can append an event
+    before the producing thread has put it in `commits`. The poll that reads
+    the entry then moves its cursor past it; the entry must still be matched
+    once its commit is recorded, not reported as never relayed."""
+    reads = FakeReads()
+    tracker = propagation.Tracker({STREAM: ["recommendations"]})
+    cursors = {STREAM: "5-0"}
+    commits = {"ours-1": 100.0}
+    reads.entries[STREAM] = [
+        ("6-0", {"event_id": "ours-1"}),
+        ("7-0", {"event_id": "ours-2"}),  # relayed; its commit not recorded yet
+    ]
+    reads.positions[STREAM] = {"recommendations": "5-0"}
+    propagation.poll(reads, tracker, cursors, commits, lambda: 100.002)
+    assert cursors[STREAM] == "7-0"
+    assert set(tracker.entries[STREAM]) == {"6-0"}
+
+    commits["ours-2"] = 100.003  # the producing thread records it now
+    reads.positions[STREAM] = {"recommendations": "7-0"}
+    propagation.poll(reads, tracker, cursors, commits, lambda: 100.020)
+
+    assert set(tracker.entries[STREAM]) == {"6-0", "7-0"}
+    assert tracker.seen_events() == {"ours-1", "ours-2"}
+    assert tracker.done()
+    (row,) = tracker.results()
+    assert row["count"] == 2
+    assert row["unacknowledged"] == 0
+    assert row["max_ms"] == 20.0
+
+
+def test_entries_of_events_that_are_not_ours_are_never_tracked():
+    reads = FakeReads()
+    tracker = propagation.Tracker({STREAM: ["recommendations"]})
+    cursors = {STREAM: "5-0"}
+    reads.entries[STREAM] = [("6-0", {"event_id": "someone-elses"}), ("7-0", {})]
+    for _ in range(3):
+        propagation.poll(reads, tracker, cursors, {"ours": 1.0}, lambda: 2.0)
+    assert tracker.entries[STREAM] == {}
+    assert [e for e, _ in tracker.unclaimed[STREAM]] == ["6-0", "7-0"]
+
+
+class FakeOutbox:
+    """Answers relayed_events' query from a set of relayed ids per schema."""
+
+    def __init__(self, relayed):
+        self.relayed = relayed
+        self.calls = []
+
+    def execute(self, statement, params):
+        schema = statement._obj[1]._obj[0]  # the composed sql.Identifier
+        self.calls.append((schema, params))
+        ids = params[0]
+        rows = [(i,) for i in ids if i in self.relayed.get(schema, set())]
+
+        class Rows:
+            def fetchall(self_inner):
+                return rows
+
+        return Rows()
+
+    def rollback(self):
+        pass
+
+
+def test_unmatched_events_are_re_checked_against_their_outbox():
+    pytest.importorskip("psycopg")
+    outbox = FakeOutbox({"sales_events": {"a"}, "products_events": {"c"}})
+    relayed = propagation.relayed_events(
+        outbox, ["sales_events", "products_events", "sales_events"], {"a", "b", "c"}
+    )
+    assert relayed == {"a", "c"}
+    assert [schema for schema, _ in outbox.calls] == [
+        "products_events",
+        "sales_events",
+    ]
+    assert all(params == (["a", "b", "c"],) for _, params in outbox.calls)
+
+
 # --- contracts and bounds -------------------------------------------------------
 
 CONTRACT = """# `stream:sales.v1.recorded`
@@ -336,6 +415,13 @@ def test_lost_entries_and_unbounded_groups_fail(tmp_path):
         "2 committed events never relayed",
         f"{STREAM} recommendations: 3 entries never acknowledged",
         f"{STREAM} analytics-kpis: measured, but its contract states no bound",
+    ]
+
+
+def test_a_relayed_event_never_read_back_fails_under_its_own_name(tmp_path):
+    report = {"results": [_row()], "not_relayed": 0, "relayed_unmatched": 1}
+    assert propagation.check(report, _contracts(tmp_path)) == [
+        "1 relayed events never read from their stream"
     ]
 
 

@@ -28,6 +28,17 @@ alike.
   (`XINFO GROUPS`) and pending list (`XPENDING`) every `--poll-ms` (default
   5 ms). An entry is acknowledged at the first poll where the group has
   delivered it and it is no longer pending.
+- **Matching.** An entry is matched to a commit by its `event_id`. The relay
+  is woken by the commit's `pg_notify`, so it can append an entry before the
+  tool has recorded that commit. Such an entry is kept and matched by a later
+  poll; it is never skipped ([#1216](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/1216)).
+  Its latency is overstated by at most that delay.
+- **The end of a run.** After the last commit, the tool keeps polling until
+  every committed event has been read from its stream and acknowledged, or
+  until `--timeout` (default 60 s) has passed. Then it reads each outbox for
+  any event it still has not read. An event whose row is still unrelayed counts
+  as never relayed. An event whose row is marked relayed counts as relayed but
+  never read back.
 - **One clock.** Both times are read on the tool's monotonic clock. A latency is
   overstated by at most one poll interval, and understated by at most one
   commit round trip.
@@ -49,7 +60,9 @@ alike.
 - a measured group has no bound;
 - its p95 or maximum exceeds the bound;
 - an entry was never acknowledged;
-- a committed event was never relayed;
+- a committed event was never relayed: its outbox row is still unrelayed at
+  the end of the run;
+- a relayed event was never read from its stream;
 - the load hit an error;
 - a contract has no bound table.
 

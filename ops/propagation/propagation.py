@@ -164,9 +164,31 @@ class Tracker:
         self.groups = {stream: list(names) for stream, names in groups.items()}
         self.entries: dict[str, dict[str, Entry]] = {s: {} for s in self.groups}
         self.max_deliveries: dict[tuple[str, str], int] = {}
+        # Entries read past whose event this process did not know yet: the
+        # relay can append an event before the thread that committed it has
+        # recorded it (#1216). They are matched by a later poll.
+        self.unclaimed: dict[str, list[tuple[str, str]]] = {s: [] for s in self.groups}
 
     def add(self, stream: str, entry_id: str, event_id: str, committed: float) -> None:
         self.entries[stream].setdefault(entry_id, Entry(entry_id, event_id, committed))
+
+    def read(self, stream: str, entry_id: str, event_id: str) -> None:
+        """Remember an entry read from the stream until it can be claimed."""
+        self.unclaimed[stream].append((entry_id, event_id))
+
+    def claim(self, commits: Mapping[str, float]) -> None:
+        """Track every read entry whose event is now known to be ours."""
+        for stream, unclaimed in self.unclaimed.items():
+            waiting = []
+            for entry_id, event_id in unclaimed:
+                if event_id in commits:
+                    self.add(stream, entry_id, event_id, commits[event_id])
+                else:
+                    waiting.append((entry_id, event_id))
+            self.unclaimed[stream] = waiting
+
+    def seen_events(self) -> set[str]:
+        return {e.event_id for es in self.entries.values() for e in es.values()}
 
     def outstanding(self, stream: str, group: str) -> list[Entry]:
         return [e for e in self.entries[stream].values() if group not in e.acked]
@@ -243,13 +265,19 @@ def poll(
     commits: Mapping[str, float],
     now: Callable[[], float],
 ) -> None:
-    """One poll: pick up new entries of ours, then each group's acknowledgements."""
+    """One poll: pick up new entries of ours, then each group's acknowledgements.
+
+    The cursor moves past every entry read, but an entry whose event is not in
+    `commits` yet is kept, not dropped: the relay can append an event, woken by
+    the commit's `pg_notify`, before the producing thread has recorded its
+    commit time or before this poll's snapshot of `commits` was taken. Such an
+    entry is claimed by the first poll whose `commits` holds its event (#1216).
+    """
     for stream, entries in reads.new_entries(cursors).items():
         for entry_id, fields in entries:
             cursors[stream] = entry_id
-            event_id = fields.get("event_id", "")
-            if event_id in commits:
-                tracker.add(stream, entry_id, event_id, commits[event_id])
+            tracker.read(stream, entry_id, fields.get("event_id", ""))
+    tracker.claim(commits)
     streams = [s for s, entries in tracker.entries.items() if entries]
     if not streams:
         return
@@ -449,6 +477,27 @@ def touch_once(connection: Any, stream: str, touch: Touch, target: tuple) -> lis
     return [row[0] for row in rows]
 
 
+def relayed_events(
+    connection: Any, schemas: Iterable[str], event_ids: Iterable[str]
+) -> set[str]:
+    """Which of these events their outbox marks relayed."""
+    from psycopg import sql
+
+    ids = sorted(event_ids)
+    relayed: set[str] = set()
+    for schema in sorted(set(schemas)):
+        rows = connection.execute(
+            sql.SQL(
+                "SELECT event_id::text FROM {}.outbox "
+                "WHERE event_id = ANY(%s::uuid[]) AND relayed_at IS NOT NULL"
+            ).format(sql.Identifier(schema)),
+            (ids,),
+        ).fetchall()
+        relayed.update(row[0] for row in rows)
+    connection.rollback()
+    return relayed
+
+
 def produce(
     database_url: str,
     stream: str,
@@ -568,20 +617,28 @@ def measure(args: argparse.Namespace) -> dict[str, Any]:
         thread.start()
     deadline = None
     while True:
+        # Asked before the snapshot, so that once nothing is producing the
+        # snapshot holds every commit: a commit recorded during the poll cannot
+        # be missed by the test below (#1216).
+        producing = any(thread.is_alive() for thread in producers)
         with lock:
             snapshot = dict(commits)
         poll(reads, tracker, cursors, snapshot, time.perf_counter)
-        producing = any(thread.is_alive() for thread in producers)
         if not producing:
             if deadline is None:
                 deadline = time.perf_counter() + args.timeout
-            seen = sum(len(entries) for entries in tracker.entries.values())
-            if seen >= len(snapshot) and tracker.done():
+            if not set(snapshot) - tracker.seen_events() and tracker.done():
                 break
             if time.perf_counter() > deadline:
                 break
         time.sleep(args.poll_ms / 1000)
-    seen_events = {e.event_id for es in tracker.entries.values() for e in es.values()}
+    unmatched = set(commits) - tracker.seen_events()
+    relayed: set[str] = set()
+    if unmatched:
+        with psycopg.connect(args.database_url) as connection:
+            relayed = relayed_events(
+                connection, [touch_for(s).schema for s in groups], unmatched
+            )
     return {
         "kind": "measure",
         "environment": args.environment,
@@ -590,7 +647,10 @@ def measure(args: argparse.Namespace) -> dict[str, Any]:
         "rate_per_second": args.rate,
         "poll_interval_ms": args.poll_ms,
         "results": tracker.results(),
-        "not_relayed": len(set(commits) - seen_events),
+        # Not in the stream at the deadline: still unrelayed in the outbox, or
+        # relayed and yet never read back (#1216).
+        "not_relayed": len(unmatched - relayed),
+        "relayed_unmatched": len(unmatched & relayed),
         "skipped": skipped,
         "errors": errors,
     }
@@ -716,6 +776,10 @@ def check(
         failures.append(f"load error: {message}")
     if report.get("not_relayed"):
         failures.append(f"{report['not_relayed']} committed events never relayed")
+    if report.get("relayed_unmatched"):
+        failures.append(
+            f"{report['relayed_unmatched']} relayed events never read from their stream"
+        )
     for _stream, contract in sorted(contracts.items()):
         if not contract.bounds:
             failures.append(f"{contract.path.name}: no {BOUND_HEADING} table")

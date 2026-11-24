@@ -116,6 +116,11 @@ pg: "PostgreSQL — database retail" {
   }
 }
 
+gcs: "Cloud Storage bucket — the web's files\nprivate · uniform access · no public access\nthe instance's service account, no key (ADR-0091)\nproduct pictures; metadata in public.stored_file" {
+  class: store
+  shape: cylinder
+}
+
 infra: "mosaiq-infra — compose project under mosaiq-infra.service" {
   class: layer
   rs: "redis-state\nnoeviction · AOF\nsessions · stream:* · rate limits" {
@@ -142,6 +147,7 @@ nginx -> web: "/"
 nginx -> services: "/api/<name>/v1"
 
 web -> pg.public: "SQL as retail_app"
+web -> gcs: "file bytes only · Cloud Storage API (ADR-0091)"
 services -> pg.public: "own tables only · svc_<name> roles"
 services -> pg.svcschemas: "own new tables"
 services -> pg.api: "cross-boundary reads of the producer's views"

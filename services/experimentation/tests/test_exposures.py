@@ -371,3 +371,13 @@ def test_svc_kpis_reads_the_view_and_no_table_beneath_it(scene: Scenario) -> Non
             scene.owner.execute("SET LOCAL ROLE svc_kpis")
             scene.owner.execute("SELECT count(*) FROM public.experiment_exposure")
     assert scene.published() == []
+
+
+def test_an_occurrence_without_an_offset_is_refused(
+    service: Any, scene: Scenario
+) -> None:
+    event = scene.fields(scene.customers[1], START)
+    event["occurred_at"] = "2026-03-10T12:00:00"
+    with pytest.raises(ValueError, match="offset"):
+        service.extensions["experimentation_handle_exposure"](event)
+    assert scene.exposure_rows() == []

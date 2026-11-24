@@ -6,6 +6,14 @@ projection's stable source key. Both notice rows and exposure facts are
 append-only. A VOIDED notice is a tombstone consulted by counts, including when
 it arrives before RECORDED. The exposure keeps the entry's store, and
 ``api_experiments.exposure_v1`` publishes the exposures no notice voided (#1198).
+
+The notices behave as recommendations' consumer (#1197, ``app/interactions.py``)
+handles its kinds: idempotent and order-free, a RECORDED never undoes a void, a
+VOIDED that arrives first is kept, and a malformed entry raises. The storage
+differs on purpose: an exposure is append-only for every application role
+(RN-27, ADR-0050) and F25-12's attributions reference it, so a void is a
+separate notice row rather than a flag updated on the exposure, and a void that
+arrives first writes no exposure at all.
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ from psycopg import Connection
 
 LOGGER = logging.getLogger(__name__)
 REPEAT_SECONDS = 60
+SMALLINT_MAX = 32_767
 
 LOCK_SOURCE = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 841))"
 NOTICE_EXISTS = """
@@ -95,7 +104,10 @@ SELECT g.group_id, count(DISTINCT x.assignment_id)
 
 
 def _instant(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("occurred_at has no offset")
+    return parsed
 
 
 def _store(value: str | None) -> int | None:
@@ -106,9 +118,12 @@ def _store(value: str | None) -> int | None:
     """
     if value is None:
         return None
-    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 32767:
-        raise ValueError("store_id is not a positive smallint")
-    return int(value)
+    if not value.isascii() or not value.isdigit():
+        raise ValueError("store_id is not a positive integer")
+    store = int(value)
+    if not 1 <= store <= SMALLINT_MAX:
+        raise ValueError("store_id is out of range")
+    return store
 
 
 def _source_event(value: str, notice: str) -> UUID:

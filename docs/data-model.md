@@ -1193,6 +1193,10 @@ decision that matters is how a product's many-valued facts are split:
   delete of a run): `segmentation_run` does not change. A WEB_RUN
   version's source run is derived (the earliest linked run), not stored, so the
   two cannot disagree.
+  A run `api_segments.apply_assignment_v1` records for rfm-engine is linked in the
+  same transaction through `api_models.link_run_version_v1` (ADR-0092), so the link
+  and the run's `parameters.model_version_id` name one version; the link is the one
+  source readers use.
   `api_models.run_version_v1` is its read-only projection for segments-service;
   it exposes the same key, version and link time without duplicating a fact or
   granting the consumer access to model-registry's table.

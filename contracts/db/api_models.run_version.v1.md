@@ -11,7 +11,11 @@
 | Consumers | segments, recommendations, analytics-kpis |
 
 The view publishes the immutable model-version link for every segmentation run
-that model-registry has linked. A run can be temporarily absent while its stream
+that model-registry has linked. A run of rfm-engine's changes is linked in the
+transaction that records it, through
+[`api_models.link_run_version_v1`](api_models.link_run_version.v1.md), which
+`api_segments.apply_assignment_v1` calls (ADR-0092); a run the web records is linked
+by model-registry. A run can be temporarily absent while its stream
 event is pending; consumers preserve that absence as an unknown version and do
 not substitute the currently published version. recommendations reads it for
 the `model_version_id` of a `/v2` decision, and answers null for a run with no
@@ -26,7 +30,7 @@ missing row as an unknown version, never as the published one.
 |---|---|---|
 | `run_id` | `bigint` | The segmentation run, by value across the boundary. |
 | `version_id` | `bigint` | The immutable version that scored the run. |
-| `linked_at` | `timestamp with time zone` | When model-registry recorded the link. |
+| `linked_at` | `timestamp with time zone` | When the link was recorded. |
 
 ## Compatibility
 

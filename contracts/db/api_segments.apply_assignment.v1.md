@@ -94,6 +94,10 @@ web run in progress, which closes every open row at the instant it read after ta
 that lock, and a web run waits for the changes in flight; changes do not wait for each
 other on it.
 
+The run's creation also links it to the call's version in `models.run_version`, through
+`api_models.link_run_version_v1` (ADR-0092), so its version is read from
+`api_models.run_version_v1` like any run's.
+
 The row's insert raises `stream:segments.v1.assignment_changed` and the run's
 insert raises `stream:segments.v1.run_recorded`, both through the capture
 triggers, in the same transaction.
@@ -106,6 +110,7 @@ triggers, in the same transaction.
 | 23514 | `unknown_label` | `p_label_code` is not in the label vocabulary. | `profile_rejected` |
 | 23514 | `unknown_customer` | `p_customer_id` is not in `api_customers.customer_ref_v1`. | `profile_rejected` |
 | 23514 | `batch_mismatch` | A call of a batch that writes disagrees with the batch's cause, version, rule set, method or window. | a defect of the caller |
+| 23503 | `unknown_model_version` | The call creates its batch's run and `p_model_version_id` is not a version of the registry, so the run cannot be linked (ADR-0092). rfm-engine reads the version from `api_models.published_version_v1` and versions are never deleted, so it never sends one. | a defect of the caller |
 
 These are database outcomes. rfm-engine maps them to its own behaviour; the
 segments service never answers them over HTTP. A unique violation on the open-row
@@ -126,8 +131,11 @@ index is never surfaced: the function waits and re-reads instead.
   batch id. Calling twice with the same arguments returns `unchanged` the second time,
   so a redelivered event is harmless (RN-65).
 - The `models.run_version` link is model-registry's. Segments reads the version of a
-  run through the view that model-registry publishes (F22-10); this function records
-  `p_model_version_id` in the run's parameters so that the link is never absent.
+  run through the view that model-registry publishes (F22-10). When this function
+  records a run it also links it to `p_model_version_id`, in the same transaction,
+  through model-registry's `api_models.link_run_version_v1`, granted to
+  `definer_segments` (ADR-0092, #1208); it never writes the registry's table. The
+  version also stays in the run's parameters (ADR-0087).
 
 ## Compatibility
 

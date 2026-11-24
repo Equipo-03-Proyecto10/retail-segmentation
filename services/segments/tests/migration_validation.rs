@@ -531,3 +531,69 @@ async fn a_recomputation_with_no_new_sale_shows_no_migration() {
         .all(|total| total.entries == 0 && total.exits == 0));
     clean(&owner).await;
 }
+
+/// A sale that moves a customer between two assignments written under one published
+/// version is behaviour, not method (#1208, ADR-0064, ADR-0092): both runs are
+/// incremental, `apply_assignment_v1` links each to the version it was scored under, so
+/// both sides of the migration name the version and it is not methodological.
+#[tokio::test]
+async fn a_sale_under_the_version_of_the_previous_assignment_is_not_methodological() {
+    let _turn = TURN.lock().await;
+    let url = owner_url();
+    let owner = connect(&url).await;
+    let db = service_database(&url);
+    clean(&owner).await;
+    before(&owner).await;
+    // Customer 4 has no row yet: a first sale opens one, and a second sale moves it,
+    // each in a batch of its own, both under version 1.
+    assert_eq!(
+        apply(&owner, Uuid::new_v4(), 4, Some("LOYAL"), "SALE").await,
+        "opened"
+    );
+    let from = clock(&owner).await;
+    assert_eq!(
+        apply(&owner, Uuid::new_v4(), 4, Some("CHAMPION"), "SALE").await,
+        "changed"
+    );
+    let window = MigrationWindow {
+        from,
+        to: clock(&owner).await,
+    };
+
+    let explanation = read_migration_explanation(&db, customer(4), window.clone())
+        .await
+        .unwrap();
+    let migration = &explanation.migration;
+    assert_eq!(migration.previous.state, label("LOYAL"));
+    assert_eq!(migration.new.state, label("CHAMPION"));
+    assert_eq!(migration.new.cause.as_deref(), Some("SALE"));
+    assert_ne!(migration.previous.run_id, migration.new.run_id);
+    assert_eq!(
+        (
+            migration.previous.model_version_id,
+            migration.new.model_version_id
+        ),
+        (Some(1), Some(1)),
+        "both incremental runs are linked to the version they were scored under"
+    );
+    assert!(
+        !migration.methodological,
+        "a sale under one version is behaviour"
+    );
+
+    // The list reads the same pair the same way.
+    let listed = mine_between(&db, &window).await;
+    let listed = listed
+        .iter()
+        .find(|migration| migration.customer_id == customer(4))
+        .expect("customer 4 is listed");
+    assert_eq!(
+        (
+            listed.previous.model_version_id,
+            listed.new.model_version_id,
+            listed.methodological
+        ),
+        (Some(1), Some(1), false)
+    );
+    clean(&owner).await;
+}

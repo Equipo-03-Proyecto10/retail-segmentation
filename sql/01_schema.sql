@@ -2777,6 +2777,11 @@ BEGIN
                         0, NULL, public.fn_segmentation_window_origin(p_window_days),
                         v_scope)
                 RETURNING * INTO v_run;
+                -- The run's version is the registry's link too, in this transaction,
+                -- so segments reads it from api_models.run_version_v1 like any run's
+                -- (ADR-0092, #1208). The function is model-registry's, and its table
+                -- is not this boundary's.
+                PERFORM api_models.link_run_version_v1(v_run.run_id, p_model_version_id);
             END IF;
 
             BEGIN
@@ -6602,6 +6607,64 @@ SELECT run_id, version_id, linked_at
   FROM models.run_version;
 REVOKE ALL ON api_models.run_version_v1 FROM PUBLIC;
 
+-- contracts/db/api_models.link_run_version.v1.md (ADR-0092). The one write of the
+-- link from outside the registry: api_segments.apply_assignment_v1 calls it in the
+-- transaction that records a run of rfm-engine's changes, with the version the run
+-- was scored under, so a run it records is never unlinked (#1208). The version must
+-- exist; whether it is still published is not asked, because a publication may land
+-- between rfm-engine's read and the call. A run already linked to the same version
+-- is a no-op; to another, a refusal, since a link never changes.
+CREATE OR REPLACE FUNCTION api_models.link_run_version_v1(
+    p_run_id bigint,
+    p_version_id bigint
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $link$
+DECLARE
+    v_linked bigint;
+BEGIN
+    IF p_run_id IS NULL OR p_version_id IS NULL THEN
+        RAISE EXCEPTION 'link_run_version_v1: an argument is NULL'
+            USING ERRCODE = '22023';
+    END IF;
+    IF NOT EXISTS (SELECT FROM models.model_version AS v
+                    WHERE v.version_id = p_version_id) THEN
+        RAISE EXCEPTION 'model version % does not exist', p_version_id
+            USING ERRCODE = '23503', CONSTRAINT = 'unknown_model_version';
+    END IF;
+    INSERT INTO models.run_version (run_id, version_id)
+    VALUES (p_run_id, p_version_id)
+    ON CONFLICT (run_id) DO NOTHING;
+    IF NOT FOUND THEN
+        SELECT r.version_id INTO v_linked
+          FROM models.run_version AS r
+         WHERE r.run_id = p_run_id;
+        IF v_linked IS DISTINCT FROM p_version_id THEN
+            RAISE EXCEPTION 'run % is linked to version %, not %',
+                p_run_id, v_linked, p_version_id
+                USING ERRCODE = '23514', CONSTRAINT = 'run_version_conflict';
+        END IF;
+    END IF;
+END
+$link$;
+ALTER FUNCTION api_models.link_run_version_v1(bigint, bigint) OWNER TO definer_models;
+REVOKE EXECUTE ON FUNCTION api_models.link_run_version_v1(bigint, bigint) FROM PUBLIC;
+
+-- The runs rfm-engine's changes recorded before the function above linked them
+-- (ADR-0092, #1208): each carries its batch and the version it was scored under in
+-- its parameters (ADR-0087). Idempotent, so the operator's reapply of this section
+-- links what is pending and nothing twice. A version that does not exist is left
+-- unlinked, as the function would refuse it. On a clean run there is no such run yet.
+INSERT INTO models.run_version (run_id, version_id)
+SELECT r.run_id, v.version_id
+  FROM public.segmentation_run AS r
+  JOIN models.model_version AS v
+    ON v.version_id = (r.parameters ->> 'model_version_id')::bigint
+ WHERE r.parameters ? 'batch_id'
+ON CONFLICT (run_id) DO NOTHING;
+
 -- A K-means training (F22-12, ADR-0021, RN-58): the request that started the
 -- fit and, once it ends, what the fit produced. A POST answers at once with the
 -- row RUNNING and the fit runs after the answer, so the row is the thing a
@@ -7072,6 +7135,15 @@ GRANT SELECT ON api_segments.label_v1 TO svc_models;
 GRANT SELECT ON api_segments.assignment_interval_v1 TO svc_models;
 GRANT USAGE ON SCHEMA api_models TO svc_segments;
 GRANT SELECT ON api_models.run_version_v1 TO svc_segments;
+-- The link of a run rfm-engine's changes recorded (ADR-0092): the function's owner
+-- reads the versions and adds links, and only the owner of the function that records
+-- those runs, definer_segments, may call it. No service role may.
+GRANT USAGE ON SCHEMA models TO definer_models;
+GRANT SELECT ON models.model_version TO definer_models;
+GRANT SELECT, INSERT ON models.run_version TO definer_models;
+GRANT USAGE ON SCHEMA api_models TO definer_segments;
+GRANT EXECUTE ON FUNCTION api_models.link_run_version_v1(bigint, bigint)
+    TO definer_segments;
 -- A change is scored under the version in force (ADR-0063), read from the registry's
 -- view and not from its table.
 GRANT USAGE ON SCHEMA api_models TO svc_rfm;

@@ -322,6 +322,8 @@ definer_segments,public.customer_segment_history(valid_to),UPDATE
 definer_segments,api_customers,USAGE
 definer_segments,api_customers.customer_ref_v1,SELECT
 definer_segments,"api_segments.apply_assignment_v1(uuid,uuid,character varying,smallint,smallint,smallint,timestamp with time zone,integer,numeric,text,bigint,text,integer,bigint)",EXECUTE
+definer_segments,api_models,USAGE
+definer_segments,"api_models.link_run_version_v1(bigint,bigint)",EXECUTE
 svc_segments,api_segments,USAGE
 svc_recommendations,api_segments,USAGE
 svc_segments,api_segments.current_label_v1,SELECT
@@ -630,6 +632,11 @@ svc_models,models_events.outbox,DELETE
 svc_models,models_events.outbox(relayed_at),UPDATE
 definer_models,models_events,USAGE
 definer_models,models_events.outbox,INSERT
+definer_models,models,USAGE
+definer_models,models.model_version,SELECT
+definer_models,models.run_version,SELECT
+definer_models,models.run_version,INSERT
+definer_models,"api_models.link_run_version_v1(bigint,bigint)",EXECUTE
 svc_models,api_models,USAGE
 svc_models,api_models.published_version_v1,SELECT
 svc_models,api_sales,USAGE

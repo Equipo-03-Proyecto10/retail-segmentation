@@ -14,7 +14,6 @@
   },
   "data_origin": {
     "views": [
-      "api_experiments.exposure_v1",
       "api_recommendations.interaction_v1",
       "api_sales.net_purchase_line_v1"
     ],

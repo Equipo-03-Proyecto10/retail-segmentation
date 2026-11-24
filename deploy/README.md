@@ -1368,6 +1368,25 @@ you want exactly what the code calls. **No key file is created, and none is ever
 put on the instance or in the repository**: the web uses Application Default
 Credentials, which on the VM are its attached service account.
 
+For the signed URLs of private files (#1190) the same account signs through IAM
+`signBlob`, which needs `roles/iam.serviceAccountTokenCreator` **on itself** (the
+binding is on the service account, not on the project):
+
+```sh
+gcloud iam service-accounts add-iam-policy-binding <instance service account> \
+  --member=serviceAccount:<instance service account> \
+  --role=roles/iam.serviceAccountTokenCreator
+```
+
+Without it, a request for a private file answers 503 and no URL. It needs the
+`cloud-platform` access scope below as well. Keep `SIGNED_URL_TTL_SECONDS` at its
+600 default or lower; the web never issues more than 900. To check on the instance:
+sign in as the administrator, open a sales load's report, follow "Download the
+uploaded CSV" before and after the URL's ten minutes; the second answer is Google's
+refusal (an XML `ExpiredToken` or `Request has expired` error). Sign in as an analyst and request
+`/files/<file id>/download` for the same file: 403, and a `REFUSED` row in
+`file_access`.
+
 The VM must carry an access scope that lets that account write to Cloud Storage.
 A VM created with the default scopes has `devstorage.read_only`, and a write then
 fails with a 403 that looks like a missing role. Check it, and widen it if needed
@@ -1382,7 +1401,8 @@ Record the bucket, the binding and the scope in `docs/infra.md`.
 
 ### 2. The schema, before the release
 
-`sql/01_schema.sql` adds the `stored_file` table and `product.image_file_id`.
+`sql/01_schema.sql` adds the `stored_file` and `file_access` tables, `product.image_file_id`
+and `sales_load.source_file_id`.
 Apply it the way any web schema change is applied to the instance (rebuild the
 database before merging to `main`, as the previous schema changes were). The
 three scripts must run clean in order from an empty database first.

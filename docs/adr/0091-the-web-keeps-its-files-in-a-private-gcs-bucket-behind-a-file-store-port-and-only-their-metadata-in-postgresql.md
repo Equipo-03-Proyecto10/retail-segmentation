@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Owner:** Marcelo
-**Issue:** #1189
+**Issue:** #1189, #1190
 **Supersedes:** —
 **Superseded by:** —
 
@@ -62,9 +62,9 @@ metadata server. No key file exists anywhere: not in the repository, not on the 
 update, delete and list objects) on the one bucket, not on the project;
 `roles/storage.objectAdmin` is not needed, and a custom role of `storage.objects.create`,
 `.get` and `.delete` is the narrower choice if the team wants exactly what the code uses.
-V4 signing for #1190 uses IAM `signBlob` on that same account, which needs
-`roles/iam.serviceAccountTokenCreator` on itself and the `cloud-platform` access scope; it
-is not granted until #1190 ships.
+V4 signing (#1190, below) uses IAM `signBlob` on that same account, which needs
+`roles/iam.serviceAccountTokenCreator` on that account, granted to itself and on nothing
+else, and the `cloud-platform` access scope.
 
 **The bucket is private.** Uniform bucket-level access is on (no object ACLs), public access
 prevention is enforced, and nobody holds `allUsers` or `allAuthenticatedUsers`. Its name comes
@@ -81,8 +81,40 @@ the object through the port and streaming it, with `Content-Type` from the row,
 touching the bucket. The route keeps the permission it had (`catalog.read`); "public" names the
 file's privacy class, not that the page is anonymous, and `private` keeps a shared cache such as
 Cloudflare from storing it. The application's blanket `no-store` (#291) exempts exactly this
-response. A `PRIVATE` file is never served by this route (it answers 404); #1190 gives it a V4
-URL that expires within 15 minutes.
+response. A `PRIVATE` file is never served by this route (it answers 404).
+
+**A private file is reached through a short-lived signed URL (#1190).** The one `PRIVATE`
+kind that exists today is the source CSV of a sales import: the upload route writes the CSV
+to the store before the load runs and registers it against the `sales_load` row after, as
+`sales-import/<file_id>.csv`, content type `text/csv`, owner the uploader. The import is the
+business operation and keeping its file is secondary, so a store that is down, or a
+registration that fails, leaves the load standing with `source_file_id` null, a warning to the
+user and a log line; no file is ever left without its row, or the reverse. (No other file in
+the platform is private today: the datasets are never stored, the exports are generated per
+request, and the product pictures are public. This is the smallest kind that is real, and
+the one that carries customer data.)
+
+`GET /files/<file_id>/download` answers a signed-in user. An unknown, `PUBLIC` or removed file
+is a 404 in the web's common error page, with no URL. Otherwise the file's kind names the
+permission that may read it (`sales-import` needs `sales_ingest.execute`, which only ADMIN
+holds); a kind with no reader is refused to everyone. A role that holds it gets a URL that
+works for `SIGNED_URL_TTL_SECONDS` (default 600, clamped to 900, so never more than fifteen
+minutes), as a 303 redirect, or as JSON (`file_id`, `url`, `expires_at`) when the client asks
+for JSON. A role that does not gets 403 and no URL. Every answer, issued or refused, is a row
+in `file_access` (file, actor, role at that moment, outcome, expiry, time), which the web
+can insert into and never change, and a log line `file_access outcome=... file_id=... actor=...
+role=... expires_at=...`; neither holds the URL or its signature.
+
+On the `gcs` backend the URL is a V4 URL for one object, `GET` only, signed as the instance's
+attached account through IAM `signBlob` (`blob.generate_signed_url(version="v4", ...)` with the
+account's email and an access token, no private key), with
+`response-content-disposition: attachment` and a name made of the kind and the file id. No ACL
+is touched, and the object stays private. Google refuses the URL after it expires. On the
+`local` backend the URL is `/files/<file_id>/content?expires=<epoch>&signature=<hmac>`, an
+HMAC-SHA256 of the file id and the expiry under `FLASK_SECRET_KEY` with a fixed prefix, which
+that route checks (signature first, then expiry) before serving the bytes; a missing, forged,
+reused-for-another-file or late URL is a 403 and a `file_url_refused ... reason=` line without
+the query string. The route does not exist on the `gcs` backend.
 
 **The database keeps metadata only,** in one table, `stored_file` (schema in
 `sql/01_schema.sql`): `file_id`, `object_path`, `content_type`, `size_bytes`, `sha256`,
@@ -147,7 +179,10 @@ path, not in a second column. The one departure is `product.image_path` above, n
 | Keep the files on the instance's disk | They do not survive the instance, and the final delivery requires Cloud Storage |
 | A `files-service` microservice the web calls | The web consumes no service (AGENTS.md); a sixteenth deployable unit for opaque bytes is not one business rule; it would also put the web's own upload behind a network hop it does not need |
 | Objects public-read, the browser loads them from `storage.googleapis.com` | Public access prevention is the guarantee the story asks for, and a public object cannot be withdrawn from a URL that has been shared |
-| Redirect each public image to a V4 signed URL | Every render would sign, so the URL changes each time and the browser cannot cache the image; it also needs `signBlob` on day one. Signed URLs are kept for the private files, where expiry is the point |
+| Redirect each public image to a V4 signed URL | Every render would sign, so the URL changes each time and the browser cannot cache the image. Signed URLs are kept for the private files, where expiry is the point |
+| Record a refused request in `audit_log` or as a domain event | `audit_log.action` is `INSERT`/`UPDATE`/`DELETE` and the audit-trail contract enumerates it; the web cannot call `api_audit.record_event_v1` (ADR-0072: `retail_app` has no `USAGE` on that schema). A new event kind needs a contract and a superseding record of ADR-0072. `file_access` is the web's own append-only record until then |
+| Stream the private file through the web as for the pictures | It would make the web carry every download and give the bucket nothing to expire; the issue asks for a URL |
+| Keep an uploaded dataset or export as the private kind | None is kept today; storing one only to have something to sign would invent a feature. The sales import's own CSV is the file the platform already receives |
 | A service-account key file on the instance | A secret on a disk and in an environment file, to rotate and to leak; the attached account makes the key unnecessary |
 | `fake-gcs-server` or the storage emulator for the local stack | Needs Docker, which is not available on every machine and not in the test job; the local backend behind the same port tests the same code paths without a second process |
 | Call the GCS client directly from the routes, with no port | Every test would need the cloud or a patched client, and the failure ordering above could not be tested without it |
@@ -163,15 +198,20 @@ route for them; the table, the naming and the credentials are already in place.
 **What this makes hard.** The web now has one outbound dependency. When the bucket is down,
 nobody can upload and product pictures do not load, although every other page works. A crash
 between the store write and the database write leaves an object with no row, and nothing
-sweeps those yet. The `content_type` CHECK lists the three image types: the first story that
-stores another kind (a PDF, a CSV) widens it in `sql/01_schema.sql`, which is a schema
-change on the live database. `FLASK_ENV=production` with no store configured now refuses to
+sweeps those yet. The `content_type` CHECK lists the three image types and `text/csv`: the next kind
+widens it in `sql/01_schema.sql`, which is a schema change on the live database. A
+refusal is recorded in the web's own `file_access`, not in the audit-trail service, so an
+auditor reading the audit trail does not see it until a later record gives the web a way to
+write a domain event. A URL, once issued, works for whoever holds it until it expires: that
+is what a signed URL is, and why it is short. `FLASK_ENV=production` with no store configured now refuses to
 start.
 
 **What must now be true elsewhere.**
 - The bucket exists, private, with uniform bucket-level access and public access prevention,
   and its name is in `GCS_BUCKET`. The operator creates it; this change creates nothing
   in the cloud.
+- The instance's service account holds `roles/iam.serviceAccountTokenCreator` on itself, so it
+  can call `signBlob` for the signed URLs; without it a request for a private file is a 503.
 - The instance's service account holds the bucket-scoped role above, and the VM carries an
   access scope that lets it write to Cloud Storage. A VM created with the default scopes
   has only `devstorage.read_only`, so writes fail with 403 until the scope is changed, which
@@ -195,6 +235,13 @@ start.
   both failure orders (store down: no row; row refused: object removed).
 - `tests/test_stored_file_schema.py` shows each CHECK of `stored_file` and of
   `product_one_image_source` refusing a bad row, and the seeded history rows.
+- `tests/test_file_urls.py` runs the GCS signer against a fake client that records the call (V4,
+  `GET`, at most 900 seconds, signed as the account, no ACL) and the local signer on the real
+  clock (a 2-second URL, waited out; tampering of each part). `tests/test_private_files_postgres.py`
+  runs the route against PostgreSQL: the allowed role gets a URL that downloads, a role that may not
+  gets 403, no URL and a `REFUSED` row, an unknown id is a 404, and the captured log holds no
+  signature. What no test can show is Google accepting the URL and refusing it after it expires;
+  that is the instance's evidence.
 - `tests/test_migrate_uploads.py` runs the script's dry run and real run against a temporary
   `UPLOAD_DIR`, twice, and with a file it cannot move.
 - `grep -rn "google.cloud" web/ deploy/ services/` finds the import only in

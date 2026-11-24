@@ -1,0 +1,81 @@
+{
+  "urls": [
+    {
+      "name": "auth",
+      "url": "/api/auth/openapi.yaml"
+    },
+    {
+      "name": "users",
+      "url": "/api/users/openapi.yaml"
+    },
+    {
+      "name": "products",
+      "url": "/api/products/openapi.yaml"
+    },
+    {
+      "name": "categories",
+      "url": "/api/categories/openapi.yaml"
+    },
+    {
+      "name": "stores",
+      "url": "/api/stores/openapi.yaml"
+    },
+    {
+      "name": "stock",
+      "url": "/api/stock/openapi.yaml"
+    },
+    {
+      "name": "customers",
+      "url": "/api/customers/openapi.yaml"
+    },
+    {
+      "name": "customer-preferences",
+      "url": "/api/customer-preferences/openapi.yaml"
+    },
+    {
+      "name": "sales",
+      "url": "/api/sales/openapi.yaml"
+    },
+    {
+      "name": "segments",
+      "url": "/api/segments/openapi.yaml"
+    },
+    {
+      "name": "recommendations",
+      "url": "/api/recommendations/openapi.yaml"
+    },
+    {
+      "name": "engagement",
+      "url": "/api/engagement/openapi.yaml"
+    },
+    {
+      "name": "check-ins",
+      "url": "/api/check-ins/openapi.yaml"
+    },
+    {
+      "name": "campaigns",
+      "url": "/api/campaigns/openapi.yaml"
+    },
+    {
+      "name": "audit-trail",
+      "url": "/api/audit-trail/openapi.yaml"
+    },
+    {
+      "name": "rfm-engine",
+      "url": "/api/rfm-engine/openapi.yaml"
+    },
+    {
+      "name": "model-registry",
+      "url": "/api/model-registry/openapi.yaml"
+    },
+    {
+      "name": "experimentation",
+      "url": "/api/experimentation/openapi.yaml"
+    },
+    {
+      "name": "analytics-kpis",
+      "url": "/api/analytics-kpis/openapi.yaml"
+    }
+  ],
+  "urls.primaryName": "auth"
+}

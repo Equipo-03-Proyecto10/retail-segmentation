@@ -199,7 +199,10 @@ docker compose -f compose.distributed.yaml up --build --wait
 
 Every service is then at `http://127.0.0.1:8080/api/<name>/`, as the clients
 reach `https://<host>/api/<name>/` on the instance. Set `MOSAIQ_GATEWAY_PORT`
-to use another port. This file is for a laptop; nothing deployed reads it. The
+to use another port. Every contract can be read and tried at
+`http://127.0.0.1:8080/api/docs/`, which is the Swagger UI page the instance
+serves at `https://<host>/api/docs/` ([ADR-0090](docs/adr/0090-the-api-documentation-page-is-a-static-artifact-served-by-the-edge-from-the-published-docs-tree.md)).
+This file is for a laptop; nothing deployed reads it. The
 web system keeps its own `compose.yaml` and does not join this network.
 
 **Run both clients against it:**

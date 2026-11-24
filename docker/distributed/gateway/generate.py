@@ -10,7 +10,9 @@ clients and the negative suite see the same prefixes, body limit, forwarded
 headers and 413 envelope locally as on the instance. Only the upstream
 differs: the service's container on the `mosaiq` network, resolved per request
 through Docker's DNS, so the gateway starts while a service is down and only
-that prefix answers 502. This file and its output never reach the instance.
+that prefix answers 502. It also serves the Swagger UI page at /api/docs/
+(ADR-0090) from docs/api-docs. This file and its output never reach the
+instance.
 """
 
 from __future__ import annotations
@@ -59,6 +61,46 @@ server {
 """
 
 
+# The Swagger UI page of deploy/nginx/mosaiq.conf (ADR-0090), from docs/api-docs
+# mounted read-only. This server sends no headers of its own, so the page
+# repeats the security headers the template's named locations already carry.
+DOCS_LOCATION = """\
+location = /api/docs {
+    absolute_redirect off;
+    return 301 /api/docs/;
+}
+
+location /api/docs/ {
+    alias /usr/share/nginx/api-docs/;
+    index index.html;
+    charset utf-8;
+%s}
+"""
+SECURITY_HEADERS = (
+    "Strict-Transport-Security",
+    "X-Content-Type-Options",
+    "X-Frame-Options",
+    "Referrer-Policy",
+    "Content-Security-Policy",
+    "Permissions-Policy",
+)
+
+
+def docs_location() -> str:
+    rendered = _template.render_nginx("docs", 5000, auth=False)
+    named = rendered[rendered.index("location @") :]
+    named = named[: named.index("}")]
+    headers = [
+        line.strip()
+        for line in named.splitlines()
+        if line.strip().startswith("add_header ")
+        and line.split()[1] in SECURITY_HEADERS
+    ]
+    if [line.split()[1] for line in headers] != list(SECURITY_HEADERS):
+        raise ValueError("the template's security headers changed")
+    return DOCS_LOCATION % "".join(f"    {line}\n" for line in headers)
+
+
 def upstream_variable(name: str) -> str:
     return "$mosaiq_upstream_" + name.replace("-", "_")
 
@@ -88,7 +130,7 @@ def location(name: str, port: int) -> str:
 
 def generate() -> str:
     registry = yaml.safe_load((ROOT / "contracts/registry.yaml").read_text())
-    blocks = [
+    blocks = [docs_location()] + [
         location(entry["name"], int(entry["port"])) for entry in registry["services"]
     ]
     indented = "\n".join(

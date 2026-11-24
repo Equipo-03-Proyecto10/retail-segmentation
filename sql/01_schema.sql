@@ -7563,7 +7563,7 @@ BEGIN
           AND c.relname NOT IN (
               'audit_log', 'experiment_assignment', 'experiment_exposure',
               'experiment_conversion', 'experiment', 'experiment_group', 'segmentation_run',
-              'customer_segment_history'
+              'customer_segment_history', 'file_access'
           )
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
@@ -7610,6 +7610,15 @@ BEGIN
         RAISE EXCEPTION 'experiment_conversion must be append-only for the application role (RN-27)';
     END IF;
     RAISE NOTICE 'PASS: experiment_conversion is append-only for the application role';
+
+    IF NOT has_table_privilege('public.file_access', 'SELECT')
+       OR NOT has_table_privilege('public.file_access', 'INSERT')
+       OR has_table_privilege('public.file_access', 'UPDATE')
+       OR has_table_privilege('public.file_access', 'DELETE')
+       OR has_table_privilege('public.file_access', 'TRUNCATE') THEN
+        RAISE EXCEPTION 'file_access must be append-only for the application role (ADR-0091)';
+    END IF;
+    RAISE NOTICE 'PASS: file_access is append-only for the application role';
 
     IF NOT has_table_privilege('public.experiment', 'UPDATE')
        OR has_table_privilege('public.experiment', 'DELETE')

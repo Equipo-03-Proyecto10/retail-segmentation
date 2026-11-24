@@ -618,3 +618,19 @@ def test_the_block_is_the_only_definition_of_the_file_store() -> None:
     assert "CREATE TABLE stored_file" not in text
     assert "image_file_id UUID" not in product
     assert "CREATE OR REPLACE TRIGGER trg_product_image_file_matches" in _store_block()
+
+
+def test_a_service_that_writes_products_and_cannot_read_stored_file_is_unaffected(
+    owner,
+) -> None:
+    # products-service writes `product` as svc_products, which holds no privilege on
+    # stored_file. The image check must not run for a product with no picture.
+    owner.execute("SET LOCAL ROLE svc_products")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with owner.transaction():
+            owner.execute("SELECT count(*) FROM stored_file")
+
+    owner.execute("UPDATE product SET name = name WHERE product_id = 1")
+    assert owner.execute(
+        "SELECT count(*) FROM product WHERE product_id = 1"
+    ).fetchone() == (1,)

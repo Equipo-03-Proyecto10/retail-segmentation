@@ -570,9 +570,12 @@ BEGIN
     RETURN NEW;
 END
 $match$;
+-- Only for a product that has a stored picture: a service that writes a product
+-- (products-service, with no privilege on stored_file) never reaches the check.
 CREATE OR REPLACE TRIGGER trg_product_image_file_matches
 AFTER INSERT OR UPDATE OF image_path, image_file_id ON product
-FOR EACH ROW EXECUTE FUNCTION fn_product_image_file_matches();
+FOR EACH ROW WHEN (NEW.image_file_id IS NOT NULL)
+EXECUTE FUNCTION fn_product_image_file_matches();
 
 -- The history is kept: the web may add a row and move it forward, never delete
 -- it, rewrite what it says about the object, or bring a removed file back.

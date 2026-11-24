@@ -58,6 +58,7 @@ class Floor:
     home: int
     other: int
     product_id: int
+    list_price: str
     customer_id: str
     channel_id: int
 
@@ -104,7 +105,11 @@ class Floor:
             "channel_id": self.channel_id,
             "occurred_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "lines": [
-                {"product_id": self.product_id, "quantity": 1, "unit_price": "1.00"}
+                {
+                    "product_id": self.product_id,
+                    "quantity": 1,
+                    "unit_price": self.list_price,
+                }
             ],
         }
 
@@ -140,6 +145,12 @@ def floor(deployed_stack: Stack) -> Iterator[Floor]:
     level = next(x for x in levels.json()["stock_levels"] if x["quantity_on_hand"] > 0)
     other = level["store_id"]
     home = next(s for s in store_ids if s != other)
+    # The sale is charged its product's list price, so the discount rule
+    # (RN-13) never refuses a sale these cases expect to be accepted.
+    product = edge.call(
+        "GET", f"/api/products/v1/products/{level['product_id']}", token=token
+    )
+    require(product, 200)
     customers = edge.call("GET", "/api/customers/v1/customers?size=1", token=token)
     require(customers, 200)
     channels = edge.call("GET", "/api/sales/v1/channels", token=token)
@@ -156,6 +167,7 @@ def floor(deployed_stack: Stack) -> Iterator[Floor]:
             home,
             other,
             level["product_id"],
+            product.json()["list_price"],
             customers.json()["customers"][0]["customer_id"],
             channels.json()["channels"][0]["channel_id"],
         )

@@ -173,8 +173,11 @@ async fn the_role_reads_eight_published_views_and_no_base_table() {
         granted,
         [
             "api_experiments.campaign_effect_v1:SELECT",
+            "api_experiments.exposure_v1:SELECT",
             "api_models.run_version_v1:SELECT",
             "api_products.product_ref_v1:SELECT",
+            "api_recommendations.interaction_v1:SELECT",
+            "api_recommendations.recommended_purchase_v1:SELECT",
             "api_sales.net_purchase_line_v1:SELECT",
             "api_segments.assignment_change_v1:SELECT",
             "api_segments.current_label_v1:SELECT",
@@ -193,7 +196,7 @@ async fn the_role_reads_eight_published_views_and_no_base_table() {
                AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
                AND has_table_privilege('svc_kpis', c.oid, \
                    'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') \
-               AND (n.nspname || '.' || c.relname) NOT IN ($1, $2, $3, $4, $5, $6, $7, $8)",
+               AND (n.nspname || '.' || c.relname) NOT IN ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
             &[
                 &"api_sales.net_purchase_line_v1",
                 &"api_segments.current_label_v1",
@@ -203,6 +206,9 @@ async fn the_role_reads_eight_published_views_and_no_base_table() {
                 &"api_segments.assignment_change_v1",
                 &"api_models.run_version_v1",
                 &"api_experiments.campaign_effect_v1",
+                &"api_experiments.exposure_v1",
+                &"api_recommendations.interaction_v1",
+                &"api_recommendations.recommended_purchase_v1",
             ],
         )
         .await

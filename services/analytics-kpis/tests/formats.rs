@@ -414,23 +414,6 @@ async fn every_refusal_of_the_contract_in_json_and_xml() {
 }
 
 #[tokio::test]
-async fn an_operation_that_is_planned_is_not_served() {
-    let _turn = TURN.lock().await;
-    let Some(stack) = Stack::start().await else {
-        return;
-    };
-    let admin = stack.token("ADMIN");
-    // campaign-performance is served since F26-04; the other two wait for their
-    // producers' views (api_recommendations.interaction_v1 and the rest).
-    for path in ["conversion", "recommendation-performance"] {
-        let uri = format!("/v1/kpi-reports/{path}?from=2020-03-01&to=2020-03-31");
-        let (status, body) = send(&stack.app, "GET", &uri, Some(&admin), JSON).await;
-        assert_eq!(status, 404, "{path}: {body}");
-    }
-    stack.finish().await;
-}
-
-#[tokio::test]
 async fn the_meta_routes_answer_without_a_token() {
     let _turn = TURN.lock().await;
     let Some(stack) = Stack::start().await else {

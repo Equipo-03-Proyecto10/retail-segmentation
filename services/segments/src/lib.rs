@@ -1128,6 +1128,28 @@ pub async fn read_assignments_in<C: GenericClient + Sync>(
     Ok((assignments, total as u64))
 }
 
+/// The one place a run's model version is decided (ADR-0064, ADR-0087, #1208). A run's version is
+/// its link in `api_models.run_version_v1` (a FULL run, linked by model-registry); failing that, the
+/// version the run recorded in its own parameters, which is where rfm-engine records an
+/// INCREMENTAL run's (nothing links those). `$link` is the alias of the `run_version_v1` join,
+/// `$run` the alias of `public.segmentation_run`; both are literals written in this file, never
+/// input. A recorded value that is not a plain number is no version, so a bad parameter makes a run
+/// unknown (methodological) and never fails a read.
+macro_rules! run_version {
+    ($link:literal, $run:literal) => {
+        concat!(
+            "COALESCE(",
+            $link,
+            ".version_id, CASE WHEN ",
+            $run,
+            ".parameters ->> 'model_version_id' ~ '^[0-9]{1,18}$' \
+             THEN (",
+            $run,
+            ".parameters ->> 'model_version_id')::bigint END)"
+        )
+    };
+}
+
 /// One page of assignment history with the immutable model version that scored
 /// each run. A missing run-version link is pending and stays null; it is never
 /// replaced with the currently published version (ADR-0064).
@@ -1174,27 +1196,39 @@ pub async fn read_versioned_assignments(
     ];
     let total: i64 = connection
         .query_one(
-            "SELECT count(*) FROM public.customer_segment_history AS h \
-             LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
-             WHERE ($1::bigint IS NULL OR rv.version_id = $1) \
+            concat!(
+                "SELECT count(*) FROM public.customer_segment_history AS h \
+                 JOIN public.segmentation_run AS r ON r.run_id = h.run_id \
+                 LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
+                 WHERE ($1::bigint IS NULL OR ",
+                run_version!("rv", "r"),
+                " = $1) \
                AND ($2::uuid IS NULL OR h.customer_id = $2) \
                AND ($3::text IS NULL OR h.label_code = $3) \
-               AND (NOT $4::boolean OR h.valid_to IS NULL)",
+               AND (NOT $4::boolean OR h.valid_to IS NULL)"
+            ),
             &parameters[..4],
         )
         .await?
         .try_get(0)?;
     let rows = connection
         .query(
-            "SELECT h.customer_id, h.run_id, rv.version_id, h.cause, h.label_code, \
+            concat!(
+                "SELECT h.customer_id, h.run_id, ",
+                run_version!("rv", "r"),
+                ", h.cause, h.label_code, \
                     h.r_score, h.f_score, h.m_score, h.valid_from, h.valid_to \
              FROM public.customer_segment_history AS h \
+             JOIN public.segmentation_run AS r ON r.run_id = h.run_id \
              LEFT JOIN api_models.run_version_v1 AS rv ON rv.run_id = h.run_id \
-             WHERE ($1::bigint IS NULL OR rv.version_id = $1) \
+             WHERE ($1::bigint IS NULL OR ",
+                run_version!("rv", "r"),
+                " = $1) \
                AND ($2::uuid IS NULL OR h.customer_id = $2) \
                AND ($3::text IS NULL OR h.label_code = $3) \
                AND (NOT $4::boolean OR h.valid_to IS NULL) \
-             ORDER BY h.valid_from DESC, h.history_id DESC LIMIT $5 OFFSET $6",
+             ORDER BY h.valid_from DESC, h.history_id DESC LIMIT $5 OFFSET $6"
+            ),
             &parameters,
         )
         .await?;
@@ -1406,13 +1440,18 @@ pub async fn read_migrations(
     // `VERSION_CHANGE` cause is honoured by `build_migration`.
     let rows = connection
         .query(
-            "WITH ids AS ( \
+            concat!(
+                "WITH ids AS ( \
                  SELECT customer_id FROM api_customers.customer_ref_v1) \
              SELECT ids.customer_id, \
-                    b.run_id, b.label_code, bv.version_id, br.run_at, b.valid_from, \
+                    b.run_id, b.label_code, ",
+                run_version!("bv", "br"),
+                ", br.run_at, b.valid_from, \
                     b.cause, b.recency_last_purchase_at, \
                     b.frequency_count, b.monetary_total::text, b.r_score, b.f_score, b.m_score, \
-                    a.run_id, a.label_code, av.version_id, ar.run_at, a.valid_from, \
+                    a.run_id, a.label_code, ",
+                run_version!("av", "ar"),
+                ", ar.run_at, a.valid_from, \
                     a.cause, a.recency_last_purchase_at, \
                     a.frequency_count, a.monetary_total::text, a.r_score, a.f_score, a.m_score \
                FROM ids \
@@ -1426,7 +1465,8 @@ pub async fn read_migrations(
                 AND (a.valid_to IS NULL OR a.valid_to > $2) \
                LEFT JOIN public.segmentation_run AS ar ON ar.run_id = a.run_id \
                LEFT JOIN api_models.run_version_v1 AS av ON av.run_id = a.run_id \
-              ORDER BY ids.customer_id",
+              ORDER BY ids.customer_id"
+            ),
             &[&query.window.from, &query.window.to],
         )
         .await?;
@@ -1496,11 +1536,17 @@ async fn version_at<C: GenericClient + Sync>(
 ) -> Result<Option<i64>, ApiError> {
     Ok(connection
         .query_opt(
-            "SELECT v.version_id \
+            concat!(
+                "SELECT ",
+                run_version!("v", "r"),
+                " AS version_id \
                FROM public.segmentation_run AS r \
-               JOIN api_models.run_version_v1 AS v ON v.run_id = r.run_id \
-              WHERE r.run_at <= $1 \
-              ORDER BY r.run_at DESC, r.run_id DESC LIMIT 1",
+               LEFT JOIN api_models.run_version_v1 AS v ON v.run_id = r.run_id \
+              WHERE r.run_at <= $1 AND ",
+                run_version!("v", "r"),
+                " IS NOT NULL \
+              ORDER BY r.run_at DESC, r.run_id DESC LIMIT 1"
+            ),
             &[&instant],
         )
         .await?

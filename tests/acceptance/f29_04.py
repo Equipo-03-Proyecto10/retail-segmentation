@@ -375,7 +375,7 @@ def run_suites(args: argparse.Namespace) -> int:
     missing = [name for name in REQUIRED if not os.environ.get(name)]
     if missing:
         raise SystemExit("Set " + ", ".join(missing) + " (see the module docstring).")
-    out = Path(args.out)
+    out = Path(args.out).resolve()  # the suites run in other directories
     rec = Recorder(out, "F29-04 the segmentation path, on one version", "f29-04")
     rec.facts["commit"] = git("rev-parse", "HEAD")
     rec.facts["describe"] = git("describe", "--always", "--dirty", "--tags")

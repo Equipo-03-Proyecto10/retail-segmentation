@@ -1,0 +1,4 @@
+uv run --frozen pytest -q -rs -p no:cacheprovider --junitxml=/home/pc/.cache/mosaiq-local/wt/g889/docs/evidence/f29-04/20261124T0334Z/suites/02-rfm-rfm-engine.junit.xml tests/test_hand_computed.py
+
+..                                                                       [100%]
+2 passed in 1.01s

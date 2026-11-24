@@ -1,0 +1,14 @@
+run_id=20261124040215
+api_url=http://127.0.0.1:18191
+web_url=http://127.0.0.1:18192
+console_url=http://127.0.0.1:18193
+store_ids=6,14,22,30
+product_ids=1,2,3,4,5
+sign_in_interval_s=2.5
+steps=160,240,320,400,480,560
+step_seconds=60
+recovery_users=10
+recovery_seconds=180
+spawn_rate=20.0
+floor_accounts=40
+desktop_accounts=30

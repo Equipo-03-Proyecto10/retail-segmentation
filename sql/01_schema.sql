@@ -475,7 +475,8 @@ CREATE TABLE file_access (
     -- An issued URL has an expiry, at most 15 minutes after the request; a
     -- refusal has none, because no URL exists.
     CONSTRAINT file_access_expiry_check CHECK (
-        (outcome = 'ISSUED' AND expires_at > occurred_at
+        (outcome = 'ISSUED' AND expires_at IS NOT NULL
+            AND expires_at > occurred_at
             AND expires_at <= occurred_at + interval '15 minutes')
         OR (outcome = 'REFUSED' AND expires_at IS NULL))
 );

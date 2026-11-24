@@ -1,8 +1,9 @@
 # Deployment view of the delivered system: what runs on the one instance,
 # under which systemd unit and compose project, and what reaches it.
 # Sources: deploy/README.md, deploy/nginx/mosaiq.conf, deploy/systemd/*.service,
-# deploy/infra/compose.yaml, docs/infra.md, bench/README.md, ADR-0006, ADR-0009,
-# ADR-0013, ADR-0040, ADR-0041, ADR-0042, ADR-0044.
+# deploy/infra/compose.yaml, docs/infra.md, bench/README.md, ops/console/README.md,
+# ADR-0006, ADR-0009, ADR-0013, ADR-0040, ADR-0041, ADR-0042, ADR-0044, ADR-0055,
+# ADR-0059.
 #
 # No arrow joins two services. They meet only through the producer's api_*
 # objects in PostgreSQL and through Redis Streams (ADR-0044).
@@ -23,6 +24,7 @@ classes: {
   appnode:  { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" } }
   svc:      { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" } }
   svc2:     { style: { fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; stroke-dash: 4; stroke-width: 2 } }
+  svc3:     { style: { fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; double-border: true } }
   bench:    { style: { fill: "#F0F0EE"; stroke: "#8C8C86"; stroke-dash: 4; font-color: "#232320" } }
   layer:    { style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 20 } }
 }
@@ -30,6 +32,7 @@ classes: {
 android: "Android client\nKotlin · JSON only · Bearer token" { class: external }
 electron: "Electron client\nTypeScript · XML validated against XSD · Bearer token" { class: external }
 direct: "Any other source\nreaching the origin address" { class: external; shape: oval }
+operator: "Team operator\ngcloud compute ssh · OS Login" { class: external }
 
 edge: "Cloudflare edge — ADR-0013" {
   class: layer
@@ -51,11 +54,11 @@ gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
 
     nginx: "NGINX :443\nTLS termination, Origin CA pair · :80 returns 301\n/ to the web system\n/api/<name>/ to 127.0.0.1:<port>, one include per service" { class: gatenode }
 
-    web: "mosaiq.service\nGunicorn · Flask + Jinja2 · 127.0.0.1:8000\nfrozen · server-rendered HTML\nno Redis · no service calls" { class: appnode }
+    web: "mosaiq.service\nGunicorn · Flask + Jinja2 · 127.0.0.1:8000\nserver-rendered HTML · changes only for new facts (Q-17)\nno Redis · no service calls" { class: appnode }
 
-    services: "Fifteen services — mosaiq-svc@<name>.service, each its own compose project mosaiq-<name>" {
+    services: "Nineteen services — mosaiq-svc@<name>.service, each its own compose project mosaiq-<name>" {
       class: layer
-      grid-rows: 3
+      grid-rows: 4
       auth: "mosaiq-svc@auth\nproject mosaiq-auth\nFlask · 127.0.0.1:5001" { class: svc }
       users: "mosaiq-svc@users\nproject mosaiq-users\nFlask · 127.0.0.1:5002" { class: svc }
       products: "mosaiq-svc@products\nproject mosaiq-products\nFlask · 127.0.0.1:5003" { class: svc }
@@ -71,7 +74,13 @@ gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
       check_ins: "mosaiq-svc@check-ins\nproject mosaiq-check-ins\nRust · 127.0.0.1:5013" { class: svc }
       campaigns: "mosaiq-svc@campaigns\nproject mosaiq-campaigns\nFlask · 127.0.0.1:5014\nSECOND WAVE" { class: svc2 }
       audit_trail: "mosaiq-svc@audit-trail\nproject mosaiq-audit-trail\nRust · 127.0.0.1:5015\nSECOND WAVE" { class: svc2 }
+      rfm_engine: "mosaiq-svc@rfm-engine\nproject mosaiq-rfm-engine\nFlask · 127.0.0.1:5016\nADR-0059" { class: svc3 }
+      model_registry: "mosaiq-svc@model-registry\nproject mosaiq-model-registry\nFlask · 127.0.0.1:5019\nADR-0059" { class: svc3 }
+      experimentation: "mosaiq-svc@experimentation\nproject mosaiq-experimentation\nFlask · 127.0.0.1:5020\nADR-0059" { class: svc3 }
+      analytics_kpis: "mosaiq-svc@analytics-kpis\nproject mosaiq-analytics-kpis\nRust · 127.0.0.1:5022\nADR-0059" { class: svc3 }
     }
+
+    ops: "OPS ONLY — mosaiq-ops-console.service\nproject mosaiq-ops-console · 127.0.0.1:5090\nnot a service: not registered, not routed by NGINX\nreached only through an SSH tunnel (ADR-0055)" { class: bench }
 
     bench: "BENCH ONLY — Rust twin of the products reads\nbench/products-service-rs · 127.0.0.1:5103\nnot registered, not routed by NGINX, not deployed (ADR-0042, E-22)" { class: bench }
 
@@ -79,8 +88,8 @@ gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
       class: layer
       public: "public\n29 tables, 4NF\nthe web reads and writes it as retail_app" { class: store; shape: cylinder }
       svcschemas: "service schemas\nsvc_<name> roles, own tables only (ADR-0046)" { class: store; shape: cylinder }
-      api: "api_* schemas\nversioned *_v1 views, consume_v1" { class: store; shape: cylinder }
-      outbox: "eight outboxes\n<suffix>_events.outbox\nusers · products · categories · stores\nstock · preferences · sales · segments" { class: store; shape: cylinder }
+      api: "17 api_* schemas\nversioned *_v1 views, consume_v1" { class: store; shape: cylinder }
+      outbox: "eleven outboxes\n<suffix>_events.outbox\nusers · products · categories · stores · stock · customers\npreferences · sales · segments · rfm · models" { class: store; shape: cylinder }
     }
 
     infra: "mosaiq-infra.service — compose project mosaiq-infra (ADR-0037, ADR-0038)" {
@@ -99,6 +108,8 @@ direct -> gcp.fw.fwdeny: "no route past this rule" {
   style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
 }
 gcp.fw.fw443 -> gcp.vm.nginx
+operator -> gcp.fw.fw22: "SSH :22"
+gcp.fw.fw22 -> gcp.vm.ops: "tunnel -L 5090" { style.stroke-dash: 4 }
 
 gcp.vm.nginx -> gcp.vm.web: "/"
 gcp.vm.nginx -> gcp.vm.services: "/api/<name>/v1"
@@ -114,3 +125,5 @@ gcp.vm.infra.rs -> gcp.vm.services: "consumer groups · XREADGROUP"
 gcp.vm.services -> gcp.vm.infra.rc: "caches"
 gcp.vm.services -> gcp.vm.infra.mongo: "engagement only"
 gcp.vm.bench -> gcp.vm.pg.public: "reads products as svc_products_bench" { style.stroke-dash: 4 }
+gcp.vm.ops -> gcp.vm.services: "/health/live · /health/ready · /openapi.yaml" { style.stroke-dash: 4 }
+gcp.vm.ops -> gcp.vm.infra.rs: "INFO · XINFO GROUPS as ops_console" { style.stroke-dash: 4 }

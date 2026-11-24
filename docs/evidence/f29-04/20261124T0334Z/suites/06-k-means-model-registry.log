@@ -1,0 +1,4 @@
+uv run --frozen pytest -q -rs -p no:cacheprovider --junitxml=/home/pc/.cache/mosaiq-local/wt/g889/docs/evidence/f29-04/20261124T0334Z/suites/06-k-means-model-registry.junit.xml tests/test_training.py
+
+...................................                                      [100%]
+35 passed in 8.27s

@@ -76,15 +76,29 @@ pub struct TestStore {
 
 impl TestStore {
     pub async fn create(owner: &Client) -> Self {
-        let id: i16 = 30_000 + (Uuid::new_v4().as_u128() % 2_000) as i16;
-        owner
-            .execute(
-                "INSERT INTO public.store (store_id, name, city, state) \
-                 VALUES ($1, $2, 'Testville', 'TS')",
-                &[&id, &format!("svc-test-{id}")],
-            )
-            .await
-            .unwrap();
+        // Tests run in parallel against one database, so a drawn id may be
+        // taken: draw again until the insert claims one (#1223).
+        let mut attempts = 0;
+        let id: i16 = loop {
+            attempts += 1;
+            assert!(
+                attempts <= 200,
+                "no free test store id in 30_000..30_000+2_000"
+            );
+            let candidate: i16 = 30_000 + (Uuid::new_v4().as_u128() % 2_000) as i16;
+            let claimed = owner
+                .query_opt(
+                    "INSERT INTO public.store (store_id, name, city, state) \
+                     VALUES ($1, $2, 'Testville', 'TS') \
+                     ON CONFLICT (store_id) DO NOTHING RETURNING store_id",
+                    &[&candidate, &format!("svc-test-{candidate}")],
+                )
+                .await
+                .unwrap();
+            if let Some(row) = claimed {
+                break row.get(0);
+            }
+        };
         Self { id }
     }
 

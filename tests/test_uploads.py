@@ -4,7 +4,6 @@ import struct
 import zlib
 from dataclasses import replace
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
 import pytest
@@ -12,10 +11,11 @@ from werkzeug.datastructures import FileStorage
 
 from web.app import create_app
 from web.config import Config
+from web.services import uploads
 from web.services.uploads import (
     MAX_IMAGE_SIDE_PIXELS,
     UploadRejected,
-    delete_product_image,
+    delete_legacy_image,
     save_product_image,
 )
 
@@ -55,6 +55,13 @@ def config(tmp_path):
     )
 
 
+def _upload(content: bytes, mime: str, config) -> uploads.ValidatedImage:
+    """The validation every upload passes before anything is written."""
+    return uploads._validate(
+        FileStorage(BytesIO(content), filename="../a", content_type=mime), config
+    )
+
+
 @pytest.mark.parametrize(
     "mime,content",
     [
@@ -63,14 +70,11 @@ def config(tmp_path):
         ("image/webp", b"RIFF\x04\x00\x00\x00WEBPimage bytes"),
     ],
 )
-def test_upload_round_trip(config, mime, content):
-    saved = save_product_image(
-        FileStorage(BytesIO(content), filename="../a", content_type=mime), config
-    )
-    assert Path(saved.absolute_path).read_bytes() == content
-    assert "/" not in saved.relative_path
-    delete_product_image(saved.relative_path, config)
-    assert not Path(saved.absolute_path).exists()
+def test_an_accepted_image_is_validated_whole(config, mime, content):
+    image = _upload(content, mime, config)
+
+    assert image.data == content
+    assert image.content_type == mime
 
 
 @pytest.mark.parametrize(
@@ -78,50 +82,54 @@ def test_upload_round_trip(config, mime, content):
     [
         (b"", "image/png"),
         (b"pdf", "application/pdf"),
+        (b"GIF89a", "image/gif"),
         (b"x" * 11, "image/png"),
         (b"text", "image/png"),
         (b"\xff\xd8\xff", "image/png"),
     ],
 )
-def test_rejection_writes_no_file(config, content, mime):
+def test_a_rejected_file_never_reaches_the_store(config, content, mime):
+    store = Mock()
+
     with pytest.raises(UploadRejected):
         save_product_image(
             FileStorage(BytesIO(content), filename="a", content_type=mime),
             replace(config, max_upload_bytes=10),
+            owner_id="11111111-1111-1111-1111-000000000001",
+            store=store,
         )
-    assert not list(Path(config.upload_dir).iterdir())
+
+    store.put.assert_not_called()
 
 
-def test_deletion_stays_inside_upload_directory(config, tmp_path):
+def test_deleting_a_legacy_image_stays_inside_the_upload_directory(config, tmp_path):
     outside = tmp_path / "outside"
     outside.write_bytes(b"keep")
-    delete_product_image(
+    delete_legacy_image(
         "../outside", replace(config, upload_dir=str(tmp_path / "uploads"))
     )
     assert outside.read_bytes() == b"keep"
 
 
-def test_image_route_uses_same_relative_directory_as_storage(
+def test_a_legacy_image_is_still_served_from_the_upload_directory(
     config, monkeypatch, tmp_path
 ):
+    # An image uploaded before the file store, and not yet migrated (ADR-0091).
     monkeypatch.chdir(tmp_path)
     config = replace(config, upload_dir="uploads")
-    saved = save_product_image(
-        FileStorage(
-            BytesIO(_png()),
-            filename="a.png",
-            content_type="image/png",
-        ),
-        config,
-    )
+    (tmp_path / "uploads").mkdir()
+    (tmp_path / "uploads" / "0123456789abcdef0123456789abcdef.png").write_bytes(_png())
     client = create_app(
         config, database_connector=Mock(return_value=MagicMock())
     ).test_client()
     with client.session_transaction() as session:
         session.update(user_id="u-1", role_code="ADMIN", name="Admin")
-    response = client.get(f"/admin/products/image/{saved.relative_path}")
+
+    response = client.get("/admin/products/image/0123456789abcdef0123456789abcdef.png")
+
     assert response.status_code == 200
     assert response.data == _png()
+    assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_rejected_creation_does_not_insert_product(config, monkeypatch):
@@ -151,40 +159,42 @@ def test_rejected_creation_does_not_insert_product(config, monkeypatch):
     assert b'name="product_id"' in response.data
 
 
-def _save_png(content: bytes, config) -> None:
-    save_product_image(
-        FileStorage(BytesIO(content), filename="a.png", content_type="image/png"),
-        config,
+def _refuse_png(content: bytes, config, match: str) -> None:
+    """The whole upload path refuses the file, and the store never sees it."""
+    store = Mock()
+    with pytest.raises(UploadRejected, match=match):
+        save_product_image(
+            FileStorage(BytesIO(content), filename="a.png", content_type="image/png"),
+            config,
+            owner_id="11111111-1111-1111-1111-000000000001",
+            store=store,
+        )
+    store.put.assert_not_called()
+
+
+def test_a_png_at_the_size_limit_is_accepted(config):
+    image = _upload(
+        _png(MAX_IMAGE_SIDE_PIXELS, MAX_IMAGE_SIDE_PIXELS), "image/png", config
     )
 
-
-def test_a_png_at_the_size_limit_is_accepted(config, tmp_path):
-    _save_png(_png(MAX_IMAGE_SIDE_PIXELS, MAX_IMAGE_SIDE_PIXELS), config)
-
-    assert len(list(tmp_path.iterdir())) == 1
+    assert image.content_type == "image/png"
 
 
 @pytest.mark.parametrize(
     "width,height",
     [(60000, 60000), (MAX_IMAGE_SIDE_PIXELS + 1, 1), (1, MAX_IMAGE_SIDE_PIXELS + 1)],
 )
-def test_a_png_declaring_huge_dimensions_is_refused(config, tmp_path, width, height):
+def test_a_png_declaring_huge_dimensions_is_refused(config, width, height):
     # #595: a few hundred bytes that declare 60000×60000 pixels.
-    with pytest.raises(UploadRejected, match="pixels or fewer"):
-        _save_png(_png(width, height), config)
-
-    assert list(tmp_path.iterdir()) == []
+    _refuse_png(_png(width, height), config, "pixels or fewer")
 
 
-def test_a_png_with_html_appended_is_refused(config, tmp_path):
+def test_a_png_with_html_appended_is_refused(config):
     # #595: a valid image followed by a page; served as image/png it runs
     # nothing today, but no later step should ever receive it.
     trailer = b"<html><script>alert(1)</script></html>"
 
-    with pytest.raises(UploadRejected, match="extra data after its end"):
-        _save_png(_png(trailer=trailer), config)
-
-    assert list(tmp_path.iterdir()) == []
+    _refuse_png(_png(trailer=trailer), config, "extra data after its end")
 
 
 @pytest.mark.parametrize(
@@ -197,8 +207,5 @@ def test_a_png_with_html_appended_is_refused(config, tmp_path):
     ],
     ids=["no-chunks", "no-iend", "bad-crc", "ihdr-not-first"],
 )
-def test_a_damaged_png_is_refused(config, tmp_path, content):
-    with pytest.raises(UploadRejected, match="damaged or incomplete"):
-        _save_png(content, config)
-
-    assert list(tmp_path.iterdir()) == []
+def test_a_damaged_png_is_refused(config, content):
+    _refuse_png(content, config, "damaged or incomplete")

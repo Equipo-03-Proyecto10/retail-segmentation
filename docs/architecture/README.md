@@ -69,10 +69,11 @@ what the web changes without the web knowing they exist.
 
 | Store | Where | Holds |
 |---|---|---|
-| PostgreSQL, database `retail` | the instance, `127.0.0.1:5432` | `public` (29 tables, 4NF), the service schemas, the `api_*` schemas, the eight outboxes |
+| PostgreSQL, database `retail` | the instance, `127.0.0.1:5432` | `public` (30 tables, 4NF), the service schemas, the `api_*` schemas, the eight outboxes |
 | `redis-state` | project `mosaiq-infra` | sessions, Redis Streams, rate limits; `noeviction`, AOF |
 | `redis-cache` | project `mosaiq-infra` | caches and live counters; `allkeys-lru` |
 | MongoDB | project `mosaiq-infra` | in-store engagement, owned by `engagement` alone |
+| Cloud Storage bucket | project `iac-dev-01`, private, uniform bucket-level access | the web's files (a product's picture), reached only by the web, through the instance's service account and no key; their metadata is `public.stored_file` ([ADR-0091](../adr/0091-the-web-keeps-its-files-in-a-private-gcs-bucket-behind-a-file-store-port-and-only-their-metadata-in-postgresql.md)) |
 
 [ADR-0037](../adr/0037-two-redis-instances-carry-sessions-caches-limits-and-inter-service-streams.md)
 and [ADR-0038](../adr/0038-mongodb-holds-in-store-engagement-owned-by-engagement-service-alone.md)

@@ -23,8 +23,11 @@ from psycopg.errors import (
 )
 
 from web.db import categories, channels, products, roles, stores
+from web.db.products import ProductImage
 from web.db.transactions import atomic
 from web.parsing import page_number, whole_number
+from web.services import files
+from web.services.files import StoredObject
 
 
 @dataclass(frozen=True)
@@ -327,9 +330,14 @@ def create_product(
     name: str,
     category_id: int,
     list_price: Decimal,
-    image_path: str | None = None,
+    image: StoredObject | None = None,
 ) -> None:
-    """Create a product, translating constraint refusals."""
+    """Create a product, translating constraint refusals.
+
+    A picture already written to the file store is registered here, in the same
+    transaction as the product (ADR-0091): both rows commit, or neither does."""
+    if image is not None:
+        files.insert_row(connection, image)
     products.create_product(
         connection,
         product_id=product_id,
@@ -337,7 +345,8 @@ def create_product(
         name=name,
         category_id=category_id,
         list_price=list_price,
-        image_path=image_path,
+        image_path=None if image is None else image.public_name,
+        image_file_id=None if image is None else image.file_id,
     )
 
 
@@ -351,9 +360,21 @@ def update_product(
     category_id: int,
     list_price: Decimal,
     is_active: bool,
-    image_path: str | None = None,
-) -> None:
-    """Update a product, translating constraint refusals."""
+    image: StoredObject | None = None,
+) -> ProductImage:
+    """Update a product, translating constraint refusals.
+
+    A new picture is registered in the same transaction and replaces the old
+    one; with none, the product keeps its picture. The product's row is locked and
+    the picture it held is read there, and returned: that, and not what the page
+    read earlier, is what the caller retires once this commits. A product that was
+    deleted meanwhile is a CatalogConflict, and the new picture's row goes with the
+    rolled-back transaction."""
+    displaced = products.lock_product_image(connection, product_id)
+    if displaced is None:
+        raise CatalogConflict("", "That product no longer exists.")
+    if image is not None:
+        files.insert_row(connection, image)
     products.update_product(
         connection,
         product_id,
@@ -362,14 +383,20 @@ def update_product(
         category_id=category_id,
         list_price=list_price,
         is_active=is_active,
-        image_path=image_path,
+        image_path=None if image is None else image.public_name,
+        image_file_id=None if image is None else image.file_id,
     )
+    return displaced
 
 
 @_catalog_write("product", "delete")
-def delete_product(connection: Connection, product_id: int) -> None:
-    """Delete a product, translating constraint refusals."""
-    products.delete_product(connection, product_id)
+def delete_product(connection: Connection, product_id: int) -> ProductImage:
+    """Delete a product, translating constraint refusals, and return the picture
+    it had, which the caller retires once this commits."""
+    displaced = products.delete_product(connection, product_id)
+    if displaced is None:
+        raise CatalogConflict("", "That product no longer exists.")
+    return displaced
 
 
 @_catalog_write("channel", "create")

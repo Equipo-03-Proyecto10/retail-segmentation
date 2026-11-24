@@ -35,6 +35,14 @@ DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 # Multipart headers and the remaining catalog fields, in addition to one image.
 FORM_OVERHEAD_BYTES = 64 * 1024
 DEFAULT_ALLOWED_IMAGE_TYPES = "image/jpeg,image/png,image/webp"
+# Where uploaded files live (F29-13, ADR-0091). `local` writes under UPLOAD_DIR
+# and stands in for the cloud on a developer's machine and in tests; `gcs`
+# writes to the Cloud Storage bucket GCS_BUCKET through the instance's own
+# credentials. Anything but development refuses `local` unless it is allowed.
+FILE_STORE_LOCAL = "local"
+FILE_STORE_GCS = "gcs"
+FILE_STORE_BACKENDS = frozenset({FILE_STORE_LOCAL, FILE_STORE_GCS})
+DEFAULT_FILE_STORE_BACKEND = FILE_STORE_LOCAL
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -115,6 +123,12 @@ class Config:
     where an uploaded product image is written, the largest file accepted, and
     the MIME types treated as images at all.
 
+    `file_store_backend`, `gcs_bucket` and `file_store_allow_local_in_production`
+    govern F29-13 (ADR-0091): which store keeps the uploaded files, the bucket
+    the `gcs` backend writes to, and whether the `local` backend may run outside
+    development. `from_env` refuses the combinations that would silently put the
+    files on the instance's disk or write to no bucket at all.
+
     No setting marks figures Synthetic: every page takes the marker from the
     data_origin of the rows it reads (ADR-0052, #560).
     """
@@ -137,6 +151,9 @@ class Config:
     allowed_image_types: frozenset[str] = field(
         default_factory=lambda: _set_env(None, default=DEFAULT_ALLOWED_IMAGE_TYPES)
     )
+    file_store_backend: str = DEFAULT_FILE_STORE_BACKEND
+    gcs_bucket: str | None = None
+    file_store_allow_local_in_production: bool = False
     # Login failures are counted per account and client address. NGINX adds a
     # worker-shared client limit in front of the two Gunicorn workers.
     login_throttle_max_attempts: int = DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS
@@ -168,6 +185,38 @@ class Config:
                 "and set it in the environment; see .env.example."
             )
 
+        file_store_backend = (
+            (env.get("FILE_STORE_BACKEND") or DEFAULT_FILE_STORE_BACKEND)
+            .strip()
+            .lower()
+        )
+        gcs_bucket = (env.get("GCS_BUCKET") or "").strip() or None
+        allow_local = _bool_env(
+            env.get("FILE_STORE_ALLOW_LOCAL_IN_PRODUCTION"), default=False
+        )
+        if file_store_backend not in FILE_STORE_BACKENDS:
+            raise ConfigurationError(
+                f"FILE_STORE_BACKEND is {file_store_backend!r}; it must be one "
+                f"of {', '.join(sorted(FILE_STORE_BACKENDS))}; see .env.example."
+            )
+        if file_store_backend == FILE_STORE_GCS and gcs_bucket is None:
+            raise ConfigurationError(
+                "FILE_STORE_BACKEND is gcs but GCS_BUCKET is not set; name the "
+                "bucket in the environment; see .env.example."
+            )
+        if (
+            file_store_backend == FILE_STORE_LOCAL
+            and environment != DEFAULT_ENVIRONMENT
+            and not allow_local
+        ):
+            raise ConfigurationError(
+                "FILE_STORE_BACKEND is local while FLASK_ENV is "
+                f"{environment!r}: uploaded files would be written to the "
+                "instance's disk. Set FILE_STORE_BACKEND=gcs and GCS_BUCKET, or "
+                "FILE_STORE_ALLOW_LOCAL_IN_PRODUCTION=true if that is meant; "
+                "see .env.example."
+            )
+
         return cls(
             secret_key=secret_key,
             environment=environment,
@@ -194,6 +243,9 @@ class Config:
             allowed_image_types=_set_env(
                 env.get("ALLOWED_IMAGE_TYPES"), default=DEFAULT_ALLOWED_IMAGE_TYPES
             ),
+            file_store_backend=file_store_backend,
+            gcs_bucket=gcs_bucket,
+            file_store_allow_local_in_production=allow_local,
             login_throttle_max_attempts=_int_env(
                 env.get("LOGIN_THROTTLE_MAX_ATTEMPTS"),
                 default=DEFAULT_LOGIN_THROTTLE_MAX_ATTEMPTS,

@@ -9,3 +9,4 @@ psycopg[binary]==3.2.3
 python-dotenv==1.2.4
 argon2-cffi==23.1.0
 gunicorn==23.0.0
+google-cloud-storage==3.4.0

@@ -8,18 +8,22 @@ added here without a declaration is refused rather than exposed.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from uuid import UUID
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     flash,
+    g,
     redirect,
     render_template,
     request,
     send_from_directory,
+    session,
     url_for,
 )
 from flask.typing import ResponseReturnValue
@@ -39,6 +43,7 @@ from web.db.products import (
     list_products,
 )
 from web.db.roles import get_role, list_roles
+from web.db.stored_files import get_stored_file
 from web.db.stores import (
     get_store,
     list_stores,
@@ -80,10 +85,13 @@ from web.services.catalog import (
     validate_role,
     validate_store,
 )
+from web.services.files import ObjectMissing, StoreUnavailable, get_file_store
 from web.services.pagination import page_count
 from web.services.uploads import (
     UploadRejected,
-    delete_product_image,
+    UploadUnavailable,
+    abandon_product_image,
+    retire_product_image,
     save_product_image,
 )
 from web.services.users import (
@@ -687,8 +695,8 @@ def create_product_view() -> ResponseReturnValue:
     config = current_app.config["APP_CONFIG"]
     if image_file and image_file.filename:
         try:
-            saved = save_product_image(image_file, config)
-        except UploadRejected as error:
+            saved = save_product_image(image_file, config, owner_id=session["user_id"])
+        except (UploadRejected, UploadUnavailable) as error:
             return (
                 render_template(
                     "admin/product_form.html",
@@ -696,7 +704,7 @@ def create_product_view() -> ResponseReturnValue:
                     errors={"image": str(error)},
                     all_categories=all_categories,
                 ),
-                400,
+                _upload_refusal_status(error),
             )
 
     try:
@@ -707,11 +715,11 @@ def create_product_view() -> ResponseReturnValue:
             name=name,
             category_id=int(category_id_raw),
             list_price=validation.price,
-            image_path=saved.relative_path if saved else None,
+            image=saved,
         )
     except CatalogConflict as error:
         if saved:
-            delete_product_image(saved.relative_path, config)
+            abandon_product_image(connection, saved)
         return (
             render_template(
                 "admin/product_form.html",
@@ -728,10 +736,10 @@ def create_product_view() -> ResponseReturnValue:
             409,
         )
     except BaseException:
-        # Anything else (#595): the row was not written, so the file must not
-        # stay on disk; the error still reaches the application's handler.
+        # Anything else (#595): the row was not written, so the object must not
+        # stay in the store; the error still reaches the application's handler.
         if saved:
-            delete_product_image(saved.relative_path, config)
+            abandon_product_image(connection, saved)
         raise
 
     flash("Product created.", "success")
@@ -787,11 +795,12 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
 
     # Validate the image before writing anything, so a rejected file never
     # leaves the product's other fields half-updated.
+    saved = None
+    config = current_app.config["APP_CONFIG"]
     if image_file and image_file.filename:
-        config = current_app.config["APP_CONFIG"]
         try:
-            saved = save_product_image(image_file, config)
-        except UploadRejected as error:
+            saved = save_product_image(image_file, config, owner_id=session["user_id"])
+        except (UploadRejected, UploadUnavailable) as error:
             return (
                 render_template(
                     "admin/product_form.html",
@@ -807,11 +816,11 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
                     errors={"image": str(error)},
                     all_categories=all_categories,
                 ),
-                400,
+                _upload_refusal_status(error),
             )
 
     try:
-        update_product(
+        displaced = update_product(
             connection,
             product_id,
             sku=sku,
@@ -819,13 +828,15 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
             category_id=int(category_id_raw),
             list_price=validation.price,
             is_active=is_active,
-            image_path=(
-                saved.relative_path if image_file and image_file.filename else None
-            ),
+            image=saved,
         )
     except CatalogConflict as error:
-        if image_file and image_file.filename:
-            delete_product_image(saved.relative_path, config)
+        if saved:
+            abandon_product_image(connection, saved)
+        if not error.field:
+            # Not about one field (the product was deleted meanwhile): the form
+            # has nowhere to put it, so it is said above the form.
+            flash(str(error), "danger")
         return (
             render_template(
                 "admin/product_form.html",
@@ -843,15 +854,20 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
             409,
         )
     except BaseException:
-        # As on create (#595): a failed update leaves no new file behind.
-        if image_file and image_file.filename:
-            delete_product_image(saved.relative_path, config)
+        # As on create (#595): a failed update leaves no new object behind.
+        if saved:
+            abandon_product_image(connection, saved)
         raise
 
-    if image_file and image_file.filename:
-        old_path = product.image_path
-        if old_path:
-            delete_product_image(old_path, config)
+    if saved and displaced is not None:
+        # What the locked row held when this edit committed, not what the page read
+        # before it: another edit may have replaced it in between.
+        retire_product_image(
+            connection,
+            image_file_id=displaced.image_file_id,
+            image_path=displaced.image_path,
+            config=config,
+        )
 
     flash("Product updated.", "success")
     return redirect(url_for("admin.list_products_view"))
@@ -872,8 +888,7 @@ def delete_product_view(product_id: int) -> ResponseReturnValue:
             list_endpoint="admin.list_products_view",
         )
     try:
-        delete_product(connection, product_id)
-
+        displaced = delete_product(connection, product_id)
     except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         products, total = list_products(
@@ -892,8 +907,13 @@ def delete_product_view(product_id: int) -> ResponseReturnValue:
             409,
         )
 
-    if record.image_path:
-        delete_product_image(record.image_path, current_app.config["APP_CONFIG"])
+    if displaced is not None:
+        retire_product_image(
+            connection,
+            image_file_id=displaced.image_file_id,
+            image_path=displaced.image_path,
+            config=current_app.config["APP_CONFIG"],
+        )
     flash("Product deleted.", "success")
     return redirect(url_for("admin.list_products_view"))
 
@@ -1282,10 +1302,64 @@ def activate_user_view(user_id: UUID) -> ResponseReturnValue:
     return redirect(url_for("admin.list_users_view"))
 
 
+# `<file_id>.<ext>`: the public name of a picture in the file store (ADR-0091).
+_STORED_IMAGE_NAME = re.compile(
+    r"(?P<file_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+    r"\.(?P<extension>jpg|png|webp)"
+)
+# The route needs `catalog.read`, so the picture is private to signed-in readers
+# even when its file is PUBLIC: `private` keeps a shared cache out, and a name is
+# never reused for other bytes, so the browser may keep it for a day.
+_STORED_IMAGE_MAX_AGE_SECONDS = 86400
+
+
+def _upload_refusal_status(error: Exception) -> int:
+    """A refused file is the user's to fix (400); a store that is down is not."""
+    return 503 if isinstance(error, UploadUnavailable) else 400
+
+
 @bp.get("/products/image/<path:filename>")
 @requires(CATALOG_READ)
 def product_image(filename: str) -> ResponseReturnValue:
-    config = current_app.config["APP_CONFIG"]
-    response = send_from_directory(Path(config.upload_dir).resolve(), filename)
+    """A product's picture: from the file store when it was uploaded there, and
+    from `UPLOAD_DIR` for a file the migration of ADR-0091 has not moved yet."""
+    named = _STORED_IMAGE_NAME.fullmatch(filename)
+    if named is None:
+        config = current_app.config["APP_CONFIG"]
+        response = send_from_directory(Path(config.upload_dir).resolve(), filename)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+    return _stored_image(UUID(named["file_id"]), named["extension"])
+
+
+def _stored_image(file_id: UUID, extension: str) -> ResponseReturnValue:
+    record = get_stored_file(get_connection(), file_id)
+    if (
+        record is None
+        or record.privacy != "PUBLIC"
+        or record.status != "STORED"
+        or not record.object_path.endswith(f".{extension}")
+    ):
+        abort(404)
+    if request.if_none_match.contains(record.sha256):
+        response = Response(status=304)
+    else:
+        try:
+            data = get_file_store().get(record.object_path)
+        except ObjectMissing:
+            current_app.logger.error(
+                "file_store_object_missing file_id=%s path=%r",
+                record.file_id,
+                record.object_path,
+            )
+            abort(404)
+        except StoreUnavailable:
+            abort(503)
+        response = Response(data, mimetype=record.content_type)
+    response.set_etag(record.sha256)
+    response.headers["Cache-Control"] = (
+        f"private, max-age={_STORED_IMAGE_MAX_AGE_SECONDS}, immutable"
+    )
     response.headers["X-Content-Type-Options"] = "nosniff"
+    g.cacheable_response = True
     return response

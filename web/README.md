@@ -39,8 +39,18 @@ directories are not named `controllers/`, `models/` and `views/`:
 [ADR-0003](../docs/adr/0003-layered-architecture-with-an-explicit-service-layer.md).
 
 One directory from the intended layout is still absent because nothing has a
-file to put in it yet: `uploads/`, which arrives with image handling (F3-07,
-gitignored).
+file to put in it yet: `uploads/` (gitignored), which only the local file store
+and the images of the first delivery use.
+
+Uploaded files (a product's picture) are kept by a file store, not by the
+database ([ADR-0091](../docs/adr/0091-the-web-keeps-its-files-in-a-private-gcs-bucket-behind-a-file-store-port-and-only-their-metadata-in-postgresql.md)).
+`services/files.py` holds the `FileStore` port and its two backends: a private
+Cloud Storage bucket in production, and a directory under `UPLOAD_DIR` on a
+developer's machine and in tests (`FILE_STORE_BACKEND`, default `local`). The
+`stored_file` table keeps only each file's metadata. An upload writes the bytes,
+then the row, in the product's transaction; a store that is down leaves no row,
+and a refused row leaves no object. Only `services/files.py` may import the
+Google client, and only when the `gcs` backend is first used.
 
 Writes go through services, which own a complete transaction. Data-access
 functions return data or raise psycopg exceptions; services translate expected

@@ -103,7 +103,7 @@ def test_upload_rejection_logs_reason_without_file_contents(caplog):
         content_type="image/png",
     )
     try:
-        save_product_image(file, configuration())
+        save_product_image(file, configuration(), owner_id="u-1")
     except UploadRejected:
         pass
     assert "upload_refused" in caplog.text

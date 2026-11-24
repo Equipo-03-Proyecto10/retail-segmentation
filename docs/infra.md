@@ -188,7 +188,7 @@ psql -d retail -f sql/02_seed_30_per_table.sql
 | Extensions | `pg_trgm` |
 | Application role | `retail_app`, `LOGIN`, password generated on the instance |
 | Its privileges | `SELECT, INSERT, UPDATE, DELETE` only — verified against `information_schema.table_privileges`. No `CREATE`, no `ALTER`, no ownership |
-| Seed | 29 tables loaded; `transaction_line` 600, `transaction` 300, `inventory` 150 rows |
+| Seed | 30 tables loaded; `transaction_line` 600, `transaction` 300, `inventory` 150 rows |
 
 ### Access policy and the application role
 
@@ -440,6 +440,49 @@ gcloud compute ssh mosaiq-deployment-vm --zone=northamerica-south1-a \
   -- -N -L 5090:127.0.0.1:5090
 # then open http://localhost:5090 (or /status.json)
 ```
+
+## Cloud Storage bucket (F29-13)
+
+The web's files, [ADR-0091](adr/0091-the-web-keeps-its-files-in-a-private-gcs-bucket-behind-a-file-store-port-and-only-their-metadata-in-postgresql.md)
+(#1189). Created on 2026-11-24 by the steps in
+[`deploy/README.md`](../deploy/README.md) "F29-13", step 1.
+
+| Field | Value |
+|---|---|
+| Bucket | `gs://iac-dev-01-mosaiq-files` (the web's `GCS_BUCKET`) |
+| Location | `northamerica-south1`, storage class `STANDARD` |
+| Access | uniform bucket-level access on, public access prevention `enforced`; no `allUsers` or `allAuthenticatedUsers` binding |
+| Soft delete | the default, 7 days |
+| Binding | `roles/storage.objectUser` for `23051370455-compute@developer.gserviceaccount.com`, the account the instance runs as, on this bucket only |
+| Key files | none: the web uses Application Default Credentials from the metadata server |
+
+**The VM's access scopes allow the writes.** A VM created with the default
+scopes has `devstorage.read_only`, and a write is then refused with a 403
+whatever the role. On 2026-11-24 the VM was stopped and its scopes set to the
+ones it had, with `storage-ro` replaced by `storage-rw`:
+
+```sh
+gcloud compute instances stop mosaiq-deployment-vm --zone=northamerica-south1-a
+gcloud compute instances set-service-account mosaiq-deployment-vm \
+  --zone=northamerica-south1-a \
+  --service-account=23051370455-compute@developer.gserviceaccount.com \
+  --scopes=storage-rw,logging-write,monitoring-write,pubsub,service-management,service-control,trace
+gcloud compute instances start mosaiq-deployment-vm --zone=northamerica-south1-a
+```
+
+The stop restarts Redis, which signs everyone out (#714), so it is not done
+between a rehearsal and a demonstration. After the start, with the metadata
+server's token, the instance uploaded, read and deleted a probe object (200, 200,
+204); an anonymous listing got 401. #1190's V4 signing needs `cloud-platform`
+instead, and `roles/iam.serviceAccountTokenCreator` on the account itself;
+ADR-0091 leaves both for #1190.
+
+**The bucket binding is not yet the account's only Cloud Storage access.** The
+default Compute Engine account holds `roles/editor` on the project, which
+includes every bucket's objects, and the scope now allows writes. The
+bucket-scoped binding above is the least privilege only once `roles/editor` is replaced by the roles the VM uses (at least
+`roles/logging.logWriter` and `roles/monitoring.metricWriter`). That is a
+decision for whoever owns the project.
 
 ## Continuous deployment
 

@@ -944,7 +944,7 @@ report*.
 
 ## 9. PostgreSQL domain model
 
-The schema has 29 tables.
+The schema has 30 tables.
 
 | Domain | Tables | Definition in this project |
 |---|---|---|
@@ -954,6 +954,7 @@ The schema has 29 tables.
 | Segmentation | `segment_rule`, `segment_label`, `segment`, `segmentation_run`, `customer_segment_history` | Configurable RFM bands, stable labels, reproducible runs and durable assignment history |
 | Marketing model | `campaign`, `experiment`, `experiment_group`, `experiment_assignment`, `experiment_exposure`, `experiment_conversion` | Campaign targeting and separate experiment assignment, exposure and conversion events |
 | Notifications | `notification`, `notification_recipient` | In-app events (a finished sales load, a completed run, an experiment's end, a deactivation) and each recipient's read state |
+| Files | `stored_file` | The metadata of the files kept in the file store (ADR-0091): object path, content type, size, SHA-256, privacy, status and owner; the bytes are in a bucket |
 | Governance | `audit_log` | Actor, entity, operation, before/after data and execution time |
 
 A customer has no `current_segment_id`. That column was retired by ADR-0017; the

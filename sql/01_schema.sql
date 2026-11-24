@@ -409,8 +409,13 @@ CREATE TABLE product (
     name        VARCHAR(150) NOT NULL,
     category_id SMALLINT NOT NULL REFERENCES category(category_id) ON DELETE RESTRICT,
     list_price  NUMERIC(10,2) NOT NULL CHECK (list_price >= 0),
-    -- F3-07 stores the uploaded file under UPLOAD_DIR and keeps only its path
-    -- here. The bytes are never versioned and never held in the database.
+    -- The public name of the picture: what the web's image route
+    -- (/admin/products/image/<name>) answers to, and what products-service
+    -- joins to PRODUCTS_PHOTO_BASE_URL to publish photo_url (ADR-0091). F3-07
+    -- kept a file name under UPLOAD_DIR here. A picture kept in the file store is
+    -- named <image_file_id>.<ext>, and the FILE STORE block below, which adds
+    -- image_file_id, enforces that. A row with image_path and no image_file_id is
+    -- a file not yet moved by deploy/migrate-uploads-1189.py.
     image_path  VARCHAR(255),
     is_active   BOOLEAN NOT NULL DEFAULT TRUE
 );
@@ -451,6 +456,155 @@ CREATE TABLE transaction_line (
     unit_price     NUMERIC(10,2) NOT NULL CHECK (unit_price > 0),
     PRIMARY KEY (transaction_id, product_id)
 );
+
+-- BEGIN FILE STORE (ADR-0091, F29-13, #1189)
+-- Re-runnable. On a clean build it creates the file store's metadata; on a
+-- database that predates it (the instance, whose product.image_path rows are
+-- the input of deploy/migrate-uploads-1189.py and must NOT be rebuilt away) it
+-- adds the same objects and touches no row. Apply it with
+--   sed -n '/^-- BEGIN FILE STORE/,/^-- END FILE STORE$/p' sql/01_schema.sql | psql ...
+-- (deploy/README.md). The product column is added here, after the table, so a
+-- live database and a clean build dump alike (deploy/check-schema-drift.sh).
+
+-- The metadata of one file the platform keeps outside the database (F29-13,
+-- #1189, ADR-0091): the bytes are an object in a private Cloud Storage bucket
+-- (or, on a developer's machine and in tests, a file under UPLOAD_DIR), and
+-- this row is the only thing PostgreSQL holds about them. Never the bytes.
+--
+-- The object is named <kind>/<file_id>.<ext>: the kind, the row's own identifier
+-- and an extension that matches the content type. The user's file name is never
+-- used, so the CHECK below is also what keeps a path inside its folder.
+--
+-- A row is never deleted. Removing a file marks it PENDING_DELETE before the
+-- object is touched and DELETED after, and keeps the fact that it existed; a
+-- row left PENDING_DELETE is a delete the store has not confirmed (it was
+-- unreachable, or the process stopped between the two), which
+-- deploy/migrate-uploads-1189.py --delete-pending finishes. Also the record of an
+-- object whose write succeeded but whose product was then refused, when even
+-- the cleanup could not reach the store.
+-- 4NF: every column depends on file_id alone; object_path is a second candidate
+-- key; sha256 is deliberately not a key (two uploads of one picture are two
+-- files). metadata is free, and nothing queries it (docs/data-model.md).
+CREATE TABLE IF NOT EXISTS stored_file (
+    file_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    object_path    VARCHAR(255) NOT NULL UNIQUE,
+    content_type   VARCHAR(100) NOT NULL,
+    size_bytes     BIGINT NOT NULL,
+    sha256         CHAR(64) NOT NULL,
+    privacy        VARCHAR(10) NOT NULL,
+    status         VARCHAR(15) NOT NULL DEFAULT 'STORED',
+    owner_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at     TIMESTAMPTZ,
+    metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT stored_file_content_type_check
+        CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp')),
+    -- 5 MB, the same limit as MAX_UPLOAD_BYTES. A larger kind of file widens it
+    -- by a schema change of its own.
+    CONSTRAINT stored_file_size_check
+        CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+    CONSTRAINT stored_file_sha256_check CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT stored_file_privacy_check CHECK (privacy IN ('PUBLIC', 'PRIVATE')),
+    CONSTRAINT stored_file_status_check
+        CHECK (status IN ('STORED', 'PENDING_DELETE', 'DELETED')),
+    CONSTRAINT stored_file_deleted_at_check
+        CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL)),
+    CONSTRAINT stored_file_metadata_check CHECK (jsonb_typeof(metadata) = 'object'),
+    -- <kind>/<file_id>.<ext>, the extension the content type implies.
+    CONSTRAINT stored_file_object_path_check
+        CHECK (object_path ~ ('^[a-z][a-z0-9-]*/' || file_id::text || '[.](jpg|png|webp)$')
+           AND ((content_type = 'image/jpeg' AND object_path LIKE '%.jpg')
+             OR (content_type = 'image/png'  AND object_path LIKE '%.png')
+             OR (content_type = 'image/webp' AND object_path LIKE '%.webp')))
+);
+
+-- One user's files, newest first.
+CREATE INDEX IF NOT EXISTS idx_stored_file_owner ON stored_file (owner_user_id, created_at DESC);
+-- The delete the store has not yet confirmed, found without scanning the table.
+CREATE INDEX IF NOT EXISTS idx_stored_file_pending_delete ON stored_file (created_at)
+    WHERE status = 'PENDING_DELETE';
+
+
+-- The product's picture in the file store: one stored file, and a file is one
+-- product's. The name in image_path must be the file's own id and the extension
+-- its content type implies; a CHECK cannot read the referenced row, so a
+-- constraint trigger does (product_image_file_matches).
+ALTER TABLE product ADD COLUMN IF NOT EXISTS image_file_id UUID;
+DO $filestore$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conname = 'product_image_file_id_fkey'
+                      AND conrelid = 'public.product'::regclass) THEN
+        ALTER TABLE product ADD CONSTRAINT product_image_file_id_fkey
+            FOREIGN KEY (image_file_id) REFERENCES stored_file(file_id)
+            ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conname = 'product_image_name_check'
+                      AND conrelid = 'public.product'::regclass) THEN
+        ALTER TABLE product ADD CONSTRAINT product_image_name_check
+            CHECK (image_file_id IS NULL
+                   OR coalesce(image_path ~ ('^' || image_file_id::text
+                                             || '[.](jpg|png|webp)$'), FALSE));
+    END IF;
+END
+$filestore$;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_product_image_file ON product (image_file_id)
+    WHERE image_file_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION fn_product_image_file_matches() RETURNS trigger
+LANGUAGE plpgsql AS $match$
+BEGIN
+    IF NEW.image_file_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM stored_file AS f
+         WHERE f.file_id = NEW.image_file_id
+           AND NEW.image_path = f.file_id::text || CASE f.content_type
+                                    WHEN 'image/jpeg' THEN '.jpg'
+                                    WHEN 'image/png'  THEN '.png'
+                                    WHEN 'image/webp' THEN '.webp' END
+    ) THEN
+        RAISE EXCEPTION 'product % names its picture %, which is not its stored file''s name',
+            NEW.product_id, NEW.image_path
+            USING ERRCODE = '23514', CONSTRAINT = 'product_image_file_matches';
+    END IF;
+    RETURN NEW;
+END
+$match$;
+-- Only for a product that has a stored picture: a service that writes a product
+-- (products-service, with no privilege on stored_file) never reaches the check.
+CREATE OR REPLACE TRIGGER trg_product_image_file_matches
+AFTER INSERT OR UPDATE OF image_path, image_file_id ON product
+FOR EACH ROW WHEN (NEW.image_file_id IS NOT NULL)
+EXECUTE FUNCTION fn_product_image_file_matches();
+
+-- The history is kept: the web may add a row and move it forward, never delete
+-- it, rewrite what it says about the object, or bring a removed file back.
+REVOKE UPDATE, DELETE ON stored_file FROM retail_app;
+GRANT UPDATE (status, deleted_at) ON stored_file TO retail_app;
+CREATE OR REPLACE FUNCTION fn_stored_file_forward_lifecycle() RETURNS trigger
+LANGUAGE plpgsql AS $forward$
+BEGIN
+    IF (NEW.file_id, NEW.object_path, NEW.content_type, NEW.size_bytes, NEW.sha256,
+        NEW.privacy, NEW.owner_user_id, NEW.created_at, NEW.metadata)
+       IS DISTINCT FROM
+       (OLD.file_id, OLD.object_path, OLD.content_type, OLD.size_bytes, OLD.sha256,
+        OLD.privacy, OLD.owner_user_id, OLD.created_at, OLD.metadata) THEN
+        RAISE EXCEPTION 'a stored file''s identity never changes'
+            USING ERRCODE = '23514', CONSTRAINT = 'stored_file_identity_immutable';
+    END IF;
+    IF OLD.status <> NEW.status AND NOT (
+        (OLD.status = 'STORED' AND NEW.status IN ('PENDING_DELETE', 'DELETED'))
+        OR (OLD.status = 'PENDING_DELETE' AND NEW.status = 'DELETED')) THEN
+        RAISE EXCEPTION 'a stored file cannot go from % back to %', OLD.status, NEW.status
+            USING ERRCODE = '23514', CONSTRAINT = 'stored_file_forward_lifecycle';
+    END IF;
+    RETURN NEW;
+END
+$forward$;
+CREATE OR REPLACE TRIGGER trg_stored_file_forward_lifecycle
+BEFORE UPDATE ON stored_file FOR EACH ROW
+EXECUTE FUNCTION fn_stored_file_forward_lifecycle();
+-- END FILE STORE
 
 -- BEGIN DATA ORIGIN COLUMNS (ADR-0052, #559)
 -- A no-op on a clean build, where CREATE TABLE above already has both
@@ -7580,7 +7734,7 @@ BEGIN
           AND c.relname NOT IN (
               'audit_log', 'experiment_assignment', 'experiment_exposure',
               'experiment_conversion', 'experiment', 'experiment_group', 'segmentation_run',
-              'customer_segment_history'
+              'customer_segment_history', 'stored_file'
           )
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
@@ -7627,6 +7781,19 @@ BEGIN
         RAISE EXCEPTION 'experiment_conversion must be append-only for the application role (RN-27)';
     END IF;
     RAISE NOTICE 'PASS: experiment_conversion is append-only for the application role';
+
+    IF NOT has_table_privilege('public.stored_file', 'SELECT')
+       OR NOT has_table_privilege('public.stored_file', 'INSERT')
+       OR has_table_privilege('public.stored_file', 'UPDATE')
+       OR has_table_privilege('public.stored_file', 'DELETE')
+       OR has_table_privilege('public.stored_file', 'TRUNCATE')
+       OR NOT has_column_privilege('public.stored_file', 'status', 'UPDATE')
+       OR NOT has_column_privilege('public.stored_file', 'deleted_at', 'UPDATE')
+       OR has_column_privilege('public.stored_file', 'object_path', 'UPDATE')
+       OR has_column_privilege('public.stored_file', 'privacy', 'UPDATE') THEN
+        RAISE EXCEPTION 'stored_file may only have status and deleted_at updated, and never be deleted from, by the application role (ADR-0091)';
+    END IF;
+    RAISE NOTICE 'PASS: stored_file history is protected from the application role';
 
     IF NOT has_table_privilege('public.experiment', 'UPDATE')
        OR has_table_privilege('public.experiment', 'DELETE')

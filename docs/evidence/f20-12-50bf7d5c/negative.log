@@ -1,0 +1,81 @@
+..............F..s.ssssssssssssssssss................................... [ 41%]
+.....ss...s...ss...................s....................F.s............. [ 82%]
+........s....................s.                                          [100%]
+=================================== FAILURES ===================================
+_______________ test_the_grant_and_boundary_checks_print_nothing _______________
+
+deployed_stack = Stack(edge=<tests.negative.stack.Edge object at 0x7f3e3a79e0f0>, target='instance', run_id='f2e7191728', accounts={'AD...eated_for_run=True), stack=..., closed=False, issued=30356.362490059)], spare=[], last_sign_in_started=30355.827940919)
+evidence = Evidence(label='Instance', rows=[Row(area='auth', case='a rotated refresh token reused', expected='401 refresh_reused'...db/check_boundaries.sql', expected='exit 0, prints nothing', actual='exit 0, prints nothing', verdict=True)], notes=[])
+
+    def test_the_grant_and_boundary_checks_print_nothing(
+        deployed_stack: Stack, evidence: Evidence
+    ) -> None:
+        grants = _db("bash", "contracts/db/check_grants.sh")
+        boundaries = _db(
+            "psql",
+            "-X",
+            "-v",
+            "ON_ERROR_STOP=1",
+            "-d",
+            "retail",
+            "-f",
+            "contracts/db/check_boundaries.sql",
+        )
+        held = True
+        for case, result in (
+            ("contracts/db/check_grants.sh", grants),
+            ("contracts/db/check_boundaries.sql", boundaries),
+        ):
+            output = (result.stdout + result.stderr).strip()
+            held &= evidence.record(
+                "database",
+                case,
+                "exit 0, prints nothing",
+                f"exit {result.returncode}, "
+                + (f"{len(output.splitlines())} lines" if output else "prints nothing"),
+                result.returncode == 0 and not output,
+            )
+>       assert held, (grants.stdout, grants.stderr, boundaries.stdout, boundaries.stderr)
+E       AssertionError: ('> definer_audit,"api_audit.record_event_v1(uuid,text,text,timestamp with time zone,text,uuid,text,smallint,text,text...', "tail: cannot open '/var/tmp/mosaiq-1124-S1/tree/contracts/db/grants.csv' for reading: Permission denied
+E         ", '', '')
+E       assert False
+
+tests/negative/test_infrastructure.py:159: AssertionError
+_______________ test_sales_refuses_a_sale_its_stock_cannot_cover _______________
+
+deployed_stack = Stack(edge=<tests.negative.stack.Edge object at 0x7f3e3a79e0f0>, target='instance', run_id='f2e7191728', accounts={'AD...eated_for_run=False), stack=..., closed=True, issued=30377.478805028)], spare=[], last_sign_in_started=30376.952857309)
+evidence = Evidence(label='Instance', rows=[Row(area='auth', case='a rotated refresh token reused', expected='401 refresh_reused'..., so it runs on the local stack only, with MOSAIQ_DB_CONTAINER and MOSAIQ_CUSTOMERS_CONTAINER.", areas=['customers'])])
+sale = {'customer_id': '00000000-0000-0000-0000-000000000001', 'store_id': 1, 'channel_id': 1, 'occurred_at': '2026-11-24T04:09:37+00:00', ...}
+
+    def test_sales_refuses_a_sale_its_stock_cannot_cover(
+        deployed_stack: Stack, evidence: Evidence, sale: dict
+    ) -> None:
+        reply = deployed_stack.edge.json(
+            "POST",
+            SALES,
+            sale,
+            token=deployed_stack.token("ADMIN"),
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+        held = evidence.check(
+            "sales", "a line 1,000 over the stock on hand", reply, 409, "stock_unavailable"
+        )
+>       assert held, reply.outcome()
+E       AssertionError: 422 discount_without_promotion
+E       assert False
+
+tests/negative/test_rules.py:119: AssertionError
+=========================== short test summary info ============================
+SKIPPED [1] tests/negative/test_infrastructure.py:208: local stack only
+SKIPPED [1] tests/negative/test_infrastructure.py:269: MOSAIQ_PROBE_HOST is not set; the outside port probe is disabled.
+SKIPPED [17] tests/negative/test_infrastructure.py:286: MOSAIQ_PROBE_HOST is not set; the outside port probe is disabled.
+SKIPPED [1] tests/negative/test_representations.py:57: segments takes no body
+SKIPPED [1] tests/negative/test_representations.py:57: recommendations takes no body
+SKIPPED [1] tests/negative/test_representations.py:57: audit-trail takes no body
+SKIPPED [1] tests/negative/test_representations.py:57: analytics-kpis takes no body
+SKIPPED [1] tests/negative/test_representations.py:122: auth has no paginated read
+SKIPPED [1] tests/negative/test_revocation.py:116: local stack only, with its container names
+SKIPPED [1] tests/negative/test_rules.py:144: an accepted sale persists; local stack only
+SKIPPED [1] tests/negative/test_store_scope.py:349: rows in another store persist; local stack only
+SKIPPED [1] tests/negative/test_infrastructure.py:54: local stack only, with its container name
+2 failed, 145 passed, 28 skipped in 616.16s (0:10:16)

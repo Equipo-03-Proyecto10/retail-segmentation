@@ -1,0 +1,7 @@
+negative	tests.negative.test_rules::test_sales_refuses_a_sale_its_stock_cannot_cover	1215
+negative	tests.negative.test_rules::test_sales_refuses_a_reused_key_with_another_request	1215
+negative	tests.negative.test_store_scope::test_reads_by_id_refuse_another_stores_rows	1215
+parity	tests.parity.test_recommendation_parity::*	1222
+service-stores	service-stores.rules::channels_are_a_set_replaced_atomically_and_an_unknown_id_writes_nothing	1223
+negative (instance)	tests.negative.test_rules::test_sales_refuses_a_sale_its_stock_cannot_cover	1215
+negative (instance)	tests.negative.test_infrastructure::test_the_grant_and_boundary_checks_print_nothing	784

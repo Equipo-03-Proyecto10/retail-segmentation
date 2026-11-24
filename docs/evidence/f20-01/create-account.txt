@@ -1,0 +1,21 @@
+HTTP/2 201 
+content-type: application/json
+location: /v1/users/927d1bf9-c8cb-43ca-9841-704e5d0993bb
+x-correlation-id: f20-01-create-user
+strict-transport-security: max-age=31536000; includeSubDomains
+
+{
+  "user_id": "927d1bf9-c8cb-43ca-9841-704e5d0993bb",
+  "name": "F20-01 Store Manager",
+  "email": "f20-01-store-manager@example.test",
+  "role_code": "STORE_MANAGER",
+  "is_active": true,
+  "created_at": "2026-11-24T03:39:01.083764Z"
+}
+HTTP/2 200 
+content-type: application/json
+x-correlation-id: f20-01-assign-store
+strict-transport-security: max-age=31536000; includeSubDomains
+
+{"user_id":"927d1bf9-c8cb-43ca-9841-704e5d0993bb","store_ids":[30]}
+sign-out 204

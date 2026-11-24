@@ -158,6 +158,7 @@ class _StandIn(BaseHTTPRequestHandler):
     forbidden_code = "forbidden_role"
 
     def _send(self, status: int, body: dict | None = None) -> None:
+        assert self.headers.get("User-Agent") == "mosaiq-acceptance/1"
         raw = json.dumps(body).encode() if body is not None else b""
         self.send_response(status)
         self.send_header("Content-Type", "application/json")

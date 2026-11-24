@@ -355,7 +355,7 @@ The instance has to show what the delivery claims. In this order, by whoever
 holds the instance (none of it can be done from the repository):
 
 1. **Back up, then re-provision the database** from the three scripts at the
-   deployed commit. The final schema has 29 tables and also depends on
+   deployed commit. The final schema has 31 tables and also depends on
    `btree_gist` from `00_create_database.sql`: it includes the complete exposure
    and conversion event chain, named treatment arms with immutable definitions,
    non-overlapping close-only segment history, insert-only segmentation runs,
@@ -1399,13 +1399,37 @@ gcloud compute instances describe mosaiq-deployment-vm --zone=northamerica-south
 
 Record the bucket, the binding and the scope in `docs/infra.md`.
 
-### 2. The schema, before the release
+### 2. The schema, before the release: upgrade in place, do not rebuild
 
-`sql/01_schema.sql` adds the `stored_file` and `file_access` tables, `product.image_file_id`
-and `sales_load.source_file_id`.
-Apply it the way any web schema change is applied to the instance (rebuild the
-database before merging to `main`, as the previous schema changes were). The
-three scripts must run clean in order from an empty database first.
+The `-- BEGIN FILE STORE` block of `sql/01_schema.sql` creates `stored_file` and
+`file_access`, adds `product.image_file_id` and `sales_load.source_file_id`, widens
+`stored_file` to the PRIVATE `text/csv` kind of #1190, and installs the constraints,
+the two triggers and the privileges that go with them. It is re-runnable, it changes no row, and on a clean
+build it is what creates those objects, so the three scripts still run clean from
+empty. **Apply that block to the live database. Do not rebuild it from the three
+scripts before step 4:** the clean seed has no product pictures, and the only
+record of which product shows which uploaded file is `product.image_path`, which
+the migration reads. A rebuild first would leave loose files under `UPLOAD_DIR`
+and nothing to say whose they are.
+
+```sh
+# as the schema owner, from a checkout of the release
+sed -n '/^-- BEGIN FILE STORE/,/^-- END FILE STORE$/p' sql/01_schema.sql \
+  | sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d retail
+```
+
+Check it took, and that nothing was lost:
+
+```sql
+SELECT count(*) AS stored_files FROM stored_file;                  -- 0
+SELECT count(*) AS to_migrate FROM product
+ WHERE image_path IS NOT NULL AND image_file_id IS NULL;           -- the pictures to move
+```
+
+If a rebuild is wanted anyway (a re-provision for another reason), do step 4
+first, or export the mapping before dropping anything:
+`\copy (SELECT product_id, image_path FROM product WHERE image_path IS NOT NULL) TO '/var/tmp/mosaiq-images.csv' CSV`.
+Keep the migration's own report with the evidence for #1189.
 
 ### 3. The web's environment, before the release
 

@@ -99,6 +99,7 @@ def _gcs(client: SigningClient) -> GcsFileStore:
     return GcsFileStore(
         "the-private-bucket",
         client=client,
+        retry_policy=lambda: "retry",
         signer_identity=lambda: ("files@project.iam.gserviceaccount.com", "ya29.token"),
     )
 

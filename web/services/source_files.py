@@ -69,6 +69,6 @@ def attach_source(
         _register(connection, stored, load_id)
     except Exception:
         _log.exception("source_file_not_kept reason=registration load_id=%s", load_id)
-        files.remove_object(store, stored.object_path)
+        files.abandon_object(connection, store, stored)
         return False
     return True

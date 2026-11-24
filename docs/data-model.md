@@ -448,8 +448,10 @@ repeating column. `metadata` is one opaque `jsonb` object for facts that no quer
 filters or joins on (the product a replaced picture belonged to, for instance); a
 fact a query needs is a column, so the object never holds a repeating group. Two
 columns record a status that is not a state of the world but a fact about the store:
-`status = 'PENDING_DELETE'` is a delete the bucket has not confirmed, and a row is
-never removed, so `DELETED` keeps the record that the file existed.
+`status = 'PENDING_DELETE'` is a delete the bucket has not confirmed (it is written
+before the object is touched), and a row is never removed, so `DELETED` keeps the
+record that the file existed. The web's role may update only `status` and
+`deleted_at`, and only forward (`STORED`, `PENDING_DELETE`, `DELETED`).
 
 `file_access` (F29-14) is an event relation keyed by `access_id`: one row per request
 for a private file. Its determinants are the key alone. `role_code` is the role the
@@ -465,8 +467,10 @@ load whose file was not kept. It depends on `load_id` alone.
 
 `product.image_path` is the one deliberate departure. A picture kept in the store is
 named `<image_file_id>.<ext>` in `image_path`, so that column is derivable from
-`image_file_id` and the file's content type, and `product_image_name_check` keeps
-the two from disagreeing. It exists because products-service publishes `photo_url`
+`image_file_id` and the file's content type, and `product_image_name_check` (the
+shape) with the constraint trigger `product_image_file_matches` (the extension the
+referenced file's type implies, which a CHECK cannot read) keep the two from
+disagreeing. It exists because products-service publishes `photo_url`
 from it and that contract is frozen. It is temporary: the story that gives
 products-service a published view drops the column, and until then the redundancy is
 checked, not trusted.

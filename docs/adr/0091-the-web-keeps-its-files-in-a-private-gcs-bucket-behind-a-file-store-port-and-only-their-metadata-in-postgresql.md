@@ -89,7 +89,9 @@ to the store before the load runs and registers it against the `sales_load` row 
 `sales-import/<file_id>.csv`, content type `text/csv`, owner the uploader. The import is the
 business operation and keeping its file is secondary, so a store that is down, or a
 registration that fails, leaves the load standing with `source_file_id` null, a warning to the
-user and a log line; no file is ever left without its row, or the reverse. (No other file in
+user and a log line; no file is ever left without its row, or the reverse (an object whose
+registration failed is removed, and if even that cannot reach the store it is recorded
+`PENDING_DELETE`, as for a picture). (No other file in
 the platform is private today: the datasets are never stored, the exports are generated per
 request, and the product pictures are public. This is the smallest kind that is real, and
 the one that carries customer data.)
@@ -128,16 +130,34 @@ backend in production unless that is explicitly allowed.
 content type other than the three image types, a size above 5 MB or not positive, a SHA-256
 that is not 64 lowercase hex digits, a path that is not `<kind>/<file_id>.<ext>` with the
 extension matching the content type, and a `deleted_at` that disagrees with the status.
-`product.image_file_id` references it, unique where set (and `product_image_name_check` ties `image_path` to it, below). A row is never deleted: removing a
-file marks it `DELETED` and keeps the fact that it existed.
+`product.image_file_id` references it, unique where set, and a constraint trigger
+(`product_image_file_matches`) refuses a product whose `image_path` is not the referenced
+file's id plus the extension its content type implies (a CHECK cannot read the other row, so a
+PNG could otherwise be published as `<id>.jpg`). A row is never deleted and its history cannot
+be rewritten: the web's role may insert a row and update only `status` and `deleted_at`, a
+trigger refuses any change to what the row says about its object, and the status only moves
+forward (`STORED`, then `PENDING_DELETE`, then `DELETED`); `verify_app_role` checks the
+privileges. The whole of this (the table, the column, the constraints, the triggers and the
+privileges) is one re-runnable block of `sql/01_schema.sql`, `-- BEGIN FILE STORE`, so an
+existing database is upgraded in place and a clean build gets the same objects. The block
+also holds #1190's pieces: `sales_load.source_file_id`, `file_access`, and the two CHECKs that
+name the kinds of file (`text/csv` is the second kind), which it re-creates on every run.
 
 **Writes put the bytes first, then the row.** The store is written, then the metadata row is
 inserted in the same database transaction as the product. If the store refuses, no row is
 written, the user sees a controlled error (HTTP 503 and a message on the form) and the failure
-is logged. If the row or the product write fails, the object is deleted and the transaction
-rolls back. The reverse order would leave a row naming an object that does not exist, which
-a reader can see; the chosen order can leave, at worst, an object with no row (a
-crash between the two steps), which no reader sees and which costs only storage.
+is logged. If the row or the product write fails, the transaction rolls back and the object
+is deleted; if that delete cannot reach the store either, its metadata is committed in a fresh
+transaction as `PENDING_DELETE`, so `--delete-pending` finds it and no object is ever left that
+nothing records (the one window left is a process that dies between the two steps). The
+reverse order would leave a row naming an object that does not exist, which a reader can
+see. An edit locks the product's row and reads the picture it holds there, inside the same
+transaction, and retires that one after it commits (a delete returns the picture it removed):
+what is retired is what was displaced, not what the page read earlier, so two edits, or an
+edit and a delete, cannot leave a stored but unreferenced file. An edit of a product deleted
+meanwhile is refused and leaves no row and no object. The GCS calls carry a per-attempt timeout
+of 10 seconds and a retry policy whose whole-operation deadline is 20 seconds, because the
+client's default of 120 seconds would outlive NGINX's 60 and equal gunicorn's worker timeout.
 
 **The existing images move once.** `deploy/migrate-uploads-1189.py` reads each `product` row
 that has `image_path` and no `image_file_id`, uploads the file from `UPLOAD_DIR`, inserts its
@@ -147,6 +167,11 @@ every statement, and lists every file it could not move, with the reason. It att
 migrated rows to the administrator, because the old upload did not record who made it. It
 does not delete the originals; the operator removes them after checking the report. Until it
 has run, the web keeps serving a not-yet-migrated image from `UPLOAD_DIR` through the same route.
+A file that cannot be read for any reason (missing, a directory, a permission) is listed with
+its reason like any other, and does not stop the rest. **The live database is not rebuilt before
+it runs**: the clean seed has no product pictures, and `product.image_path` is the only record of
+which product shows which file, so the schema block above is applied to the live database, the
+web is released, and the script runs, before any later re-provision.
 
 **`product.image_path` stays, and is derived.** products-service publishes `photo_url` as
 `PRODUCTS_PHOTO_BASE_URL` joined to `image_path`, and its contract is frozen: clearing the
@@ -159,8 +184,10 @@ published view of the picture drops the column.
 
 **When the bucket is unreachable,** an upload is refused as above; a read answers 503 with
 the common error page (the product page still renders, the picture does not); and a delete
-does not fail the user's action: the row is marked `PENDING_DELETE` and the migration script's
-`--delete-pending` mode removes the object later and marks the row `DELETED`.
+does not fail the user's action: the row is committed `PENDING_DELETE` before the store is
+touched, then `DELETED` once the object is gone, so an interruption or a failure at any step
+leaves a row that says what is still to do and never `STORED` over a missing object. The
+migration script's `--delete-pending` mode finishes every `PENDING_DELETE` row.
 
 ### Why `stored_file` is in 4NF
 
@@ -224,9 +251,9 @@ start.
 - `/etc/mosaiq/mosaiq.env` sets `FILE_STORE_BACKEND=gcs` and `GCS_BUCKET` before the release
   that contains this record is deployed, or the web refuses to start and the deploy script
   rolls back.
-- `sql/01_schema.sql` is applied to the live database before the web release (the web's tables
-  are rebuilt with the release, as for any schema change), and the migration script runs
-  once afterwards, following `deploy/README.md`.
+- The `FILE STORE` block of `sql/01_schema.sql` is applied to the live database before the web
+  release, without rebuilding it, and the migration script runs once afterwards, following
+  `deploy/README.md`.
 - `google-cloud-storage` is pinned in `web/requirements.txt` and installed in the instance's
   virtualenv.
 - `docs/scope.md` C-1 is read with this exception; AGENTS.md's line that the web "consumes no

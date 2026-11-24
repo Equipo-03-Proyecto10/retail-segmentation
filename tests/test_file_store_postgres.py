@@ -24,6 +24,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from flask import Flask
@@ -36,7 +37,10 @@ from web.db import stored_files
 from web.services.files import (
     GcsFileStore,
     LocalFileStore,
+    NewFile,
     StoreUnavailable,
+    insert_row,
+    put_new_file,
 )
 
 pytestmark = pytest.mark.postgres
@@ -510,22 +514,42 @@ def test_a_failure_after_the_row_removes_the_object_too(
 # ---------- reading: only a stored, public file is served ----------
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        "UPDATE stored_file SET privacy = 'PRIVATE' WHERE file_id = %s",
-        "UPDATE stored_file SET status = 'PENDING_DELETE' WHERE file_id = %s",
-    ],
-    ids=["private", "pending-delete"],
-)
-def test_a_file_that_is_not_public_and_stored_is_not_served(
-    stack: Stack, change: str
-) -> None:
+def test_a_file_that_is_pending_delete_is_not_served(stack: Stack) -> None:
     stack.create(911020, _image(PNG))
     name, file_id = stack.product(911020)
-    stack.owner.execute(change, (file_id,))
+    stack.owner.execute(
+        "UPDATE stored_file SET status = 'PENDING_DELETE' WHERE file_id = %s",
+        (file_id,),
+    )
 
     assert stack.client.get(f"/admin/products/image/{name}").status_code == 404
+
+
+def test_a_private_file_is_not_served_by_the_public_image_route(stack: Stack) -> None:
+    # A row's privacy cannot be changed after it is written, so the file is
+    # written PRIVATE and a product is pointed at it.
+    stored = put_new_file(
+        stack.store,
+        NewFile(
+            kind="product-image",
+            data=PNG,
+            content_type="image/png",
+            owner_id=ADMIN_ID,
+            privacy="PRIVATE",
+        ),
+    )
+    stack.extra_paths.append(stored.object_path)
+    insert_row(stack.owner, stored)
+    stack.owner.execute(
+        "INSERT INTO product (product_id, sku, name, category_id, list_price,"
+        " image_path, image_file_id) VALUES (911060, 'SKU-1189-911060', 'Private', 1,"
+        " 1, %s, %s)",
+        (stored.public_name, stored.file_id),
+    )
+
+    answer = stack.client.get(f"/admin/products/image/{stored.public_name}")
+
+    assert answer.status_code == 404
 
 
 def test_an_object_missing_from_the_store_is_a_404_and_is_logged(
@@ -574,7 +598,7 @@ def test_the_gcs_backend_serves_the_whole_flow_with_a_fake_client(
 
     client = FakeClient()
     stack.app.extensions["file_store"] = GcsFileStore(
-        "the-private-bucket", client=client
+        "the-private-bucket", client=client, retry_policy=lambda: "retry"
     )
 
     assert stack.create(911024, _image(PNG)).status_code == 302
@@ -603,7 +627,9 @@ def test_a_gcs_bucket_that_is_down_leaves_no_row(stack: Stack) -> None:
 
     client = FakeClient()
     client.failures["upload_from_string"] = ConnectionError("unreachable")
-    stack.app.extensions["file_store"] = GcsFileStore("b", client=client)
+    stack.app.extensions["file_store"] = GcsFileStore(
+        "b", client=client, retry_policy=lambda: "retry"
+    )
 
     response = stack.create(911025, _image(PNG))
 
@@ -612,3 +638,203 @@ def test_a_gcs_bucket_that_is_down_leaves_no_row(stack: Stack) -> None:
     assert client.objects == {}
     attempted = [c[1] for c in client.calls if c[0] == "upload_from_string"]
     assert len(attempted) == 1 and stack.rows_for(attempted) == 0
+
+
+# ---------- two writers: what an edit retires is what it displaced (#1205) ----------
+
+
+def _status(stack: Stack, file_id) -> str:
+    return stack.file(file_id)[5]
+
+
+def test_an_edit_retires_the_picture_it_replaced_not_the_one_its_page_read(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.db.products import get_product
+    from web.routes import admin
+
+    stack.create(911030, _image(PNG))  # A
+    _, a_id = stack.product(911030)
+    page_read = get_product(stack.owner, 911030)  # the page of an edit that began on A
+    assert stack.edit(911030, _image(JPEG, "b.jpg", "image/jpeg")).status_code == 302
+    b_name, b_id = stack.product(911030)  # another edit won: B
+    monkeypatch.setattr(admin, "get_product", Mock(return_value=page_read))
+
+    assert stack.edit(911030, _image(WEBP, "c.webp", "image/webp")).status_code == 302
+
+    _, c_id = stack.product(911030)
+    assert [_status(stack, f) for f in (a_id, b_id, c_id)] == [
+        "DELETED",
+        "DELETED",
+        "STORED",
+    ], "B was displaced by C and must be retired, whatever the page had read"
+    assert stack.on_disk() == [stack.file(c_id)[0]]
+    assert stack.client.get(f"/admin/products/image/{b_name}").status_code == 404
+
+
+def test_an_edit_of_a_product_deleted_meanwhile_is_refused_and_keeps_nothing(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.db.products import get_product
+    from web.routes import admin
+
+    stack.create(911031, _image(PNG))
+    page_read = get_product(stack.owner, 911031)
+    stack.client.post("/admin/products/911031/delete", data={"confirm": "yes"})
+    assert stack.product(911031) is None
+    monkeypatch.setattr(admin, "get_product", Mock(return_value=page_read))
+    written = len(stack.store.written)
+
+    response = stack.edit(911031, _image(JPEG, "new.jpg", "image/jpeg"))
+
+    assert response.status_code == 409
+    assert "no longer exists" in response.get_data(as_text=True)
+    new_path = stack.store.written[written]
+    assert stack.rows_for([new_path]) == 0, "no row for a picture nobody has"
+    assert stack.on_disk() == [], "and no object"
+
+
+def test_a_delete_retires_the_picture_the_product_held_when_it_went(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from web.db.products import get_product
+    from web.routes import admin
+
+    stack.create(911032, _image(PNG))  # A
+    _, a_id = stack.product(911032)
+    page_read = get_product(stack.owner, 911032)
+    stack.edit(911032, _image(JPEG, "b.jpg", "image/jpeg"))  # B
+    _, b_id = stack.product(911032)
+    monkeypatch.setattr(admin, "get_product", Mock(return_value=page_read))
+
+    response = stack.client.post(
+        "/admin/products/911032/delete", data={"confirm": "yes"}
+    )
+
+    assert response.status_code == 302
+    assert (_status(stack, a_id), _status(stack, b_id)) == ("DELETED", "DELETED")
+    assert stack.on_disk() == []
+
+
+# ---------- a delete is recorded before it is done (#1205) ----------
+
+
+def test_a_failure_recording_the_delete_leaves_the_row_pending_and_the_user_unharmed(
+    stack: Stack, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from web.db import stored_files
+
+    stack.create(911033, _image(PNG))
+    _, file_id = stack.product(911033)
+    path = stack.file(file_id)[0]
+
+    def refused(*args, **kwargs):
+        raise RuntimeError("the database went away")
+
+    monkeypatch.setattr(stored_files, "mark_deleted", refused)
+    with caplog.at_level(logging.ERROR):
+        response = stack.client.post(
+            "/admin/products/911033/delete", data={"confirm": "yes"}
+        )
+
+    assert response.status_code == 302, "the user's action does not fail"
+    assert stack.product(911033) is None
+    assert not (stack.root / path).exists(), "the object is gone"
+    assert _status(stack, file_id) == "PENDING_DELETE", "and the row says so"
+    assert "file_store_delete_record_deferred" in caplog.text
+
+    # What `--delete-pending` does afterwards: the object is already gone, and the
+    # row is finished.
+    monkeypatch.undo()
+    from web.services.files import discard_file
+
+    discard_file(stack.owner, stack.store, file_id)
+    assert _status(stack, file_id) == "DELETED"
+
+
+# ---------- a cleanup that cannot reach the store is not forgotten (#1205) ----------
+
+
+class DeleteDownStore(RecordingLocalStore):
+    """Writes and reads, but cannot delete: the bucket failed between the two."""
+
+    def delete(self, object_path: str) -> None:
+        raise StoreUnavailable("the bucket is unreachable")
+
+
+def _swap_in_a_store_that_cannot_delete(stack: Stack) -> DeleteDownStore:
+    broken = DeleteDownStore(stack.root)
+    stack.app.extensions["file_store"] = broken
+    return broken
+
+
+def _pending(stack: Stack, path: str) -> tuple | None:
+    return stack.owner.execute(
+        "SELECT status, privacy, owner_user_id::text, size_bytes FROM stored_file"
+        " WHERE object_path = %s",
+        (path,),
+    ).fetchone()
+
+
+def test_a_refused_create_whose_cleanup_fails_leaves_a_pending_delete_row(
+    stack: Stack, caplog: pytest.LogCaptureFixture
+) -> None:
+    stack.create(911034, _image(PNG), sku="SKU-1189-DUP")
+    broken = _swap_in_a_store_that_cannot_delete(stack)
+
+    with caplog.at_level(logging.ERROR):
+        response = stack.create(
+            911035, _image(JPEG, "b.jpg", "image/jpeg"), sku="SKU-1189-DUP"
+        )
+
+    assert response.status_code == 409
+    assert stack.product(911035) is None
+    (orphan,) = broken.written
+    assert (stack.root / orphan).exists(), "the object could not be removed"
+    assert _pending(stack, orphan) == ("PENDING_DELETE", "PUBLIC", ADMIN_ID, len(JPEG))
+    assert "file_store_orphan_delete_deferred" in caplog.text
+    # The cleanup command can now find it, and finish.
+    from web.services.files import discard_file
+
+    stack.app.extensions["file_store"] = stack.store
+    row = stack.owner.execute(
+        "SELECT file_id FROM stored_file WHERE object_path = %s", (orphan,)
+    ).fetchone()
+    discard_file(stack.owner, stack.store, row[0])
+    assert not (stack.root / orphan).exists()
+    assert _pending(stack, orphan)[0] == "DELETED"
+
+
+def test_a_refused_edit_whose_cleanup_fails_leaves_a_pending_delete_row(
+    stack: Stack,
+) -> None:
+    stack.create(911036, _image(PNG), sku="SKU-1189-ONE")
+    stack.create(911037, _image(PNG), sku="SKU-1189-TWO")
+    broken = _swap_in_a_store_that_cannot_delete(stack)
+    data = {
+        "sku": "SKU-1189-ONE",  # taken by the other product
+        "name": "File store product 911037",
+        "category_id": "1",
+        "list_price": "10.00",
+        "is_active": "on",
+        "image": _image(JPEG, "b.jpg", "image/jpeg"),
+    }
+
+    response = stack.client.post(
+        "/admin/products/911037/edit", data=data, content_type="multipart/form-data"
+    )
+
+    assert response.status_code == 409
+    (orphan,) = broken.written[-1:]
+    assert _pending(stack, orphan)[0] == "PENDING_DELETE"
+
+
+def test_a_cleanup_that_works_leaves_no_row(stack: Stack) -> None:
+    stack.create(911038, _image(PNG), sku="SKU-1189-DUP2")
+
+    response = stack.create(
+        911039, _image(JPEG, "b.jpg", "image/jpeg"), sku="SKU-1189-DUP2"
+    )
+
+    assert response.status_code == 409
+    assert stack.rows_for(stack.store.written[1:]) == 0

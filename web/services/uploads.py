@@ -29,10 +29,10 @@ from web.services.files import (
     NewFile,
     StoredObject,
     StoreUnavailable,
+    abandon_object,
     discard_file,
     get_file_store,
     put_new_file,
-    remove_object,
 )
 
 PRODUCT_IMAGE_KIND = "product-image"
@@ -199,10 +199,11 @@ def save_product_image(
 
 
 def abandon_product_image(
-    saved: StoredObject, *, store: FileStore | None = None
+    connection: Connection, saved: StoredObject, *, store: FileStore | None = None
 ) -> None:
-    """Remove the object of an upload whose transaction did not commit."""
-    remove_object(store or get_file_store(), saved.object_path)
+    """Remove the object of an upload whose transaction did not commit; if the
+    store is down too, keep its metadata as `PENDING_DELETE` (see `abandon_object`)."""
+    abandon_object(connection, store or get_file_store(), saved)
 
 
 def retire_product_image(

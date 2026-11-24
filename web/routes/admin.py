@@ -719,7 +719,7 @@ def create_product_view() -> ResponseReturnValue:
         )
     except CatalogConflict as error:
         if saved:
-            abandon_product_image(saved)
+            abandon_product_image(connection, saved)
         return (
             render_template(
                 "admin/product_form.html",
@@ -739,7 +739,7 @@ def create_product_view() -> ResponseReturnValue:
         # Anything else (#595): the row was not written, so the object must not
         # stay in the store; the error still reaches the application's handler.
         if saved:
-            abandon_product_image(saved)
+            abandon_product_image(connection, saved)
         raise
 
     flash("Product created.", "success")
@@ -820,7 +820,7 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
             )
 
     try:
-        update_product(
+        displaced = update_product(
             connection,
             product_id,
             sku=sku,
@@ -832,7 +832,11 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
         )
     except CatalogConflict as error:
         if saved:
-            abandon_product_image(saved)
+            abandon_product_image(connection, saved)
+        if not error.field:
+            # Not about one field (the product was deleted meanwhile): the form
+            # has nowhere to put it, so it is said above the form.
+            flash(str(error), "danger")
         return (
             render_template(
                 "admin/product_form.html",
@@ -852,14 +856,16 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
     except BaseException:
         # As on create (#595): a failed update leaves no new object behind.
         if saved:
-            abandon_product_image(saved)
+            abandon_product_image(connection, saved)
         raise
 
-    if saved:
+    if saved and displaced is not None:
+        # What the locked row held when this edit committed, not what the page read
+        # before it: another edit may have replaced it in between.
         retire_product_image(
             connection,
-            image_file_id=product.image_file_id,
-            image_path=product.image_path,
+            image_file_id=displaced.image_file_id,
+            image_path=displaced.image_path,
             config=config,
         )
 
@@ -882,8 +888,7 @@ def delete_product_view(product_id: int) -> ResponseReturnValue:
             list_endpoint="admin.list_products_view",
         )
     try:
-        delete_product(connection, product_id)
-
+        displaced = delete_product(connection, product_id)
     except CatalogConflict as error:
         page = parse_pagination(request.args.get("page"))
         products, total = list_products(
@@ -902,12 +907,13 @@ def delete_product_view(product_id: int) -> ResponseReturnValue:
             409,
         )
 
-    retire_product_image(
-        connection,
-        image_file_id=record.image_file_id,
-        image_path=record.image_path,
-        config=current_app.config["APP_CONFIG"],
-    )
+    if displaced is not None:
+        retire_product_image(
+            connection,
+            image_file_id=displaced.image_file_id,
+            image_path=displaced.image_path,
+            config=current_app.config["APP_CONFIG"],
+        )
     flash("Product deleted.", "success")
     return redirect(url_for("admin.list_products_view"))
 

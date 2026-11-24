@@ -21,6 +21,7 @@ import pytest
 
 from web.config import Config
 from web.services.files import (
+    GCS_DEADLINE_SECONDS,
     GCS_TIMEOUT_SECONDS,
     GcsFileStore,
     LocalFileStore,
@@ -30,6 +31,8 @@ from web.services.files import (
 )
 
 PATH = "product-image/6f1c0de2-0000-4000-8000-000000000001.jpg"
+# Stands for the client's retry policy, which these tests do not load.
+RETRY = "a-retry-policy"
 
 
 # ---------- the local backend ----------
@@ -160,7 +163,9 @@ class FakeClient:
 
 def test_gcs_put_writes_one_object_with_its_type_a_guard_and_a_timeout() -> None:
     client = FakeClient()
-    store = GcsFileStore("the-private-bucket", client=client)
+    store = GcsFileStore(
+        "the-private-bucket", client=client, retry_policy=lambda: RETRY
+    )
 
     store.put(PATH, b"\xff\xd8\xffbytes", "image/jpeg")
 
@@ -173,13 +178,14 @@ def test_gcs_put_writes_one_object_with_its_type_a_guard_and_a_timeout() -> None
         # A name is used once: the write succeeds only if nothing is there.
         "if_generation_match": 0,
         "timeout": GCS_TIMEOUT_SECONDS,
+        "retry": RETRY,
     }
     assert client.objects == {PATH: b"\xff\xd8\xffbytes"}
 
 
 def test_gcs_get_returns_the_bytes_and_an_absent_object_is_missing() -> None:
     client = FakeClient()
-    store = GcsFileStore("b", client=client)
+    store = GcsFileStore("b", client=client, retry_policy=lambda: RETRY)
     store.put(PATH, b"data", "image/png")
 
     assert store.get(PATH) == b"data"
@@ -189,7 +195,7 @@ def test_gcs_get_returns_the_bytes_and_an_absent_object_is_missing() -> None:
 
 def test_gcs_delete_removes_the_object_and_an_absent_one_is_not_an_error() -> None:
     client = FakeClient()
-    store = GcsFileStore("b", client=client)
+    store = GcsFileStore("b", client=client, retry_policy=lambda: RETRY)
     store.put(PATH, b"data", "image/png")
 
     store.delete(PATH)
@@ -216,7 +222,9 @@ def test_any_other_failure_of_the_bucket_is_unavailable_and_logged(
 ) -> None:
     client = FakeClient()
     client.failures[method] = failure
-    store = GcsFileStore("the-private-bucket", client=client)
+    store = GcsFileStore(
+        "the-private-bucket", client=client, retry_policy=lambda: RETRY
+    )
 
     with caplog.at_level(logging.ERROR):
         with pytest.raises(StoreUnavailable):
@@ -244,6 +252,15 @@ def _install_fake_library(monkeypatch: pytest.MonkeyPatch, client_factory) -> li
     monkeypatch.setitem(sys.modules, "google", google)
     monkeypatch.setitem(sys.modules, "google.cloud", cloud)
     monkeypatch.setitem(sys.modules, "google.cloud.storage", storage)
+
+    class Policy:
+        def with_deadline(self, seconds: float) -> tuple:
+            return ("retry-until", seconds)
+
+    retry = types.ModuleType("google.cloud.storage.retry")
+    retry.DEFAULT_RETRY = Policy()
+    storage.retry = retry
+    monkeypatch.setitem(sys.modules, "google.cloud.storage.retry", retry)
     return built
 
 
@@ -261,6 +278,39 @@ def test_the_gcs_client_is_built_once_and_only_when_first_used(
 
     assert len(built) == 1
     assert built[0].objects == {PATH: b"x"}
+
+
+def test_every_call_to_the_bucket_has_a_whole_operation_deadline_shorter_than_the_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The client's `timeout` bounds one HTTP attempt; its retry policy bounds the
+    # operation, 120 seconds by default: as long as gunicorn's worker and twice
+    # NGINX's 60. Each call must carry a policy cut to GCS_DEADLINE_SECONDS.
+    built = _install_fake_library(monkeypatch, FakeClient)
+    store = GcsFileStore("b")
+
+    store.put(PATH, b"x", "image/jpeg")
+    store.get(PATH)
+    store.delete(PATH)
+
+    calls = built[0].calls
+    retries = [
+        call[-1]["retry"]
+        for call in calls
+        if call[0] in {"upload_from_string", "download_as_bytes", "delete"}
+    ]
+    assert retries == [("retry-until", GCS_DEADLINE_SECONDS)] * 3
+    assert GCS_TIMEOUT_SECONDS <= GCS_DEADLINE_SECONDS < 60
+
+
+def test_the_real_clients_default_retry_is_cut_to_the_deadline() -> None:
+    # The library is a runtime requirement (web/requirements.txt), installed in CI.
+    retry = pytest.importorskip("google.cloud.storage.retry")
+
+    cut = retry.DEFAULT_RETRY.with_deadline(GCS_DEADLINE_SECONDS)
+
+    assert retry.DEFAULT_RETRY.deadline == 120  # what an unbounded call would get
+    assert cut.deadline == GCS_DEADLINE_SECONDS
 
 
 def test_credentials_that_cannot_be_found_are_unavailable_not_a_crash(

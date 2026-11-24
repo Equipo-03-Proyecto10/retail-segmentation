@@ -21,6 +21,7 @@ from pathlib import Path
 from diagrams import Cluster, Diagram, Edge
 from diagrams.gcp.compute import ComputeEngine
 from diagrams.gcp.network import FirewallRules
+from diagrams.gcp.storage import GCS
 from diagrams.onprem.client import Client, User
 from diagrams.onprem.container import Docker
 from diagrams.onprem.database import Mongodb, PostgreSQL
@@ -127,6 +128,8 @@ with Diagram(
                 "BENCH ONLY — Rust twin\nproducts reads · :5103\nnot routed by NGINX"
             )
 
+            bucket = GCS("Cloud Storage bucket\nprivate · no key\nthe web's files")
+
             with Cluster(PG_LABEL, graph_attr=CLUSTER_ATTR):
                 postgres = PostgreSQL(
                     "public (31 tables, 4NF)\nservice schemas\n"
@@ -148,6 +151,7 @@ with Diagram(
     nginx >> Edge(label="/", color=ORANGE) >> gunicorn
     gunicorn >> flask
     flask >> Edge(label="SQL as retail_app", color=ORANGE) >> postgres
+    flask >> Edge(label="file bytes (ADR-0091)", color=ORANGE) >> bucket
 
     # NGINX to the services: one compound edge for the fifteen routes. Services
     # to the datastores: one compound edge from the cluster, not fifteen.

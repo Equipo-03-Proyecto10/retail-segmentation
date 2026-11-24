@@ -29,6 +29,7 @@ from tests.rollback_connection import RollbackConnection
 from tests.test_file_store_postgres import DownStore, RecordingLocalStore
 from web.app import create_app
 from web.config import Config
+from web.db import stored_files
 from web.services.files import PRIVATE, NewFile, insert_row, put_new_file
 
 pytestmark = pytest.mark.postgres
@@ -56,7 +57,15 @@ class Bench:
             session.update(user_id=user_id, role_code=role, name=role.title())
         return client
 
-    def private_file(self, *, kind: str = "sales-import", data: bytes = CSV) -> UUID:
+    def private_file(
+        self,
+        *,
+        kind: str = "sales-import",
+        data: bytes = CSV,
+        privacy: str = PRIVATE,
+    ) -> UUID:
+        """A file written in the state wanted. A row's privacy and identity never
+        change after it is written (ADR-0091), so a test asks for the state."""
         stored = put_new_file(
             self.store,
             NewFile(
@@ -64,7 +73,7 @@ class Bench:
                 data=data,
                 content_type="text/csv",
                 owner_id=ADMIN_ID,
-                privacy=PRIVATE,
+                privacy=privacy,
             ),
         )
         insert_row(self.db, stored)
@@ -266,15 +275,8 @@ def test_an_unknown_id_is_a_404_in_the_common_error_page_and_issues_nothing(
 
 def test_a_removed_or_public_file_is_a_404_not_a_url(bench: Bench) -> None:
     removed = bench.private_file()
-    bench.db.execute(
-        "UPDATE stored_file SET status = 'DELETED', deleted_at = now()"
-        " WHERE file_id = %s",
-        (removed,),
-    )
-    public = bench.private_file()
-    bench.db.execute(
-        "UPDATE stored_file SET privacy = 'PUBLIC' WHERE file_id = %s", (public,)
-    )
+    stored_files.mark_deleted(bench.db, removed)  # the one move the web may make
+    public = bench.private_file(privacy="PUBLIC")
     admin = bench.client(ADMIN_ID, "ADMIN")
 
     assert admin.get(f"/files/{removed}/download").status_code == 404
@@ -360,10 +362,7 @@ def _short(config: Config) -> Config:
 def test_the_content_route_serves_nothing_that_is_not_private(bench: Bench) -> None:
     from web.services.file_urls import signature
 
-    file_id = bench.private_file()
-    bench.db.execute(
-        "UPDATE stored_file SET privacy = 'PUBLIC' WHERE file_id = %s", (file_id,)
-    )
+    file_id = bench.private_file(privacy="PUBLIC")
     expires = int(time.time()) + 300
     sig = signature("a-test-secret", file_id, expires)
 

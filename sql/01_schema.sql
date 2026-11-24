@@ -403,87 +403,6 @@ FOR EACH ROW EXECUTE FUNCTION fn_customer_segment_history_close_only();
 
 -- ---------- PRODUCT CATALOG AND SALES ----------
 
--- The metadata of one file the platform keeps outside the database (F29-13,
--- #1189, ADR-0091): the bytes are an object in a private Cloud Storage bucket
--- (or, on a developer's machine and in tests, a file under UPLOAD_DIR), and
--- this row is the only thing PostgreSQL holds about them. Never the bytes.
---
--- The object is named <kind>/<file_id>.<ext>: the kind, the row's own identifier
--- and an extension that matches the content type. The user's file name is never
--- used, so the CHECK below is also what keeps a path inside its folder.
---
--- A row is never deleted. Removing a file marks it DELETED and keeps the fact
--- that it existed; PENDING_DELETE is a delete the store has not yet confirmed
--- (the bucket was unreachable), which deploy/migrate-uploads-1189.py retries.
--- 4NF: every column depends on file_id alone; object_path is a second candidate
--- key; sha256 is deliberately not a key (two uploads of one picture are two
--- files). metadata is free, and nothing queries it (docs/data-model.md).
-CREATE TABLE stored_file (
-    file_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    object_path    VARCHAR(255) NOT NULL UNIQUE,
-    content_type   VARCHAR(100) NOT NULL,
-    size_bytes     BIGINT NOT NULL,
-    sha256         CHAR(64) NOT NULL,
-    privacy        VARCHAR(10) NOT NULL,
-    status         VARCHAR(15) NOT NULL DEFAULT 'STORED',
-    owner_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    deleted_at     TIMESTAMPTZ,
-    metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
-    CONSTRAINT stored_file_content_type_check
-        CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp', 'text/csv')),
-    -- 5 MB, the same limit as MAX_UPLOAD_BYTES. A larger kind of file widens it
-    -- by a schema change of its own. text/csv is the one PRIVATE kind there is
-    -- today: the source file of a sales import (ADR-0091, F29-14).
-    CONSTRAINT stored_file_size_check
-        CHECK (size_bytes > 0 AND size_bytes <= 5242880),
-    CONSTRAINT stored_file_sha256_check CHECK (sha256 ~ '^[0-9a-f]{64}$'),
-    CONSTRAINT stored_file_privacy_check CHECK (privacy IN ('PUBLIC', 'PRIVATE')),
-    CONSTRAINT stored_file_status_check
-        CHECK (status IN ('STORED', 'PENDING_DELETE', 'DELETED')),
-    CONSTRAINT stored_file_deleted_at_check
-        CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL)),
-    CONSTRAINT stored_file_metadata_check CHECK (jsonb_typeof(metadata) = 'object'),
-    -- <kind>/<file_id>.<ext>, the extension the content type implies.
-    CONSTRAINT stored_file_object_path_check
-        CHECK (object_path ~ ('^[a-z][a-z0-9-]*/' || file_id::text || '[.](jpg|png|webp|csv)$')
-           AND ((content_type = 'image/jpeg' AND object_path LIKE '%.jpg')
-             OR (content_type = 'image/png'  AND object_path LIKE '%.png')
-             OR (content_type = 'image/webp' AND object_path LIKE '%.webp')
-             OR (content_type = 'text/csv'   AND object_path LIKE '%.csv')))
-);
-
--- One user's files, newest first.
-CREATE INDEX idx_stored_file_owner ON stored_file (owner_user_id, created_at DESC);
--- The delete the store has not yet confirmed, found without scanning the table.
-CREATE INDEX idx_stored_file_pending_delete ON stored_file (created_at)
-    WHERE status = 'PENDING_DELETE';
-
--- Every request for a PRIVATE file: the signed URL that was issued, or the
--- refusal (F29-14, ADR-0091). Append-only: the web may insert and read, never
--- change or remove a row. It holds who, which file, what answer and until when,
--- never the URL or its signature.
-CREATE TABLE file_access (
-    access_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    file_id        UUID NOT NULL REFERENCES stored_file(file_id) ON DELETE RESTRICT,
-    actor_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
-    role_code      VARCHAR(40) NOT NULL,
-    outcome        VARCHAR(10) NOT NULL,
-    occurred_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    expires_at     TIMESTAMPTZ,
-    CONSTRAINT file_access_outcome_check CHECK (outcome IN ('ISSUED', 'REFUSED')),
-    -- An issued URL has an expiry, at most 15 minutes after the request; a
-    -- refusal has none, because no URL exists.
-    CONSTRAINT file_access_expiry_check CHECK (
-        (outcome = 'ISSUED' AND expires_at IS NOT NULL
-            AND expires_at > occurred_at
-            AND expires_at <= occurred_at + interval '15 minutes')
-        OR (outcome = 'REFUSED' AND expires_at IS NULL))
-);
-CREATE INDEX idx_file_access_file ON file_access (file_id, occurred_at DESC);
-CREATE INDEX idx_file_access_actor ON file_access (actor_user_id, occurred_at DESC);
-REVOKE UPDATE, DELETE ON file_access FROM retail_app;
-
 CREATE TABLE product (
     product_id  INT PRIMARY KEY,
     sku         VARCHAR(40) NOT NULL UNIQUE,
@@ -493,25 +412,13 @@ CREATE TABLE product (
     -- The public name of the picture: what the web's image route
     -- (/admin/products/image/<name>) answers to, and what products-service
     -- joins to PRODUCTS_PHOTO_BASE_URL to publish photo_url (ADR-0091). F3-07
-    -- kept a file name under UPLOAD_DIR here; a picture kept in the file store
-    -- is named <image_file_id>.<ext>, which the CHECK below enforces. That makes
-    -- the column derivable from image_file_id and the file's content type, a
-    -- deliberate and temporary redundancy: products-service reads this column
-    -- and its contract is frozen. A later story gives it a published view and
-    -- drops the column. A row with image_path and no image_file_id is a file
-    -- not yet moved by deploy/migrate-uploads-1189.py.
+    -- kept a file name under UPLOAD_DIR here. A picture kept in the file store is
+    -- named <image_file_id>.<ext>, and the FILE STORE block below, which adds
+    -- image_file_id, enforces that. A row with image_path and no image_file_id is
+    -- a file not yet moved by deploy/migrate-uploads-1189.py.
     image_path  VARCHAR(255),
-    -- The product's picture in the file store: one stored file, and a file is
-    -- one product's.
-    image_file_id UUID REFERENCES stored_file(file_id) ON DELETE RESTRICT,
-    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT product_image_name_check
-        CHECK (image_file_id IS NULL
-               OR coalesce(image_path ~ ('^' || image_file_id::text || '[.](jpg|png|webp)$'),
-                           FALSE))
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE
 );
-CREATE UNIQUE INDEX ux_product_image_file ON product (image_file_id)
-    WHERE image_file_id IS NOT NULL;
 
 CREATE TABLE transaction (
     transaction_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -647,14 +554,8 @@ CREATE TABLE sales_load (
     rejected_count    INT NOT NULL CHECK (rejected_count >= 0),
     loaded_by         UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
     loaded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-    -- The uploaded file, kept as a PRIVATE stored file so it can be read again
-    -- through a short-lived signed URL (F29-14, ADR-0091). NULL when it was not
-    -- retained: a load before that release, or a store that was down.
-    source_file_id    UUID REFERENCES stored_file(file_id) ON DELETE RESTRICT,
     CHECK (received_count = accepted_count + rejected_count)
 );
-CREATE UNIQUE INDEX ux_sales_load_source_file ON sales_load (source_file_id)
-    WHERE source_file_id IS NOT NULL;
 
 -- One row per rejected line, with the file's own line number (the header is
 -- line 1, so the first data row is line 2) -- not the record index, which
@@ -667,6 +568,208 @@ CREATE TABLE sales_load_rejection (
 );
 
 CREATE INDEX idx_sales_load_rejection_load ON sales_load_rejection (load_id);
+
+-- BEGIN FILE STORE (ADR-0091, F29-13, #1189)
+-- Placed after sales_load, which it alters. Re-runnable. On a clean build it creates the file store's metadata; on a
+-- database that predates it (the instance, whose product.image_path rows are
+-- the input of deploy/migrate-uploads-1189.py and must NOT be rebuilt away) it
+-- adds the same objects and touches no row. Apply it with
+--   sed -n '/^-- BEGIN FILE STORE/,/^-- END FILE STORE$/p' sql/01_schema.sql | psql ...
+-- (deploy/README.md). The product column is added here, after the table, so a
+-- live database and a clean build dump alike (deploy/check-schema-drift.sh).
+
+-- The metadata of one file the platform keeps outside the database (F29-13,
+-- #1189, ADR-0091): the bytes are an object in a private Cloud Storage bucket
+-- (or, on a developer's machine and in tests, a file under UPLOAD_DIR), and
+-- this row is the only thing PostgreSQL holds about them. Never the bytes.
+--
+-- The object is named <kind>/<file_id>.<ext>: the kind, the row's own identifier
+-- and an extension that matches the content type. The user's file name is never
+-- used, so the CHECK below is also what keeps a path inside its folder.
+--
+-- A row is never deleted. Removing a file marks it PENDING_DELETE before the
+-- object is touched and DELETED after, and keeps the fact that it existed; a
+-- row left PENDING_DELETE is a delete the store has not confirmed (it was
+-- unreachable, or the process stopped between the two), which
+-- deploy/migrate-uploads-1189.py --delete-pending finishes. Also the record of an
+-- object whose write succeeded but whose product was then refused, when even
+-- the cleanup could not reach the store.
+-- 4NF: every column depends on file_id alone; object_path is a second candidate
+-- key; sha256 is deliberately not a key (two uploads of one picture are two
+-- files). metadata is free, and nothing queries it (docs/data-model.md).
+CREATE TABLE IF NOT EXISTS stored_file (
+    file_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    object_path    VARCHAR(255) NOT NULL UNIQUE,
+    content_type   VARCHAR(100) NOT NULL,
+    size_bytes     BIGINT NOT NULL,
+    sha256         CHAR(64) NOT NULL,
+    privacy        VARCHAR(10) NOT NULL,
+    status         VARCHAR(15) NOT NULL DEFAULT 'STORED',
+    owner_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at     TIMESTAMPTZ,
+    metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- 5 MB, the same limit as MAX_UPLOAD_BYTES. A larger kind of file widens it
+    -- by a schema change of its own.
+    CONSTRAINT stored_file_size_check
+        CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+    CONSTRAINT stored_file_sha256_check CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT stored_file_privacy_check CHECK (privacy IN ('PUBLIC', 'PRIVATE')),
+    CONSTRAINT stored_file_status_check
+        CHECK (status IN ('STORED', 'PENDING_DELETE', 'DELETED')),
+    CONSTRAINT stored_file_deleted_at_check
+        CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL)),
+    CONSTRAINT stored_file_metadata_check CHECK (jsonb_typeof(metadata) = 'object')
+);
+
+-- The two checks that name the kinds of file the platform keeps. Re-created on
+-- every run, so a database that already holds the table (the #1189 release) gains
+-- the PRIVATE text/csv kind (F29-14, the source file of a sales import) and a new
+-- kind is a change to these two statements and nothing else.
+ALTER TABLE stored_file
+    DROP CONSTRAINT IF EXISTS stored_file_content_type_check,
+    DROP CONSTRAINT IF EXISTS stored_file_object_path_check;
+ALTER TABLE stored_file
+    ADD CONSTRAINT stored_file_content_type_check
+        CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp', 'text/csv')),
+    -- <kind>/<file_id>.<ext>, the extension the content type implies.
+    ADD CONSTRAINT stored_file_object_path_check
+        CHECK (object_path ~ ('^[a-z][a-z0-9-]*/' || file_id::text || '[.](jpg|png|webp|csv)$')
+           AND ((content_type = 'image/jpeg' AND object_path LIKE '%.jpg')
+             OR (content_type = 'image/png'  AND object_path LIKE '%.png')
+             OR (content_type = 'image/webp' AND object_path LIKE '%.webp')
+             OR (content_type = 'text/csv'   AND object_path LIKE '%.csv')));
+
+-- One user's files, newest first.
+CREATE INDEX IF NOT EXISTS idx_stored_file_owner ON stored_file (owner_user_id, created_at DESC);
+-- The delete the store has not yet confirmed, found without scanning the table.
+CREATE INDEX IF NOT EXISTS idx_stored_file_pending_delete ON stored_file (created_at)
+    WHERE status = 'PENDING_DELETE';
+
+
+-- The product's picture in the file store: one stored file, and a file is one
+-- product's. The name in image_path must be the file's own id and the extension
+-- its content type implies; a CHECK cannot read the referenced row, so a
+-- constraint trigger does (product_image_file_matches).
+ALTER TABLE product ADD COLUMN IF NOT EXISTS image_file_id UUID;
+DO $filestore$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conname = 'product_image_file_id_fkey'
+                      AND conrelid = 'public.product'::regclass) THEN
+        ALTER TABLE product ADD CONSTRAINT product_image_file_id_fkey
+            FOREIGN KEY (image_file_id) REFERENCES stored_file(file_id)
+            ON DELETE RESTRICT;
+    END IF;
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conname = 'product_image_name_check'
+                      AND conrelid = 'public.product'::regclass) THEN
+        ALTER TABLE product ADD CONSTRAINT product_image_name_check
+            CHECK (image_file_id IS NULL
+                   OR coalesce(image_path ~ ('^' || image_file_id::text
+                                             || '[.](jpg|png|webp)$'), FALSE));
+    END IF;
+END
+$filestore$;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_product_image_file ON product (image_file_id)
+    WHERE image_file_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION fn_product_image_file_matches() RETURNS trigger
+LANGUAGE plpgsql AS $match$
+BEGIN
+    IF NEW.image_file_id IS NOT NULL AND NOT EXISTS (
+        SELECT 1 FROM stored_file AS f
+         WHERE f.file_id = NEW.image_file_id
+           AND NEW.image_path = f.file_id::text || CASE f.content_type
+                                    WHEN 'image/jpeg' THEN '.jpg'
+                                    WHEN 'image/png'  THEN '.png'
+                                    WHEN 'image/webp' THEN '.webp' END
+    ) THEN
+        RAISE EXCEPTION 'product % names its picture %, which is not its stored file''s name',
+            NEW.product_id, NEW.image_path
+            USING ERRCODE = '23514', CONSTRAINT = 'product_image_file_matches';
+    END IF;
+    RETURN NEW;
+END
+$match$;
+-- Only for a product that has a stored picture: a service that writes a product
+-- (products-service, with no privilege on stored_file) never reaches the check.
+CREATE OR REPLACE TRIGGER trg_product_image_file_matches
+AFTER INSERT OR UPDATE OF image_path, image_file_id ON product
+FOR EACH ROW WHEN (NEW.image_file_id IS NOT NULL)
+EXECUTE FUNCTION fn_product_image_file_matches();
+
+-- The history is kept: the web may add a row and move it forward, never delete
+-- it, rewrite what it says about the object, or bring a removed file back.
+REVOKE UPDATE, DELETE ON stored_file FROM retail_app;
+GRANT UPDATE (status, deleted_at) ON stored_file TO retail_app;
+CREATE OR REPLACE FUNCTION fn_stored_file_forward_lifecycle() RETURNS trigger
+LANGUAGE plpgsql AS $forward$
+BEGIN
+    IF (NEW.file_id, NEW.object_path, NEW.content_type, NEW.size_bytes, NEW.sha256,
+        NEW.privacy, NEW.owner_user_id, NEW.created_at, NEW.metadata)
+       IS DISTINCT FROM
+       (OLD.file_id, OLD.object_path, OLD.content_type, OLD.size_bytes, OLD.sha256,
+        OLD.privacy, OLD.owner_user_id, OLD.created_at, OLD.metadata) THEN
+        RAISE EXCEPTION 'a stored file''s identity never changes'
+            USING ERRCODE = '23514', CONSTRAINT = 'stored_file_identity_immutable';
+    END IF;
+    IF OLD.status <> NEW.status AND NOT (
+        (OLD.status = 'STORED' AND NEW.status IN ('PENDING_DELETE', 'DELETED'))
+        OR (OLD.status = 'PENDING_DELETE' AND NEW.status = 'DELETED')) THEN
+        RAISE EXCEPTION 'a stored file cannot go from % back to %', OLD.status, NEW.status
+            USING ERRCODE = '23514', CONSTRAINT = 'stored_file_forward_lifecycle';
+    END IF;
+    RETURN NEW;
+END
+$forward$;
+CREATE OR REPLACE TRIGGER trg_stored_file_forward_lifecycle
+BEFORE UPDATE ON stored_file FOR EACH ROW
+EXECUTE FUNCTION fn_stored_file_forward_lifecycle();
+
+-- The source file of a sales import, kept as a PRIVATE stored file so it can be
+-- read again through a short-lived signed URL (F29-14, ADR-0091). NULL when it was
+-- not retained: a load before that release, or a store that was down.
+ALTER TABLE sales_load ADD COLUMN IF NOT EXISTS source_file_id UUID;
+DO $filestore_sources$
+BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint
+                    WHERE conname = 'sales_load_source_file_id_fkey'
+                      AND conrelid = 'public.sales_load'::regclass) THEN
+        ALTER TABLE sales_load ADD CONSTRAINT sales_load_source_file_id_fkey
+            FOREIGN KEY (source_file_id) REFERENCES stored_file(file_id)
+            ON DELETE RESTRICT;
+    END IF;
+END
+$filestore_sources$;
+CREATE UNIQUE INDEX IF NOT EXISTS ux_sales_load_source_file ON sales_load (source_file_id)
+    WHERE source_file_id IS NOT NULL;
+
+-- Every request for a PRIVATE file: the signed URL that was issued, or the
+-- refusal (F29-14, ADR-0091). Append-only: the web may insert and read, never
+-- change or remove a row. It holds who, which file, what answer and until when,
+-- never the URL or its signature.
+CREATE TABLE IF NOT EXISTS file_access (
+    access_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    file_id        UUID NOT NULL REFERENCES stored_file(file_id) ON DELETE RESTRICT,
+    actor_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
+    role_code      VARCHAR(40) NOT NULL,
+    outcome        VARCHAR(10) NOT NULL,
+    occurred_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ,
+    CONSTRAINT file_access_outcome_check CHECK (outcome IN ('ISSUED', 'REFUSED')),
+    -- An issued URL has an expiry, at most 15 minutes after the request; a
+    -- refusal has none, because no URL exists.
+    CONSTRAINT file_access_expiry_check CHECK (
+        (outcome = 'ISSUED' AND expires_at IS NOT NULL
+            AND expires_at > occurred_at
+            AND expires_at <= occurred_at + interval '15 minutes')
+        OR (outcome = 'REFUSED' AND expires_at IS NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_file_access_file ON file_access (file_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_file_access_actor ON file_access (actor_user_id, occurred_at DESC);
+REVOKE UPDATE, DELETE ON file_access FROM retail_app;
+-- END FILE STORE
 
 -- ---------- DOMAIN CHECKS THE TABLES ABOVE CANNOT STATE INLINE (#591) ----------
 --
@@ -7563,7 +7666,7 @@ BEGIN
           AND c.relname NOT IN (
               'audit_log', 'experiment_assignment', 'experiment_exposure',
               'experiment_conversion', 'experiment', 'experiment_group', 'segmentation_run',
-              'customer_segment_history', 'file_access'
+              'customer_segment_history', 'stored_file', 'file_access'
           )
           AND (NOT has_table_privilege(c.oid, 'SELECT')
                OR NOT has_table_privilege(c.oid, 'INSERT')
@@ -7619,6 +7722,19 @@ BEGIN
         RAISE EXCEPTION 'file_access must be append-only for the application role (ADR-0091)';
     END IF;
     RAISE NOTICE 'PASS: file_access is append-only for the application role';
+
+    IF NOT has_table_privilege('public.stored_file', 'SELECT')
+       OR NOT has_table_privilege('public.stored_file', 'INSERT')
+       OR has_table_privilege('public.stored_file', 'UPDATE')
+       OR has_table_privilege('public.stored_file', 'DELETE')
+       OR has_table_privilege('public.stored_file', 'TRUNCATE')
+       OR NOT has_column_privilege('public.stored_file', 'status', 'UPDATE')
+       OR NOT has_column_privilege('public.stored_file', 'deleted_at', 'UPDATE')
+       OR has_column_privilege('public.stored_file', 'object_path', 'UPDATE')
+       OR has_column_privilege('public.stored_file', 'privacy', 'UPDATE') THEN
+        RAISE EXCEPTION 'stored_file may only have status and deleted_at updated, and never be deleted from, by the application role (ADR-0091)';
+    END IF;
+    RAISE NOTICE 'PASS: stored_file history is protected from the application role';
 
     IF NOT has_table_privilege('public.experiment', 'UPDATE')
        OR has_table_privilege('public.experiment', 'DELETE')

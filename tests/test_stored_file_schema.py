@@ -7,7 +7,9 @@ transaction that is rolled back, so the shared test database keeps its rows.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -364,6 +366,285 @@ def test_no_seeded_product_points_at_an_object_no_bucket_holds(owner) -> None:
             " AND product_id <= 40"
         )
         assert cursor.fetchone()[0] == 0
+
+
+# ---------- a product's name for its picture is its stored file's (#1205) ----------
+
+
+def _linked(owner, content_type: str, extension: str, image_path_extension: str):
+    file_id = str(uuid4())
+    _insert(
+        owner,
+        _row(
+            file_id=file_id,
+            content_type=content_type,
+            object_path=f"product-image/{file_id}.{extension}",
+        ),
+    )
+    product_id = _a_product(owner)
+    return file_id, product_id, f"{file_id}.{image_path_extension}"
+
+
+def test_a_png_cannot_be_published_under_a_jpg_name(owner) -> None:
+    # The CHECK only sees the product's row; the extension must also be the one the
+    # referenced file's content type implies, so a constraint trigger reads it.
+    file_id, product_id, name = _linked(owner, "image/png", "png", "jpg")
+
+    with pytest.raises(CheckViolation) as refusal:
+        with owner.transaction():
+            owner.execute(
+                "UPDATE product SET image_file_id = %s, image_path = %s"
+                " WHERE product_id = %s",
+                (file_id, name, product_id),
+            )
+
+    assert refusal.value.diag.constraint_name == "product_image_file_matches"
+
+
+@pytest.mark.parametrize(
+    "content_type,extension",
+    [("image/jpeg", "jpg"), ("image/png", "png"), ("image/webp", "webp")],
+)
+def test_each_type_is_published_under_its_own_extension_only(
+    owner, content_type: str, extension: str
+) -> None:
+    file_id, product_id, name = _linked(owner, content_type, extension, extension)
+    owner.execute(
+        "UPDATE product SET image_file_id = %s, image_path = %s WHERE product_id = %s",
+        (file_id, name, product_id),
+    )
+    others = {"jpg", "png", "webp"} - {extension}
+    for other in sorted(others):
+        with pytest.raises(CheckViolation):
+            with owner.transaction():
+                owner.execute(
+                    "UPDATE product SET image_path = %s WHERE product_id = %s",
+                    (f"{file_id}.{other}", product_id),
+                )
+
+
+def test_the_name_is_checked_on_insert_too(owner) -> None:
+    file_id = str(uuid4())
+    _insert(owner, _row(file_id=file_id))  # image/jpeg, .jpg
+
+    with pytest.raises(CheckViolation) as refusal:
+        with owner.transaction():
+            owner.execute(
+                "INSERT INTO product (product_id, sku, name, category_id, list_price,"
+                " image_path, image_file_id) VALUES (919150, 'SCHEMA-INS', 'x', 1, 1,"
+                " %s, %s)",
+                (f"{file_id}.png", file_id),
+            )
+
+    assert refusal.value.diag.constraint_name == "product_image_file_matches"
+
+
+# ---------- the history cannot be rewritten by the web role (#1205) ----------
+
+
+def _as_web(owner: psycopg.Connection) -> None:
+    owner.execute("SET LOCAL ROLE retail_app")
+
+
+def test_the_web_role_cannot_delete_a_stored_file_row(owner) -> None:
+    file_id = str(uuid4())
+    _insert(owner, _row(file_id=file_id))
+    _as_web(owner)
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with owner.transaction():
+            owner.execute("DELETE FROM stored_file WHERE file_id = %s", (file_id,))
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with owner.transaction():
+            owner.execute("DELETE FROM stored_file WHERE status = 'DELETED'")
+
+
+@pytest.mark.parametrize(
+    "column,value",
+    [
+        ("object_path", "'product-image/x.jpg'"),
+        ("privacy", "'PRIVATE'"),
+        ("sha256", "repeat('b', 64)"),
+        ("size_bytes", "1"),
+        ("owner_user_id", "gen_random_uuid()"),
+        ("metadata", "'{}'::jsonb"),
+    ],
+)
+def test_the_web_role_may_not_rewrite_what_a_row_says_about_its_object(
+    owner, column: str, value: str
+) -> None:
+    file_id = str(uuid4())
+    _insert(owner, _row(file_id=file_id))
+    _as_web(owner)
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with owner.transaction():
+            owner.execute(
+                f"UPDATE stored_file SET {column} = {value} WHERE file_id = %s",  # noqa: S608
+                (file_id,),
+            )
+
+
+def test_a_removed_file_is_never_brought_back_even_by_the_columns_the_web_may_update(
+    owner,
+) -> None:
+    file_id = str(uuid4())
+    _insert(owner, _row(file_id=file_id, status="DELETED", deleted_at="2026-01-01Z"))
+    _as_web(owner)
+
+    for target in ("STORED", "PENDING_DELETE"):
+        with pytest.raises(CheckViolation) as refusal:
+            with owner.transaction():
+                owner.execute(
+                    "UPDATE stored_file SET status = %s, deleted_at = NULL"
+                    " WHERE file_id = %s",
+                    (target, file_id),
+                )
+        assert refusal.value.diag.constraint_name == "stored_file_forward_lifecycle"
+
+
+def test_a_file_moves_forward_through_its_lifecycle(owner) -> None:
+    file_id = str(uuid4())
+    _insert(owner, _row(file_id=file_id))
+    _as_web(owner)
+
+    owner.execute(
+        "UPDATE stored_file SET status = 'PENDING_DELETE' WHERE file_id = %s",
+        (file_id,),
+    )
+    owner.execute(
+        "UPDATE stored_file SET status = 'DELETED', deleted_at = now()"
+        " WHERE file_id = %s",
+        (file_id,),
+    )
+    with pytest.raises(CheckViolation):
+        with owner.transaction():
+            owner.execute(
+                "UPDATE stored_file SET status = 'PENDING_DELETE', deleted_at = NULL"
+                " WHERE file_id = %s",
+                (file_id,),
+            )
+
+
+def test_not_even_the_owner_changes_a_files_identity(owner) -> None:
+    file_id = str(uuid4())
+    _insert(owner, _row(file_id=file_id))
+
+    with pytest.raises(CheckViolation) as refusal:
+        with owner.transaction():
+            owner.execute(
+                "UPDATE stored_file SET privacy = 'PRIVATE' WHERE file_id = %s",
+                (file_id,),
+            )
+
+    assert refusal.value.diag.constraint_name == "stored_file_identity_immutable"
+
+
+# ---------- a live database is upgraded in place, not rebuilt (#1205) ----------
+
+_SCHEMA = Path(__file__).resolve().parents[1] / "sql" / "01_schema.sql"
+
+
+def _store_block() -> str:
+    """The block the way an operator extracts it (deploy/README.md)."""
+    text = _SCHEMA.read_text(encoding="utf-8")
+    found = re.search(
+        r"^-- BEGIN FILE STORE.*?^-- END FILE STORE$", text, re.MULTILINE | re.DOTALL
+    )
+    assert found, "the FILE STORE block is missing"
+    return found.group(0)
+
+
+def test_a_database_that_predates_the_file_store_keeps_its_images_and_gains_the_store(
+    owner,
+) -> None:
+    # The state of the instance before this release: no stored_file, no
+    # image_file_id, and products whose pictures are named in image_path, which is
+    # all that deploy/migrate-uploads-1189.py has to go on.
+    owner.execute("DROP TRIGGER trg_product_image_file_matches ON product")
+    owner.execute("ALTER TABLE product DROP COLUMN image_file_id")
+    owner.execute("ALTER TABLE sales_load DROP COLUMN source_file_id")
+    owner.execute("DROP TABLE file_access")
+    owner.execute("DROP TABLE stored_file")
+    legacy = _a_product(owner)
+    owner.execute(
+        "UPDATE product SET image_path = %s WHERE product_id = %s",
+        ("0123456789abcdef0123456789abcdef.jpg", legacy),
+    )
+
+    for _ in range(2):  # re-runnable
+        owner.execute(_store_block())
+
+    assert owner.execute(
+        "SELECT image_path, image_file_id FROM product WHERE product_id = %s",
+        (legacy,),
+    ).fetchone() == ("0123456789abcdef0123456789abcdef.jpg", None)
+    assert owner.execute("SELECT count(*) FROM stored_file").fetchone()[0] == 0
+    # The private-file pieces of #1190 come back with it.
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM information_schema.columns"
+            " WHERE table_name = 'sales_load' AND column_name = 'source_file_id'"
+        ).fetchone()[0]
+        == 1
+    )
+    assert owner.execute("SELECT count(*) FROM file_access").fetchone()[0] == 0
+    # What the migration selects is still there to be selected.
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM product WHERE image_path IS NOT NULL"
+            " AND image_file_id IS NULL AND product_id = %s",
+            (legacy,),
+        ).fetchone()[0]
+        == 1
+    )
+    # And the new rules are in force again.
+    file_id = str(uuid4())
+    _insert(
+        owner,
+        _row(
+            file_id=file_id,
+            content_type="image/png",
+            object_path=f"product-image/{file_id}.png",
+        ),
+    )
+    with pytest.raises(CheckViolation):
+        with owner.transaction():
+            owner.execute(
+                "UPDATE product SET image_file_id = %s, image_path = %s"
+                " WHERE product_id = %s",
+                (file_id, f"{file_id}.jpg", legacy),
+            )
+    _as_web(owner)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with owner.transaction():
+            owner.execute("DELETE FROM stored_file")
+
+
+def test_the_block_is_the_only_definition_of_the_file_store() -> None:
+    text = _SCHEMA.read_text(encoding="utf-8")
+    product = text.split("CREATE TABLE product (", 1)[1].split("\n);", 1)[0]
+
+    assert text.count("CREATE TABLE IF NOT EXISTS stored_file (") == 1
+    assert "CREATE TABLE stored_file" not in text
+    assert "image_file_id UUID" not in product
+    assert "CREATE OR REPLACE TRIGGER trg_product_image_file_matches" in _store_block()
+
+
+def test_a_service_that_writes_products_and_cannot_read_stored_file_is_unaffected(
+    owner,
+) -> None:
+    # products-service writes `product` as svc_products, which holds no privilege on
+    # stored_file. The image check must not run for a product with no picture.
+    owner.execute("SET LOCAL ROLE svc_products")
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with owner.transaction():
+            owner.execute("SELECT count(*) FROM stored_file")
+
+    owner.execute("UPDATE product SET name = name WHERE product_id = 1")
+    assert owner.execute(
+        "SELECT count(*) FROM product WHERE product_id = 1"
+    ).fetchone() == (1,)
 
 
 # ---------- a private file kind and the record of its requests (F29-14) ----------

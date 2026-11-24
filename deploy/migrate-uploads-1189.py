@@ -53,11 +53,11 @@ from web.services.files import (  # noqa: E402
     FileStore,
     NewFile,
     StoreUnavailable,
+    abandon_object,
     build_file_store,
     discard_file,
     insert_row,
     put_new_file,
-    remove_object,
 )
 
 _CONTENT_TYPE_BY_SUFFIX = {
@@ -122,6 +122,11 @@ def _read_original(upload_dir: Path, image_path: str) -> bytes:
         return target.read_bytes()
     except FileNotFoundError as error:
         raise ValueError("the file is missing from the upload directory") from error
+    except OSError as error:
+        # A directory, a permission, a failing disk: this file's problem, listed in
+        # the report, and no reason to stop the others.
+        reason = error.strerror or type(error).__name__
+        raise ValueError(f"the file cannot be read: {reason}") from error
 
 
 def _validated(data: bytes, image_path: str, config: Config) -> str:
@@ -188,7 +193,7 @@ def _move_one(
         connection.commit()
     except BaseException as error:
         connection.rollback()
-        remove_object(store, stored.object_path)
+        abandon_object(connection, store, stored)
         if isinstance(error, ValueError):
             raise
         if isinstance(error, psycopg.Error):

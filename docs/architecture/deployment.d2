@@ -46,6 +46,8 @@ gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
     fwdeny: "mosaiq-deny-other-ingress\npriority 1000 — dropped" { class: deny }
   }
 
+  gcs: "Cloud Storage bucket\nprivate · uniform bucket-level access\npublic access prevention enforced\nthe web's files (ADR-0091)" { class: store; shape: cylinder }
+
   vm: "mosaiq-deployment-vm · CentOS 10 Stream · one instance" {
     class: layer
 
@@ -104,6 +106,7 @@ gcp.vm.nginx -> gcp.vm.web: "/"
 gcp.vm.nginx -> gcp.vm.services: "/api/<name>/v1"
 
 gcp.vm.web -> gcp.vm.pg.public: "SQL as retail_app"
+gcp.vm.web -> gcp.gcs: "file bytes · attached service account (ADR-0091)"
 gcp.vm.services -> gcp.vm.pg.public: "own tables"
 gcp.vm.services -> gcp.vm.pg.svcschemas: "own new tables"
 gcp.vm.services -> gcp.vm.pg.api: "cross-boundary reads"

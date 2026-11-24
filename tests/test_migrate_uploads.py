@@ -410,3 +410,75 @@ def test_delete_pending_leaves_the_row_pending_while_the_store_is_down(
 def test_delete_pending_is_not_a_dry_run(bench: Bench) -> None:
     with pytest.raises(SystemExit):
         bench.run("--delete-pending", "--dry-run")
+
+
+# ---------- one unreadable file does not end the report (#1205) ----------
+
+
+def test_a_candidate_that_cannot_be_read_is_listed_and_the_rest_continue(
+    bench: Bench, capsys
+) -> None:
+    import os
+
+    bench.legacy_product(912020, "0123456789abcdef0123456789abcd20.png", PNG)
+    # A directory where a file should be, and a file nobody may read.
+    bench.legacy_product(912021, "0123456789abcdef0123456789abcd21.png", None)
+    (bench.uploads / "0123456789abcdef0123456789abcd21.png").mkdir()
+    bench.legacy_product(912022, "0123456789abcdef0123456789abcd22.png", PNG)
+    unreadable = bench.uploads / "0123456789abcdef0123456789abcd22.png"
+    unreadable.chmod(0)
+    bench.legacy_product(912023, "0123456789abcdef0123456789abcd23.png", PNG)
+    try:
+        status = bench.run()
+        dry = bench.run("--dry-run")
+    finally:
+        unreadable.chmod(0o600)
+
+    out = capsys.readouterr().out
+    assert status == 1 and dry == 1
+    assert "FAILED product 912021" in out and "cannot be read" in out
+    if os.geteuid() != 0:  # root reads a mode-0 file
+        assert "FAILED product 912022" in out and "Permission denied" in out
+    # The readable ones moved in spite of the others.
+    assert bench.product(912020)[1] is not None
+    assert bench.product(912023)[1] is not None
+    assert bench.product(912021)[1] is None
+
+
+# ---------- a failed move whose cleanup also fails is not forgotten (#1205) ----------
+
+
+class DeleteDownStore(RecordingStore):
+    def delete(self, object_path: str) -> None:
+        raise StoreUnavailable("the bucket is unreachable")
+
+
+def test_a_move_refused_after_the_upload_whose_cleanup_fails_leaves_a_pending_row(
+    bench: Bench, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bench.legacy_product(912024, "0123456789abcdef0123456789abcd24.png", PNG)
+    real_read = migrate._read_original
+
+    def changed_underneath(upload_dir: Path, image_path: str) -> bytes:
+        data = real_read(upload_dir, image_path)
+        bench.owner.execute(
+            "UPDATE product SET image_path = 'another-name.png' WHERE product_id = %s",
+            (912024,),
+        )
+        bench.owner.commit()
+        return data
+
+    monkeypatch.setattr(migrate, "_read_original", changed_underneath)
+    broken = DeleteDownStore(bench.store_root)
+
+    status = bench.run(store=broken)
+
+    (orphan,) = broken.written
+    assert status == 1
+    assert (bench.store_root / orphan).exists(), "the object is still in the bucket"
+    assert bench.owner.execute(
+        "SELECT status, privacy FROM stored_file WHERE object_path = %s", (orphan,)
+    ).fetchone() == ("PENDING_DELETE", "PUBLIC")
+    # And `--delete-pending` finds and finishes it.
+    assert bench.run("--delete-pending") == 0
+    assert not (bench.store_root / orphan).exists()

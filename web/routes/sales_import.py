@@ -38,7 +38,7 @@ from web.middleware.authz import SALES_INGEST_EXECUTE, requires
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
 from web.services.file_urls import ttl_seconds
-from web.services.files import get_file_store, remove_object
+from web.services.files import abandon_object, get_file_store
 from web.services.pagination import page_count
 from web.services.sales_csv import (
     CONTRACT_VERSION,
@@ -119,7 +119,7 @@ def upload() -> Response | tuple[str | Response, int]:
             )
         except BaseException as error:
             if kept is not None:
-                remove_object(store, kept.object_path)
+                abandon_object(get_connection(), store, kept)
             if isinstance(error, UnsupportedContractVersion):
                 return _refuse(f"The file was not loaded: {error}.")
             raise

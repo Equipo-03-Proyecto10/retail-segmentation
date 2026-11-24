@@ -28,6 +28,14 @@ class Product:
     image_file_id: uuid.UUID | None = None
 
 
+@dataclass(frozen=True)
+class ProductImage:
+    """The picture a product holds: its public name and its stored file."""
+
+    image_path: str | None
+    image_file_id: uuid.UUID | None
+
+
 def list_products(
     connection: Connection, *, search: str | None, page: int, per_page: int
 ) -> tuple[list[Product], int]:
@@ -170,7 +178,29 @@ def update_product(
         )
 
 
-def delete_product(connection: Connection, product_id: int) -> None:
-    """Delete one product; the service owns the transaction."""
+def lock_product_image(connection: Connection, product_id: int) -> ProductImage | None:
+    """Lock one product's row and return the picture it has *now*, or None if it
+    is gone. A write that replaces a picture reads it here, inside its own
+    transaction, so what it retires afterwards is what it really displaced and not
+    what the page read earlier (two edits, or an edit and a delete, can race)."""
     with connection.cursor() as cursor:
-        cursor.execute("DELETE FROM product WHERE product_id = %s", (product_id,))
+        cursor.execute(
+            "SELECT image_path, image_file_id FROM product "
+            "WHERE product_id = %s FOR UPDATE",
+            (product_id,),
+        )
+        row = cursor.fetchone()
+    return ProductImage(*row) if row else None
+
+
+def delete_product(connection: Connection, product_id: int) -> ProductImage | None:
+    """Delete one product and return the picture it had; the service owns the
+    transaction. None if there was no such product."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "DELETE FROM product WHERE product_id = %s "
+            "RETURNING image_path, image_file_id",
+            (product_id,),
+        )
+        row = cursor.fetchone()
+    return ProductImage(*row) if row else None

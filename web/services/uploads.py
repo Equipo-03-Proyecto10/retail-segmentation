@@ -28,12 +28,12 @@ from web.services.files import (
     PUBLIC,
     FileStore,
     NewFile,
+    StoredObject,
     StoreUnavailable,
     discard_file,
     get_file_store,
-    public_name,
+    put_new_file,
     remove_object,
-    store_new_file,
 )
 
 PRODUCT_IMAGE_KIND = "product-image"
@@ -53,17 +53,6 @@ class UploadRejected(Exception):
 
 class UploadUnavailable(Exception):
     """The file store could not take the file. Nothing was saved."""
-
-
-@dataclass(frozen=True)
-class SavedUpload:
-    """An accepted upload, written to the store and registered in the caller's
-    open transaction. `relative_path` is the public name the database stores in
-    product.image_path (`<file_id>.<ext>`)."""
-
-    file_id: uuid.UUID
-    object_path: str
-    relative_path: str
 
 
 @dataclass(frozen=True)
@@ -169,19 +158,18 @@ def save_product_image(
     file: FileStorage,
     config: Config,
     *,
-    connection: Connection,
     owner_id: uuid.UUID | str,
     store: FileStore | None = None,
-) -> SavedUpload:
-    """Validate an uploaded product image, write it to the file store and
-    register it in the caller's transaction.
+) -> StoredObject:
+    """Validate an uploaded product image and write its bytes to the file store.
 
     Raises UploadRejected on a disallowed type, an oversized file, or a PNG that
     is damaged, too large in pixels, or carries data after its end, and
     UploadUnavailable when the store cannot take the file; in both cases nothing
-    is stored and no row exists. The caller commits the row together with the
-    product, or calls `abandon_product_image` if that write fails. The original
-    filename is ignored.
+    is stored. On success the object is in the store and its row is not yet
+    written: the catalog service inserts the row in the product's own transaction
+    (`create_product(image=...)`), and the caller calls `abandon_product_image` if
+    that write fails. The original filename is ignored.
     """
     log = logging.getLogger(__name__)
     try:
@@ -189,11 +177,9 @@ def save_product_image(
     except UploadRejected as error:
         log.info("upload_refused reason=%r", str(error))
         raise
-    store = store or get_file_store()
     try:
-        stored = store_new_file(
-            connection,
-            store,
+        return put_new_file(
+            store or get_file_store(),
             NewFile(
                 kind=PRODUCT_IMAGE_KIND,
                 data=image.data,
@@ -209,15 +195,10 @@ def save_product_image(
             "The image could not be saved because the file store is not "
             "reachable. Nothing was changed; try again in a few minutes."
         ) from error
-    return SavedUpload(
-        file_id=stored.file_id,
-        object_path=stored.object_path,
-        relative_path=public_name(stored),
-    )
 
 
 def abandon_product_image(
-    saved: SavedUpload, *, store: FileStore | None = None
+    saved: StoredObject, *, store: FileStore | None = None
 ) -> None:
     """Remove the object of an upload whose transaction did not commit."""
     remove_object(store or get_file_store(), saved.object_path)

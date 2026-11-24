@@ -33,7 +33,7 @@ below are all web-system requirements.
 | RF-05 | The system holds exactly one administrator. Creating or promoting a second is refused by the application and, independently, by the database | Acceso diferenciado | F4-02 (#70) |
 | RF-06 | The administrator creates, reads, updates and deletes rows in every catalog: category, product, store, channel and role | Operación de catálogos | F3-04 (#64) |
 | RF-07 | A deletion that would orphan existing data is refused with a message naming what still references the row, not with a database error | Operación de catálogos | F3-04 (#64) |
-| RF-08 | The administrator attaches an image to a product. The file is stored under `UPLOAD_DIR` and the database keeps its path, never its bytes | Operación de catálogos | F3-07 (#67) |
+| RF-08 | The administrator attaches an image to a product. The file is stored in the file store (a private Cloud Storage bucket in production, `UPLOAD_DIR` locally and in tests, ADR-0091) and the database keeps only its metadata, never its bytes | Operación de catálogos | F3-07 (#67) |
 | RF-09 | The administrator creates users, edits them, and deactivates them. Deactivation, not deletion, is how access is removed, so history keeps its actor | Operación de catálogos | F3-06 (#66) |
 | RF-10 | A signed-in user lists, searches and opens the detail of customers and products, within what their role permits | Consulta de información | F3-05 (#65) |
 | RF-11 | A user consults stock per store and product | Consulta de información | F3-05 (#65) |

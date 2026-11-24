@@ -695,9 +695,7 @@ def create_product_view() -> ResponseReturnValue:
     config = current_app.config["APP_CONFIG"]
     if image_file and image_file.filename:
         try:
-            saved = save_product_image(
-                image_file, config, connection=connection, owner_id=session["user_id"]
-            )
+            saved = save_product_image(image_file, config, owner_id=session["user_id"])
         except (UploadRejected, UploadUnavailable) as error:
             return (
                 render_template(
@@ -717,8 +715,7 @@ def create_product_view() -> ResponseReturnValue:
             name=name,
             category_id=int(category_id_raw),
             list_price=validation.price,
-            image_path=saved.relative_path if saved else None,
-            image_file_id=saved.file_id if saved else None,
+            image=saved,
         )
     except CatalogConflict as error:
         if saved:
@@ -802,9 +799,7 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
     config = current_app.config["APP_CONFIG"]
     if image_file and image_file.filename:
         try:
-            saved = save_product_image(
-                image_file, config, connection=connection, owner_id=session["user_id"]
-            )
+            saved = save_product_image(image_file, config, owner_id=session["user_id"])
         except (UploadRejected, UploadUnavailable) as error:
             return (
                 render_template(
@@ -833,8 +828,7 @@ def edit_product_view(product_id: int) -> ResponseReturnValue:
             category_id=int(category_id_raw),
             list_price=validation.price,
             is_active=is_active,
-            image_path=saved.relative_path if saved else None,
-            image_file_id=saved.file_id if saved else None,
+            image=saved,
         )
     except CatalogConflict as error:
         if saved:

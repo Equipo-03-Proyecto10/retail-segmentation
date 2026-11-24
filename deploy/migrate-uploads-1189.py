@@ -55,9 +55,9 @@ from web.services.files import (  # noqa: E402
     StoreUnavailable,
     build_file_store,
     discard_file,
-    public_name,
+    insert_row,
+    put_new_file,
     remove_object,
-    store_new_file,
 )
 
 _CONTENT_TYPE_BY_SUFFIX = {
@@ -154,8 +154,7 @@ def _move_one(
     data = _read_original(Path(config.upload_dir), image_path)
     content_type = _validated(data, image_path, config)
     try:
-        stored = store_new_file(
-            connection,
+        stored = put_new_file(
             store,
             NewFile(
                 kind=uploads.PRODUCT_IMAGE_KIND,
@@ -172,11 +171,10 @@ def _move_one(
         )
     except StoreUnavailable as error:
         raise ValueError(f"the store refused it: {error}") from error
-    except psycopg.Error as error:
-        raise ValueError(f"the metadata row was refused: {error}") from error
 
-    name = public_name(stored)
+    name = stored.public_name
     try:
+        insert_row(connection, stored)
         with connection.cursor() as cursor:
             cursor.execute(
                 """
@@ -194,7 +192,7 @@ def _move_one(
         if isinstance(error, ValueError):
             raise
         if isinstance(error, psycopg.Error):
-            raise ValueError(f"the product was refused: {error}") from error
+            raise ValueError(f"the row or the product was refused: {error}") from error
         raise
     return name
 

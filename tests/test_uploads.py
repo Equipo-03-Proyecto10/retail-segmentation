@@ -88,23 +88,18 @@ def test_an_accepted_image_is_validated_whole(config, mime, content):
         (b"\xff\xd8\xff", "image/png"),
     ],
 )
-def test_a_rejected_file_reaches_neither_the_store_nor_the_database(
-    config, content, mime
-):
+def test_a_rejected_file_never_reaches_the_store(config, content, mime):
     store = Mock()
-    connection = MagicMock()
 
     with pytest.raises(UploadRejected):
         save_product_image(
             FileStorage(BytesIO(content), filename="a", content_type=mime),
             replace(config, max_upload_bytes=10),
-            connection=connection,
             owner_id="11111111-1111-1111-1111-000000000001",
             store=store,
         )
 
     store.put.assert_not_called()
-    connection.cursor.assert_not_called()
 
 
 def test_deleting_a_legacy_image_stays_inside_the_upload_directory(config, tmp_path):
@@ -171,7 +166,6 @@ def _refuse_png(content: bytes, config, match: str) -> None:
         save_product_image(
             FileStorage(BytesIO(content), filename="a.png", content_type="image/png"),
             config,
-            connection=MagicMock(),
             owner_id="11111111-1111-1111-1111-000000000001",
             store=store,
         )

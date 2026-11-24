@@ -1,10 +1,11 @@
 """deploy/migrate-uploads-1189.py moves the first delivery's images into the file
 store (F29-13, ADR-0091).
 
-It runs for real against PostgreSQL, a temporary `UPLOAD_DIR` and the local
-backend standing in for the bucket (the real cloud is not available to the
-tests): the dry run, the real run, running it again, resuming after a limit, the
-files it cannot move, and the deletes the store could not confirm.
+It runs for real against PostgreSQL (on a `RollbackConnection`, so the shared
+test database keeps its rows), a temporary `UPLOAD_DIR` and the local backend
+standing in for the bucket (the real cloud is not available to the tests): the
+dry run, the real run, running it again, resuming after a limit, the files it
+cannot move, and the deletes the store could not confirm.
 """
 
 from __future__ import annotations
@@ -15,14 +16,14 @@ import struct
 import sys
 import zlib
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from uuid import UUID, uuid4
 
-import psycopg
 import pytest
 from flask.testing import FlaskClient
 
+from tests.rollback_connection import RollbackConnection
 from web.app import create_app
 from web.config import Config
 from web.services.files import LocalFileStore, StoreUnavailable
@@ -87,18 +88,15 @@ class DownStore:
 
 @dataclass
 class Bench:
-    owner: psycopg.Connection
+    owner: RollbackConnection
     app_url: str
     uploads: Path
     store_root: Path
     store: RecordingStore
     config: Config
-    product_ids: list[int] = field(default_factory=list)
-    extra_file_ids: list[UUID] = field(default_factory=list)
 
     def legacy_product(self, product_id: int, name: str, data: bytes | None) -> None:
         """A product the first delivery left behind: a name and (maybe) a file."""
-        self.product_ids.append(product_id)
         self.owner.execute(
             "INSERT INTO product (product_id, sku, name, category_id, list_price,"
             " image_path) VALUES (%s, %s, %s, 1, 1, %s)",
@@ -134,11 +132,16 @@ class Bench:
         }
 
     def run(self, *argv: str, store=None) -> int:
-        return migrate.main(list(argv), self.environ(), store=store or self.store)
+        return migrate.main(
+            list(argv),
+            self.environ(),
+            store=store or self.store,
+            connect=self.owner.connector,
+        )
 
 
 @pytest.fixture
-def bench(app_url: str, owner_url: str, tmp_path: Path) -> Iterator[Bench]:
+def bench(app_url: str, tmp_path: Path) -> Iterator[Bench]:
     uploads = tmp_path / "uploads"
     uploads.mkdir()
     store_root = tmp_path / "bucket"
@@ -151,21 +154,13 @@ def bench(app_url: str, owner_url: str, tmp_path: Path) -> Iterator[Bench]:
         database_url=app_url,
         upload_dir=str(uploads),
     )
-    with psycopg.connect(owner_url, autocommit=True) as owner:
-        state = Bench(
-            owner, app_url, uploads, store_root, RecordingStore(store_root), config
+    database = RollbackConnection(app_url)
+    try:
+        yield Bench(
+            database, app_url, uploads, store_root, RecordingStore(store_root), config
         )
-        try:
-            yield state
-        finally:
-            owner.execute(
-                "DELETE FROM product WHERE product_id = ANY(%s)", (state.product_ids,)
-            )
-            owner.execute(
-                "DELETE FROM stored_file WHERE object_path = ANY(%s)"
-                " OR file_id = ANY(%s)",
-                (state.store.written, state.extra_file_ids),
-            )
+    finally:
+        database.discard()
 
 
 def test_a_dry_run_reports_and_writes_nothing_anywhere(bench: Bench, capsys) -> None:
@@ -227,7 +222,7 @@ def test_a_migrated_image_is_served_by_the_web_through_the_store(
     bench.legacy_product(912005, "0123456789abcdef0123456789abcd05.png", PNG)
     bench.run()
     name, _ = bench.product(912005)
-    app = create_app(bench.config)
+    app = create_app(bench.config, database_connector=bench.owner.connector)
     app.extensions["file_store"] = bench.store
     client: FlaskClient = app.test_client()
     with client.session_transaction() as session:
@@ -340,6 +335,7 @@ def test_a_product_that_changed_during_the_move_is_left_alone_and_its_object_rem
             "UPDATE product SET image_path = 'another-name.png' WHERE product_id = %s",
             (912017,),
         )
+        bench.owner.commit()  # another session's committed change
         return data
 
     monkeypatch.setattr(migrate, "_read_original", changed_underneath)
@@ -361,8 +357,7 @@ def test_the_script_refuses_a_configuration_the_web_would_refuse(capsys) -> None
 
 
 def test_exactly_one_administrator_owns_the_migrated_files(bench: Bench) -> None:
-    with psycopg.connect(bench.app_url) as connection:
-        assert migrate._administrator(connection) == UUID(ADMIN_ID)
+    assert migrate._administrator(bench.owner) == UUID(ADMIN_ID)
 
 
 # ---------- the deletes the store could not confirm ----------
@@ -370,7 +365,6 @@ def test_exactly_one_administrator_owns_the_migrated_files(bench: Bench) -> None
 
 def _pending(bench: Bench) -> UUID:
     file_id = uuid4()
-    bench.extra_file_ids.append(file_id)
     path = f"product-image/{file_id}.png"
     bench.store.put(path, PNG, "image/png")
     bench.owner.execute(

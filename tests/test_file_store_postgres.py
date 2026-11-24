@@ -7,9 +7,10 @@ against a fake GCS client (the real cloud is not available to the tests). The
 failure orders are the point: a store that is down leaves no row, and a row that
 is refused leaves no object.
 
-Every test owns one product id and the objects its store was ever asked to
-write; the fixture deletes exactly those afterwards, so the shared test database
-keeps its rows.
+The web runs on a `RollbackConnection`: one real connection in one transaction
+that is never committed, so nothing a test writes (products, files, the outbox
+events their triggers capture) outlives it, and the shared test database keeps
+its rows.
 """
 
 from __future__ import annotations
@@ -24,11 +25,11 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-import psycopg
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
 
+from tests.rollback_connection import RollbackConnection
 from web.app import create_app
 from web.config import Config
 from web.db import stored_files
@@ -99,9 +100,8 @@ class Stack:
     app: Flask
     client: FlaskClient
     store: RecordingLocalStore
-    owner: psycopg.Connection
+    owner: RollbackConnection
     root: Path
-    product_ids: list[int] = field(default_factory=list)
     extra_paths: list[str] = field(default_factory=list)
 
     def product(self, product_id: int) -> tuple | None:
@@ -135,7 +135,6 @@ class Stack:
         )
 
     def create(self, product_id: int, image=None, *, sku: str | None = None):
-        self.product_ids.append(product_id)
         data = {
             "product_id": str(product_id),
             "sku": sku or f"SKU-1189-{product_id}",
@@ -167,7 +166,7 @@ class Stack:
 
 
 @pytest.fixture
-def stack(app_url: str, owner_url: str, tmp_path: Path) -> Iterator[Stack]:
+def stack(app_url: str, tmp_path: Path) -> Iterator[Stack]:
     config = Config(
         secret_key="test",
         environment="testing",
@@ -177,24 +176,18 @@ def stack(app_url: str, owner_url: str, tmp_path: Path) -> Iterator[Stack]:
         database_url=app_url,
         upload_dir=str(tmp_path),
     )
-    app = create_app(config)
+    database = RollbackConnection(app_url)
+    app = create_app(config, database_connector=database.connector)
     store = RecordingLocalStore(tmp_path)
     app.extensions["file_store"] = store
     app.config["PROPAGATE_EXCEPTIONS"] = False
     client = app.test_client()
     with client.session_transaction() as session:
         session.update(user_id=ADMIN_ID, role_code="ADMIN", name="Admin")
-    with psycopg.connect(owner_url, autocommit=True) as owner:
-        state = Stack(app, client, store, owner, tmp_path)
-        try:
-            yield state
-        finally:
-            owner.execute(
-                "DELETE FROM product WHERE product_id = ANY(%s)", (state.product_ids,)
-            )
-            owner.execute(
-                "DELETE FROM stored_file WHERE object_path = ANY(%s)", (state.paths(),)
-            )
+    try:
+        yield Stack(app, client, store, database, tmp_path)
+    finally:
+        database.discard()
 
 
 def _image(data: bytes, name: str = "My Holiday Photo.png", mime="image/png"):
@@ -488,7 +481,8 @@ def test_a_refused_metadata_row_removes_the_object(
 
     response = stack.create(911018, _image(PNG))
 
-    assert response.status_code == 500
+    # The product's write is refused as a whole: a controlled 409 on the form.
+    assert response.status_code == 409
     assert stack.product(911018) is None
     assert len(stack.store.written) == 1
     assert stack.on_disk() == []

@@ -21,6 +21,7 @@ PostgreSQL listener, HBA policy, SSH access and application-role verification:
 | `deploy.sh` | copied to `/tmp/mosaiq-deploy.sh` by the deploy workflow on each run, not installed |
 | `deploy-service.sh` | not installed: `deploy-service.yml` copies it with the merged commit's service files on each release (F18-03) |
 | `rehearse-rollback.sh` | not installed: run from a checkout, as root, before a demonstration (F18-03) |
+| `migrate-uploads-1189.py` | not installed: run once from the checkout by the operator, after the bucket exists, to move the product images into it (F29-13, below) |
 | the TLS certificate | `/etc/nginx/tls/mosaiq.{crt,key}` — a Cloudflare Origin CA pair on the instance (F6-03 Path C, [ADR-0013](../docs/adr/0013-publish-mosaiq-through-cloudflare-with-an-origin-certificate.md)), not in the repo |
 
 ### Deployment layout
@@ -1326,3 +1327,131 @@ For each service, `rehearse-rollback.sh`:
    - `https://127.0.0.1/` answers 200.
 
 It prints a Markdown section per service, and exits 1 when a check fails.
+
+---
+
+## F29-13 — the platform's files in a Cloud Storage bucket (#1189)
+
+[ADR-0091](../docs/adr/0091-the-web-keeps-its-files-in-a-private-gcs-bucket-behind-a-file-store-port-and-only-their-metadata-in-postgresql.md)
+(Proposed until the team accepts it) moves the product images off the instance's
+disk. The bytes go to a private bucket, the database keeps one `stored_file` row
+of metadata per file, and the web streams a picture through its own image route.
+**Nothing here has been created or run in the cloud by the repository.** An
+operator does the steps below, in this order, and the web refuses to start
+before step 3 is done.
+
+### 1. The bucket, once (operator, in project `iac-dev-01`)
+
+```sh
+gcloud storage buckets create gs://<bucket> --project=iac-dev-01 \
+  --location=northamerica-south1 --uniform-bucket-level-access \
+  --public-access-prevention
+gcloud storage buckets describe gs://<bucket>
+```
+
+The description must show `uniform_bucket_level_access: true` and
+`public_access_prevention: enforced`, and no `allUsers` or `allAuthenticatedUsers` in
+`gcloud storage buckets get-iam-policy gs://<bucket>`. Grant the instance's own
+service account (today the default Compute Engine account, see
+[`docs/infra.md`](../docs/infra.md)) the least role the web needs, on this bucket
+only, never on the project:
+
+```sh
+gcloud storage buckets add-iam-policy-binding gs://<bucket> \
+  --member=serviceAccount:<instance service account> \
+  --role=roles/storage.objectUser
+```
+
+`roles/storage.objectUser` creates, reads, updates, deletes and lists objects.
+A custom role of `storage.objects.create`, `.get` and `.delete` is narrower, if
+you want exactly what the code calls. **No key file is created, and none is ever
+put on the instance or in the repository**: the web uses Application Default
+Credentials, which on the VM are its attached service account.
+
+The VM must carry an access scope that lets that account write to Cloud Storage.
+A VM created with the default scopes has `devstorage.read_only`, and a write then
+fails with a 403 that looks like a missing role. Check it, and widen it if needed
+(the VM has to be stopped to change its scopes, so do it outside a demonstration):
+
+```sh
+gcloud compute instances describe mosaiq-deployment-vm --zone=northamerica-south1-a \
+  --format='value(serviceAccounts[].scopes)'
+```
+
+Record the bucket, the binding and the scope in `docs/infra.md`.
+
+### 2. The schema, before the release
+
+`sql/01_schema.sql` adds the `stored_file` table and `product.image_file_id`.
+Apply it the way any web schema change is applied to the instance (rebuild the
+database before merging to `main`, as the previous schema changes were). The
+three scripts must run clean in order from an empty database first.
+
+### 3. The web's environment, before the release
+
+In `/etc/mosaiq/mosaiq.env` (`root:mosaiq`, `0640`):
+
+```sh
+FILE_STORE_BACKEND=gcs
+GCS_BUCKET=<bucket>
+```
+
+Without them, `FLASK_ENV=production` and the default local backend make the web
+refuse to start, and the deploy script rolls the release back as unhealthy. To
+keep the instance on its disk on purpose (for instance until the bucket exists),
+set `FILE_STORE_ALLOW_LOCAL_IN_PRODUCTION=true`; the files then die with the
+instance. The virtualenv needs the new pinned dependency
+(`/opt/mosaiq/venv/bin/pip install -r web/requirements.txt`, which the deploy does).
+
+### 4. Move the existing images, once, after the release
+
+A product whose picture was uploaded before this release keeps working: the web
+still serves it from `UPLOAD_DIR` until it is moved. Run the script as the web's
+user, from the checkout, with the web's environment. Look first:
+
+```sh
+sudo -u mosaiq bash -c 'set -a; . /etc/mosaiq/mosaiq.env; set +a; \
+  cd /opt/mosaiq/current && /opt/mosaiq/venv/bin/python deploy/migrate-uploads-1189.py --dry-run'
+```
+
+Then move them (drop `--dry-run`; `--limit N` moves at most N):
+
+```sh
+sudo -u mosaiq bash -c 'set -a; . /etc/mosaiq/mosaiq.env; set +a; \
+  cd /opt/mosaiq/current && /opt/mosaiq/venv/bin/python deploy/migrate-uploads-1189.py'
+```
+
+- It is idempotent and resumable: a product it already moved is not selected
+  again, so after an interruption, or after fixing a file, run it again.
+- It prints each file it could not move, with the reason, and exits 1 if there is
+  any. Those products keep their old picture and the gap is recorded in the
+  output; keep that output in the evidence for #1189.
+- It deletes nothing from `UPLOAD_DIR`. Open a few product pages, then remove the
+  originals yourself.
+- The migrated rows belong to the administrator, because the old upload did not
+  record who made it.
+
+### 5. A delete the store could not confirm
+
+If the bucket was unreachable when a picture was replaced or its product deleted,
+the user's action succeeded and the row was marked `PENDING_DELETE`. Finish those
+with the same script:
+
+```sh
+sudo -u mosaiq bash -c 'set -a; . /etc/mosaiq/mosaiq.env; set +a; \
+  cd /opt/mosaiq/current && /opt/mosaiq/venv/bin/python deploy/migrate-uploads-1189.py --delete-pending'
+```
+
+```sql
+SELECT file_id, object_path, created_at FROM stored_file WHERE status = 'PENDING_DELETE';
+```
+
+### Rollback
+
+Set `FILE_STORE_ALLOW_LOCAL_IN_PRODUCTION=true`, redeploy the previous release,
+and nothing else is needed for pictures that were never migrated. A picture that
+was migrated is in the bucket only: the previous release reads `image_path`
+(`<file_id>.<ext>`) from `UPLOAD_DIR`, where the original still sits under its old
+name but the product no longer points at it. Restore the product's old name from
+the script's output, or copy the object back, before rolling back a migrated
+instance.

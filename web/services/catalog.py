@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import re
-import uuid
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
@@ -26,6 +25,8 @@ from psycopg.errors import (
 from web.db import categories, channels, products, roles, stores
 from web.db.transactions import atomic
 from web.parsing import page_number, whole_number
+from web.services import files
+from web.services.files import StoredObject
 
 
 @dataclass(frozen=True)
@@ -328,10 +329,14 @@ def create_product(
     name: str,
     category_id: int,
     list_price: Decimal,
-    image_path: str | None = None,
-    image_file_id: uuid.UUID | None = None,
+    image: StoredObject | None = None,
 ) -> None:
-    """Create a product, translating constraint refusals."""
+    """Create a product, translating constraint refusals.
+
+    A picture already written to the file store is registered here, in the same
+    transaction as the product (ADR-0091): both rows commit, or neither does."""
+    if image is not None:
+        files.insert_row(connection, image)
     products.create_product(
         connection,
         product_id=product_id,
@@ -339,8 +344,8 @@ def create_product(
         name=name,
         category_id=category_id,
         list_price=list_price,
-        image_path=image_path,
-        image_file_id=image_file_id,
+        image_path=None if image is None else image.public_name,
+        image_file_id=None if image is None else image.file_id,
     )
 
 
@@ -354,10 +359,14 @@ def update_product(
     category_id: int,
     list_price: Decimal,
     is_active: bool,
-    image_path: str | None = None,
-    image_file_id: uuid.UUID | None = None,
+    image: StoredObject | None = None,
 ) -> None:
-    """Update a product, translating constraint refusals."""
+    """Update a product, translating constraint refusals.
+
+    A new picture is registered in the same transaction and replaces the old
+    one; with none, the product keeps its picture."""
+    if image is not None:
+        files.insert_row(connection, image)
     products.update_product(
         connection,
         product_id,
@@ -366,8 +375,8 @@ def update_product(
         category_id=category_id,
         list_price=list_price,
         is_active=is_active,
-        image_path=image_path,
-        image_file_id=image_file_id,
+        image_path=None if image is None else image.public_name,
+        image_file_id=None if image is None else image.file_id,
     )
 
 

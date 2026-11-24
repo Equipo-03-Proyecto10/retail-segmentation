@@ -72,14 +72,17 @@ from `GCS_BUCKET`. An object is named `<kind>/<file_id>.<ext>`, for example
 `product-image/6f1c…e2.jpg`: the kind, the file's own identifier and an extension chosen from
 the validated content type. The user's file name is never used, stored or logged.
 
-**A public file reaches the browser through the web.** `GET /files/<file_id>` reads the
-metadata row, checks the file is `PUBLIC` and `STORED`, fetches the object through the port
-and streams it, with `Content-Type` from the row, `X-Content-Type-Options: nosniff`,
-`ETag` set to the row's SHA-256, and `Cache-Control: private, max-age=86400, immutable`.
-A matching `If-None-Match` answers 304 without touching the bucket. The route keeps
-the permission the old image route had (`catalog.read`); "public" names the file's
-privacy class, not that the page is anonymous. A `PRIVATE` file is never served by this
-route; #1190 gives it a V4 URL that expires within 15 minutes.
+**A public file reaches the browser through the web.** The web's existing image route,
+`GET /admin/products/image/<name>`, answers a name of the form `<file_id>.<ext>` by reading the
+metadata row, checking the file is `PUBLIC` and `STORED` and that the extension matches, fetching
+the object through the port and streaming it, with `Content-Type` from the row,
+`X-Content-Type-Options: nosniff`, `ETag` set to the row's SHA-256, and
+`Cache-Control: private, max-age=86400, immutable`. A matching `If-None-Match` answers 304 without
+touching the bucket. The route keeps the permission it had (`catalog.read`); "public" names the
+file's privacy class, not that the page is anonymous, and `private` keeps a shared cache such as
+Cloudflare from storing it. The application's blanket `no-store` (#291) exempts exactly this
+response. A `PRIVATE` file is never served by this route (it answers 404); #1190 gives it a V4
+URL that expires within 15 minutes.
 
 **The database keeps metadata only,** in one table, `stored_file` (schema in
 `sql/01_schema.sql`): `file_id`, `object_path`, `content_type`, `size_bytes`, `sha256`,
@@ -88,7 +91,7 @@ route; #1190 gives it a V4 URL that expires within 15 minutes.
 content type other than the three image types, a size above 5 MB or not positive, a SHA-256
 that is not 64 lowercase hex digits, a path that is not `<kind>/<file_id>.<ext>` with the
 extension matching the content type, and a `deleted_at` that disagrees with the status.
-`product.image_file_id` references it, unique where set. A row is never deleted: removing a
+`product.image_file_id` references it, unique where set (and `product_image_name_check` ties `image_path` to it, below). A row is never deleted: removing a
 file marks it `DELETED` and keeps the fact that it existed.
 
 **Writes put the bytes first, then the row.** The store is written, then the metadata row is
@@ -101,15 +104,21 @@ crash between the two steps), which no reader sees and which costs only storage.
 
 **The existing images move once.** `deploy/migrate-uploads-1189.py` reads each `product` row
 that has `image_path` and no `image_file_id`, uploads the file from `UPLOAD_DIR`, inserts its
-row, sets `image_file_id` and clears `image_path` in one transaction. It is idempotent and
+row, and sets `image_file_id` and the new `image_path` in one transaction. It is idempotent and
 resumable (a finished product is no longer selected), supports `--dry-run`, parameterizes
 every statement, and lists every file it could not move, with the reason. It attributes the
 migrated rows to the administrator, because the old upload did not record who made it. It
-does not delete the originals; the operator removes them after checking the report.
-`product.image_path` stays readable, and the web keeps serving a not-yet-migrated image from
-`UPLOAD_DIR` through the old route, only for as long as the migration has not run. A later
-change drops the column and the old route; the schema CHECK `product_one_image_source`
-guarantees a product never carries both.
+does not delete the originals; the operator removes them after checking the report. Until it
+has run, the web keeps serving a not-yet-migrated image from `UPLOAD_DIR` through the same route.
+
+**`product.image_path` stays, and is derived.** products-service publishes `photo_url` as
+`PRODUCTS_PHOTO_BASE_URL` joined to `image_path`, and its contract is frozen: clearing the
+column after the move would silently null every migrated photo in a released service. So a
+picture in the store is named `<image_file_id>.<ext>` in `image_path`, and `/admin/products/image/<name>`
+resolves that name to the file. The column is then derivable from `image_file_id` and the
+content type, a deliberate and temporary departure from 4NF that the schema checks
+(`product_image_name_check`) instead of trusting. The story that gives products-service a
+published view of the picture drops the column.
 
 **When the bucket is unreachable,** an upload is refused as above; a read answers 503 with
 the common error page (the product page still renders, the picture does not); and a delete
@@ -129,7 +138,7 @@ privacy and the status are single-valued; a product's image is one file, and a g
 be its own association table, not a repeating column). `metadata` is one opaque attribute
 for facts nothing queries or joins on; a fact a query needs becomes a column, so the
 `jsonb` never holds a repeating group. The path's prefix (the kind) is recorded once, in the
-path, not in a second column.
+path, not in a second column. The one departure is `product.image_path` above, named and checked.
 
 ## Alternatives considered
 

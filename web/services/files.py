@@ -6,10 +6,11 @@ machine and in tests. PostgreSQL keeps only the `stored_file` row. The web reach
 the store through this port and nothing else, so a route never imports the
 Google client and a test never needs the cloud.
 
-Writing is bytes first, then the row, in the caller's transaction: if the store
-refuses, no row exists; if the row (or anything the caller does with it before
-the commit) fails, the object is deleted. The one case this order cannot undo is
-a crash between the two steps, which leaves an object no row names. No reader
+Writing is bytes first (`put_new_file`), then the row, inserted by the service
+that owns the transaction in the same unit of work as whatever refers to the file:
+if the store refuses, no row exists; if the row or that unit of work fails, the
+caller removes the object (`remove_object`). The one case this order cannot undo
+is a crash between the two steps, which leaves an object no row names. No reader
 sees it, and it costs storage only.
 """
 
@@ -30,6 +31,7 @@ from psycopg import Connection
 from web.config import FILE_STORE_GCS, FILE_STORE_LOCAL, Config
 from web.db import stored_files
 from web.db.stored_files import StoredFile
+from web.db.transactions import atomic
 
 _log = logging.getLogger(__name__)
 
@@ -240,45 +242,74 @@ class NewFile:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class StoredObject:
+    """An object already written to the store, whose row is not yet written.
+
+    The row is inserted by the service that owns the transaction (for a product
+    image, the catalog's), in the same unit of work as whatever refers to it.
+    """
+
+    file_id: uuid.UUID
+    object_path: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+    privacy: str
+    owner_id: uuid.UUID | str
+    metadata: dict[str, Any]
+
+    @property
+    def public_name(self) -> str:
+        """`<file_id>.<ext>`: the name the web's image route answers to, and what
+        `product.image_path` holds for a file in the store."""
+        return f"{self.file_id}{EXTENSION_BY_CONTENT_TYPE[self.content_type]}"
+
+
 def public_name(file: StoredFile) -> str:
-    """`<file_id>.<ext>`: the name the web's image route answers to, and what
-    `product.image_path` holds for a file in the store."""
-    extension = EXTENSION_BY_CONTENT_TYPE[file.content_type]
-    return f"{file.file_id}{extension}"
+    """The same name, for a row read back from the database."""
+    return f"{file.file_id}{EXTENSION_BY_CONTENT_TYPE[file.content_type]}"
 
 
-def store_new_file(
-    connection: Connection, store: FileStore, new: NewFile
-) -> StoredFile:
-    """Write the bytes, then the metadata row, in the caller's transaction.
+def put_new_file(store: FileStore, new: NewFile) -> StoredObject:
+    """Write the bytes of a new file to the store, under a generated name.
 
-    The caller commits (a service wrapped in `@atomic`), or rolls back and calls
-    `remove_object`. Raises StoreUnavailable when the store refuses, with no row
-    written; on any failure after the object was written, the object is removed
-    here before the error continues.
+    This is the first half of keeping a file: bytes first, then the row. It
+    raises StoreUnavailable when the store refuses, with nothing written and no
+    row to undo. After it returns, whoever holds the `StoredObject` must either
+    commit its row (`stored_files.insert_stored_file`, in the unit of work that
+    uses it) or call `remove_object` if that unit of work fails.
     """
     file_id = uuid.uuid4()
     extension = EXTENSION_BY_CONTENT_TYPE[new.content_type]
     object_path = f"{new.kind}/{file_id}{extension}"
-    digest = hashlib.sha256(new.data).hexdigest()
-
     store.put(object_path, new.data, new.content_type)
-    try:
-        return stored_files.insert_stored_file(
-            connection,
-            file_id=file_id,
-            object_path=object_path,
-            content_type=new.content_type,
-            size_bytes=len(new.data),
-            sha256=digest,
-            privacy=new.privacy,
-            owner_user_id=new.owner_id,
-            metadata=new.metadata,
-        )
-    except BaseException:
-        connection.rollback()
-        remove_object(store, object_path)
-        raise
+    return StoredObject(
+        file_id=file_id,
+        object_path=object_path,
+        content_type=new.content_type,
+        size_bytes=len(new.data),
+        sha256=hashlib.sha256(new.data).hexdigest(),
+        privacy=new.privacy,
+        owner_id=new.owner_id,
+        metadata=new.metadata,
+    )
+
+
+def insert_row(connection: Connection, stored: StoredObject) -> StoredFile:
+    """The metadata row of an object already in the store, in the caller's
+    transaction."""
+    return stored_files.insert_stored_file(
+        connection,
+        file_id=stored.file_id,
+        object_path=stored.object_path,
+        content_type=stored.content_type,
+        size_bytes=stored.size_bytes,
+        sha256=stored.sha256,
+        privacy=stored.privacy,
+        owner_user_id=stored.owner_id,
+        metadata=stored.metadata,
+    )
 
 
 def remove_object(store: FileStore, object_path: str) -> None:
@@ -291,6 +322,7 @@ def remove_object(store: FileStore, object_path: str) -> None:
         _log.error("file_store_orphan_left path=%r", object_path)
 
 
+@atomic
 def discard_file(connection: Connection, store: FileStore, file_id: uuid.UUID) -> None:
     """Retire a stored file the platform no longer uses, in its own transaction.
 
@@ -301,7 +333,6 @@ def discard_file(connection: Connection, store: FileStore, file_id: uuid.UUID) -
     """
     row = stored_files.get_stored_file(connection, file_id)
     if row is None or row.status == "DELETED":
-        connection.commit()
         return
     try:
         store.delete(row.object_path)
@@ -310,4 +341,3 @@ def discard_file(connection: Connection, store: FileStore, file_id: uuid.UUID) -
         _log.error("file_store_delete_deferred file_id=%s", file_id)
     else:
         stored_files.mark_deleted(connection, file_id)
-    connection.commit()

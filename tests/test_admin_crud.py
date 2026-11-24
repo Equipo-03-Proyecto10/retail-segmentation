@@ -242,7 +242,7 @@ def test_a_valid_product_without_an_image_is_created_and_redirects_to_the_list(
     assert response.headers["Location"].endswith("/admin/products")
     create.assert_called_once()
     assert create.call_args.kwargs["sku"] == "SKU-F5-01"
-    assert create.call_args.kwargs["image_path"] is None
+    assert create.call_args.kwargs["image"] is None
 
 
 def test_a_product_with_nothing_referencing_it_is_deleted(
@@ -607,7 +607,7 @@ _PRODUCT_FORM = {
 def _upload(monkeypatch) -> Mock:
     """A saved upload, and the removal the route must call for it."""
     monkeypatch.setattr(admin, "list_all_categories", Mock(return_value=[]))
-    saved = Mock(relative_path="new-name.png", file_id=UUID(int=7))
+    saved = Mock(public_name="new-name.png", file_id=UUID(int=7))
     monkeypatch.setattr(admin, "save_product_image", Mock(return_value=saved))
     abandon = Mock()
     monkeypatch.setattr(admin, "abandon_product_image", abandon)

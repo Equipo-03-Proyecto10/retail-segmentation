@@ -1,0 +1,4 @@
+.s..                                                                     [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/negative/test_revocation.py:127: local stack only, with its container names
+3 passed, 1 skipped, 13 deselected in 137.34s (0:02:17)

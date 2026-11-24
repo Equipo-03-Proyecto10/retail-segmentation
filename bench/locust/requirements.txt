@@ -1,0 +1,4 @@
+# The Locust load test's own tool (F29-15, #1191), pinned. It is never in the
+# web's or a service's requirements: install it in a virtualenv of its own.
+#   python3 -m venv ~/.venvs/mosaiq-locust && ~/.venvs/mosaiq-locust/bin/pip install -r bench/locust/requirements.txt
+locust==2.46.7

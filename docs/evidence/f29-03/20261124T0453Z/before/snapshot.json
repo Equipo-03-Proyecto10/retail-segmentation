@@ -1,0 +1,44 @@
+{
+  "store_id": 30,
+  "lines": {
+    "1": {
+      "sku": "SKU-00001",
+      "store_name": "Store 30",
+      "web": 40,
+      "service": 40,
+      "database": 40,
+      "evidence": [
+        "exchanges.md#exchange-12",
+        "exchanges.md#exchange-11",
+        "rows.md#rows-1"
+      ]
+    },
+    "2": {
+      "sku": "SKU-00002",
+      "store_name": "Store 30",
+      "web": 41,
+      "service": 41,
+      "database": 41,
+      "evidence": [
+        "exchanges.md#exchange-14",
+        "exchanges.md#exchange-13",
+        "rows.md#rows-2"
+      ]
+    }
+  },
+  "customer": {
+    "customer_id": "00000000-0000-0000-0000-000000000028",
+    "web": {
+      "purchases": "1",
+      "spend": "41.25"
+    },
+    "database": {
+      "purchases": "12",
+      "spend": "5340.75"
+    },
+    "evidence": [
+      "exchanges.md#exchange-15",
+      "rows.md#rows-3"
+    ]
+  }
+}

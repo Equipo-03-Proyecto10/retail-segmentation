@@ -10,16 +10,19 @@
 //! (`getNetSalesReport`), spend, retention and segment migrations
 //! (`getSpendReport`, `getRetentionReport`, `getMigrationReport`, F26-03) and
 //! demand by segment beside stock (`getDemandCoverageReport`), and campaign
-//! performance (`getCampaignPerformanceReport`, F26-04). The other reports
-//! of the contract are marked `x-mosaiq-status: planned` (ADR-0073) until the
-//! stories that build them.
+//! performance (`getCampaignPerformanceReport`), conversion after exposure
+//! (`getConversionReport`) and recommendation performance
+//! (`getRecommendationPerformanceReport`, F26-04). A report of the contract not
+//! yet built is marked `x-mosaiq-status: planned` (ADR-0073) until its story.
 
 pub mod campaign;
 pub mod catalog;
+pub mod conversion;
 pub mod demand_coverage;
 pub mod migrations;
 pub mod net_sales;
 pub mod query;
+pub mod recommendation_performance;
 pub mod retention;
 pub mod scope;
 pub mod spend;
@@ -39,8 +42,8 @@ use mosaiq_kit::{
 };
 
 use crate::query::{
-    parse_campaign_query, parse_demand_query, parse_migration_query, parse_retention_query,
-    parse_sales_query, DemandQuery, Dimension, Granularity, MigrationQuery,
+    parse_campaign_query, parse_demand_query, parse_engagement_query, parse_migration_query,
+    parse_retention_query, parse_sales_query, DemandQuery, Dimension, Granularity, MigrationQuery,
 };
 use crate::scope::Scope;
 
@@ -289,6 +292,60 @@ async fn get_campaign_performance_report(ctx: Ctx) -> Result<Reply, ApiError> {
     Ok(Representation::new("KpiReport", report_wire(envelope, ctx.page, ctx.size)).into())
 }
 
+async fn get_conversion_report(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = parse_engagement_query(&query_string())?;
+    let scope = scope::resolve(&ctx, query.store_id).await?;
+    let generated_at = Utc::now().trunc_subsecs(0);
+    let report =
+        conversion::read(ctx.db(), &query, &scope, generated_at, ctx.page, ctx.size).await?;
+    let envelope = Envelope {
+        kpi: conversion::KPI,
+        definition_version: conversion::DEFINITION_VERSION,
+        from: query.from,
+        to: query.to,
+        granularity: query.granularity,
+        group_by: &query.group_by,
+        scope: &scope,
+        generated_at,
+        views: conversion::origin_views(&query, &scope),
+        synthetic: report.synthetic,
+        spans_model_versions: false,
+        model_version_ids: Vec::new(),
+        rows: report.rows.iter().map(conversion::Row::wire).collect(),
+        total: report.total,
+    };
+    Ok(Representation::new("KpiReport", report_wire(envelope, ctx.page, ctx.size)).into())
+}
+
+async fn get_recommendation_performance_report(ctx: Ctx) -> Result<Reply, ApiError> {
+    let query = parse_engagement_query(&query_string())?;
+    let scope = scope::resolve(&ctx, query.store_id).await?;
+    let generated_at = Utc::now().trunc_subsecs(0);
+    let report =
+        recommendation_performance::read(ctx.db(), &query, &scope, ctx.page, ctx.size).await?;
+    let envelope = Envelope {
+        kpi: recommendation_performance::KPI,
+        definition_version: recommendation_performance::DEFINITION_VERSION,
+        from: query.from,
+        to: query.to,
+        granularity: query.granularity,
+        group_by: &query.group_by,
+        scope: &scope,
+        generated_at,
+        views: recommendation_performance::origin_views(&query, &scope),
+        synthetic: report.synthetic,
+        spans_model_versions: false,
+        model_version_ids: Vec::new(),
+        rows: report
+            .rows
+            .iter()
+            .map(recommendation_performance::Row::wire)
+            .collect(),
+        total: report.total,
+    };
+    Ok(Representation::new("KpiReport", report_wire(envelope, ctx.page, ctx.size)).into())
+}
+
 fn demand_coverage_wire(
     query: &DemandQuery,
     scope: &Scope,
@@ -418,6 +475,27 @@ async fn views_ready(db: Arc<Database>) -> bool {
             )
             .await
             .is_ok()
+        && connection
+            .query(
+                "SELECT exposure_id FROM api_experiments.exposure_v1 LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
+        && connection
+            .query(
+                "SELECT product_id FROM api_recommendations.interaction_v1 LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
+        && connection
+            .query(
+                "SELECT product_id FROM api_recommendations.recommended_purchase_v1 LIMIT $1",
+                &[&0i64],
+            )
+            .await
+            .is_ok()
 }
 
 async fn capture_request(request: Request<Body>, next: Next) -> Response {
@@ -437,6 +515,11 @@ pub fn router(config: KitConfig, contracts: &str) -> Result<Router, Box<dyn std:
         .operation(
             "getCampaignPerformanceReport",
             get_campaign_performance_report,
+        )?
+        .operation("getConversionReport", get_conversion_report)?
+        .operation(
+            "getRecommendationPerformanceReport",
+            get_recommendation_performance_report,
         )?
         .operation("listKpiDefinitions", list_kpi_definitions)?
         .ready_check(views_ready)

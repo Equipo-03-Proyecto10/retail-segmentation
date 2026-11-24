@@ -1,0 +1,19 @@
+Null display is "(null)".
+BEGIN READ ONLY;
+BEGIN
+-- Inventory before the sale, store '30' products '{1,2}'
+SELECT i.store_id, i.product_id, p.sku, p.list_price, p.is_active,
+       i.quantity_on_hand, i.updated_at
+  FROM inventory AS i
+  JOIN product AS p USING (product_id)
+ WHERE i.store_id = $1::smallint
+   AND i.product_id = ANY ($2::int[])
+ ORDER BY i.product_id
+ store_id | product_id |    sku    | list_price | is_active | quantity_on_hand |          updated_at           
+----------+------------+-----------+------------+-----------+------------------+-------------------------------
+       30 |          1 | SKU-00001 |      18.75 | t         |               41 | 2026-11-23 20:16:25.843243+00
+       30 |          2 | SKU-00002 |      22.50 | t         |               42 | 2026-11-23 20:16:25.843243+00
+(2 rows)
+
+ROLLBACK;
+ROLLBACK

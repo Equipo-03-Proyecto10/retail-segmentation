@@ -145,6 +145,12 @@ assemble_acl() {
       sources+=("$dir/current/redis/$n.acl")
     fi
   done
+  # The ops users (ADR-0055) come from the merged commit's tree, as the infra
+  # run takes them. Leaving them out dropped ops_console from both instances on
+  # every service deploy, until the next infra run put it back.
+  for dir in "$tree"/ops/*/redis/*.acl; do
+    [[ -f $dir ]] && sources+=("$dir")
+  done
   # An empty ACL_SOURCES would fall back to assemble-acl.sh's own globs,
   # relative to the working directory. With no line to load, a glob that
   # matches nothing leaves the file to `ops` and the disabled `default`.

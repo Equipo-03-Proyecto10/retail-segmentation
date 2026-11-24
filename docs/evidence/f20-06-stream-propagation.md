@@ -11,7 +11,7 @@ and how it takes both times on one clock, are described in
 | Environment | Status |
 |---|---|
 | Local stack (`compose.distributed.yaml`) | **Measured** on 2026-11-06. The figures are below. |
-| GCP instance | **Pending.** Max, who owns the instance, runs the commands in [The instance](#the-instance-pending). |
+| GCP instance | **Measured** on 2026-11-24 (UTC), release #1188 at `50bf7d5c`. The figures are in [The instance](#the-instance). |
 
 ## Local stack
 
@@ -195,39 +195,111 @@ stream:products.v1.changed products        lag 0 pending 0 oldest —
 stream:products.v1.changed recommendations lag 3 pending 0 oldest 4.8 s
 ```
 
-## The instance (pending)
+## The instance
 
-**Max runs this.** The instance figures are not measured yet. From the
-checkout on the instance, after this change is merged and the aclfile has been
-reassembled with `deploy/infra/redis/assemble-acl.sh`:
+Run on 2026-11-24 between 04:40Z and 04:55Z (the evening of 2026-11-23 in
+Mexico City), on release #1188, `main` at `50bf7d5c`, with `ops/propagation`
+from a `git archive` of that commit. Redis is 7.4.11 with `appendfsync
+everysec`, `redis-state` at 64 MB with `noeviction` (2 MB used before the run).
+The tool ran as the `ops_console` Redis user and as the OS user `postgres`.
+
+**Why it did not run earlier.** The first attempt, an hour before, found no
+`ops_console` user on `redis-state`: `deploy-service.sh` assembled the aclfile
+without the `ops/*/redis` lines, so every service deploy dropped it
+(fixed by [PR #1196](https://github.com/Equipo-03-Proyecto10/retail-segmentation/pull/1196)).
+The user loaded the aclfile with `ACL LOAD` (no restart); `ops_console` then
+held `+xpending +xrange +time` on both Redis instances.
+
+Two things the runbook did not say, found by running it on the instance:
+- The instance's PostgreSQL accepts `postgres` on its socket only from the OS
+  user `postgres` (peer authentication), and the tool's container runs as root.
+  `run.sh` now takes `PROPAGATION_USER` (`$(id -u postgres)`), runs `pip`
+  with `--user`, and the report directory must be writable by that uid.
+- SELinux is enforcing: the tool's directory, the contracts and the report
+  directory needed the label `container_file_t` to be bind-mounted
+  (`chcon -R -t container_file_t`, on the copy of the tree only).
 
 ```bash
 export DATABASE_URL='postgresql://postgres@/retail?host=/run/postgresql'
-export REDIS_URL="redis://ops_console:$(sudo sed -n 's/^REDIS_OPS_CONSOLE_PASSWORD=//p' /etc/mosaiq/svc/ops-console.env)@redis-state:6379/0"
-PROPAGATION_OUT=~/propagation ops/propagation/run.sh measure --check
-PROPAGATION_OUT=~/propagation ops/propagation/run.sh backlog \
+export REDIS_URL="redis://ops_console:…@redis-state:6379/0"   # read from /etc/mosaiq/svc/ops-console.env
+PROPAGATION_USER=$(id -u postgres) PROPAGATION_OUT=<dir> ops/propagation/run.sh measure --check
+PROPAGATION_USER=$(id -u postgres) PROPAGATION_OUT=<dir> ops/propagation/run.sh backlog \
   'docker compose -p mosaiq-recommendations stop' \
   'docker compose -p mosaiq-recommendations start' \
   --stream stream:products.v1.changed --group recommendations --events 500
 ```
 
-On the instance:
-- `segments.run_recorded` is skipped, because appending a segmentation run
-  would change the current run.
-- `users.access_changed` touches inactive accounts only, and is skipped if
-  there are none.
+The load was 200 changes per stream at 20 per second (the tool's default;
+`preferences.changed` raises two events per change, so 400). The poll interval
+was 5 ms. `segments.run_recorded` was skipped (it appends a segmentation run),
+and 16 groups were skipped because their producer is not captured yet, as
+listed in `skipped` of the report. `users.access_changed` touched inactive
+accounts only (72 of them).
 
-Then:
-1. Commit `~/propagation/measure.json` as
-   `f20-06-stream-propagation-instance.json`.
-2. Commit `~/propagation/backlog.json` as
-   `f20-06-backlog-recommendations-instance.json`.
-3. Fill in this table.
+### Propagation, every deployed group
+
+Two runs were made. The second one passed `--check`
+([`f20-06-stream-propagation-instance.json`](f20-06-stream-propagation-instance.json)):
 
 | Stream | Group | Events | p50 (ms) | p95 (ms) | Max (ms) | Unacked |
 |---|---|---:|---:|---:|---:|---:|
-| _all deployed groups_ | | _pending_ | _pending_ | _pending_ | _pending_ | _pending_ |
+| `stream:categories.v1.changed` | `categories` | 200 | 629.7 | 984.3 | 1057.7 | 0 |
+| `stream:categories.v1.changed` | `recommendations` | 200 | 662.8 | 1002.2 | 1057.7 | 0 |
+| `stream:preferences.v1.changed` | `recommendations` | 400 | 697.1 | 1019.8 | 1132.8 | 0 |
+| `stream:products.v1.changed` | `products` | 200 | 629.1 | 994.9 | 1093.9 | 0 |
+| `stream:products.v1.changed` | `recommendations` | 200 | 661.4 | 1019.8 | 1112.9 | 0 |
+| `stream:sales.v1.recorded` | `recommendations` | 200 | 663.7 | 1018.6 | 1112.1 | 0 |
+| `stream:sales.v1.recorded` | `rfm-engine` | 200 | 727.4 | 1046.4 | 1125.9 | 0 |
+| `stream:stock.v1.changed` | `recommendations` | 200 | 663.1 | 992.4 | 1115.3 | 0 |
+| `stream:stores.v1.changed` | `stores` | 200 | 632.1 | 1007.4 | 1111.5 | 0 |
+| `stream:users.v1.access_changed` | `auth` | 200 | 626.1 | 989.7 | 1097.8 | 0 |
 
-| Backlog run | Entries | Acknowledged | Lost | Catch-up |
-|---|---:|---:|---:|---:|
-| `products.changed` → `recommendations` | _pending_ | _pending_ | _pending_ | _pending_ |
+Every p95 is about 1.0 s and every maximum about 1.1 s, against the contracts'
+bound of **p95 3000 ms and max 5000 ms**. No group exceeds a bound, and no
+entry was left unacknowledged. The local figures
+([above](#local-stack)) are the same to within 10%: the cause is the relay's
+`WAITAOF` and `appendfsync everysec`, not the machine.
+
+**The first run failed `--check`**
+([`f20-06-stream-propagation-instance-first-run.json`](f20-06-stream-propagation-instance-first-run.json)):
+`FAIL: 2 committed events never relayed`. In it `stream:products.v1.changed` and
+`stream:sales.v1.recorded` each report 199 events of 200. Read afterwards,
+`products_events.outbox` and `sales_events.outbox` held all 200 rows of the run
+each, with none unrelayed, so the relay did not lose them; the tool did not match
+one event in each stream to its entry. The second run, a minute later with the
+same load, matched all 200 in both. This is recorded as a finding, not retuned
+away: it may be a race in the tool's first poll (the entries of that run were
+all acknowledged, with 0 unacknowledged), but one run does not prove it. The
+other figures of the first run are within 3% of the second's.
+
+### Backlog on `recommendations`
+
+`mosaiq-recommendations` was stopped with `docker compose -p mosaiq-recommendations stop`
+and started again in the same step
+([`f20-06-backlog-recommendations-instance.json`](f20-06-backlog-recommendations-instance.json)).
+After it, the container was `Up`, the gateway served its contract (200), and
+`check-services.sh` and `check-redis.sh` printed nothing.
+
+| Backlog run | Entries | Acknowledged | Lost | Max deliveries | Catch-up |
+|---|---:|---:|---:|---:|---:|
+| `products.changed` → `recommendations` | 500 | 500 | 0 | 1 | **13.7 s** |
+
+The stopped service was the consumer only (`producer_stopped: false`), so the
+500 events were relayed while it was down, as in the local run, whose catch-up was
+3.6 s. Catch-up is timed from the restart command until the last acknowledgement
+in both, so it includes the container's start. The instance's 13.7 s is
+about four times the local figure; this run does not isolate why (the
+container's cold start is a candidate, not a measurement). No event was lost
+and none was delivered twice. There is no contract bound on catch-up.
+
+### What the run touched
+
+Real writes by the tool, none changing a value a reader sees, in each of the
+two measure runs of 200 changes per stream: no-op updates (`SET x = x`) of
+40 products, 30 categories, 30 stores, 150 inventory rows (`quantity_on_hand`
+unchanged; they include store 17's rows, and no stock movement was recorded),
+200 sale rows and 72 inactive accounts; and, for each of the 30 customers, a
+preference interest deleted and re-inserted in one transaction (800 events in
+the two runs). The backlog run touched 500 products' rows the same way. No
+sale, assignment or stock movement was recorded. Each touch raised a real
+event that every group handled.

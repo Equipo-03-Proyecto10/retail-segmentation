@@ -589,7 +589,12 @@ class Portal:
 
     def _send(self, method: str, path: str, data: bytes | None, note: str):
         correlation = self.rec.correlation_id()
-        headers = {"X-Correlation-ID": correlation, "Accept": "text/html"}
+        headers = {
+            "X-Correlation-ID": correlation,
+            "Accept": "text/html",
+            # Cloudflare refuses urllib's default "Python-urllib/3.x" (error 1010).
+            "User-Agent": "mosaiq-acceptance/1",
+        }
         if data is not None:
             headers["Content-Type"] = "application/x-www-form-urlencoded"
             headers["Origin"] = self.base

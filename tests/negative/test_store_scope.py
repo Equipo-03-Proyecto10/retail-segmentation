@@ -289,9 +289,11 @@ def test_a_list_without_a_store_filter_names_only_the_callers_stores(
         held &= evidence.record(
             "store scope",
             f"GET {path.split('?')[0].removeprefix('/api/')}, no store filter",
-            f"only store {floor.home}",
+            f"only store {floor.home}, and at least one row",
             f"stores {sorted(stores)}",
-            stores <= {floor.home},
+            # An empty page carries nothing of another store, but it does not
+            # exercise the filter either (review of PR #1204).
+            bool(stores) and stores <= {floor.home},
         )
     assert held
 

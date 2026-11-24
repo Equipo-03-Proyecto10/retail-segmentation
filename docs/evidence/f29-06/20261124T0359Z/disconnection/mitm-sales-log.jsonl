@@ -1,0 +1,3 @@
+{"t": "05:10:41", "idempotency_key": "0522a5de-2a7e-47ba-aa85-a8b303c04545", "status": 201, "replayed": null, "correlation": "30223c83-5817-4e43-8b97-18e2b8451d31", "dropped": true, "sale_id": 309}
+{"t": "05:10:42", "idempotency_key": "0522a5de-2a7e-47ba-aa85-a8b303c04545", "status": 200, "replayed": "true", "correlation": "77b5975d-bc79-49f2-80ac-a3eff5b2ceb1", "dropped": false, "sale_id": 309}
+{"t": "05:10:42", "idempotency_key": "77c8b2fa-add5-43c1-bb7a-05d84c08b1f6", "status": 201, "replayed": null, "correlation": "24d6aec8-8e81-4d25-bc26-8b7f0b2edc52", "dropped": false, "sale_id": 310}

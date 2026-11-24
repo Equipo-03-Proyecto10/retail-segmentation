@@ -1,0 +1,28 @@
+auth                   releases/0.1.4  1.1.0
+users                  releases/0.2.0  1.4.0
+stores                 releases/0.2.0  1.4.0
+categories             releases/0.1.9  1.2.0
+products               releases/0.3.0  1.4.0
+stock                  releases/0.3.0  1.3.0
+customers              releases/0.4.0  1.8.1
+sales                  releases/0.7.0  1.10.1
+customer-preferences   releases/0.3.0  1.1.2
+segments               releases/0.6.0  1.6.2
+recommendations        releases/0.5.0  2.0.4
+engagement             releases/0.4.0  2.5.0
+check-ins              releases/0.3.0  1.4.0
+mosaiq-auth-auth-1	ghcr.io/equipo-03-proyecto10/mosaiq-auth:0.1.4
+mosaiq-categories-categories-1	ghcr.io/equipo-03-proyecto10/mosaiq-categories:0.1.9
+mosaiq-check-ins-check-ins-1	ghcr.io/equipo-03-proyecto10/mosaiq-check-ins:0.3.0
+mosaiq-customer-preferences-customer-preferences-1	ghcr.io/equipo-03-proyecto10/mosaiq-customer-preferences:0.3.0
+mosaiq-customers-customers-1	ghcr.io/equipo-03-proyecto10/mosaiq-customers:0.4.0
+mosaiq-engagement-engagement-1	ghcr.io/equipo-03-proyecto10/mosaiq-engagement:0.4.0
+mosaiq-products-products-1	ghcr.io/equipo-03-proyecto10/mosaiq-products:0.3.0
+mosaiq-recommendations-recommendations-1	ghcr.io/equipo-03-proyecto10/mosaiq-recommendations:0.5.0
+mosaiq-sales-sales-1	ghcr.io/equipo-03-proyecto10/mosaiq-sales:0.7.0
+mosaiq-sales-sales-import-worker-1	ghcr.io/equipo-03-proyecto10/mosaiq-sales:0.7.0
+mosaiq-segments-segments-1	ghcr.io/equipo-03-proyecto10/mosaiq-segments:0.6.0
+mosaiq-stock-stock-1	ghcr.io/equipo-03-proyecto10/mosaiq-stock:0.3.0
+mosaiq-stores-stores-1	ghcr.io/equipo-03-proyecto10/mosaiq-stores:0.2.0
+mosaiq-users-users-1	ghcr.io/equipo-03-proyecto10/mosaiq-users:0.2.0
+50bf7d5c

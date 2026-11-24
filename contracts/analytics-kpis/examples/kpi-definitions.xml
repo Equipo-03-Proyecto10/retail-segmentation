@@ -194,14 +194,13 @@
     <kpi_code>recommendation-performance</kpi_code>
     <name>Recommendation performance</name>
     <version>1</version>
-    <definition>Impressions, clicks and purchases of recommendations. Each is counted from its own origin and none is derived from another, so a purchase is never inferred from a click.</definition>
+    <definition>Impressions, clicks and purchases of recommendations. Each is counted from its own origin and none is derived from another, so a purchase is never inferred from a click. An interaction carries no channel, so channel is not a dimension of this report.</definition>
     <window>An impression or click falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC); a purchase when the sale's occurred_at does.</window>
     <origin_views>api_recommendations.interaction_v1</origin_views>
     <origin_views>api_recommendations.recommended_purchase_v1</origin_views>
     <origin_views>api_segments.current_label_v1</origin_views>
     <dimensions>segment</dimensions>
     <dimensions>store</dimensions>
-    <dimensions>channel</dimensions>
     <dimensions>period</dimensions>
     <store_attributable>true</store_attributable>
     <roles>ADMIN</roles>

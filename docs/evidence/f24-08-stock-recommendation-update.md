@@ -1,10 +1,11 @@
 # F24-08 (#831): a stock change, and the recommendation that follows it
 
-> **Status: criteria 1 to 3 held on a local stack on 2026-11-23**
-> ([local run](#local-run)): 26 checks, 26 held. Criterion 4, "the same
-> result on the deployed instance", is **pending**: the team agreed not to touch
-> the instance for now, and only its operator can start it. This document is
-> the runbook for that run, and every `‹fill: …›` below is filled during it.
+> **Status: criteria 1 to 4 held.** On a local stack on 2026-11-23, 26 checks
+> held ([local run](#local-run)). On the deployed instance on 2026-11-24
+> (03:33Z), release #1188 at `50bf7d5c`, 26 checks held again
+> ([the instance run](#on-the-instance)): `cycle` 17 of 17, `exclusions` 9 of 9.
+> The delays were 164 ms to "not offered" and 73 ms to "offered again", against
+> a bound of 5000 ms. The record below is filled.
 
 Governing decisions:
 [ADR-0067](../adr/0067-a-recommendation-is-judged-at-a-reference-store-and-channel-and-its-explanation-is-recorded.md)
@@ -23,7 +24,7 @@ decision),
 | 1. A movement or a sale leaves a recommended product at zero in a store; the next read after the propagation bound no longer offers it, and the measured delay is in the evidence | `f24_08 cycle`, its first half: a `COUNT` to zero, then reads every 100 ms until the product is no longer offered at the store, and one more read once the bound has passed |
 | 2. After a restock, once the bound has passed, it can be offered again | `f24_08 cycle`, its second half: a `RECEIPT` of the counted quantity, measured the same way |
 | 3. A discontinued product and a product not authorized for the customer are both excluded, and the decisions say why | `f24_08 exclusions`: read-only, the answer and its stored decision |
-| 4. The same result on the deployed instance | **Pending**: [On the instance](#on-the-instance) |
+| 4. The same result on the deployed instance | [On the instance](#on-the-instance): the same two collectors, 26 of 26 checks held |
 
 The collector is [`tests/acceptance/f24_08.py`](../../tests/acceptance/f24_08.py);
 its pure parts are pinned in
@@ -171,8 +172,19 @@ and the run above is the second one.
 
 ## On the instance
 
-**Pending.** Run it only once the operator has started the instance and the team
-has agreed. Nothing here has run there.
+**Held.** Run on 2026-11-24 between 03:33Z and 03:35Z (2026-11-23 evening in
+Mexico City), as root on the instance, from a `git archive` of `main` at
+`50bf7d5c` (the tree of release #1188, identical to `develop` at `fdf0caed`).
+The run is [`f24-08/instance-20261124T0333Z`](f24-08/instance-20261124T0333Z/):
+`cycle/` and `exclusions/` (each with `summary.md`, `exchanges.md`, `rows.md`
+and `record.json`, and `cycle/delays.json`) and `exclusions-precondition/`,
+the raw exchanges of the precondition (step 0.3: the seed holds no
+discontinued product, so product 5 was discontinued for the run and put back).
+
+The collector's "checkout commit" row reads `(unavailable)`, because the tree
+was a `git archive` without `.git`. The deployed commit is the `web commit`
+row, `50bf7d5c48336a39f89f34f9bb8d44a78057fb06`, and the release directories
+of each service are in the same table.
 
 ### Who does what
 
@@ -273,12 +285,21 @@ check is what ties `not_sellable` to this product (step 0.3).
 
 | Item | Value |
 |---|---|
-| Date (UTC) | ‹fill› |
-| Identified version | ‹fill: commit, and the contract versions from `summary.md`› |
-| Customer, store, product | ‹fill› |
-| Delay to "not offered" | ‹fill› ms (bound max 5000 ms) |
-| Delay to "offered again" | ‹fill› ms |
-| `exclusions` | ‹fill: checks held› |
+| Date (UTC) | 2026-11-24, `cycle` 03:33:01Z to 03:33:15Z, `exclusions` 03:34:20Z to 03:34:22Z |
+| Identified version | `50bf7d5c` (release #1188). Contracts served: auth 1.1.0, stock 1.3.0, products 1.4.0, recommendations 2.0.4. Releases: auth 0.1.4, stock 0.3.0, products 0.3.0, recommendations 0.5.0 |
+| Customer, store, product | customer `00000000-0000-0000-0000-000000000003` (current `r_score` 4, label `CHAMPION`, `PERSONALIZATION` granted, one restricted category), store 3. `cycle`: product 2 (10 units, primary at position 2). `exclusions`: product 5 (discontinued for the run) |
+| Delay to "not offered" | **164 ms** (bound max 5000 ms). The first read after the `201` had already changed: an upper bound, within one poll (100 ms) of the true figure |
+| Delay to "offered again" | **73 ms**, same reading |
+| After the bound (5000 ms) | product 2 an `elsewhere` entry held at store 13 (25 units), `out_of_stock` 21 to 22, not offered at store 3; after the receipt, primary again with quantity 10, `out_of_stock` back to 21. The stored decision is the answer's both times |
+| `exclusions` | 9 of 9 held: product 5 `is_active` false and absent from the answer; product 4 (restricted category) absent; `not_sellable` 1 and `PERSONALIZATION_WITHDRAWN` 1 in the answer and in the stored decision; the earlier decision `0fd3af51-15c3-463d-b7af-b057ca631c26` offered product 5 and counted `not_sellable` 0 |
+| Accounts | `s1-f2408-analyst@example.test` (`ANALYST`, user `44e1b8bd-7d92-4603-9d47-d0789a136ec7`) and `s1-f2408-planner@example.test` (`INVENTORY_PLANNER`, user `b914c065-b19e-4372-a920-9888f8e6963e`), created through users-service by the administrator and deactivated afterwards |
+| Left as found | stock of product 2 at store 3 read 10 before and after; product 5 `active` again; both accounts inactive; `check-services.sh` and `check-redis.sh` printed nothing afterwards |
 
-Commit `summary.md`, `exchanges.md`, `rows.md`, `record.json` and `delays.json`
-of each `$RUN/*` with the filled record.
+What the run wrote on the instance:
+- stock movements 36 (`COUNT` 10 to 0) and 37 (`RECEIPT` 0 to 10), store 3,
+  product 2, append-only, with the note `F24-08 (#831)`;
+- the two `@example.test` accounts above, now inactive;
+- the status of product 5, `active` to `discontinued` and back to `active`
+  through `PATCH /api/products/v1/products/5/details` as the administrator, for
+  about 15 seconds (`exclusions-precondition/`). Both responses are `200`;
+- recommendation decisions, which every read records.

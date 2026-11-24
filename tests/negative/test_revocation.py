@@ -36,11 +36,28 @@ def _probe(stack: Stack, service: Service, token: str):
 def test_a_signed_out_session_is_refused_everywhere(
     deployed_stack: Stack, services: dict[str, Service], evidence: Evidence
 ) -> None:
-    session = deployed_stack.fresh_session("ADMIN")
+    # The session is ADMIN's unless MOSAIQ_REVOCATION_ROLE names another role,
+    # which an instance run does so as to sign out an account the run created
+    # (there is one administrator, and it is not the run's to sign out).
+    role = os.environ.get("MOSAIQ_REVOCATION_ROLE", "ADMIN")
+    session = deployed_stack.fresh_session(role)
     token = session.token()
     for name in IMPLEMENTED:
         before = _probe(deployed_stack, services[name], token)
-        assert before.status != 401, (name, before.outcome())
+        # Authenticated means the service let the token through: a 2xx, or the
+        # role refusal that only an authenticated caller gets. A 500, 404 or
+        # another 403 proves nothing about the session (review of PR #1204).
+        authenticated = 200 <= before.status < 300 or (
+            before.status == 403 and before.code() == "forbidden_role"
+        )
+        assert authenticated, (name, before.outcome())
+        evidence.record(
+            name,
+            "the request before sign-out is authenticated",
+            "2xx, or 403 forbidden_role",
+            before.outcome(),
+            authenticated,
+        )
 
     require(session.sign_out(), 204)
 

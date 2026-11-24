@@ -1,0 +1,65 @@
+Null display is "(null)".
+BEGIN READ ONLY;
+BEGIN
+-- The transaction, sale '307' with Idempotency-Key '46f97341-a607-4d8c-b3e4-244b02fc408f'
+SELECT t.transaction_id, t.source_transaction_id,
+       t.source_transaction_id = 'svc-sales:' || lower($2) AS key_matches,
+       t.customer_id, t.store_id, t.channel_id, t.occurred_at, t.total,
+       t.data_origin
+  FROM transaction AS t
+ WHERE t.transaction_id = $1::bigint
+ transaction_id |             source_transaction_id              | key_matches |             customer_id              | store_id | channel_id |          occurred_at          | total | data_origin 
+----------------+------------------------------------------------+-------------+--------------------------------------+----------+------------+-------------------------------+-------+-------------
+            307 | svc-sales:46f97341-a607-4d8c-b3e4-244b02fc408f | t           | 00000000-0000-0000-0000-000000000028 |       30 |          3 | 2026-11-24 03:51:10.148779+00 | 41.25 | OBSERVED
+(1 row)
+
+-- Its lines
+SELECT l.transaction_id, l.product_id, l.quantity, l.unit_price,
+       l.quantity * l.unit_price AS line_total
+  FROM transaction_line AS l
+ WHERE l.transaction_id = $1::bigint
+ ORDER BY l.product_id
+ transaction_id | product_id | quantity | unit_price | line_total 
+----------------+------------+----------+------------+------------
+            307 |          1 |        1 |      18.75 |      18.75
+            307 |          2 |        1 |      22.50 |      22.50
+(2 rows)
+
+-- Its capture row, and who recorded it
+SELECT c.transaction_id, encode(c.request_sha256, 'hex') AS request_sha256,
+       c.recorded_by, u.email, r.code AS role_code, c.captured_at
+  FROM sales.sale_capture AS c
+  JOIN app_user AS u ON u.user_id = c.recorded_by
+  JOIN role AS r USING (role_id)
+ WHERE c.transaction_id = $1::bigint
+ transaction_id |                          request_sha256                          |             recorded_by              |               email               |   role_code   |          captured_at          
+----------------+------------------------------------------------------------------+--------------------------------------+-----------------------------------+---------------+-------------------------------
+            307 | a154c95899c637ddaf772513203d94f184bc60609df1107f0b86e00edcbc4640 | 927d1bf9-c8cb-43ca-9841-704e5d0993bb | f20-01-store-manager@example.test | STORE_MANAGER | 2026-11-24 03:51:17.700846+00
+(1 row)
+
+-- Inventory after the sale, for the sale's store and products
+SELECT i.store_id, i.product_id, l.quantity AS sold, i.quantity_on_hand,
+       i.updated_at
+  FROM transaction AS t
+  JOIN transaction_line AS l USING (transaction_id)
+  JOIN inventory AS i
+    ON i.store_id = t.store_id AND i.product_id = l.product_id
+ WHERE t.transaction_id = $1::bigint
+ ORDER BY i.product_id
+ store_id | product_id | sold | quantity_on_hand |          updated_at           
+----------+------------+------+------------------+-------------------------------
+       30 |          1 |    1 |               40 | 2026-11-24 03:51:17.700846+00
+       30 |          2 |    1 |               41 | 2026-11-24 03:51:17.700846+00
+(2 rows)
+
+-- The sale's outbox row; none once the relay has published and removed it
+SELECT o.stream, o.event_type, o.entity_id, o.occurred_at, o.relayed_at
+  FROM sales_events.outbox AS o
+ WHERE o.entity_id = $1
+          stream          | event_type | entity_id |          occurred_at          |          relayed_at          
+--------------------------+------------+-----------+-------------------------------+------------------------------
+ stream:sales.v1.recorded | INSERT     | 307       | 2026-11-24 03:51:17.700846+00 | 2026-11-24 03:51:17.73005+00
+(1 row)
+
+ROLLBACK;
+ROLLBACK

@@ -1656,6 +1656,36 @@ CROSS JOIN LATERAL (
     WHERE i.position = 3
 ) AS r(signal, segment_buyers, category_id, share);
 
+-- ---------- recommendations.recommendation_interaction (60 events, #1197, ADR-0090) ----------
+-- Thirty customers each clicked, two days before it, a product they then bought,
+-- and had been shown it an hour earlier: 30 impressions and 30 clicks. The
+-- purchase is the first net line of the customer (the 30 lowest customer ids that
+-- bought), so recommended_purchase_v1 returns at least those 30 rows over the seeded sales. The
+-- segment label cycles through the seeded labels; the rank is 1 to 5.
+-- Event ids are fixed so a re-run of the seed is the same data.
+INSERT INTO recommendations.recommendation_interaction
+    (event_id, kind, occurred_at, store_id, product_id, customer_id, label_code, rank)
+SELECT md5('reco-interaction-' || k.n || '-' || e.kind)::uuid,
+       e.kind,
+       k.occurred_at - e.lead,
+       k.store_id, k.product_id, k.customer_id,
+       (SELECT label_code FROM segment_label ORDER BY ordinal_position
+         OFFSET k.n % (SELECT count(*) FROM segment_label) LIMIT 1),
+       (1 + k.n % 5)::smallint
+FROM (
+    SELECT row_number() OVER (ORDER BY customer_id) AS n, customer_id, store_id,
+           product_id, occurred_at - interval '2 days' AS occurred_at
+    FROM (
+        SELECT DISTINCT ON (customer_id) customer_id, store_id, product_id, occurred_at
+        FROM api_sales.net_purchase_line_v1
+        ORDER BY customer_id, occurred_at, transaction_id, product_id
+    ) AS first_line
+    ORDER BY customer_id
+    LIMIT 30
+) AS k
+CROSS JOIN (VALUES ('RECO_IMPRESSION', interval '1 hour'),
+                   ('RECO_CLICK', interval '0')) AS e(kind, lead);
+
 -- ---------- outboxes (ADR-0054, #597) ----------
 -- Empty-database bootstrap only: remove the events this transaction captured
 -- before COMMIT makes them visible to a relay. Keep all capture and integrity

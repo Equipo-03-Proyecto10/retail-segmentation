@@ -1182,9 +1182,10 @@ the web keeps deploying through `deploy.sh`, unchanged.
    file interpolates without a default, such as auth's `AUTH_KID`, taken from
    the service's env file.
 3. Records the ACL line in `/opt/mosaiq/services/<name>/acl/`, then rebuilds the
-   aclfile from every service's recorded line and runs `ACL LOAD` on both Redis
+   aclfile from every service's recorded line, plus the merged commit's
+   `ops/*/redis/*.acl` users (ADR-0055), and runs `ACL LOAD` on both Redis
    instances (`assemble-acl.sh`). Two deploys at once therefore never load each
-   other's previous line.
+   other's previous line, and a deploy never drops `ops_console`.
 4. Runs `docker compose -p mosaiq-<name> pull`, checks that the image is on
    disk, then runs `up -d --no-deps`.
 5. Polls `http://127.0.0.1:<port>/health/ready` for 60 s.

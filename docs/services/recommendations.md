@@ -63,6 +63,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | PostgreSQL | — | reads | SELECT on published views only (nine for `/v1`, six more for `/v2`); a result cache in `redis-cache` |
 | PostgreSQL, schema `recommendations` | `recommendation_decision`, `recommendation_exclusion`, `recommendation_item`, `recommendation_reason` | S (F24-05) | The decision record (ADR-0067, ADR-0046): per decision the customer id, the reference store and channel, the status, the segmentation run and model version and the computation time; per exclusion reason its count; per item its product, kind, position, quantity and `alternative_for`; one row per reason. Ids, figures and codes only. Retained 90 days; anonymization clears the customer id. No `api_*` view: the decisions are published by this service's own `recommendation-decisions` resource. Grants in `contracts/db/grants.csv`, 30 or more seed rows each |
+| PostgreSQL, schema `recommendations` | `recommendation_interaction` | S (#1197) | One row per `RECO_IMPRESSION` or `RECO_CLICK` engagement relayed (ADR-0075, ADR-0090): event UUID, kind, time, store, product, the customer when the client sent one, label code and rank, and `voided`. The service holds SELECT, INSERT and UPDATE of `voided` and `customer_id`; it deletes nothing. Published as `api_recommendations.interaction_v1` and, with the net sales, as `recommended_purchase_v1` |
 
 ## Database contracts
 
@@ -83,6 +84,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes (`/v2`, #827) | `api_sales.channel_v1` | sales |
 | Consumes (`/v2`, #827) | `api_users.store_assignment_v1` | users (a floor caller's stores, per request, ADR-0060) |
 | Consumes (`/v2`, #827) | `api_models.run_version_v1` | model-registry (`model_version_id`) |
+| Publishes (#1197) | `api_recommendations.interaction_v1` | analytics-kpis (`contracts/db/api_recommendations.interaction.v1.md`): the impressions and clicks that are not voided |
+| Publishes (#1197) | `api_recommendations.recommended_purchase_v1` | analytics-kpis (`contracts/db/api_recommendations.recommended_purchase.v1.md`, ADR-0090): net sale lines bought within seven days of the customer's click on that product |
 
 ## Events
 
@@ -96,6 +99,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Consumes | `stream:sales.v1.recorded` | group `recommendations` | Invalidates its result cache |
 | Consumes | `stream:segments.v1.run_recorded` | group `recommendations` | Invalidates its result cache |
 | Consumes | `stream:segments.v1.assignment_changed` | group `recommendations` | Invalidates that customer's cached results (`/v1` and `/v2`) and no one else's; an entry with no customer empties the cache (F22-15) |
+| Consumes (#1197) | `stream:engagement.v1.interaction_recorded` | group `recommendations` (ADR-0075) | Keeps `RECO_IMPRESSION` and `RECO_CLICK` in its own schema, one row per event, and hides a row on a `VOIDED` notice; ignores `CAMPAIGN_EXPOSURE`. It never empties the result cache: an interaction changes no answer |
 
 ## Redis keys
 

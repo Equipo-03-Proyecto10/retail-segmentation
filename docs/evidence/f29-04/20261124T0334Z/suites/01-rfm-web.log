@@ -1,0 +1,4 @@
+/home/pc/.cache/mosaiq-local/venv-ci/bin/python -m pytest -q -rs -p no:cacheprovider --junitxml=/home/pc/.cache/mosaiq-local/wt/g889/docs/evidence/f29-04/20261124T0334Z/suites/01-rfm-web.junit.xml tests/test_rfm_hand_computed.py tests/test_rfm_hand_fixture_copies.py
+
+....                                                                     [100%]
+4 passed in 0.24s

@@ -31,6 +31,9 @@ on:
       # The raw results and the report are committed after a run; they are not
       # a reason to run it again.
       - "!bench/results/**"
+      # The Locust load test of the whole platform (F29-15) has no part in the
+      # twin or its comparison.
+      - "!bench/locust/**"
       - contracts/products/**
       - .github/workflows/bench.yml
   workflow_dispatch:

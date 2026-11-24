@@ -131,3 +131,8 @@ docs/architecture/render.sh          # add --png for PNG
 
 `d2` renders the two `.d2` sources; the `.py` source needs Graphviz. The
 infrastructure SVG inlines its icons, so it holds no local path.
+
+GitHub shows an SVG scaled down to the width of the page. The two d2 views
+therefore keep 22 px type and lines of about 40 characters, and the
+infrastructure view lays the services out four to a row, so all three stay
+legible at that width. To zoom in, open the file's **Raw** view.

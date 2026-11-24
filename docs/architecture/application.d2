@@ -9,6 +9,9 @@
 # No arrow joins two services. They meet only through the producer's api_*
 # objects in PostgreSQL and through Redis Streams (ADR-0044), so every edge here
 # ends at a datastore, at NGINX or at a client.
+#
+# GitHub scales an SVG down to the width of the page, so this view keeps short
+# lines and large type: labels of at most about 40 characters, 22 px text.
 direction: down
 
 vars: {
@@ -19,167 +22,168 @@ vars: {
 
 classes: {
   edgeio: {
-    style: { fill: "#E2EBF6"; stroke: "#1F5FA8"; font-color: "#232320" }
+    style: { fill: "#E2EBF6"; stroke: "#1F5FA8"; font-color: "#232320"; font-size: 22 }
   }
   gatenode: {
-    style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320" }
+    style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320"; font-size: 22 }
   }
   appnode: {
-    style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" }
+    style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320"; font-size: 22 }
   }
   svc: {
-    style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" }
+    style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320"; font-size: 22 }
   }
   svc2: {
     style: {
-      fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"
+      fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; font-size: 22
       stroke-dash: 4; stroke-width: 2
     }
   }
   svc3: {
     style: {
-      fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"
+      fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; font-size: 22
       double-border: true
     }
   }
   store: {
-    style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" }
+    style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320"; font-size: 22 }
   }
   bench: {
     style: {
-      fill: "#F4F4F2"; stroke: "#8C8C86"; font-color: "#4F4F4A"
+      fill: "#F4F4F2"; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 22
       stroke-dash: 4
     }
   }
   layer: {
-    style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 20 }
+    style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 26 }
+  }
+  quiet: {
+    style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 20 }
   }
 }
 
-android: "Android — Kotlin\nJSON only · Bearer token\nfloor process: camera/QR · GPS · Room" {
+android: "Android — Kotlin\nJSON only · Bearer token\nfloor: camera/QR · GPS · Room" {
   class: edgeio
 }
-electron: "Electron — TypeScript\nXML validated against XSD · Bearer token\nback-office process" {
+electron: "Electron — TypeScript\nXML validated against XSD\nBearer token · back office" {
   class: edgeio
 }
 
-nginx: "NGINX :443\n/  to the web system\n/api/<name>/ to one loopback port per service\none include per service" {
+nginx: "NGINX :443\n/ → the web system\n/api/<name>/ → one loopback port\none include per service" {
   class: gatenode
 }
 
-web: "WEB SYSTEM — mosaiq.service (systemd)\nFlask + Jinja2 under Gunicorn, 127.0.0.1:8000\nserver-rendered HTML · changes only for new facts (Q-17)\nno Redis · no service calls" {
+web: "WEB SYSTEM\nmosaiq.service · Gunicorn :8000\nFlask + Jinja2, server-rendered\nno Redis · no service calls\nchanges only for new facts (Q-17)" {
   class: appnode
 }
 
-services: "NINETEEN SERVICES — each its own compose project mosaiq-<name> under mosaiq-svc@<name>.service (ADR-0040)" {
+services: "NINETEEN SERVICES\neach its own compose project mosaiq-<name>\nunder mosaiq-svc@<name>.service (ADR-0040)" {
   class: layer
+  grid-columns: 1
 
   core: "Core (13)" {
     class: layer
     grid-rows: 3
-      "auth": "auth\nproject mosaiq-auth\nFlask · :5001" { class: svc }
-      "users": "users\nproject mosaiq-users\nFlask · :5002" { class: svc }
-      "products": "products\nproject mosaiq-products\nFlask · :5003" { class: svc }
-      "categories": "categories\nproject mosaiq-categories\nFlask · :5004" { class: svc }
-      "stores": "stores\nproject mosaiq-stores\nRust · :5005" { class: svc }
-      "stock": "stock\nproject mosaiq-stock\nRust · :5006" { class: svc }
-      "customers": "customers\nproject mosaiq-customers\nFlask · :5007" { class: svc }
-      "customer-preferences": "customer-preferences\nproject mosaiq-customer-preferences\nRust · :5008" { class: svc }
-      "sales": "sales\nproject mosaiq-sales\nFlask · :5009" { class: svc }
-      "segments": "segments\nproject mosaiq-segments\nRust · :5010" { class: svc }
-      "recommendations": "recommendations\nproject mosaiq-recommendations\nFlask · :5011" { class: svc }
-      "engagement": "engagement\nproject mosaiq-engagement\nFlask + MongoDB · :5012" { class: svc }
-      "check-ins": "check-ins\nproject mosaiq-check-ins\nRust · :5013" { class: svc }
+    grid-columns: 5
+    "auth": "auth\nFlask · :5001" { class: svc }
+    "users": "users\nFlask · :5002" { class: svc }
+    "products": "products\nFlask · :5003" { class: svc }
+    "categories": "categories\nFlask · :5004" { class: svc }
+    "stores": "stores\nRust · :5005" { class: svc }
+    "stock": "stock\nRust · :5006" { class: svc }
+    "customers": "customers\nFlask · :5007" { class: svc }
+    "customer-preferences": "customer-preferences\nRust · :5008" { class: svc }
+    "sales": "sales\nFlask · :5009" { class: svc }
+    "segments": "segments\nRust · :5010" { class: svc }
+    "recommendations": "recommendations\nFlask · :5011" { class: svc }
+    "engagement": "engagement\nFlask + MongoDB · :5012" { class: svc }
+    "check-ins": "check-ins\nRust · :5013" { class: svc }
   }
-  second: "Second wave (2) — dashed outline" {
+  later: "Added after the core (6)" {
     class: layer
     grid-columns: 2
-      "campaigns": "campaigns\nproject mosaiq-campaigns\nFlask · :5014\nSECOND WAVE" { class: svc2 }
-      "audit-trail": "audit-trail\nproject mosaiq-audit-trail\nRust · :5015\nSECOND WAVE" { class: svc2 }
-  }
-  third: "Third delivery (4), ADR-0059 — double outline" {
-    class: layer
-    grid-columns: 2
-      "rfm-engine": "rfm-engine\nproject mosaiq-rfm-engine\nFlask · :5016\nADR-0059" { class: svc3 }
-      "model-registry": "model-registry\nproject mosaiq-model-registry\nFlask · :5019\nADR-0059" { class: svc3 }
-      "experimentation": "experimentation\nproject mosaiq-experimentation\nFlask · :5020\nADR-0059" { class: svc3 }
-      "analytics-kpis": "analytics-kpis\nproject mosaiq-analytics-kpis\nRust · :5022\nADR-0059" { class: svc3 }
+    second: "Second wave — dashed" {
+      class: layer
+      grid-columns: 1
+      "campaigns": "campaigns\nFlask · :5014" { class: svc2 }
+      "audit-trail": "audit-trail\nRust · :5015" { class: svc2 }
+    }
+    third: "ADR-0059 — double outline" {
+      class: layer
+      grid-columns: 2
+      "rfm-engine": "rfm-engine\nFlask · :5016" { class: svc3 }
+      "model-registry": "model-registry\nFlask · :5019" { class: svc3 }
+      "experimentation": "experimentation\nFlask · :5020" { class: svc3 }
+      "analytics-kpis": "analytics-kpis\nRust · :5022" { class: svc3 }
+    }
   }
 }
 
-bench: "BENCH ONLY — Rust twin of the products reads\nbench/products-service-rs · 127.0.0.1:5103\nnot a service: not registered, not routed by NGINX,\nnot deployed (ADR-0042, E-22)" {
+bench: "BENCH ONLY\nRust twin of the products reads\n127.0.0.1:5103 · not registered,\nnot routed, not deployed\n(ADR-0042, E-22)" {
   class: bench
 }
 
 pg: "PostgreSQL — database retail" {
   class: layer
-  public: "public\n29 tables, 4NF\nthe web reads and writes it as retail_app;\neach service only its own tables (svc_<name>)" {
+  public: "public — 29 tables, 4NF\nthe web writes it as retail_app;\neach service only its own tables" {
     class: store
     shape: cylinder
   }
-  svcschemas: "service schemas (ADR-0046)\nusers · products · customers · preferences · stores\nstock · sales · checkins · recommendations · campaigns\nrfm · models · experiments · kpis · audit_events" {
+  svcschemas: "service schemas (ADR-0046)\nusers · products · customers\npreferences · stores · stock\nsales · checkins · campaigns\nrecommendations · rfm · models\nexperiments · kpis · audit_events" {
     class: store
     shape: cylinder
   }
-  api: "17 api_* schemas\nversioned *_v1 views, consume_v1\nusers · products · categories · stores · stock · customers\npreferences · sales · segments · recommendations · campaigns\ncheckins · audit · rfm · models · experiments · kpis" {
+  api: "17 api_* schemas\nversioned *_v1 views, consume_v1\nusers · products · categories\nstores · stock · customers\npreferences · sales · segments\nrecommendations · campaigns\ncheckins · audit · rfm · models\nexperiments · kpis" {
     class: store
     shape: cylinder
   }
-  outbox: "eleven outboxes — <suffix>_events.outbox\nusers · products · categories · stores · stock · customers\npreferences · sales · segments · rfm · models\nkeys only, filled by capture triggers" {
+  outbox: "eleven outboxes\n<suffix>_events.outbox, keys only\nusers · products · categories\nstores · stock · customers\npreferences · sales · segments\nrfm · models" {
     class: store
     shape: cylinder
   }
 }
 
-infra: "mosaiq-infra — compose project under mosaiq-infra.service" {
+infra: "mosaiq-infra — compose project\nunder mosaiq-infra.service" {
   class: layer
-  rs: "redis-state\nnoeviction · AOF\nsessions · stream:* · rate limits" {
+  rs: "redis-state\nnoeviction · AOF\nsessions · streams · limits" {
     class: store
     shape: cylinder
-  }
-  streams: "Redis Streams on redis-state — stream:<name>, producer to consumer groups\nusers.v1.access_changed: users to auth\nproducts.v1.changed: products to products, recommendations\ncategories.v1.changed: categories to categories, recommendations\nstores.v1.changed: stores to stores\nstock.v1.changed: stock to recommendations\ncustomers.v1.anonymized: customers to customer-preferences, users\npreferences.v1.changed: customer-preferences to recommendations\npreferences.v1.consent_changed: customer-preferences to recommendations, campaigns, rfm-engine\nsales.v1.recorded: sales to recommendations, rfm-engine\nsales.v1.reversed: sales to recommendations, rfm-engine, experimentation\nsegments.v1.run_recorded: segments to segments, recommendations\nsegments.v1.assignment_changed: segments to recommendations, analytics-kpis\nrfm.v1.profile_changed: rfm-engine to analytics-kpis\nmodels.v1.publication_recorded: model-registry to rfm-engine\nengagement.v1.interaction_recorded: engagement to experimentation, recommendations" {
-    class: store
-    shape: page
   }
   rc: "redis-cache\nallkeys-lru\ncaches · live counters" {
     class: store
     shape: cylinder
   }
-  mongo: "MongoDB\ndatabase engagement\nowned by engagement alone (ADR-0038)" {
+  mongo: "MongoDB\ndatabase engagement\nengagement alone (ADR-0038)" {
     class: store
     shape: cylinder
   }
 }
 
-android -> nginx: "JSON"
-electron -> nginx: "XML"
-nginx -> web: "/"
-nginx -> services: "/api/<name>/v1"
-
-web -> pg.public: "SQL as retail_app"
-services -> pg.public: "own tables only · svc_<name> roles"
-services -> pg.svcschemas: "own new tables"
-services -> pg.api: "cross-boundary reads of the producer's views"
-pg.api -> pg.public: "owner-defined views" {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
-}
-pg.public -> pg.outbox: "capture triggers (web writes too)" {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
-}
-pg.svcschemas -> pg.outbox: "capture triggers" {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
+streams: "REDIS STREAMS on redis-state · stream:<name>\nname: producer → consumer groups\nusers.v1.access_changed: users → auth\nproducts.v1.changed: products → products, recommendations\ncategories.v1.changed: categories → categories, recommendations\nstores.v1.changed: stores → stores\nstock.v1.changed: stock → recommendations\ncustomers.v1.anonymized: customers → customer-preferences, users\npreferences.v1.changed: customer-preferences → recommendations\npreferences.v1.consent_changed: customer-preferences → recommendations, campaigns, rfm-engine\nsales.v1.recorded: sales → recommendations, rfm-engine\nsales.v1.reversed: sales → recommendations, rfm-engine, experimentation\nsegments.v1.run_recorded: segments → segments, recommendations\nsegments.v1.assignment_changed: segments → recommendations, analytics-kpis\nrfm.v1.profile_changed: rfm-engine → analytics-kpis\nmodels.v1.publication_recorded: model-registry → rfm-engine\nengagement.v1.interaction_recorded: engagement → experimentation, recommendations" {
+  class: store
+  shape: page
 }
 
-pg.outbox -> infra.streams: "the owner relays its outbox · XADD"
-infra.streams -> services: "consumer groups · XREADGROUP"
+android -> nginx: "JSON" { style.font-size: 20 }
+electron -> nginx: "XML" { style.font-size: 20 }
+nginx -> web: "/" { style.font-size: 20 }
+nginx -> services: "/api/<name>/v1" { style.font-size: 20 }
 
-services -> infra.rs: "session liveness EXISTS · rate limits"
-services -> infra.rc: "cache, falls through to PostgreSQL"
-services.core.engagement -> infra.mongo: "events and rollups"
-infra.mongo -> infra.streams: "engagement relays its captured events · XADD" {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
-}
+web -> pg.public: "SQL as retail_app" { style.font-size: 20 }
+services -> pg.public: "own tables" { style.font-size: 20 }
+services -> pg.svcschemas: "own new tables" { style.font-size: 20 }
+services -> pg.api: "api_* reads" { style.font-size: 20 }
+pg.api -> pg.public: "owner-defined views" { class: quiet }
+pg.public -> pg.outbox: "capture triggers" { class: quiet }
+pg.svcschemas -> pg.outbox: "" { class: quiet }
 
-bench -> pg.public: "reads product as svc_products_bench" {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
-}
+pg.outbox -> streams: "owner relays · XADD" { style.font-size: 20 }
+infra.mongo -> streams: "engagement relays · XADD" { class: quiet }
+streams -> infra.rs: "kept on" { class: quiet }
+streams -> services: "consumer groups · XREADGROUP" { style.font-size: 20 }
+
+services -> infra.rs: "session EXISTS · rate limits" { style.font-size: 20 }
+services -> infra.rc: "cache" { style.font-size: 20 }
+services -> infra.mongo: "engagement only · events and rollups" { style.font-size: 20 }
+
+bench -> pg.public: "svc_products_bench" { class: quiet }

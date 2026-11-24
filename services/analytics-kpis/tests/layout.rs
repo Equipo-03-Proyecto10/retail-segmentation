@@ -1,6 +1,6 @@
 //! What F22-04's stand-up criteria ask of the directory (ADR-0034, ADR-0040,
 //! ADR-0045, AGENTS.md), and the boundary the database holds (ADR-0044,
-//! ADR-0046): the role reaches the eight views it reads and nothing else.
+//! ADR-0046): the role reaches the eleven views it reads and nothing else.
 
 mod support;
 
@@ -152,11 +152,11 @@ fn nginx_forwards_the_real_client_and_caps_the_body() {
 }
 
 #[tokio::test]
-async fn the_role_reads_eight_published_views_and_no_base_table() {
+async fn the_role_reads_eleven_published_views_and_no_base_table() {
     let Some(owner_url) = owner_url() else { return };
     let owner = connect(&owner_url).await;
 
-    // Its tables-and-views privileges are exactly the eight views of grants.csv.
+    // Its tables-and-views privileges are exactly the eleven views of grants.csv.
     let granted: Vec<String> = owner
         .query(
             "SELECT table_schema || '.' || table_name || ':' || privilege_type \
@@ -173,8 +173,11 @@ async fn the_role_reads_eight_published_views_and_no_base_table() {
         granted,
         [
             "api_experiments.campaign_effect_v1:SELECT",
+            "api_experiments.exposure_v1:SELECT",
             "api_models.run_version_v1:SELECT",
             "api_products.product_ref_v1:SELECT",
+            "api_recommendations.interaction_v1:SELECT",
+            "api_recommendations.recommended_purchase_v1:SELECT",
             "api_sales.net_purchase_line_v1:SELECT",
             "api_segments.assignment_change_v1:SELECT",
             "api_segments.current_label_v1:SELECT",
@@ -193,7 +196,8 @@ async fn the_role_reads_eight_published_views_and_no_base_table() {
                AND n.nspname NOT IN ('pg_catalog', 'information_schema') \
                AND has_table_privilege('svc_kpis', c.oid, \
                    'SELECT, INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER') \
-               AND (n.nspname || '.' || c.relname) NOT IN ($1, $2, $3, $4, $5, $6, $7, $8)",
+               AND (n.nspname || '.' || c.relname) \
+                   NOT IN ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
             &[
                 &"api_sales.net_purchase_line_v1",
                 &"api_segments.current_label_v1",
@@ -203,6 +207,9 @@ async fn the_role_reads_eight_published_views_and_no_base_table() {
                 &"api_segments.assignment_change_v1",
                 &"api_models.run_version_v1",
                 &"api_experiments.campaign_effect_v1",
+                &"api_experiments.exposure_v1",
+                &"api_recommendations.interaction_v1",
+                &"api_recommendations.recommended_purchase_v1",
             ],
         )
         .await

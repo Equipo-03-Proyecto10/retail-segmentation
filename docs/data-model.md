@@ -2339,6 +2339,7 @@ cannot be spoofed even though it is denormalized onto this table alongside
 | `assignment_id` | `BIGINT` | NN | FK → `experiment_assignment`, `CASCADE` | The assignment exposed |
 | `exposed_at` | `TIMESTAMPTZ` | NN | default `now()` | When the exposure happened |
 | `source_event_id` | `UUID` | nullable, unique when present | Engagement event projected from the stream; null for legacy web writes |
+| `store_id` | `SMALLINT` | nullable | `CHECK (store_id >= 1)`, no FK | The store where a projected exposure happened, from the event's `store_id` (#1198); null for legacy web writes |
 
 A later, separate event (ADR-0019): an assigned customer may remain
 unexposed, so exposure is never folded into the assignment row. More than
@@ -2362,6 +2363,15 @@ Counts exclude an exposure whose source has a `VOIDED` notice; neither the
 exposure nor its assignment is rewritten. These scalar facts depend on the
 whole notice key and have no independent multivalued dependency, so the
 relation is in 4NF.
+
+`store_id` (#1198) is the store where the projected exposure happened, as the
+event carries it. It is a single-valued fact of the exposure, determined by
+`exposure_id` (and by `source_event_id`, the other candidate key where present),
+so the relation stays in BCNF and 4NF. It is not derived from the assignment or
+the customer, who may be exposed in any store. It has no foreign key to `store`:
+stores are another boundary, and a store this database does not know must not
+make an at-least-once delivery fail. `api_experiments.exposure_v1` publishes it
+for analytics-kpis' conversion by store.
 
 #### `experiment_conversion`
 

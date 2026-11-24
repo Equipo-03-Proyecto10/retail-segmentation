@@ -1,6 +1,7 @@
 """Project real engagement campaign exposures (F25-10, RN-49, ADR-0075).
 
-The stream carries the engagement event UUID and the exposure fact. Engagement
+The stream carries the engagement event UUID and the exposure fact, including the
+store where it happened, which api_experiments.exposure_v1 publishes. Engagement
 already admits only one event per device ``client_event_id``; the UUID is the
 projection's stable source key. Both notice rows and exposure facts are
 append-only. A VOIDED notice is a tombstone consulted by counts, including when
@@ -18,6 +19,7 @@ from psycopg import Connection
 
 LOGGER = logging.getLogger(__name__)
 REPEAT_SECONDS = 60
+SMALLINT_MAX = 32767
 
 LOCK_SOURCE = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 841))"
 NOTICE_EXISTS = """
@@ -58,8 +60,8 @@ SELECT EXISTS (
 """
 INSERT_EXPOSURE = """
 INSERT INTO public.experiment_exposure
-       (assignment_id, exposed_at, source_event_id)
-VALUES (%s, %s, %s)
+       (assignment_id, exposed_at, source_event_id, store_id)
+VALUES (%s, %s, %s, %s)
 ON CONFLICT (source_event_id) WHERE source_event_id IS NOT NULL DO NOTHING
 """
 INSERT_NOTICE = """
@@ -102,6 +104,16 @@ def _source_event(value: str, notice: str) -> UUID:
     if not value.endswith(suffix):
         raise ValueError("event_id does not match notice")
     return UUID(value[: -len(suffix)])
+
+
+def _store(value: str) -> int:
+    """A store id as the stream encodes it: base-10, positive, a SMALLINT."""
+    if not value.isascii() or not value.isdigit():
+        raise ValueError("store_id is not a positive integer")
+    store = int(value)
+    if not 1 <= store <= SMALLINT_MAX:
+        raise ValueError("store_id is out of range")
+    return store
 
 
 def _record_notice(
@@ -158,6 +170,7 @@ def apply(connection: Connection, fields: dict[str, str]) -> None:
     campaign = int(campaign_text)
     if campaign < 1:
         raise ValueError("campaign_id is not a positive integer")
+    store = _store(fields["store_id"])
 
     if connection.execute(NOTICE_EXISTS, (source, "VOIDED")).fetchone()[0]:
         _record_notice(connection, source, notice, None, occurred_at, "VOIDED")
@@ -188,7 +201,7 @@ def apply(connection: Connection, fields: dict[str, str]) -> None:
     ).fetchone()[0]
     disposition = "REPEAT" if recent else "EXPOSURE"
     if not recent:
-        connection.execute(INSERT_EXPOSURE, (assignment, occurred_at, source))
+        connection.execute(INSERT_EXPOSURE, (assignment, occurred_at, source, store))
     _record_notice(connection, source, notice, assignment, occurred_at, disposition)
 
 

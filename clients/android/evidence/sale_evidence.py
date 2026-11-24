@@ -215,7 +215,12 @@ def _call(
     token: str | None = None,
     body: dict | None = None,
 ) -> tuple[Exchange, dict]:
-    headers = {"Accept": "application/json", "X-Correlation-ID": str(uuid.uuid4())}
+    headers = {
+        "Accept": "application/json",
+        "X-Correlation-ID": str(uuid.uuid4()),
+        # Cloudflare's edge refuses urllib's default "Python-urllib/3.x" (error 1010).
+        "User-Agent": "mosaiq-acceptance/1",
+    }
     data = None
     if body is not None:
         headers["Content-Type"] = "application/json"

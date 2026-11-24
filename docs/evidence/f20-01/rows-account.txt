@@ -1,0 +1,15 @@
+Null display is "(null)".
+BEGIN READ ONLY;
+BEGIN
+-- The account, by email: 'f20-01-store-manager@example.test'
+SELECT u.user_id, u.email, r.code AS role_code, u.is_active, u.created_at
+  FROM app_user AS u
+  JOIN role AS r USING (role_id)
+ WHERE lower(u.email) = lower($1)
+               user_id                |               email               |   role_code   | is_active |          created_at           
+--------------------------------------+-----------------------------------+---------------+-----------+-------------------------------
+ 927d1bf9-c8cb-43ca-9841-704e5d0993bb | f20-01-store-manager@example.test | STORE_MANAGER | t         | 2026-11-24 03:39:01.083764+00
+(1 row)
+
+ROLLBACK;
+ROLLBACK

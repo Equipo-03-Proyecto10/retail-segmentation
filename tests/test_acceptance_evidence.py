@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from tests.acceptance import demo, f24_08
+from tests.acceptance import demo, f24_08, f29_05
 from tests.acceptance.evidence import (
     JWT,
     Database,
@@ -994,3 +994,128 @@ def test_f24_08_says_how_to_restore_a_product_left_at_zero() -> None:
     notice = f24_08.left_at_zero_notice(3, 2, 10)
     assert "product 2" in notice and "store 3" in notice
     assert '"quantity": 10' in notice and "RECEIPT" in notice
+
+
+# ---------- F29-05 (#890) ----------
+
+SUMMARY = (
+    "# F24-08\n\nStarted x, finished y.\n17 checks, 16 held, 1 did not.\n\n"
+    "| Criterion | Case | Expected | Actual | Evidence | |\n"
+    "|---|---|---|---|---|---|\n"
+    "| 1. Agotado | 5000 ms after, product 2 is not offered at store 3 "
+    "| a | a | [1](x) | ✓ |\n"
+    "| 1. Agotado | the decision counts one more `out_of_stock` "
+    "| 22 | 21 | [1](x) | ✗ |\n"
+)
+
+
+def test_f29_05_reads_how_many_checks_a_collector_held() -> None:
+    assert f29_05.held_counts(SUMMARY) == (17, 16)
+    with pytest.raises(ValueError):
+        f29_05.held_counts("no counts here")
+
+
+def test_f29_05_a_case_holds_only_if_it_is_there_and_every_row_of_it_held() -> None:
+    assert f29_05.held_case(SUMMARY, "is not offered at store")
+    assert not f29_05.held_case(SUMMARY, "one more `out_of_stock`")
+    assert not f29_05.held_case(SUMMARY, "a case nobody wrote")
+
+
+def test_f29_05_the_seed_assigns_two_to_each_arm_and_wraps_at_thirty() -> None:
+    assert f29_05.seeded_assignment(1) == {
+        f29_05.customer_uuid(1): "CONTROL",
+        f29_05.customer_uuid(2): "CONTROL",
+        f29_05.customer_uuid(3): "TREATMENT",
+        f29_05.customer_uuid(4): "TREATMENT",
+    }
+    wrapped = f29_05.seeded_assignment(8)
+    assert wrapped[f29_05.customer_uuid(30)] == "CONTROL"
+    assert wrapped[f29_05.customer_uuid(1)] == "TREATMENT"
+    assert sorted(wrapped.values()) == ["CONTROL"] * 2 + ["TREATMENT"] * 2
+
+
+@pytest.mark.postgres
+def test_f29_05_the_seed_rule_is_what_the_seed_inserted(owner_url: str) -> None:
+    import psycopg
+
+    with psycopg.connect(owner_url) as connection:
+        rows = connection.execute(
+            "SELECT a.experiment_id, a.customer_id::text, g.kind "
+            "FROM public.experiment_assignment AS a "
+            "JOIN public.experiment_group AS g USING (group_id) "
+            "WHERE a.experiment_id <= 30"
+        ).fetchall()
+    found: dict[int, dict[str, str]] = {}
+    for experiment, customer, kind in rows:
+        found.setdefault(experiment, {})[customer] = kind
+    assert sorted(found) == list(range(1, 31))
+    for experiment, held in found.items():
+        assert held == f29_05.seeded_assignment(experiment), experiment
+
+
+def test_f29_05_a_group_that_moved_is_named() -> None:
+    before = {"a": "CONTROL", "b": "TREATMENT", "c": "CONTROL"}
+    assert f29_05.differences(before, dict(before)) == []
+    after = {"a": "TREATMENT", "b": "TREATMENT", "d": "CONTROL"}
+    assert f29_05.differences(before, after) == [
+        "a: CONTROL -> TREATMENT",
+        "c: CONTROL -> (gone)",
+        "d: (new) -> CONTROL",
+    ]
+
+
+def test_f29_05_a_product_without_stock_is_found_only_when_it_is_offered_here() -> None:
+    body = example("recommendations", "v2/recommended-with-alternatives.json")
+    assert f29_05.zero_stock_offered(body, {88, 999}) == []  # elsewhere: not here
+    assert f29_05.zero_stock_offered(body, {120}) == [120]  # a primary item
+    assert f29_05.zero_stock_offered(body, {246, 120}) == [120, 246]
+    assert f29_05.thin_availability(body) == []
+    body["items"][0]["availability"]["quantity_on_hand"] = 0
+    assert f29_05.thin_availability(body) == [body["items"][0]["product_id"]]
+
+
+def test_f29_05_the_three_sets_of_facts_are_told_apart() -> None:
+    facts = f29_05.run_facts(
+        [(1, "CONTROL"), (2, "CONTROL"), (3, "TREATMENT"), (4, "TREATMENT")],
+        [(3, "TREATMENT", False), (3, "TREATMENT", False), (4, "TREATMENT", True)],
+        [(1, 10, False), (3, 11, False), (3, 12, True)],
+    )
+    assert facts["assigned"] == 4
+    assert facts["exposure facts"] == 3 and facts["exposed assignments"] == 2
+    assert facts["conversion facts"] == 3 and facts["converted assignments"] == 2
+    assert facts["control exposures"] == 0
+    assert facts["exposure before its assignment"] == [4]
+    assert facts["sale outside its window"] == [3]
+    assert facts["assigned, never exposed"] == [1, 2]
+    assert facts["exposed, no sale"] == [4]
+    assert facts["sale, never exposed"] == [1]
+    leak = f29_05.run_facts([(1, "CONTROL")], [(1, "CONTROL", False)], [])
+    assert leak["control exposures"] == 1
+
+
+def test_f29_05_a_refusal_is_known_by_what_the_database_says() -> None:
+    error = "ERROR:  permission denied for table experiment_assignment"
+    assert f29_05.refused_with(error, ("permission denied",))
+    assert f29_05.refused_with(error, ("never rewritten", "permission denied"))
+    assert not f29_05.refused_with(error, ("fixed after assignment",))
+    assert not f29_05.refused_with("INSERT 0 1", ("permission denied",))
+
+
+def test_f29_05_a_paged_read_stops_with_its_items_and_an_empty_page(tmp_path) -> None:
+    page = {
+        "assignments": [{"customer_id": "c", "arm_kind": "CONTROL", "arm_id": 1}],
+        "page_info": {"page": 1, "size": 100, "total": 1},
+    }
+    path = "/api/experimentation/v1/experiment-assignments"
+    routes = {("GET", path): served(page)}
+    with Gateway(routes) as edge:
+        rec = Recorder(tmp_path, "t", "t")
+        items, numbers = f29_05.read_all(
+            rec, edge, "tok", path + "?experiment_id=1", "assignments", "n"
+        )
+    assert items == page["assignments"] and numbers == [1]
+    empty = {"assignments": [], "page_info": {"page": 1, "size": 100, "total": 5}}
+    with Gateway({("GET", path): served(empty)}) as edge:
+        rec = Recorder(tmp_path, "t", "t")
+        items, _ = f29_05.read_all(rec, edge, "tok", path, "assignments", "n")
+    assert items == []

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-11-24T03:51:13.319Z" hostname="LA-PODEROSA" time="2.779">
+  <properties/>
+  <testcase name="onlyActivePromotionsForThisStoreAndChannelAreShownWithTheirValidity" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.243"/>
+  <testcase name="recordingAShownOfferQueuesExactlyOneExposure" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.264"/>
+  <testcase name="aListThatIsNotThereIsSaidInTheAppsOwnWordsWithItsCodeKeptForDetails" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.189"/>
+  <testcase name="withoutAStoreNothingIsAskedAndTheNoteSaysWhy" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.02"/>
+  <testcase name="aListThatIsDownOffersRetry" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.081"/>
+  <testcase name="anExposureRetriedThroughTwoFailuresIsRecordedOnce" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="1.245"/>
+  <testcase name="aCustomerInControlIsNotShownTheTreatmentAndCannotBeRecordedAsExposed" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.19"/>
+  <testcase name="loadingTheListRecordsNoExposure" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.352"/>
+  <testcase name="noArmMeansNoExperimentRuleAndAnUnknownArmHoldsTheOfferBack" classname="online.maxthecoder.mosaiq.floor.PromotionsViewModelTest" time="0.195"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

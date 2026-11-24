@@ -17,7 +17,7 @@ container=p1191-audit-trail-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-audit-tr
 container=p1191-auth-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-auth:p831 id=21280408b5c8 memory_bytes_nanocpus=402653184 500000000
 container=p1191-db-1 image=postgres:18 id=3a4264520e12 memory_bytes_nanocpus=0 0
 container=p1191-gateway-1 image=nginx:1.27-alpine id=65645c7bb6a0 memory_bytes_nanocpus=0 0
-container=p1191-mongodb-1 image=mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0 id=b096b4cb9269 memory_bytes_nanocpus=536870912 0
+container=p1191-document-store image=mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0 id=b096b4cb9269 memory_bytes_nanocpus=536870912 0
 container=p1191-ops-console-1 image=mosaiq-ops-console:p1191 id=06ec26f3bd63 memory_bytes_nanocpus=100663296 250000000
 container=p1191-products-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-products:p831 id=9f651dbfb88f memory_bytes_nanocpus=167772160 500000000
 container=p1191-proxy-1 image=nginx:1.27-alpine id=65645c7bb6a0 memory_bytes_nanocpus=0 0

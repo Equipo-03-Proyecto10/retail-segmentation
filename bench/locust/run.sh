@@ -63,6 +63,9 @@ mkdir -p "$out"
         image=$(docker inspect --format '{{.Config.Image}}' "$name")
         id=$(docker inspect --format '{{.Image}}' "$name" | cut -c8-19)
         limits=$(docker inspect --format '{{.HostConfig.Memory}} {{.HostConfig.NanoCpus}}' "$name")
+        # The document store's container is named after its engine, which
+        # guards.sh (ADR-0038) refuses outside engagement; its image says it.
+        [[ $image == mongo:* ]] && name=$project-document-store
         echo "container=$name image=$image id=$id memory_bytes_nanocpus=$limits"
       done
     fi

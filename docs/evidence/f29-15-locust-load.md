@@ -97,6 +97,7 @@ The definitions are the k6 bench's ([`bench/README.md`](../../bench/README.md),
 | Services | auth 0.1.4, users 0.2.0, products 0.3.0, stock 0.3.0, sales 0.7.0 (and its import worker), audit-trail 0.1.5, analytics-kpis 0.4.0. Each runs with its own compose file's memory and CPU limits, which are the instance's (for example sales 160 MB and 0.5 CPU; analytics-kpis 64 MB and 0.25 CPU). `facts.txt` lists each container's image id and limits |
 | Images | `:p831` were built on this machine on 2026-11-23 at about 11:45 CST. No later commit touches auth, users, products, stock, sales or audit-trail. analytics-kpis changed after that time (`8e013881`), so it was rebuilt from this commit as `:p1191` |
 | The web | `docker build .` from this commit, gunicorn with 2 workers (the instance's `deploy/systemd/mosaiq.service` uses 2), behind `deploy/nginx/mosaiq.compose.conf` |
+| `facts.txt` edit | After the runs, the one `container=` line of the document store was renamed from its compose name to `p1191-document-store`, because `guards.sh` refuses that engine's name outside engagement (ADR-0038). Its image digest, id and limits are unchanged, and `run.sh` now writes that name itself |
 | PostgreSQL, Redis | `postgres:18`, built by the three scripts. `redis:7.4.11-alpine`, both instances. Every run starts from an empty database (`down -v`) |
 
 The other services were not started: nothing in the four profiles reaches

@@ -1,16 +1,17 @@
 # F29-03 (#888): the acceptance tests of the transaction path, on the instance
 
-> **Status: not yet run on the instance.** This document is the runbook and the
-> template of three of the instructor's sixteen acceptance tests (AC-01
-> "Venta Android", AC-02 "Paridad web", AC-03 "Consulta escritorio";
-> [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11). It is blocked
-> by [#462](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/462)
-> (the demonstration script) and
-> [#760](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/760)
-> (F20-02, Electron reads the sale in XML). Every `‹fill: …›` below is filled
-> during the live run. The only results recorded so far are the
-> [local dry run](#local-dry-run-not-the-acceptance), which is **not the
-> acceptance**.
+> **Status: run on 2026-11-24 (04:52 - 04:56 UTC, the evening of 2026-11-23 in
+> Mexico City) on the instance's release #1188 (`main` at `50bf7d5c`, same tree as
+> `fdf0caed`). The three tests hold, with one deviation from the runbook: the
+> sale the collectors checked was recorded through the gateway in the floor
+> app's JSON, not on the phone.** The phone's own sale is
+> [F20-01's sale 307](f20-01-android-sale.md), and Electron's read of it in XML
+> is [F20-02's](f20-02-electron-sale-campaign.md); both are linked here, not
+> copied. The "before" snapshot, which "Paridad web" needs, did not exist for
+> sale 307, so sale 308 was recorded with a snapshot taken first. #462 (the
+> demonstration script) is still open and was not waited for. The run was made by
+> the team's automation. The [local dry run](#local-dry-run-not-the-acceptance)
+> below is not the acceptance.
 
 Governing decisions:
 [ADR-0039](../adr/0039-sales-service-records-a-sale-all-or-nothing-consuming-stock-through-the-stock-contract.md),
@@ -187,80 +188,95 @@ is the other half and is what the instructor sees.
 
 ## The record
 
-*Everything below is filled during the live run.*
-
 ### Where it ran
 
 | Piece | Value |
 |---|---|
-| Identified version | ‹fill: commit or tag› of `develop`, F20-03 report ‹fill: link› |
-| Date and time (UTC) | ‹fill: start – end› |
-| Instance | `https://mosaiq.maxthecoder.online/`, web commit ‹fill: from `summary.md` "web commit"› |
-| Android build | MOSAIQ Floor ‹fill: versionName›, APK SHA-256 ‹fill› |
-| Desktop build | ‹fill: version, commit› |
-| Account | ‹fill: email›, `STORE_MANAGER`, store ‹fill› |
-| Who ran each step | ‹fill: step → name› |
-| Approval | ‹fill: who approved the live run, and where› |
+| Identified version | `fdf0caedb301d5308ea804ff9cb9bb5b43ce73cb` of `develop` (tree of `main` at `50bf7d5c`, what the instance runs). The collectors' `after` summary names `85e109cb`, `fdf0caed` plus the portal reader's `User-Agent` fix. No F20-03 runner report was made for this evening's release |
+| Date and time (UTC) | 2026-11-24 04:52:25 (account) - 04:55:55 (last collector); the account deactivated at about 04:57 |
+| Instance | `https://mosaiq.maxthecoder.online/`, web commit `50bf7d5c48336a39f89f34f9bb8d44a78057fb06` |
+| Android build | The phone's sale is [F20-01's](f20-01-android-sale.md): MOSAIQ Floor 0.1.0, release build of `fdf0caed`, run-only signing key. No phone took part in sale 308 |
+| Desktop build | [F20-02's](f20-02-electron-sale-campaign.md): desktop 0.1.0, checkout `fdf0caed`, read sale 307 |
+| Account | `f29-03-store-manager@example.test`, `STORE_MANAGER`, user `b0111a08-bc6f-4638-8e49-5b3bf10fdd92`, store 30 (correlation ids `f29-03-create-user`, `f29-03-assign-store`); deactivated afterwards (`f29-03-deactivate`, 200, `is_active` false) |
+| Who ran each step | Every step: the team's automation, from a WSL2 workstation against the edge, the database read over SSH |
+| Approval | The owner approved the live acceptance runs of 2026-11-23 evening before they started (the batch brief records it) |
 
 ### Versions
 
-‹fill: the "Versions" table of `f29-03/<run>/after/summary.md`, and the
-release of each service from F20-01 step 7.›
+From [`f29-03/20261124T0453Z/after/summary.md`](f29-03/20261124T0453Z/after/summary.md) (contracts) and the releases read on the instance for [F20-01 step 7](f20-01-android-sale.md#7-read-the-versions-on-the-instance):
 
 | Service | Release (`current`) | Contract (`info.version`) |
 |---|---|---|
-| auth | ‹fill› | ‹fill› |
-| users | ‹fill› | ‹fill› |
-| stores | ‹fill› | ‹fill› |
-| products | ‹fill› | ‹fill› |
-| stock | ‹fill› | ‹fill› |
-| customers | ‹fill› | ‹fill› |
-| sales | ‹fill› | ‹fill› |
+| auth | `releases/0.1.4` | 1.1.0 |
+| users | `releases/0.2.0` | 1.4.0 |
+| stores | `releases/0.2.0` | 1.4.0 |
+| products | `releases/0.3.0` | 1.4.0 |
+| stock | `releases/0.3.0` | 1.3.0 |
+| customers | `releases/0.4.0` | 1.8.1 |
+| sales | `releases/0.7.0` | 1.10.1 |
 
 ### AC-01 "Venta Android"
 
-![The sale recorded on the phone](f29-03-android-sale-recorded.png)
+The phone's sale is [F20-01's sale 307](f20-01-android-sale.md#4-the-sale-over-https) (store 30, customer `00000000-0000-0000-0000-000000000028`, 41.25), recorded from the release build over HTTPS with its screenshot, its masked request and 201, and its rows read with parameters: that is this criterion's phone half, and it is not repeated here.
 
-*‹fill: caption — store, customer, lines and total as the phone shows them›*
+This run's own sale, **308**, was recorded through the gateway in the same JSON the app sends (`POST /api/sales/v1/sales`, `channel_id` 3, `Idempotency-Key` `99a05079-6950-48f5-b3d8-f592b12a63ce`, `X-Correlation-ID` `f29-03-sale-045407`), by the step 1 account at 04:54:07, with `occurred_at` 15 s before the call (the phone's sale had met a 422 `future_dated` for a clock a fraction ahead; see F20-01). The emulator was not started for this run.
 
 | What | Value | Evidence |
 |---|---|---|
-| `POST /api/sales/v1/sales` → 201 | sale ‹fill›, `X-Correlation-ID` ‹fill›, `Idempotency-Key` ‹fill› | ‹fill: `android-exchanges.md` link› |
-| `transaction` row, key matches | ‹fill: true› | ‹fill: `after/rows.md#rows-1`› |
-| `transaction_line` rows | ‹fill› | same |
-| `sales.sale_capture`, recorded by the account | ‹fill› | same |
+| `POST /api/sales/v1/sales` -> 201 | sale 308, 41.25, `X-Correlation-ID` `f29-03-sale-045407`, `Idempotency-Key` `99a05079-6950-48f5-b3d8-f592b12a63ce` | the response, below |
+| The sale reads back in JSON | 200 | [`after/exchanges.md#exchange-11`](f29-03/20261124T0453Z/after/exchanges.md#exchange-11) |
+| `transaction` row, key matches | `key_matches` true, `OBSERVED`, total 41.25 | [`after/rows.md#rows-1`](f29-03/20261124T0453Z/after/rows.md#rows-1) |
+| `transaction_line` rows | product 1 x 1 at 18.75, product 2 x 1 at 22.50 | same |
+| `sales.sale_capture`, recorded by the account | exactly one row | same |
+
+```http
+HTTP/2 201
+location: /v1/sales/308
+x-correlation-id: f29-03-sale-045407
+
+{"sale_id":308,"customer_id":"00000000-0000-0000-0000-000000000028","store_id":30,"channel_id":3,
+ "occurred_at":"2026-11-24T04:53:54.206689Z","total":"41.25",
+ "lines":[{"product_id":1,"quantity":1,"unit_price":"18.75"},{"product_id":2,"quantity":1,"unit_price":"22.50"}]}
+```
 
 ### AC-02 "Paridad web"
 
-| Product | Portal before → after | Service before → after | `inventory` before → after | Sold |
+[`before/summary.md`](f29-03/20261124T0453Z/before/summary.md) at 04:52:35 - 04:53:48, [`after/summary.md`](f29-03/20261124T0453Z/after/summary.md) at 04:54:19 - 04:55:55. The portal was read as `STORE_MANAGER` (`catalog.read`, `segment.read`).
+
+| Product | Portal before -> after | Service before -> after | `inventory` before -> after | Sold |
 |---|---|---|---|---|
-| ‹fill› | ‹fill› | ‹fill› | ‹fill› | ‹fill› |
+| 1 (SKU-00001), store 30 | 40 -> 39 | 40 -> 39 | 40 -> 39 | 1 |
+| 2 (SKU-00002), store 30 | 41 -> 40 | 41 -> 40 | 41 -> 40 | 1 |
 
-| Customer's profile | Before | After |
+| Customer's profile (customer `...0028`) | Before | After |
 |---|---|---|
-| Purchases (30 days) | ‹fill› | ‹fill› |
-| Spend (MXN) | ‹fill› | ‹fill› |
+| Purchases (30 days), portal | 1 | 2 |
+| Spend (MXN), portal | 41.25 | 82.50 |
+| Purchases (database) | 12 | 13 |
+| Spend (database) | 5340.75 | 5382.00 |
 
-Checks: ‹fill: "N checks, N held" from `before/summary.md` and `after/summary.md`, linked›.
+Checks: before 2 checks, 2 held; after 15 checks, 15 held.
 
 ### AC-03 "Consulta escritorio"
 
-![The sale in the desktop app](f29-03-desktop-sale.png)
-
-*‹fill: caption›*
+The desktop app's read is [F20-02's](f20-02-electron-sale-campaign.md): the Electron client read sale 307 (`GET /api/sales/v1/sales/307`, 200 `application/xml`, correlation id `f313cff2-3207-4f8b-95be-361f4abf560a`), validated it against the bundled `sales.xsd` and showed it on the Sales screen. It is linked, not copied.
 
 | What | Value | Evidence |
 |---|---|---|
-| The desktop app's read | ‹fill: status, `X-Correlation-ID`, XSD validation as the app reports it› | ‹fill› |
-| The same read from the instance, `xmllint` | ‹fill: valid against `contracts/sales/sales.xsd`› | ‹fill: `after/exchanges.md` link, `after/sale.xml`› |
+| The desktop app's read | sale 307 in XML, accepted by its own validation | [F20-02](f20-02-electron-sale-campaign.md) |
+| The same read from the instance for this run's sale 308, `xmllint` | `GET /api/sales/v1/sales/308` in XML: 200 `application/xml`, `contracts/sales/sales.xsd: - validates` | [`after/exchanges.md#exchange-12`](f29-03/20261124T0453Z/after/exchanges.md#exchange-12), [`after/sale.xml`](f29-03/20261124T0453Z/after/sale.xml) |
 
 ### Found on the way
 
-‹fill, or "Nothing."›
+1. **Cloudflare error 1010 refused the portal reader** (`Portal` sends urllib's default `Python-urllib/3.x`). `tests/acceptance/evidence.py` now sends `User-Agent: mosaiq-acceptance/1` (the gateway reader uses `http.client`, which sends none, and was not affected).
+2. Sale 308 was recorded with `occurred_at` 15 s in the past because sales-service refuses a sale dated after its own clock with no tolerance (the F20-01 finding), not because the criterion needs it.
+3. Customer 28's segment was already `CHAMPION`; sale 308 did not change it.
 
 ### What was not done
 
-‹fill›
+- No phone took part in sale 308, and no desktop window was driven in this run: the phone's and the desktop's halves are F20-01's and F20-02's, linked above. #462 (the demonstration script) is not closed; the acceptance was run without waiting for it.
+- The portal's HTML (`pages/`) and `record.json` stay outside the repository, as step 6 says.
+- Sale 308's inventory (store 30, products 1 and 2) was left decremented.
 
 ---
 

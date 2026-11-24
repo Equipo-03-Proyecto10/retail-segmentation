@@ -108,6 +108,17 @@ class Scenario:
             "occurred_at": at.isoformat().replace("+00:00", "Z"),
         }
 
+    def published(self) -> list[tuple[Any, ...]]:
+        """This campaign's rows of api_experiments.exposure_v1, read as svc_kpis."""
+        with self.owner.transaction():
+            self.owner.execute("SET LOCAL ROLE svc_kpis")
+            return self.owner.execute(
+                "SELECT campaign_id, experiment_id, customer_id::text, store_id,"
+                " exposed_at, data_origin FROM api_experiments.exposure_v1"
+                " WHERE campaign_id = %s ORDER BY exposed_at",
+                (self.campaign,),
+            ).fetchall()
+
     def exposure_rows(self) -> list[tuple[Any, ...]]:
         return self.owner.execute(
             "SELECT assignment_id, exposed_at, source_event_id"
@@ -187,6 +198,7 @@ def test_outside_and_control_customers_never_become_exposed(
         scene.control: 0,
         scene.treatment: 0,
     }
+    assert scene.published() == []
 
 
 @pytest.mark.parametrize("void_first", [False, True])
@@ -207,6 +219,7 @@ def test_voided_notice_removes_or_prevents_the_exposure_count(
     assert exposures.arm_counts(scene.owner, scene.experiment)[scene.treatment] == 0
     # The accepted fact is never rewritten; a void is a separate notice.
     assert len(scene.exposure_rows()) == (0 if void_first else 1)
+    assert scene.published() == []
 
 
 class Crash(BaseException):
@@ -285,3 +298,76 @@ def test_other_engagement_kinds_are_ignored(service: Any, scene: Scenario) -> No
         ).fetchone()[0]
         == 0
     )
+
+
+def test_exposure_view_publishes_each_exposure_once_with_its_store(
+    service: Any, scene: Scenario
+) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    customer = scene.customers[1]
+    event = scene.fields(customer, START)
+    event["store_id"] = "7"
+    for _ in range(3):  # A relay duplicate and a redelivery after a crash.
+        handler(event)
+    without_store = scene.fields(customer, START + timedelta(minutes=5))
+    del without_store["store_id"]
+    handler(without_store)
+    assert scene.published() == [
+        (scene.campaign, scene.experiment, customer, 7, START, "OBSERVED"),
+        (
+            scene.campaign,
+            scene.experiment,
+            customer,
+            None,
+            START + timedelta(minutes=5),
+            "OBSERVED",
+        ),
+    ]
+
+
+def test_exposure_view_drops_an_exposure_once_voided(
+    service: Any, scene: Scenario
+) -> None:
+    handler = service.extensions["experimentation_handle_exposure"]
+    source = uuid.uuid4()
+    handler(scene.fields(scene.customers[1], START, source=source))
+    assert len(scene.published()) == 1
+    voided = scene.fields(scene.customers[1], START, source=source, notice="VOIDED")
+    handler(voided)
+    handler(voided)
+    assert scene.published() == []
+    assert len(scene.exposure_rows()) == 1
+
+
+@pytest.mark.parametrize("store", ["0", "x", "40000", "-1"])
+def test_a_malformed_store_is_refused_and_writes_nothing(
+    service: Any, scene: Scenario, store: str
+) -> None:
+    event = scene.fields(scene.customers[1], START)
+    event["store_id"] = store
+    with pytest.raises(ValueError, match="store_id"):
+        service.extensions["experimentation_handle_exposure"](event)
+    assert scene.exposure_rows() == []
+
+
+def test_the_schema_refuses_a_control_exposure_from_any_writer(
+    scene: Scenario,
+) -> None:
+    control = scene.assignments[scene.customers[0]]
+    with pytest.raises(psycopg.errors.CheckViolation) as refused:
+        with scene.owner.transaction():
+            scene.owner.execute(
+                "INSERT INTO experiment_exposure (assignment_id, exposed_at, store_id)"
+                " VALUES (%s, %s, 1)",
+                (control, START),
+            )
+    assert refused.value.diag.constraint_name == "experiment_exposure_treatment_only"
+    assert scene.published() == []
+
+
+def test_svc_kpis_reads_the_view_and_no_table_beneath_it(scene: Scenario) -> None:
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with scene.owner.transaction():
+            scene.owner.execute("SET LOCAL ROLE svc_kpis")
+            scene.owner.execute("SELECT count(*) FROM public.experiment_exposure")
+    assert scene.published() == []

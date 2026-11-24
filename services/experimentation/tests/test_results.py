@@ -735,6 +735,26 @@ def test_the_exposed_are_counted_apart_from_the_assigned(
     ] == pytest.approx(5 / 15, abs=1e-6)
 
 
+def test_exposure_decides_nothing_in_an_effect(api: Any, scene: Scenario) -> None:
+    """Exposing treated customers changes no comparison (RN-27, #1198)."""
+    _dealt(scene)
+    before = scene.get(api, "?basis=RE_READ").get_json()
+    for position in scene.members[1][:5]:
+        scene.owner.execute(
+            "INSERT INTO experiment_exposure (assignment_id, exposed_at)"
+            " SELECT assignment_id, %s FROM experiment_assignment"
+            " WHERE experiment_id = %s AND customer_id = %s",
+            (START, scene.experiment, scene.customers[position]),
+        )
+    after = scene.get(api, "?basis=RE_READ").get_json()
+    assert after["arms"][1]["exposed"] == 5
+    assert after["comparisons"] == before["comparisons"]
+    assert after["status"] == before["status"]
+    for arm_before, arm_after in zip(before["arms"], after["arms"], strict=True):
+        assert arm_after["conversion_rate"] == arm_before["conversion_rate"]
+        assert arm_after["net_revenue"] == arm_before["net_revenue"]
+
+
 def test_the_assumptions_name_what_the_estimate_rests_on(
     api: Any, scene: Scenario
 ) -> None:

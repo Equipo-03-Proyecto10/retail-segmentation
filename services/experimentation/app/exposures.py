@@ -4,7 +4,8 @@ The stream carries the engagement event UUID and the exposure fact. Engagement
 already admits only one event per device ``client_event_id``; the UUID is the
 projection's stable source key. Both notice rows and exposure facts are
 append-only. A VOIDED notice is a tombstone consulted by counts, including when
-it arrives before RECORDED.
+it arrives before RECORDED. The exposure keeps the entry's store, and
+``api_experiments.exposure_v1`` publishes the exposures no notice voided (#1198).
 """
 
 from __future__ import annotations
@@ -58,8 +59,8 @@ SELECT EXISTS (
 """
 INSERT_EXPOSURE = """
 INSERT INTO public.experiment_exposure
-       (assignment_id, exposed_at, source_event_id)
-VALUES (%s, %s, %s)
+       (assignment_id, exposed_at, source_event_id, store_id)
+VALUES (%s, %s, %s, %s)
 ON CONFLICT (source_event_id) WHERE source_event_id IS NOT NULL DO NOTHING
 """
 INSERT_NOTICE = """
@@ -95,6 +96,19 @@ SELECT g.group_id, count(DISTINCT x.assignment_id)
 
 def _instant(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _store(value: str | None) -> int | None:
+    """The entry's base-10 store id, kept on the exposure (#1198).
+
+    The stream leaves out a field whose value is absent, so a missing store is
+    recorded as none; anything else that is not a positive smallint is malformed.
+    """
+    if value is None:
+        return None
+    if not value.isascii() or not value.isdigit() or not 1 <= int(value) <= 32767:
+        raise ValueError("store_id is not a positive smallint")
+    return int(value)
 
 
 def _source_event(value: str, notice: str) -> UUID:
@@ -158,6 +172,7 @@ def apply(connection: Connection, fields: dict[str, str]) -> None:
     campaign = int(campaign_text)
     if campaign < 1:
         raise ValueError("campaign_id is not a positive integer")
+    store = _store(fields.get("store_id"))
 
     if connection.execute(NOTICE_EXISTS, (source, "VOIDED")).fetchone()[0]:
         _record_notice(connection, source, notice, None, occurred_at, "VOIDED")
@@ -188,7 +203,7 @@ def apply(connection: Connection, fields: dict[str, str]) -> None:
     ).fetchone()[0]
     disposition = "REPEAT" if recent else "EXPOSURE"
     if not recent:
-        connection.execute(INSERT_EXPOSURE, (assignment, occurred_at, source))
+        connection.execute(INSERT_EXPOSURE, (assignment, occurred_at, source, store))
     _record_notice(connection, source, notice, assignment, occurred_at, disposition)
 
 

@@ -7,6 +7,11 @@
 #
 # No arrow joins two services. They meet only through the producer's api_*
 # objects in PostgreSQL and through Redis Streams (ADR-0044).
+#
+# GitHub scales an SVG down to the width of the page, so this view keeps short
+# lines and large type: labels of at most about 40 characters, 22 px text. Each
+# service is drawn as <name>, language and port; its unit, project and loopback
+# address follow the pattern in the services cluster's label.
 direction: down
 
 vars: {
@@ -16,25 +21,27 @@ vars: {
 }
 
 classes: {
-  external: { style: { fill: "#E2EBF6"; stroke: "#1F5FA8"; font-color: "#232320" } }
-  allow:    { style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" } }
-  deny:     { style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320" } }
-  gatenode: { style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320" } }
-  store:    { style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320" } }
-  appnode:  { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" } }
-  svc:      { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320" } }
-  svc2:     { style: { fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; stroke-dash: 4; stroke-width: 2 } }
-  svc3:     { style: { fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; double-border: true } }
-  bench:    { style: { fill: "#F0F0EE"; stroke: "#8C8C86"; stroke-dash: 4; font-color: "#232320" } }
-  layer:    { style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 20 } }
+  external: { style: { fill: "#E2EBF6"; stroke: "#1F5FA8"; font-color: "#232320"; font-size: 22 } }
+  allow:    { style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320"; font-size: 22 } }
+  deny:     { style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320"; font-size: 22 } }
+  gatenode: { style: { fill: "#FAE4E2"; stroke: "#C0342B"; font-color: "#232320"; font-size: 22 } }
+  store:    { style: { fill: "#E3F2E9"; stroke: "#1F7A4C"; font-color: "#232320"; font-size: 22 } }
+  appnode:  { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320"; font-size: 22 } }
+  svc:      { style: { fill: "#FFE8D1"; stroke: "#D45400"; font-color: "#232320"; font-size: 22 } }
+  svc2:     { style: { fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; font-size: 22; stroke-dash: 4; stroke-width: 2 } }
+  svc3:     { style: { fill: "#FFF6E8"; stroke: "#D45400"; font-color: "#232320"; font-size: 22; double-border: true } }
+  bench:    { style: { fill: "#F0F0EE"; stroke: "#8C8C86"; stroke-dash: 4; font-color: "#232320"; font-size: 22 } }
+  layer:    { style: { fill: "#FAFAF9"; stroke: "#D5D5D1"; font-color: "#232320"; font-size: 26 } }
+  link:     { style: { font-size: 20 } }
+  quiet:    { style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A"; font-size: 20 } }
 }
 
-android: "Android client\nKotlin · JSON only · Bearer token" { class: external }
-electron: "Electron client\nTypeScript · XML validated against XSD · Bearer token" { class: external }
-direct: "Any other source\nreaching the origin address" { class: external; shape: oval }
-operator: "Team operator\ngcloud compute ssh · OS Login" { class: external }
+android: "Android client\nKotlin · JSON only\nBearer token" { class: external }
+electron: "Electron client\nTypeScript · XML + XSD\nBearer token" { class: external }
+direct: "Any other source\nreaching the origin" { class: external; shape: oval }
+operator: "Team operator\ngcloud compute ssh\nOS Login" { class: external }
 
-edge: "Cloudflare edge — ADR-0013" {
+edge: "Cloudflare edge\nADR-0013" {
   class: layer
   cf: "Managed edge certificate\nAlways Use HTTPS\nCF-Connecting-IP" { class: external }
 }
@@ -52,78 +59,77 @@ gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
   vm: "mosaiq-deployment-vm · CentOS 10 Stream · one instance" {
     class: layer
 
-    nginx: "NGINX :443\nTLS termination, Origin CA pair · :80 returns 301\n/ to the web system\n/api/<name>/ to 127.0.0.1:<port>, one include per service" { class: gatenode }
+    nginx: "NGINX :443\nTLS, Origin CA pair · :80 → 301\n/ → the web system\n/api/<name>/ → 127.0.0.1:<port>\none include per service" { class: gatenode }
 
-    web: "mosaiq.service\nGunicorn · Flask + Jinja2 · 127.0.0.1:8000\nserver-rendered HTML · changes only for new facts (Q-17)\nno Redis · no service calls" { class: appnode }
+    web: "mosaiq.service\nGunicorn · 127.0.0.1:8000\nFlask + Jinja2, server-rendered\nno Redis · no service calls\nchanges only for new facts (Q-17)" { class: appnode }
 
-    services: "Nineteen services — mosaiq-svc@<name>.service, each its own compose project mosaiq-<name>" {
+    services: "NINETEEN SERVICES\nunit mosaiq-svc@<name> · project mosaiq-<name> · 127.0.0.1:<port>\nsecond wave dashed · ADR-0059 double outline" {
       class: layer
       grid-rows: 4
-      auth: "mosaiq-svc@auth\nproject mosaiq-auth\nFlask · 127.0.0.1:5001" { class: svc }
-      users: "mosaiq-svc@users\nproject mosaiq-users\nFlask · 127.0.0.1:5002" { class: svc }
-      products: "mosaiq-svc@products\nproject mosaiq-products\nFlask · 127.0.0.1:5003" { class: svc }
-      categories: "mosaiq-svc@categories\nproject mosaiq-categories\nFlask · 127.0.0.1:5004" { class: svc }
-      stores: "mosaiq-svc@stores\nproject mosaiq-stores\nRust · 127.0.0.1:5005" { class: svc }
-      stock: "mosaiq-svc@stock\nproject mosaiq-stock\nRust · 127.0.0.1:5006" { class: svc }
-      customers: "mosaiq-svc@customers\nproject mosaiq-customers\nFlask · 127.0.0.1:5007" { class: svc }
-      customer_preferences: "mosaiq-svc@customer-preferences\nproject mosaiq-customer-preferences\nRust · 127.0.0.1:5008" { class: svc }
-      sales: "mosaiq-svc@sales\nproject mosaiq-sales\nFlask · 127.0.0.1:5009" { class: svc }
-      segments: "mosaiq-svc@segments\nproject mosaiq-segments\nRust · 127.0.0.1:5010" { class: svc }
-      recommendations: "mosaiq-svc@recommendations\nproject mosaiq-recommendations\nFlask · 127.0.0.1:5011" { class: svc }
-      engagement: "mosaiq-svc@engagement\nproject mosaiq-engagement\nFlask + MongoDB · 127.0.0.1:5012" { class: svc }
-      check_ins: "mosaiq-svc@check-ins\nproject mosaiq-check-ins\nRust · 127.0.0.1:5013" { class: svc }
-      campaigns: "mosaiq-svc@campaigns\nproject mosaiq-campaigns\nFlask · 127.0.0.1:5014\nSECOND WAVE" { class: svc2 }
-      audit_trail: "mosaiq-svc@audit-trail\nproject mosaiq-audit-trail\nRust · 127.0.0.1:5015\nSECOND WAVE" { class: svc2 }
-      rfm_engine: "mosaiq-svc@rfm-engine\nproject mosaiq-rfm-engine\nFlask · 127.0.0.1:5016\nADR-0059" { class: svc3 }
-      model_registry: "mosaiq-svc@model-registry\nproject mosaiq-model-registry\nFlask · 127.0.0.1:5019\nADR-0059" { class: svc3 }
-      experimentation: "mosaiq-svc@experimentation\nproject mosaiq-experimentation\nFlask · 127.0.0.1:5020\nADR-0059" { class: svc3 }
-      analytics_kpis: "mosaiq-svc@analytics-kpis\nproject mosaiq-analytics-kpis\nRust · 127.0.0.1:5022\nADR-0059" { class: svc3 }
+      grid-columns: 5
+      auth: "auth\nFlask · :5001" { class: svc }
+      users: "users\nFlask · :5002" { class: svc }
+      products: "products\nFlask · :5003" { class: svc }
+      categories: "categories\nFlask · :5004" { class: svc }
+      stores: "stores\nRust · :5005" { class: svc }
+      stock: "stock\nRust · :5006" { class: svc }
+      customers: "customers\nFlask · :5007" { class: svc }
+      customer_preferences: "customer-preferences\nRust · :5008" { class: svc }
+      sales: "sales\nFlask · :5009" { class: svc }
+      segments: "segments\nRust · :5010" { class: svc }
+      recommendations: "recommendations\nFlask · :5011" { class: svc }
+      engagement: "engagement\nFlask + MongoDB · :5012" { class: svc }
+      check_ins: "check-ins\nRust · :5013" { class: svc }
+      campaigns: "campaigns\nFlask · :5014" { class: svc2 }
+      audit_trail: "audit-trail\nRust · :5015" { class: svc2 }
+      rfm_engine: "rfm-engine\nFlask · :5016" { class: svc3 }
+      model_registry: "model-registry\nFlask · :5019" { class: svc3 }
+      experimentation: "experimentation\nFlask · :5020" { class: svc3 }
+      analytics_kpis: "analytics-kpis\nRust · :5022" { class: svc3 }
     }
 
-    ops: "OPS ONLY — mosaiq-ops-console.service\nproject mosaiq-ops-console · 127.0.0.1:5090\nnot a service: not registered, not routed by NGINX\nreached only through an SSH tunnel (ADR-0055)" { class: bench }
+    ops: "OPS ONLY — ops console\nmosaiq-ops-console.service\n127.0.0.1:5090 · SSH tunnel only\nnot a service, not routed\n(ADR-0055)" { class: bench }
 
-    bench: "BENCH ONLY — Rust twin of the products reads\nbench/products-service-rs · 127.0.0.1:5103\nnot registered, not routed by NGINX, not deployed (ADR-0042, E-22)" { class: bench }
+    bench: "BENCH ONLY — Rust twin\nof the products reads · :5103\nnot registered, not routed,\nnot deployed (ADR-0042, E-22)" { class: bench }
 
-    pg: "PostgreSQL 18 · database retail · 127.0.0.1:5432" {
+    pg: "PostgreSQL 18 · retail · 127.0.0.1:5432" {
       class: layer
-      public: "public\n29 tables, 4NF\nthe web reads and writes it as retail_app" { class: store; shape: cylinder }
-      svcschemas: "service schemas\nsvc_<name> roles, own tables only (ADR-0046)" { class: store; shape: cylinder }
-      api: "17 api_* schemas\nversioned *_v1 views, consume_v1" { class: store; shape: cylinder }
-      outbox: "eleven outboxes\n<suffix>_events.outbox\nusers · products · categories · stores · stock · customers\npreferences · sales · segments · rfm · models" { class: store; shape: cylinder }
+      public: "public — 29 tables, 4NF\nthe web writes it\nas retail_app" { class: store; shape: cylinder }
+      svcschemas: "service schemas\nsvc_<name> roles,\nown tables only (ADR-0046)" { class: store; shape: cylinder }
+      api: "17 api_* schemas\nversioned *_v1 views,\nconsume_v1" { class: store; shape: cylinder }
+      outbox: "eleven outboxes\n<suffix>_events.outbox\nusers · products · categories\nstores · stock · customers\npreferences · sales · segments\nrfm · models" { class: store; shape: cylinder }
     }
 
-    infra: "mosaiq-infra.service — compose project mosaiq-infra (ADR-0037, ADR-0038)" {
+    infra: "mosaiq-infra.service\nproject mosaiq-infra (ADR-0037, ADR-0038)" {
       class: layer
-      rs: "redis-state\nnoeviction · AOF\nsessions · Redis Streams · rate limits" { class: store; shape: cylinder }
+      rs: "redis-state\nnoeviction · AOF\nsessions · streams · limits" { class: store; shape: cylinder }
       rc: "redis-cache\nallkeys-lru\ncaches · live counters" { class: store; shape: cylinder }
       mongo: "MongoDB\ndatabase engagement" { class: store; shape: cylinder }
     }
   }
 }
 
-android -> edge.cf: "HTTPS · JSON"
-electron -> edge.cf: "HTTPS · XML"
-edge.cf -> gcp.fw.fw443: "HTTPS, edge IPs only"
-direct -> gcp.fw.fwdeny: "no route past this rule" {
-  style: { stroke-dash: 4; stroke: "#8C8C86"; font-color: "#4F4F4A" }
-}
+android -> edge.cf: "JSON" { class: link }
+electron -> edge.cf: "XML" { class: link }
+edge.cf -> gcp.fw.fw443: "HTTPS, edge IPs only" { class: link }
+direct -> gcp.fw.fwdeny: "no route past this rule" { class: quiet }
 gcp.fw.fw443 -> gcp.vm.nginx
-operator -> gcp.fw.fw22: "SSH :22"
-gcp.fw.fw22 -> gcp.vm.ops: "tunnel -L 5090" { style.stroke-dash: 4 }
+operator -> gcp.fw.fw22: "SSH :22" { class: link }
+gcp.fw.fw22 -> gcp.vm.ops: "tunnel -L 5090" { class: quiet }
 
-gcp.vm.nginx -> gcp.vm.web: "/"
-gcp.vm.nginx -> gcp.vm.services: "/api/<name>/v1"
+gcp.vm.nginx -> gcp.vm.web: "/" { class: link }
+gcp.vm.nginx -> gcp.vm.services: "/api/<name>/v1" { class: link }
 
-gcp.vm.web -> gcp.vm.pg.public: "SQL as retail_app"
-gcp.vm.services -> gcp.vm.pg.public: "own tables"
-gcp.vm.services -> gcp.vm.pg.svcschemas: "own new tables"
-gcp.vm.services -> gcp.vm.pg.api: "cross-boundary reads"
-gcp.vm.pg.public -> gcp.vm.pg.outbox: "capture triggers" { style.stroke-dash: 4 }
-gcp.vm.pg.svcschemas -> gcp.vm.pg.outbox: "capture triggers" { style.stroke-dash: 4 }
-gcp.vm.pg.outbox -> gcp.vm.infra.rs: "the owner relays its outbox · XADD"
-gcp.vm.infra.rs -> gcp.vm.services: "consumer groups · XREADGROUP"
-gcp.vm.services -> gcp.vm.infra.rc: "caches"
-gcp.vm.services -> gcp.vm.infra.mongo: "engagement only"
-gcp.vm.bench -> gcp.vm.pg.public: "reads products as svc_products_bench" { style.stroke-dash: 4 }
-gcp.vm.ops -> gcp.vm.services: "/health/live · /health/ready · /openapi.yaml" { style.stroke-dash: 4 }
-gcp.vm.ops -> gcp.vm.infra.rs: "INFO · XINFO GROUPS as ops_console" { style.stroke-dash: 4 }
+gcp.vm.web -> gcp.vm.pg.public: "SQL as retail_app" { class: link }
+gcp.vm.services -> gcp.vm.pg.public: "own tables" { class: link }
+gcp.vm.services -> gcp.vm.pg.svcschemas: "own new tables" { class: link }
+gcp.vm.services -> gcp.vm.pg.api: "api_* reads" { class: link }
+gcp.vm.pg.public -> gcp.vm.pg.outbox: "capture triggers" { class: quiet }
+gcp.vm.pg.svcschemas -> gcp.vm.pg.outbox: "" { class: quiet }
+gcp.vm.pg.outbox -> gcp.vm.infra.rs: "owner relays · XADD" { class: link }
+gcp.vm.infra.rs -> gcp.vm.services: "consumer groups · XREADGROUP" { class: link }
+gcp.vm.services -> gcp.vm.infra.rc: "caches" { class: link }
+gcp.vm.services -> gcp.vm.infra.mongo: "engagement only" { class: link }
+gcp.vm.bench -> gcp.vm.pg.public: "svc_products_bench" { class: quiet }
+gcp.vm.ops -> gcp.vm.services: "health · readiness · versions" { class: quiet }
+gcp.vm.ops -> gcp.vm.infra.rs: "INFO · XINFO GROUPS" { class: quiet }

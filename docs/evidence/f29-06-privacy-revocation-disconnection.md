@@ -1,18 +1,18 @@
 # F29-06 (#891): the acceptance tests of privacy, revocation and disconnection
 
-> **Status: "Privacidad" and "Sesión revocada" ran on the instance on
-> 2026-11-24 (04:00 UTC) and held; "Desconexión" is pending.** This document is
-> the runbook and the record of three of the instructor's sixteen acceptance
-> tests (AC-12 "Privacidad", AC-13 "Sesión revocada", AC-14 "Desconexión";
-> [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11). Nothing blocks
-> them any more: #757, #792, #795 and
+> **Status: all three ran on the instance on 2026-11-24 (04:00 to 05:14 UTC) and
+> held.** "Privacidad" and "Sesión revocada" ran first (04:00 UTC) and
+> "Desconexión" on the Android emulator after them (05:00 to 05:14 UTC). This
+> document is the runbook and the record of three of the instructor's sixteen
+> acceptance tests (AC-12 "Privacidad", AC-13 "Sesión revocada", AC-14
+> "Desconexión"; [`scope-delivery-3.md`](../scope-delivery-3.md) §10 and §11).
+> Nothing blocked them: #757, #792, #795 and
 > [#867](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/867)
 > (F27-13, offline drafts with a pending state, merged in #1141 on 2026-11-21)
-> are closed. The two server-side parts are recorded below with their evidence
-> under [`f29-06/20261124T0359Z/`](f29-06/20261124T0359Z/). "Desconexión" needs the
-> Android emulator and a person at the phone: its rows are still `‹fill: …›`.
-> The [local dry run](#local-dry-run-not-the-acceptance) is **not the
-> acceptance**.
+> are closed. The evidence is under [`f29-06/20261124T0359Z/`](f29-06/20261124T0359Z/).
+> "Desconexión" ran on an emulator behind mitmproxy, as step 3 describes, not on
+> a physical phone. The [local dry run](#local-dry-run-not-the-acceptance) is
+> **not the acceptance**.
 
 Governing decisions:
 [ADR-0036](../adr/0036-auth-service-issues-role-only-rs256-tokens-whose-sessions-live-in-redis.md),
@@ -137,6 +137,14 @@ logging, so it runs locally only; the record lists it as not run.
 
 ### 3. "Desconexión"
 
+*Learned on the run of 2026-11-24 (see "Found on the way"):* behind mitmproxy
+set `adb shell settings put global captive_portal_mode 0` and restart mobile
+data, or Android never validates the network and the outbox does not send; the
+product search needs the network, so choose a sale's items online and cut the
+sales path at the proxy (or use airplane mode only for the confirmation); the
+Outbox can hold a cart event beside the two sales; and the app resends by
+itself within seconds of a usable network.
+
 The floor tester, with the release build that contains #867, behind mitmproxy
 as in [F20-01 step 3](f20-01-android-sale.md#3-prepare-the-device-and-the-capture),
 signed in as a `STORE_MANAGER` or `SALES_ASSOCIATE` account assigned to the
@@ -205,19 +213,18 @@ screenshots. `record.json` stays outside the repository. Delete the HAR.
 
 ## The record
 
-*"Privacidad" and "Sesión revocada" are filled from the live run of
-2026-11-24; "Desconexión" is filled during its own run.*
+*Filled from the live runs of 2026-11-24.*
 
 ### Where it ran
 
 | Piece | Value |
 |---|---|
 | Identified version | Release #1188: `main` at `50bf7d5c` (its tree is identical to `develop` at `fdf0caed`), every service at its `services/<name>/VERSION` of that tree, as the "Versions" table shows. F20-03 report: not checked by this run |
-| Date and time (UTC) | 2026-11-24 03:59:30 – 04:04:45: "Privacidad" 03:59:30 – 04:01:43, "Sesión revocada" 04:02:27 – 04:04:45. Desconexión: pending |
+| Date and time (UTC) | 2026-11-24 03:59:30 – 05:14: "Privacidad" 03:59:30 – 04:01:43, "Sesión revocada" 04:02:27 – 04:04:45, "Desconexión" 05:00 – 05:14 (the offline sales 05:05:43 and 05:08:13, the network back at 05:10:40) |
 | Instance | `https://mosaiq.maxthecoder.online/`, reached from the instance itself on `https://127.0.0.1` under the published host name; web commit `50bf7d5c48336a39f89f34f9bb8d44a78057fb06` |
 | Tree used | `git archive` of the identified tree (`tests/`, `contracts/`, `pyproject.toml`, each `services/*/compose.yaml`) at `/var/tmp/mosaiq-1124-C1/tree` in a virtualenv with `pytest` 9.2.0 and PyYAML, plus one changed file, [`test_revocation.py`](../../tests/negative/test_revocation.py) (see "Found on the way"). The record's `checkout commit` therefore reads `(unavailable)`: the tree is an archive, not a checkout |
-| Android build | pending (Desconexión) |
-| Floor account | pending (Desconexión) |
+| Android build | MOSAIQ Floor 0.1.0, the release build of `develop` at `fdf0caed` (the identified tree; #867 is in it, `d107b4b7` is its ancestor), the APK of [F20-01](f20-01-android-sale.md), SHA-256 `319bcbb93f70656d5eba999e4922783a15b7a1a319fd01f745cbe1256cd293dc`, signed with that run's key, no `DEBUGGABLE` flag. Emulator 37.2.13.0, AVD `mosaiq-shots` (Android 15, API 35, `google_apis` x86_64), started with `-no-window`; mitmproxy 12.3.1 as the system proxy, its CA in the conscrypt store as F20-01 step 3.2 |
+| Floor account | `f29-06-store-manager@example.test`, `STORE_MANAGER`, user `db05f768-8f55-4e9f-9ee8-752813907d94`, store 20 (correlation ids `f29-06-create-user`, `f29-06-assign-store`); deactivated at the end (correlation id `f29-06-deactivate`, reads `is_active = false`) |
 | Who ran each step | An agent of the acceptance batch (lane C1), as the instance operator through `gcloud compute ssh`, holding the batch's instance lock |
 | Approval | The run was requested by the lead of the 2026-11-23 batch (`goal1124`, brief "The instance" and its 22:00 addendum). The administrator's credential was read from the root-only file on the instance into the process environment and never printed |
 
@@ -271,18 +278,46 @@ after it.
 
 ### AC-14 "Desconexión"
 
+`python -m tests.acceptance.f29_06 disconnection`: **5 checks, 5 held**
+([`summary.md`](f29-06/20261124T0359Z/disconnection/summary.md)).
+
+The phone signed in, picked store 20 and checked in there (geofence verified,
+0 m), then recorded two sales for `Demo Customer 19` (customer
+`00000000-0000-0000-0000-000000000019`, r_score 5, no sale at store 17):
+sale 1 (Demo Product 1, 18.75) in airplane mode, sale 2 (Demo Product 2, 22.50)
+with the network on but every sales request cut at mitmproxy before it reached
+the server (the app cannot search products offline, so the second sale's
+items were chosen online). Both confirmations answered "Sale kept as a draft on
+this phone, pending. The server checks it when you are online." and the
+history showed both as **Pending**.
+
 ![Two sales pending offline](f29-06-offline-pending.png)
+
+The Outbox then read "3 writes waiting to send": the two sales and the
+engagement event of adding the second product to the cart.
+
+![The outbox with three writes waiting](f29-06-outbox-pending.png)
+
+When the phone reached the instance again, the app sent by itself, with no tap
+on **Send now**: the first sale's 201 was held and killed at mitmproxy, the
+app sent it again about a second later and was answered 200
+`Idempotent-Replayed: true`, and the second sale followed with a 201. The
+history then shows both as **Sent**, the first reading "Sale 309 was already
+recorded; this is the same sale." and the Outbox "Everything is synced".
 
 ![Both recorded once after recovery](f29-06-recovered.png)
 
+![The outbox, synced](f29-06-outbox-synced.png)
+
 | What | Value | Evidence |
 |---|---|---|
-| Window | ‹fill: since – until› | |
-| Sales confirmed by the tester | ‹fill: 2› | screenshots |
-| The killed 201 and its resend | sale ‹fill›, key ‹fill›, resend 200 `Idempotent-Replayed: true` | ‹fill: `f29-06-android-exchanges.md`› |
-| Sales the account recorded in the window | ‹fill› | ‹fill: `disconnection/rows.md`› |
-| The same request twice / the same content twice | ‹fill: 0 / 0› | same |
-| Each key, once | ‹fill› | same |
+| Window | 2026-11-24T05:00:00Z – 05:13:45Z | |
+| Sales confirmed by the tester | 2 | screenshots above |
+| The killed 201 and its resend | sale 309, key `0522a5de-2a7e-47ba-aa85-a8b303c04545`. The 201 (`x-correlation-id` `30223c83-5817-4e43-8b97-18e2b8451d31`) was killed at mitmproxy; the resend (`77b5975d-bc79-49f2-80ac-a3eff5b2ceb1`) was 200 `Idempotent-Replayed: true`. The second sale, 310, key `77c8b2fa-add5-43c1-bb7a-05d84c08b1f6`, was 201 (`24d6aec8-8e81-4d25-bc26-8b7f0b2edc52`). Three requests for two sales | [`f29-06-android-exchanges.md`](f29-06/20261124T0359Z/disconnection/f29-06-android-exchanges.md), [`mitm-sales-log.jsonl`](f29-06/20261124T0359Z/disconnection/mitm-sales-log.jsonl) |
+| Sales the account recorded in the window | 2 (309 and 310, store 20, customer 19, totals 18.75 and 22.50) | [`disconnection/rows.md`](f29-06/20261124T0359Z/disconnection/rows.md#rows-1) |
+| The same request twice / the same content twice | 0 / 0 | [rows 2](f29-06/20261124T0359Z/disconnection/rows.md#rows-2), [rows 3](f29-06/20261124T0359Z/disconnection/rows.md#rows-3) |
+| Each key, once | each of the two keys names exactly one `transaction` | [rows 4](f29-06/20261124T0359Z/disconnection/rows.md#rows-4), [rows 5](f29-06/20261124T0359Z/disconnection/rows.md#rows-5) |
+| Stock | store 20 product 1: 31 to 30; product 2: 32 to 31, once each (not received back: a sale is not undone) | [`rows-before.txt`](f29-06/20261124T0359Z/disconnection/rows-before.txt), [`rows-after.txt`](f29-06/20261124T0359Z/disconnection/rows-after.txt) |
 
 ### Found on the way
 
@@ -300,13 +335,29 @@ after it.
   eleven with its two spares) and `f18-04-9aac6c898d-*@example.test` (the
   revocation run, nine). The store-scope fixture also left two store
   assignments, on store 2, held by two of the deactivated accounts.
+- **Behind a capturing proxy Android never validates the network.** Android's
+  connectivity probes (HTTPS to Google) fail on mitmproxy's certificate, so
+  the network stayed "connected without internet" after airplane mode and the
+  outbox did not send. `adb shell settings put global captive_portal_mode 0`
+  and a restart of mobile data fixed it. The phone's own behaviour is
+  unchanged; this belongs to the capture, and step 3 now says so.
+- **The product search needs the network.** The second sale could not be
+  confirmed fully offline with items chosen offline; its items were chosen
+  online and the sales path was cut at mitmproxy, so the sale was confirmed and
+  kept as a draft by the same code path (the app's answer is identical).
+- **The Outbox held three writes, not two**: the engagement event of the second
+  "Added to cart" waited beside the two sales. The runbook's "2 writes waiting
+  to send" is therefore "the two sales and any cart event".
+- **The resend came by itself, about a second later**, not after 10 s: the
+  runbook's "tap **Send now**" was not needed (it had been tapped before the
+  network was usable, with no effect).
 - Nothing refused a request it should have allowed, and no case failed.
 
 ### What was not done
 
-- **"Desconexión" (AC-14)**, steps 3.1 to 3.4: it needs the Android emulator
-  and the release build with #867, and stays for the acceptance of the phone.
-  Its record above is unfilled on purpose.
+- **A physical phone.** "Desconexión" ran on an emulator behind mitmproxy, as
+  F20-01 did; the dropped answer was killed at the proxy, not on a radio.
+  The app's code path is the release build's.
 - The reads by id of another store's rows and the customers "no statement
   logged" case: they run on the local stack only (see the tables).
 - The F20-03 report was not checked: this run took the identified version

@@ -6387,6 +6387,29 @@ SELECT e.campaign_id,
   LEFT JOIN experiments.experiment_plan AS p ON p.experiment_id = e.experiment_id
  WHERE e.campaign_id IS NOT NULL;
 REVOKE ALL ON api_experiments.campaign_effect_v1 FROM PUBLIC;
+
+-- contracts/db/api_experiments.exposure.v1.md (#1198): one row per campaign exposure
+-- that still counts, as experimentation projected it from engagement's stream (F25-10,
+-- ADR-0075). A VOIDED notice removes the exposure of its source event, whichever notice
+-- arrived first; an exposure the web wrote has no source event and counts. The control
+-- is never exposed, so no arm is published, and an exposure is never an effect
+-- (ADR-0069). A definer-rights view: a consumer needs no privilege on any table it reads.
+CREATE OR REPLACE VIEW api_experiments.exposure_v1
+WITH (security_invoker = off) AS
+SELECT x.exposure_id,
+       e.campaign_id,
+       a.experiment_id,
+       a.customer_id,
+       x.exposed_at,
+       e.data_origin::text AS data_origin
+  FROM public.experiment_exposure AS x
+  JOIN public.experiment_assignment AS a ON a.assignment_id = x.assignment_id
+  JOIN public.experiment AS e ON e.experiment_id = a.experiment_id
+ WHERE e.campaign_id IS NOT NULL
+   AND NOT EXISTS (SELECT FROM experiments.exposure_notice AS v
+                    WHERE v.source_event_id = x.source_event_id
+                      AND v.notice = 'VOIDED');
+REVOKE ALL ON api_experiments.exposure_v1 FROM PUBLIC;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry
@@ -7503,11 +7526,16 @@ GRANT SELECT ON api_models.run_version_v1 TO svc_kpis;
 -- incremental effect, read from experimentation's view.
 GRANT USAGE ON SCHEMA api_experiments TO svc_kpis;
 GRANT SELECT ON api_experiments.campaign_effect_v1 TO svc_kpis;
+<<<<<<< ours
 -- Conversion and recommendation performance (F26-04, #849, #1197): the interactions and
 -- the purchases made through a recommendation, read from recommendations' views.
 GRANT USAGE ON SCHEMA api_recommendations TO svc_kpis;
 GRANT SELECT ON api_recommendations.interaction_v1 TO svc_kpis;
 GRANT SELECT ON api_recommendations.recommended_purchase_v1 TO svc_kpis;
+=======
+-- Conversion after exposure (#1198): the campaign exposures that still count.
+GRANT SELECT ON api_experiments.exposure_v1 TO svc_kpis;
+>>>>>>> theirs
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

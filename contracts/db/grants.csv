@@ -552,9 +552,13 @@ svc_kpis,api_segments.assignment_change_v1,SELECT
 svc_kpis,api_models.run_version_v1,SELECT
 svc_kpis,api_experiments,USAGE
 svc_kpis,api_experiments.campaign_effect_v1,SELECT
+<<<<<<< ours
 svc_kpis,api_recommendations,USAGE
 svc_kpis,api_recommendations.interaction_v1,SELECT
 svc_kpis,api_recommendations.recommended_purchase_v1,SELECT
+=======
+svc_kpis,api_experiments.exposure_v1,SELECT
+>>>>>>> theirs
 svc_experiments,api_campaigns,USAGE
 svc_experiments,api_campaigns.campaign_target_v1,SELECT
 svc_experiments,api_campaigns.campaign_excluded_customer_v1,SELECT

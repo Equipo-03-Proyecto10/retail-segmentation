@@ -82,11 +82,17 @@ def sale(deployed_stack: Stack) -> dict:
     )
     require(products, 200)
 
-    active = {product["product_id"] for product in products.json()["products"]}
+    # The line is charged its product's own list price, read from
+    # products-service like every other id here, so the discount rule (RN-13,
+    # discount_without_promotion) has nothing to refuse before stock does.
+    list_prices = {
+        product["product_id"]: product["list_price"]
+        for product in products.json()["products"]
+    }
     level = next(
         level
         for level in levels.json()["stock_levels"]
-        if level["product_id"] in active
+        if level["product_id"] in list_prices
     )
     return {
         "customer_id": customers.json()["customers"][0]["customer_id"],
@@ -97,7 +103,7 @@ def sale(deployed_stack: Stack) -> dict:
             {
                 "product_id": level["product_id"],
                 "quantity": level["quantity_on_hand"] + 1000,
-                "unit_price": "1.00",
+                "unit_price": list_prices[level["product_id"]],
             }
         ],
     }
@@ -153,7 +159,7 @@ def test_sales_refuses_a_reused_key_with_another_request(
         headers={"Idempotency-Key": key},
     )
     require(accepted, 201)
-    other = sale | {"lines": [line | {"unit_price": "2.00"}]}
+    other = sale | {"lines": [line | {"quantity": 2}]}
     reused = deployed_stack.edge.json(
         "POST", SALES, other, token=token, headers={"Idempotency-Key": key}
     )

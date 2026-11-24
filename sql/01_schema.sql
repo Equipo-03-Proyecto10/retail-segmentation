@@ -7526,16 +7526,13 @@ GRANT SELECT ON api_models.run_version_v1 TO svc_kpis;
 -- incremental effect, read from experimentation's view.
 GRANT USAGE ON SCHEMA api_experiments TO svc_kpis;
 GRANT SELECT ON api_experiments.campaign_effect_v1 TO svc_kpis;
-<<<<<<< ours
 -- Conversion and recommendation performance (F26-04, #849, #1197): the interactions and
 -- the purchases made through a recommendation, read from recommendations' views.
 GRANT USAGE ON SCHEMA api_recommendations TO svc_kpis;
 GRANT SELECT ON api_recommendations.interaction_v1 TO svc_kpis;
 GRANT SELECT ON api_recommendations.recommended_purchase_v1 TO svc_kpis;
-=======
 -- Conversion after exposure (#1198): the campaign exposures that still count.
 GRANT SELECT ON api_experiments.exposure_v1 TO svc_kpis;
->>>>>>> theirs
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

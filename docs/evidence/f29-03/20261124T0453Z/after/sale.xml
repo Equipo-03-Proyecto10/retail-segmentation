@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<Sale xmlns="https://mosaiq.maxthecoder.online/xml/sales/v1" xmlns:common="https://mosaiq.maxthecoder.online/xml/common/v1"><sale_id>308</sale_id><customer_id>00000000-0000-0000-0000-000000000028</customer_id><store_id>30</store_id><channel_id>3</channel_id><occurred_at>2026-11-24T04:53:54.206689Z</occurred_at><total>41.25</total><lines><product_id>1</product_id><quantity>1</quantity><unit_price>18.75</unit_price></lines><lines><product_id>2</product_id><quantity>1</quantity><unit_price>22.50</unit_price></lines></Sale>

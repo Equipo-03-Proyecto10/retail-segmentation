@@ -1,0 +1,50 @@
+label=local-overload
+date_utc=2026-11-24T04:02:11Z
+commit=7d0cc7056968af151333966c4344dcdf81441a1e
+dirty=0
+locust_files_dirty=0
+locustfile_sha256=51d4e8ff1f1942c2a745386c6ebd4350019f685a4909fc2dfeec02435b85905a
+locust=2.46.7
+account_pools={'FLOOR': 40, 'DESKTOP': 30}
+host_os=Darwin 25.6.0 arm64
+host_model=Mac14,2
+host_cpu=Apple M2
+host_cpus=8
+host_memory_bytes=8589934592
+docker_cpus=8
+docker_memory_bytes=5155180544
+container=p1191-analytics-kpis-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-analytics-kpis:p1191 id=e4a54c118150 memory_bytes_nanocpus=67108864 250000000
+container=p1191-audit-trail-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-audit-trail:p831 id=d006232d38cc memory_bytes_nanocpus=50331648 250000000
+container=p1191-auth-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-auth:p831 id=21280408b5c8 memory_bytes_nanocpus=402653184 500000000
+container=p1191-db-1 image=postgres:18 id=3a4264520e12 memory_bytes_nanocpus=0 0
+container=p1191-gateway-1 image=nginx:1.27-alpine id=65645c7bb6a0 memory_bytes_nanocpus=0 0
+container=p1191-mongodb-1 image=mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0 id=b096b4cb9269 memory_bytes_nanocpus=536870912 0
+container=p1191-ops-console-1 image=mosaiq-ops-console:p1191 id=06ec26f3bd63 memory_bytes_nanocpus=100663296 250000000
+container=p1191-products-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-products:p831 id=9f651dbfb88f memory_bytes_nanocpus=167772160 500000000
+container=p1191-proxy-1 image=nginx:1.27-alpine id=65645c7bb6a0 memory_bytes_nanocpus=0 0
+container=p1191-redis-cache-1 image=redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 id=858f009f9709 memory_bytes_nanocpus=167772160 0
+container=p1191-redis-state-1 image=redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 id=858f009f9709 memory_bytes_nanocpus=100663296 0
+container=p1191-sales-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-sales:p831 id=f3540b27c4ac memory_bytes_nanocpus=167772160 500000000
+container=p1191-sales-import-worker-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-sales:p831 id=f3540b27c4ac memory_bytes_nanocpus=100663296 250000000
+container=p1191-stock-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-stock:p831 id=49f16337567a memory_bytes_nanocpus=50331648 250000000
+container=p1191-users-1 image=ghcr.io/equipo-03-proyecto10/mosaiq-users:p831 id=bc192c40a804 memory_bytes_nanocpus=234881024 500000000
+container=p1191-web-1 image=mosaiq-web:p1191 id=7b9b97548695 memory_bytes_nanocpus=0 0
+version_analytics-kpis=0.4.0
+version_audit-trail=0.1.5
+version_auth=0.1.4
+version_campaigns=0.4.0
+version_categories=0.1.9
+version_check-ins=0.3.0
+version_customer-preferences=0.3.0
+version_customers=0.4.0
+version_engagement=0.4.0
+version_experimentation=0.8.1
+version_model-registry=0.5.0
+version_products=0.3.0
+version_recommendations=0.5.0
+version_rfm-engine=0.8.0
+version_sales=0.7.0
+version_segments=0.6.0
+version_stock=0.3.0
+version_stores=0.2.0
+version_users=0.2.0

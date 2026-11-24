@@ -1,0 +1,9 @@
+{
+  "ok": false,
+  "error": {
+    "code": "forbidden_role",
+    "message": "Your role is not allowed to do this. Ask an administrator if you need access.",
+    "correlation_id": "331f0e46-82dd-4e9d-97d1-5dc0a8b1754f",
+    "details": []
+  }
+}

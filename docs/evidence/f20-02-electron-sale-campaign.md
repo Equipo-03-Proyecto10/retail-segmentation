@@ -1,14 +1,14 @@
 # F20-02 (#760): Electron reads F20-01's sale and writes a draft campaign through the gateway, in XML
 
-> **Status: not yet run on the instance.** This document is the runbook and the
-> template. It is blocked by
-> [#759](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/759)
-> (F20-01, the real Android sale whose `sale_id` it reads), and it needs the
-> team's approval first, because step 1 creates two accounts on the instance
-> and step 3 writes a `campaign` row there. Every `‹fill: …›` below is filled
-> during the live run. The only results recorded so far are the
-> [local dry run](#local-dry-run-not-the-acceptance), which is **not the
-> acceptance**.
+> **Status: run on 2026-11-24 (04:38 - 04:40 UTC, the evening of 2026-11-23 in Mexico
+> City) on the instance's release #1188 (`main` at `50bf7d5c`, same tree as the
+> checkout `fdf0caed`). All three criteria hold: 19 checks, 19 held.** The desktop
+> client read F20-01's sale 307 in XML validated by `sales.xsd`, a `MARKETING`
+> account created draft campaign 31 (validated against `campaigns.xsd`), and an
+> `ANALYST` account's identical write was refused 403 `forbidden_role` (validated
+> against `common.xsd`). The deviation of criterion 3 is recorded as designed and
+> its acceptance by Marcelo is still pending. The run was made by the team's
+> automation.
 
 Governing decisions:
 [ADR-0035](../adr/0035-each-service-publishes-its-own-versioned-contract-and-no-two-services-share-a-resource.md),
@@ -50,7 +50,7 @@ author) to accept or refuse:
 Nothing in the app was changed for this. Changing the app so a forbidden write
 can be attempted from the window would be product work with its own issue.
 
-Acceptance: ‹fill: Marcelo's answer, and where (issue comment link)›.
+Acceptance: **pending**. Marcelo has not answered; the run records the deviation as designed, and the acceptance is his to give on the issue.
 
 ## Who does what
 
@@ -263,83 +263,91 @@ form's submit makes, and writes its answer to `window-forced-write.json`: the
 
 ## The record
 
-*Everything below is filled during the live run.*
-
 ### Where it ran
 
 | Piece | Value |
 |---|---|
-| Identified version | ‹fill: commit or tag› of `develop`, the same as F20-01's run ‹fill: link› |
-| Date and time (UTC) | ‹fill: start – end› |
-| Instance | `https://mosaiq.maxthecoder.online/`, web commit ‹fill› |
-| Desktop | ‹fill: `desktop version` and `desktop checkout commit` from `summary.md`›; release build for the screens ‹fill: version› |
-| `settings.json` | `{ "baseUrl": "https://mosaiq.maxthecoder.online" }` in ‹fill: directory› |
-| Accounts | staff ‹fill: email›, `STORE_MANAGER`, store ‹fill›; marketing ‹fill: email›, user ‹fill: id›; analyst ‹fill: email›, user ‹fill: id› |
-| Who ran each step | ‹fill: step → name› |
-| Approval | ‹fill: who approved the live run, and where› |
+| Identified version | `fdf0caedb301d5308ea804ff9cb9bb5b43ce73cb` of `develop`, whose tree is that of `main` at `50bf7d5c`, what the instance runs; the same version as [F20-01's run](f20-01-android-sale.md) |
+| Date and time (UTC) | 2026-11-24, 04:38:35 (accounts) - 04:39:49 (checks); the screens at about 04:42; the accounts deactivated afterwards |
+| Instance | `https://mosaiq.maxthecoder.online/`, web commit `50bf7d5c48336a39f89f34f9bb8d44a78057fb06` |
+| Desktop | `desktop version` 0.1.0, `desktop checkout commit` `fdf0caed`; the screens come from the checkout's build (`npm run build`), not a release build |
+| `settings.json` | `{ "baseUrl": "https://mosaiq.maxthecoder.online" }` in a scratch `MOSAIQ_DESKTOP_CONFIG_DIR` |
+| Accounts | staff `f20-01-store-manager@example.test`, `STORE_MANAGER`, store 30 (F20-01's, reused); marketing `f20-02-marketing@example.test`, user `661fec2f-94bf-4bd4-8a50-86daa1fd0804`; analyst `f20-02-analyst@example.test`, user `517354fc-758d-4515-a514-6ab94154483d`. The two new ones were created through users-service at 04:38:35 and 04:38:36 (correlation ids `f20-02-create-marketing`, `f20-02-create-analyst`). All three were deactivated at the end (see "What was done after") |
+| Who ran each step | Every step: the team's automation, on a WSL2 workstation. The desktop script and the checks ran from there against the edge; the database was read over SSH through `gcloud compute ssh` (an `ssh`-shaped wrapper as `MOSAIQ_DB_EXEC`). The screens were made with `run-hidden`, Electron given `--use-angle=swiftshader` (a local, uncommitted change of `electron-test.ts`) |
+| Approval | The owner approved the live acceptance runs of 2026-11-23 evening before they started (the batch brief records it) |
 
 ### Versions
 
-‹fill: the "Versions" table of `f20-02/<run>/checked/summary.md`, and the
-release of each service from F20-01 step 7.›
+From [`f20-02/20261124T0440Z/checked/summary.md`](f20-02/20261124T0440Z/checked/summary.md), and the releases read on the instance for F20-01 ([step 7](f20-01-android-sale.md#7-read-the-versions-on-the-instance)):
 
 | Service | Release (`current`) | Contract (`info.version`) |
 |---|---|---|
-| auth | ‹fill› | ‹fill› |
-| users | ‹fill› | ‹fill› |
-| sales | ‹fill› | ‹fill› |
-| campaigns | ‹fill› | ‹fill› |
+| auth | `releases/0.1.4` | 1.1.0 |
+| users | `releases/0.2.0` | 1.4.0 |
+| sales | `releases/0.7.0` | 1.10.1 |
+| campaigns | `releases/0.4.0` | 1.4.2 |
 
 ### Criterion 1: Electron reads F20-01's sale in XML
 
 ![The sale in the desktop app](f20-02-desktop-01-sale.png)
 
-*‹fill: caption — sale, store, lines and total as the screen shows them›*
+*The Sales screen as `STORE_MANAGER`, store 30, From 03:51 To 03:52 UTC: sale 307, 2026-11-24T03:51:10.148779Z, channel `physical_store`, customer `00000000-0000-0000-0000-000000000028`, Demo Product 1 (#1) 1 x 18.75 and Demo Product 2 (#2) 1 x 22.50, total 41.25.*
 
 | What | Value | Evidence |
 |---|---|---|
-| F20-01's sale | `sale_id` ‹fill›, its 201's `X-Correlation-ID` ‹fill› | [F20-01](f20-01-android-sale.md#4-the-sale-over-https) |
-| `GET /api/sales/v1/sales/‹fill›` | ‹fill: 200 `application/xml`›, `X-Correlation-ID` ‹fill› | ‹fill: `checked/exchanges.md#exchange-n`› |
-| `xmllint` against `contracts/sales/sales.xsd` | ‹fill: "validates"› | ‹fill: `checked/summary.md`› |
-| `transaction` row, total equals the XML's | ‹fill› | ‹fill: `checked/rows.md#rows-1`› |
+| F20-01's sale | `sale_id` 307, its 201's `X-Correlation-ID` `282ac864-cde5-4a36-addd-dff0b97463e7` | [F20-01](f20-01-android-sale.md#4-the-sale-over-https) |
+| `GET /api/sales/v1/sales/307` | 200 `application/xml`, `X-Correlation-ID` `f313cff2-3207-4f8b-95be-361f4abf560a` | [`checked/exchanges.md#exchange-3`](f20-02/20261124T0440Z/checked/exchanges.md#exchange-3) |
+| `xmllint` against `contracts/sales/sales.xsd` | validates (`003-staff-response.xml`) | [`checked/summary.md`](f20-02/20261124T0440Z/checked/summary.md) |
+| `transaction` row, total equals the XML's | 307, store 30, channel 3, customer `...0028`, 41.25 in both | [`checked/rows.md#rows-1`](f20-02/20261124T0440Z/checked/rows.md#rows-1) |
 
 ### Criterion 2: a draft campaign in XML
 
 ![The draft in the desktop app](f20-02-desktop-02-draft-campaign.png)
 
-*‹fill: caption›*
+*The Campaigns screen as `MARKETING`, filtered to `DRAFT`: campaign 31, "F20-02 evidence draft 20261124T0438Z", `CHAMPION`, 2026-12-01 to 2026-12-31, `DRAFT`, open for editing. Campaigns 1, 13 and 25 above it are the seed's drafts.*
 
 | What | Value | Evidence |
 |---|---|---|
-| `POST /api/campaigns/v1/campaigns` | ‹fill: 201›, campaign ‹fill›, `X-Correlation-ID` ‹fill› | ‹fill: exchange link› |
-| `xmllint`: request and response against `campaigns.xsd` | ‹fill› | ‹fill› |
-| `campaign` row | ‹fill: id, name, label, dates, `DRAFT`› | ‹fill: `checked/rows.md#rows-2`› |
+| `POST /api/campaigns/v1/campaigns` | 201, campaign 31, `X-Correlation-ID` `cf3be364-ee21-4ac8-9fa3-4f6807d9cd44` | [`exchange-10`](f20-02/20261124T0440Z/checked/exchanges.md#exchange-10) |
+| `xmllint`: request and response against `campaigns.xsd` | both validate (`010-marketing-request.xml`, `010-marketing-response.xml`) | [`checked/summary.md`](f20-02/20261124T0440Z/checked/summary.md) |
+| `campaign` row | 31, "F20-02 evidence draft 20261124T0438Z", `CHAMPION`, 2026-12-01, 2026-12-31, `DRAFT` | [`checked/rows.md#rows-2`](f20-02/20261124T0440Z/checked/rows.md#rows-2) |
+
+The draft is not an experiment: nothing was planned or assigned, and it carries no audience, condition or budget. It stays in `DRAFT` and is still on the instance.
 
 ### Criterion 3: a role outside `x-mosaiq-roles`
 
 ![The Campaigns screen for an analyst: no create control](f20-02-desktop-03-no-create-control.png)
 
-*‹fill: caption›*
+*The Campaigns screen as `ANALYST`: the list, and no **New campaign** form.*
 
 | What | Value | Evidence |
 |---|---|---|
-| The account's role, and `createCampaign`'s roles | ‹fill: `ANALYST`›; `ADMIN`, `MARKETING` | `contracts/campaigns/openapi.yaml` |
-| `POST /api/campaigns/v1/campaigns`, same body | ‹fill: 403›, `X-Correlation-ID` ‹fill› | ‹fill: exchange link› |
-| `xmllint` against `contracts/common/v1/common.xsd` | ‹fill› | ‹fill› |
-| The envelope: code and correlation id | ‹fill: `forbidden_role`, the request's id› | same |
-| Through the window's bridge | ‹fill: `window-forced-write.json`, code and correlation id› | ‹fill› |
-| Nothing was written | ‹fill: no campaign of the draft's name after step 3's `campaign_id`› | ‹fill: `checked/rows.md#rows-3`› |
-| The deviation accepted | ‹fill: by Marcelo, link› | [above](#the-deviation-in-criterion-3) |
+| The account's role, and `createCampaign`'s roles | `ANALYST`; `ADMIN`, `MARKETING` | `contracts/campaigns/openapi.yaml` |
+| `POST /api/campaigns/v1/campaigns`, same body | 403, `X-Correlation-ID` `b4f71f52-e013-412e-a295-5dc9b398e8b6` | [`exchange-14`](f20-02/20261124T0440Z/checked/exchanges.md#exchange-14) |
+| `xmllint` against `contracts/common/v1/common.xsd` | validates (`014-forbidden-response.xml`) | [`checked/summary.md`](f20-02/20261124T0440Z/checked/summary.md) |
+| The envelope: code and correlation id | `forbidden_role`, the request's own id | same |
+| Through the window's bridge | `forbidden_role`, correlation id `331f0e46-82dd-4e9d-97d1-5dc0a8b1754f` | [`screens/window-forced-write.json`](f20-02/20261124T0440Z/screens/window-forced-write.json) |
+| Nothing was written | no campaign of the draft's name after campaign 31 | [`checked/rows.md#rows-3`](f20-02/20261124T0440Z/checked/rows.md#rows-3) |
+| The deviation accepted | pending: Marcelo has not answered | [above](#the-deviation-in-criterion-3) |
 
-Checks: ‹fill: "N checks, N held" from `checked/summary.md`, linked›.
+Checks: 19 checks, 19 held ([`checked/summary.md`](f20-02/20261124T0440Z/checked/summary.md)). The window test (`tests/window/f20-02-live.spec.ts`): 3 passed.
+
+### What was done after
+
+At the end of the run, with the administrator, through `POST /api/users/v1/users/{user_id}/deactivation` (RN-04): `f20-01-store-manager@example.test` (`927d1bf9-c8cb-43ca-9841-704e5d0993bb`, correlation id `f20-01-deactivate`), `f20-02-marketing@example.test` and `f20-02-analyst@example.test` (`f20-02-deactivate-marketing`, `f20-02-deactivate-analyst`), each 200 with `is_active` false, and read back inactive in `app_user`. The draft was left in `DRAFT`.
 
 ### Found on the way
 
-‹fill, or "Nothing."›
+1. Nothing in the three calls failed. The checks pass on the first run.
+2. The desktop's `evidence:f20-02` and the window test need `npm ci` (Electron downloads its binary, cached here) and, on a machine with no GPU, `--use-angle=swiftshader`; `electron-test.ts` has no way to pass it, so the run edited that line locally and reverted it.
+3. `node_modules` post-install scripts of `esbuild` and `electron-winstaller` were blocked by npm's `allowScripts` warning; the scripts that matter (the evidence CLI bundle and the build) ran.
 
 ### What was not done
 
-‹fill›
+- The release build of the desktop app was not made: the screens come from the checkout's build, as the dry run did.
+- Marcelo's acceptance of the deviation of criterion 3 is not recorded (see above).
+- Campaign 31 was not moved to `CANCELLED`; it stays a draft.
+- The client's raw `bodies/` and `exchanges.json`, and the checker's `record.json`, stay in the lane's scratch folder, as step 6 says.
 
 ---
 

@@ -1,0 +1,94 @@
+{
+  "started_at": "2026-11-24T04:38:49Z",
+  "finished_at": "2026-11-24T04:38:55Z",
+  "base_url": "https://mosaiq.maxthecoder.online",
+  "sale_id": 307,
+  "draft": {
+    "name": "F20-02 evidence draft 20261124T0438Z",
+    "label_code": "CHAMPION",
+    "starts_on": "2026-12-01",
+    "ends_on": "2026-12-31"
+  },
+  "build": {
+    "desktop version": "0.1.0",
+    "checkout commit": "fdf0caedb301d5308ea804ff9cb9bb5b43ce73cb",
+    "checkout describe": "kit-py/v0.1.8-776-gfdf0caed",
+    "settings.json": "<scratch>/settings.json"
+  },
+  "steps": {
+    "staff": {
+      "account": "f20-01-store-manager@example.test",
+      "role": "STORE_MANAGER",
+      "signed_in": true,
+      "may_call": true,
+      "ok": true,
+      "status": 200,
+      "correlation_id": "f313cff2-3207-4f8b-95be-361f4abf560a",
+      "exchange": 3,
+      "sale": {
+        "sale_id": 307,
+        "customer_id": "00000000-0000-0000-0000-000000000028",
+        "store_id": 30,
+        "store_name": "Store 30",
+        "channel_id": 3,
+        "channel_name": "physical_store",
+        "occurred_at": "2026-11-24T03:51:10.148779Z",
+        "total": "41.25",
+        "lines": [
+          {
+            "product_id": 1,
+            "product_name": "Demo Product 1",
+            "quantity": 1,
+            "unit_price": "18.75",
+            "line_total": "18.75"
+          },
+          {
+            "product_id": 2,
+            "product_name": "Demo Product 2",
+            "quantity": 1,
+            "unit_price": "22.50",
+            "line_total": "22.50"
+          }
+        ]
+      }
+    },
+    "marketing": {
+      "account": "f20-02-marketing@example.test",
+      "role": "MARKETING",
+      "signed_in": true,
+      "may_call": true,
+      "ok": true,
+      "status": 201,
+      "correlation_id": "cf3be364-ee21-4ac8-9fa3-4f6807d9cd44",
+      "exchange": 10,
+      "campaign": {
+        "campaign_id": 31,
+        "name": "F20-02 evidence draft 20261124T0438Z",
+        "label_code": "CHAMPION",
+        "starts_on": "2026-12-01",
+        "ends_on": "2026-12-31",
+        "status": "DRAFT",
+        "allowed_transitions": [
+          "ACTIVE",
+          "CANCELLED"
+        ]
+      }
+    },
+    "forbidden": {
+      "account": "f20-02-analyst@example.test",
+      "role": "ANALYST",
+      "signed_in": true,
+      "may_call": false,
+      "ok": false,
+      "status": 403,
+      "correlation_id": "b4f71f52-e013-412e-a295-5dc9b398e8b6",
+      "exchange": 14,
+      "error": {
+        "code": "forbidden_role",
+        "message": "Your role is not allowed to do this. Ask an administrator if you need access.",
+        "correlation_id": "b4f71f52-e013-412e-a295-5dc9b398e8b6",
+        "details": []
+      }
+    }
+  }
+}

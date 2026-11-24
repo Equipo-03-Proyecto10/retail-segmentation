@@ -189,15 +189,15 @@ start.
 
 ## Compliance
 
-- `tests/test_file_store.py` runs the upload, read, replace and delete paths on the local
-  backend against a real PostgreSQL, runs the GCS backend against a fake client that records
-  its calls, and covers both failure orders (store down: no row; row refused: object
-  removed).
+- `tests/test_file_store.py` runs both backends, the GCS one against a fake client that
+  records its calls. `tests/test_file_store_postgres.py` runs the upload, read, replace and
+  delete paths through the web's routes against a real PostgreSQL, on each backend, and covers
+  both failure orders (store down: no row; row refused: object removed).
 - `tests/test_stored_file_schema.py` shows each CHECK of `stored_file` and of
   `product_one_image_source` refusing a bad row, and the seeded history rows.
 - `tests/test_migrate_uploads.py` runs the script's dry run and real run against a temporary
   `UPLOAD_DIR`, twice, and with a file it cannot move.
 - `grep -rn "google.cloud" web/ deploy/ services/` finds the import only in
-  `web/services/files.py` and the migration script, and nothing under `services/`.
+  `web/services/files.py`, and nothing under `services/` or `deploy/`.
 - `Config.from_env` raises `ConfigurationError` for the local backend outside
   `development`, which `tests/test_config.py` asserts.

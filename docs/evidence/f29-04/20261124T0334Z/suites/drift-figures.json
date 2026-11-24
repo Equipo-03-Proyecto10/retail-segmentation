@@ -1,0 +1,301 @@
+{
+  "detection": [
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.1,
+      "explained": 0,
+      "kind": "SPEND",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.011799,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.002063
+      },
+      "size": 0.1,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.25,
+      "explained": 0,
+      "kind": "SPEND",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.054594,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.010817
+      },
+      "size": 0.25,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.5,
+      "explained": 0,
+      "kind": "SPEND",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.156659,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.042098
+      },
+      "size": 0.5,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 100,
+      "alerted_by": {
+        "M": 50
+      },
+      "alerted_pairs": 50,
+      "effect": 1.0,
+      "explained": 50,
+      "kind": "SPEND",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.362635,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.134558
+      },
+      "size": 1.0,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": -0.082233,
+      "explained": 0,
+      "kind": "FREQUENCY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.011195,
+        "M": 0.01191,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.01297
+      },
+      "size": 0.1,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": -0.205329,
+      "explained": 0,
+      "kind": "FREQUENCY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.070795,
+        "M": 0.048384,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.073429
+      },
+      "size": 0.25,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 6,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": -0.328508,
+      "explained": 0,
+      "kind": "FREQUENCY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.22891,
+        "M": 0.127501,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.213621
+      },
+      "size": 0.4,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 100,
+      "alerted_by": {
+        "F": 50,
+        "SEGMENT_SHARES": 50
+      },
+      "alerted_pairs": 50,
+      "effect": -0.410999,
+      "explained": 50,
+      "kind": "FREQUENCY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.432123,
+        "M": 0.226729,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.356657
+      },
+      "size": 0.5,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.085092,
+      "explained": 0,
+      "kind": "CATEGORY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.003666,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.001464
+      },
+      "size": 0.1,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.213441,
+      "explained": 0,
+      "kind": "CATEGORY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.003666,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.001464
+      },
+      "size": 0.25,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.426306,
+      "explained": 0,
+      "kind": "CATEGORY",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.003666,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.001464
+      },
+      "size": 0.5,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.072945,
+      "explained": 0,
+      "kind": "CHANNEL",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.003666,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.001464
+      },
+      "size": 0.1,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.183043,
+      "explained": 0,
+      "kind": "CHANNEL",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.003666,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.001464
+      },
+      "size": 0.25,
+      "windows": 100
+    },
+    {
+      "alarmed_windows": 0,
+      "alerted_by": {},
+      "alerted_pairs": 0,
+      "effect": 0.366539,
+      "explained": 0,
+      "kind": "CHANNEL",
+      "pairs": 50,
+      "psi_mean": {
+        "F": 0.00254,
+        "M": 0.003666,
+        "R": 0.00302,
+        "SEGMENT_SHARES": 0.001464
+      },
+      "size": 0.5,
+      "windows": 100
+    }
+  ],
+  "digest": "cfb2ddcfacaa1cef431f6a2ae54294fa8138e44f73a31facc4d5be6d51630f25",
+  "false_alarms": {
+    "alarmed_by": {},
+    "alarmed_windows": 0,
+    "alert_upper": 0.007461,
+    "alerted_by": {},
+    "alerted_pairs": 0,
+    "pairs": 200,
+    "psi_max": {
+      "F": 0.007659,
+      "M": 0.010542,
+      "R": 0.008045,
+      "SEGMENT_SHARES": 0.004676
+    },
+    "psi_mean": {
+      "F": 0.002403,
+      "M": 0.003711,
+      "R": 0.003182,
+      "SEGMENT_SHARES": 0.001536
+    },
+    "psi_p95": {
+      "F": 0.004975,
+      "M": 0.006922,
+      "R": 0.005884,
+      "SEGMENT_SHARES": 0.003488
+    },
+    "window_upper": 0.007461,
+    "windows": 400
+  },
+  "reference": {
+    "customers": 3979,
+    "labels": [
+      {
+        "label_code": "CHAMPION",
+        "share": 0.050515204825333
+      },
+      {
+        "label_code": "LOYAL",
+        "share": 0.0854486051771802
+      },
+      {
+        "label_code": "POTENTIAL",
+        "share": 0.5752701683840161
+      },
+      {
+        "label_code": "HIBERNATING",
+        "share": 0.023372706710228702
+      },
+      {
+        "label_code": "LOST",
+        "share": 0.26539331490324203
+      }
+    ]
+  }
+}

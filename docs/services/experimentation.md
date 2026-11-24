@@ -73,7 +73,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 
 | Direction | Object | Counterpart |
 |---|---|---|
-| Publishes | `api_experiments.exposure_v1` | analytics-kpis. Required by its contract, not contracted here |
+| Publishes | `api_experiments.exposure_v1` | analytics-kpis (`contracts/db/api_experiments.exposure.v1.md`, #1198): the campaign exposures that still count, one row each, with the campaign, experiment, customer and time |
 | Publishes | `api_experiments.campaign_effect_v1` | analytics-kpis (`contracts/db/api_experiments.campaign_effect.v1.md`, F26-04): each measured experiment of a campaign, its attributed sales and its effect, kept apart |
 | Consumes | `api_segments.current_label_v1` | segments (the label a customer holds at the frame instant) |
 | Consumes | `api_models.published_version_v1` | model-registry (the model version published at the frame instant) |

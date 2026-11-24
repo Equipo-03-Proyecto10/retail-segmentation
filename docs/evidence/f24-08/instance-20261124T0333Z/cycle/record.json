@@ -1,0 +1,952 @@
+{
+  "facts": {
+    "started_at": "2026-11-24T03:33:01Z",
+    "bound": "contracts/streams/stock.changed.v1.md, group `recommendations`: p95 3000 ms, max 5000 ms",
+    "customer": "00000000-0000-0000-0000-000000000003",
+    "store": 3,
+    "channel": "(any)",
+    "poll interval ms": 100,
+    "reader": "s1-f2408-analyst@example.test",
+    "planner": "s1-f2408-planner@example.test",
+    "gateway": "https://127.0.0.1",
+    "versions": {
+      "checkout commit": "(unavailable)",
+      "checkout describe": "(unavailable)",
+      "auth contract": "1.1.0",
+      "stock contract": "1.3.0",
+      "products contract": "1.4.0",
+      "recommendations contract": "2.0.4",
+      "auth release": "/opt/mosaiq/services/auth/releases/0.1.4",
+      "stock release": "/opt/mosaiq/services/stock/releases/0.3.0",
+      "products release": "/opt/mosaiq/services/products/releases/0.3.0",
+      "recommendations release": "/opt/mosaiq/services/recommendations/releases/0.5.0",
+      "web commit": "50bf7d5c48336a39f89f34f9bb8d44a78057fb06"
+    },
+    "product": 2,
+    "before": "product 2: primary at position 2 (store 3); exclusions: already_bought 14, out_of_stock 21, PERSONALIZATION_WITHDRAWN 1",
+    "COUNT Idempotency-Key": "1c3a3be5-82b5-4310-af67-20cca0cab037",
+    "1. Agotado: after the bound": "product 2: elsewhere at position 4 (store 13), out_of_stock; exclusions: already_bought 14, out_of_stock 22, PERSONALIZATION_WITHDRAWN 1",
+    "1. Agotado: elsewhere entry": "product 2 reported held at store 13 (25 units), unavailable_reason out_of_stock: not offered at store 3",
+    "RECEIPT Idempotency-Key": "f3205c35-5555-42cd-9912-0bfd054cbbed",
+    "2. Reabastecido: after the bound": "product 2: primary at position 2 (store 3); exclusions: already_bought 14, out_of_stock 21, PERSONALIZATION_WITHDRAWN 1",
+    "finished_at": "2026-11-24T03:33:15Z"
+  },
+  "checks": [
+    {
+      "criterion": "1. Agotado",
+      "case": "before: the product is a primary item at the store",
+      "expected": "primary",
+      "actual": "primary",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-7"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "before, again: served from the cache (same decision_id)",
+      "expected": "2a948a39-c77f-42f7-8576-13f57cfd7914",
+      "actual": "2a948a39-c77f-42f7-8576-13f57cfd7914",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-7",
+        "exchanges.md#exchange-8"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "before: the item's quantity = stock-service = `inventory`",
+      "expected": "10 = 10 = 10",
+      "actual": "10 = 10 = 10",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-7",
+        "exchanges.md#exchange-9",
+        "rows.md#rows-1"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "the COUNT to zero is recorded",
+      "expected": "201",
+      "actual": "201",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-10"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "measured delay, movement 201 to the first read that no longer offers it, within the bound's maximum",
+      "expected": "≤ 5000 ms",
+      "actual": "164 ms",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-11"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "5000 ms after the movement (bound 5000 ms), product 2 is not offered at store 3",
+      "expected": "not offered",
+      "actual": "not offered",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-12"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "the next read agrees (it may be served from the cache)",
+      "expected": "not offered",
+      "actual": "not offered",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-13"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "the decision counts one more `out_of_stock` exclusion",
+      "expected": "22",
+      "actual": "22",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-12"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "the stored decision is the answer's: same items and exclusions",
+      "expected": "same",
+      "actual": "same",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-12",
+        "rows.md#rows-2"
+      ]
+    },
+    {
+      "criterion": "1. Agotado",
+      "case": "stock-service and `inventory` hold the movement's result",
+      "expected": "0 = 0",
+      "actual": "0 = 0",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-14",
+        "rows.md#rows-3"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "the RECEIPT of 10 is recorded",
+      "expected": "201",
+      "actual": "201",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-15"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "measured delay, movement 201 to the first read that offers it, within the bound's maximum",
+      "expected": "≤ 5000 ms",
+      "actual": "73 ms",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-16"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "5000 ms after the movement (bound 5000 ms), product 2 is offered at store 3",
+      "expected": "offered",
+      "actual": "offered",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-17"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "the next read agrees (it may be served from the cache)",
+      "expected": "offered",
+      "actual": "offered",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-18"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "it is a primary item again, with the restocked quantity",
+      "expected": "primary, 10",
+      "actual": "primary, 10",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-17"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "the stored decision is the answer's: same items and exclusions",
+      "expected": "same",
+      "actual": "same",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-17",
+        "rows.md#rows-4"
+      ]
+    },
+    {
+      "criterion": "2. Reabastecido",
+      "case": "stock-service and `inventory` hold the movement's result",
+      "expected": "10 = 10",
+      "actual": "10 = 10",
+      "held": true,
+      "links": [
+        "exchanges.md#exchange-19",
+        "rows.md#rows-5"
+      ]
+    }
+  ],
+  "exchanges": [
+    {
+      "number": 1,
+      "correlation_id": "f24-08-1d5f5a21a3554d0d",
+      "note": "sign in, reader",
+      "method": "POST",
+      "url": "https://127.0.0.1/api/auth/v1/sessions",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-1d5f5a21a3554d0d"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "request_body": "{\n  \"email\": \"s1-f2408-analyst@example.test\",\n  \"password\": \"<masked #3>\",\n  \"device_label\": \"F24-08 a stock change and the recommendation\"\n}",
+      "status": 201,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-1d5f5a21a3554d0d"
+        ]
+      ],
+      "response_body": "{\n  \"access_token\": \"<masked #1>\",\n  \"refresh_token\": \"<masked #2>\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 600,\n  \"expires_at\": \"2026-11-24T03:43:02Z\"\n}",
+      "at": "2026-11-24T03:33:02Z"
+    },
+    {
+      "number": 2,
+      "correlation_id": "f24-08-ddecc0938a934ba1",
+      "note": "sign in, planner",
+      "method": "POST",
+      "url": "https://127.0.0.1/api/auth/v1/sessions",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-ddecc0938a934ba1"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "request_body": "{\n  \"email\": \"s1-f2408-planner@example.test\",\n  \"password\": \"<masked #6>\",\n  \"device_label\": \"F24-08 a stock change and the recommendation\"\n}",
+      "status": 201,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-ddecc0938a934ba1"
+        ]
+      ],
+      "response_body": "{\n  \"access_token\": \"<masked #4>\",\n  \"refresh_token\": \"<masked #5>\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 600,\n  \"expires_at\": \"2026-11-24T03:43:02Z\"\n}",
+      "at": "2026-11-24T03:33:02Z"
+    },
+    {
+      "number": 3,
+      "correlation_id": "f24-08-babcffe268884bf7",
+      "note": "version",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/auth/openapi.yaml",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-babcffe268884bf7"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/yaml"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-babcffe268884bf7"
+        ]
+      ],
+      "response_body": "openapi: 3.1.0\ninfo:\n  title: auth-service\n  version: 1.1.0\n  description: >-\n    Authenticates active accounts, issues RS256 access tokens, rotates refresh\n    tokens, and owns session liveness under RN-52. Sign-in and refresh read the\n    users service's published credential view; current-session reads, sign-out,\n    and JWKS publication do not read PostgreSQL.\nservers:\n  - url: /api/auth\nsecurity:\n  - bearer: []\npaths:\n  /v1/sessions:\n    post:\n      operationId: createSession\n      summary: Sign in and create a session\n      security: []\n      parameters:\n        - $ref: \"#/components/parameters/CorrelationId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              $ref: \"#/components/schemas/SignInRequest\"\n            examples:\n              sign_in:\n                externalValue: examples/sign-in.request.json\n          application/xml:\n            schema:\n              $ref: \"#/components/schemas/SignInRequest\"\n            examples:\n              sign_in:\n                externalValue: examples/sign-in.request.xml\n      responses:\n        \"201\":\n          description: Session created.\n          headers:\n            X-Correlation-ID:\n              $ref: \"#/components/headers/CorrelationId\"\n          content:\n            application/json:\n              schema:\n                $ref: \"#/components/schemas/TokenResult\"\n              examples:\n                sign_in:\n                  externalValue: examples/sign-in.json\n            application/xml:\n              schema:\n                $ref: \"#/components/schemas/TokenResult\"\n              examples:\n                sign_in:\n                  externalValue: examples/sign-in.xml\n        \"400\":\n          $ref: \"#/components/responses/MalformedBody\"\n        \"401\":\n          description: >-\n            Invalid credentials: invalid_credentials. A wrong password, an\n            unknown email, and an inactive account deliberately return this\n            same body so account state is not disclosed.\n          headers:\n            X-Correlation-ID:\n              $ref: \"#/components/headers/CorrelationId\"\n          content:\n            application/json:\n              schema:\n                $ref: \"#/components/schemas/Error\"\n              examples:\n                invalid_credentials:\n                  externalValue: examples/invalid-credentials.json\n            application/xml:\n              schema:\n                $ref: \"#/components/schemas/Error\"\n              examples:\n                invalid_credentials:\n                  externalValue: examples/invalid-credentials.xml\n        \"406\":\n          $ref: \"#/components/responses/NotAcceptable\"\n        \"413\":\n          $ref: \"#/components/responses/PayloadTooLarge\"\n        \"415\":\n          $ref: \"#/components/responses/UnsupportedMediaType\"\n        \"422\":\n          $ref: \"#/components/responses/InvalidBody\"\n        \"429\":\n          description: \"The sign-in request limit was exceeded: rate_limited.\"\n          headers:\n            X-Correlation-ID:\n              $ref: \"#/components/headers/CorrelationId\"\n            Retry-After:\n              $ref: \"#/components/headers/RetryAfter\"\n          content:\n            application/json:\n              schema:\n                $ref: \"#/components/schemas/Error\"\n              examples:\n                rate_limited:\n                  externalValue: examples/rate-limited.json\n            application/xml:\n              schema:\n                $ref: \"#/components/schemas/Error\"\n              examples:\n                rate_limited:\n                  externalValue: examples/rate-limited.xml\n        \"503\":\n          description: >-\n            Session state cannot be reached (auth_unavailable), or PostgreSQL\n            cannot provide the published credential view\n            (database_unavailable).\n          headers:\n            X-Correlation-ID:\n              $ref: \"#/components/headers/CorrelationId\"\n          content:\n            application/json:\n              schema:\n                $ref: \"#/components/schemas/Error\"\n              examples:\n                auth_unavailable:\n                  externalValue: examples/auth-unavailable.json\n                database_unavailable:\n                  externalValue: examples/database-unavailable.json\n            application/xml:\n              schema:\n                $ref: \"#/components/schemas/Error\"\n              examples:\n                auth_unavailable:\n                  externalValue: examples/auth-unavailable.xml\n                database_unavailable:\n                  externalValue: examples/database-unavailable.xml\n  /v1/sessions/refresh:\n    post:\n      operationId: refreshSession\n      summary: Rotate a refresh token\n      description: >-\n        Returns new access and refresh tokens without extending the session's\n        absolute end.\n      security: []\n      parameters:\n        - $ref: \"#/components/parameters/CorrelationId\"\n      requestBody:\n        required: true\n        content:\n          application/json:\n            schema:\n              $ref: \"#/components/schemas/RefreshRequest\"\n            examples:\n              refresh:\n                externalValue: examples/refresh.request.json\n          application/xml:\n            schema:\n              $ref: \"#/components/schemas/RefreshRequest\"\n            examples:\n              refresh:\n                externalValue: examples/refresh.request.xml\n      responses:\n        \"200\":\n          description: Refresh token rotated.\n          headers:\n            X-Correlation-ID:\n              $ref: \"#/components/headers/CorrelationId\"\n          content:\n            application/json:\n              schema:\n                $ref: \"#/components/schemas/TokenResult\"\n              examples:\n                refresh:\n                  externalValue: examples/refresh.json\n            application/xml:\n              schema:\n                $ref: \"#/components/schemas/TokenResult\"\n              examples:\n           \n… (17226 more characters)",
+      "at": "2026-11-24T03:33:02Z"
+    },
+    {
+      "number": 4,
+      "correlation_id": "f24-08-229a3f933d044aba",
+      "note": "version",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/stock/openapi.yaml",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-229a3f933d044aba"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/yaml"
+        ],
+        [
+          "x-correlation-id",
+          "f24-08-229a3f933d044aba"
+        ]
+      ],
+      "response_body": "openapi: 3.1.0\ninfo:\n  title: stock-service\n  version: 1.3.0\n  description: 'Publishes the quantity held for each store and product pair, records the movements that\n    change it, and states in which channels a product can be sold (RN-14, ADR-0061). A level, movement\n    or availability carries ids and quantities only: no product name, price, store name or channel name,\n    so clients fetch those from products, stores and sales by id (ADR-0035, no composition). A store holds\n    one physical quantity per product; availability per channel is derived from it and is never a second\n    quantity. Stock changes only through three doors: a sale (`api_stock.consume_v1`, called by sales\n    inside its transaction), a sale''s reversal (`api_stock.restock_v1`, called by sales inside the reversal''s\n    transaction), and a recorded movement posted here. Stock is never negative. Reservations are not adopted\n    (ADR-0061). See contracts/db/api_stock.consume.v1.md, api_stock.restock.v1.md and api_stock.availability.v1.md.'\nsecurity:\n- bearer: []\ntags:\n- name: Stock\n- name: Meta\npaths:\n  /v1/stock-levels:\n    get:\n      tags:\n      - Stock\n      summary: List stock levels\n      description: Returns a page of stock levels ordered by `store_id`, then `product_id`. `below=N`\n        returns the levels whose `quantity_on_hand` is less than N. A level is read from PostgreSQL on\n        every request and is never cached, so a phone sale and a CSV sale both show on the next read.\n      operationId: listStockLevels\n      x-mosaiq-roles: &id002\n      - ADMIN\n      - ANALYST\n      - STORE_MANAGER\n      - MARKETING\n      - INVENTORY_PLANNER\n      - AUDITOR\n      - SALES_ASSOCIATE\n      - LOYALTY_OFFICER\n      - COMMERCIAL_SUPERVISOR\n      parameters:\n      - $ref: '#/components/parameters/CorrelationId'\n      - $ref: '#/components/parameters/StoreId'\n      - $ref: '#/components/parameters/ProductId'\n      - $ref: '#/components/parameters/Below'\n      - $ref: '#/components/parameters/Page'\n      - $ref: '#/components/parameters/Size'\n      responses:\n        '200':\n          description: A page of stock levels.\n          headers:\n            X-Correlation-ID:\n              $ref: '#/components/headers/CorrelationId'\n          content:\n            application/json:\n              schema: &id001\n                $ref: '#/components/schemas/StockLevelPage'\n              examples:\n                filtered_page:\n                  externalValue: ./examples/stock-levels-filtered.json\n            application/xml:\n              schema: *id001\n              examples:\n                filtered_page:\n                  externalValue: ./examples/stock-levels-filtered.xml\n        '401':\n          $ref: '#/components/responses/Unauthorized'\n        '403':\n          $ref: '#/components/responses/Forbidden'\n        '406':\n          $ref: '#/components/responses/NotAcceptable'\n        '422':\n          $ref: '#/components/responses/InvalidQuery'\n        '429':\n          $ref: '#/components/responses/RateLimited'\n        '503':\n          $ref: '#/components/responses/OperationUnavailable'\n  /v1/stock-levels/{store_id}/{product_id}:\n    get:\n      tags:\n      - Stock\n      summary: Get one stock level\n      description: The store and product pair is the level's own identity (E-03). A level is read from\n        PostgreSQL on every request and is never cached. A pair with no `inventory` row answers 404 `stock_level_not_found`.\n      operationId: getStockLevel\n      x-mosaiq-roles: *id002\n      parameters:\n      - $ref: '#/components/parameters/CorrelationId'\n      - $ref: '#/components/parameters/StoreIdPath'\n      - $ref: '#/components/parameters/ProductIdPath'\n      responses:\n        '200':\n          description: The stock level.\n          headers:\n            X-Correlation-ID:\n              $ref: '#/components/headers/CorrelationId'\n          content:\n            application/json:\n              schema: &id003\n                $ref: '#/components/schemas/StockLevel'\n              examples:\n                stock_level:\n                  externalValue: ./examples/stock-level.json\n            application/xml:\n              schema: *id003\n              examples:\n                stock_level:\n                  externalValue: ./examples/stock-level.xml\n        '401':\n          $ref: '#/components/responses/Unauthorized'\n        '403':\n          $ref: '#/components/responses/Forbidden'\n        '404':\n          $ref: '#/components/responses/NotFound'\n        '406':\n          $ref: '#/components/responses/NotAcceptable'\n        '429':\n          $ref: '#/components/responses/RateLimited'\n        '503':\n          $ref: '#/components/responses/OperationUnavailable'\n  /v1/stock-movements:\n    post:\n      tags:\n      - Stock\n      summary: Record a stock movement\n      description: 'Records one receipt, transfer, count or adjustment and changes `inventory` in the\n        same transaction. The movement is append-only: it is never edited or deleted, and a mistake is\n        corrected by a later movement.\n\n\n        | `movement_type` | Effect on on-hand | Body |\n\n        |---|---|---|\n\n        | `RECEIPT` | Adds `quantity` (positive) at `store_id`. Creates the stock record when the pair\n        has none. | `store_id`, `product_id`, `quantity`, `reference` (for example a delivery note) |\n\n        | `TRANSFER` | Two rows sharing a `transfer_id`, in one transaction: subtracts `quantity` (positive)\n        at `origin_store_id`, adds it at `destination_store_id`. The destination record is created when\n        absent. | `product_id`, `origin_store_id`, `destination_store_id`, `quantity` |\n\n        | `COUNT` | Sets on-hand to `quantity` (zero or more) at `store_id`, and stores before and after.\n        Creates the record when absent. | `store_id`, `product_id`, `quantity`, `counted_by` |\n\n        | `ADJUSTMENT` | Adds `quantity_delta` (a non-zero integer, negative to subtract) at `store_id`.\n        Needs an existing record. | `store_id`, `product_id`, `quantity_de\n… (39538 more characters)",
+      "at": "2026-11-24T03:33:02Z"
+    },
+    {
+      "number": 5,
+      "correlation_id": "f24-08-5fb60223483f49be",
+      "note": "version",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/products/openapi.yaml",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-5fb60223483f49be"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/yaml"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-5fb60223483f49be"
+        ]
+      ],
+      "response_body": "openapi: 3.1.0\ninfo:\n  title: products-service\n  version: 1.4.0\n  description: >-\n    Owns the product catalog rule: a product has a unique SKU, a non-negative\n    two-decimal list price, exactly one existing category, and is retired by\n    deactivation. Reads may be cached, but a cache miss reads PostgreSQL. The\n    batch `ids` filter lets clients resolve as many as 50 product references in\n    one call; unknown ids are omitted rather than treated as errors.\n\n    Commercial details (`/v1/products/{product_id}/details`) add a\n    commercial status (`active`, `paused`, `discontinued`), attributes, a\n    photo URL and a barcode. The `Product` representation of `listProducts`\n    and `getProduct` is unchanged. `product.is_active` stays the one flag\n    that the web, sales and recommendations read, and it is true exactly\n    when the commercial status is `active`; the two are never stored or\n    served out of step. Substitutes and complements of a product are under\n    `/v1/products/{product_id}/relations` and are published to\n    recommendations as `api_products.product_relation_v1`. Photos are\n    uploaded through the web application, never through this service.\nsecurity:\n  - bearer: []\npaths:\n  /v1/products:\n    get:\n      operationId: listProducts\n      summary: List products\n      description: >-\n        Returns products ordered by `product_id`. Filters are combined. `q`\n        matches a case-insensitive substring of the product name or SKU. `sku`\n        is an exact match. `barcode` is an exact match on the product's\n        barcode; barcodes are unique, so the page holds at most one product,\n        and a barcode no product carries gives an empty page, not 404. `ids` is\n        a comma-separated list of at most 50 positive product ids; ids with no\n        matching product are omitted from the page and are not errors.\n        Pagination applies after filtering. A filter value outside its schema\n        returns 422 `invalid_query`, naming the parameter in `details`.\n      x-mosaiq-roles:\n        - ADMIN\n        - ANALYST\n        - STORE_MANAGER\n        - MARKETING\n        - INVENTORY_PLANNER\n        - AUDITOR\n        - SALES_ASSOCIATE\n        - LOYALTY_OFFICER\n        - COMMERCIAL_SUPERVISOR\n      parameters:\n        - $ref: '#/components/parameters/CorrelationId'\n        - name: q\n          in: query\n          description: Case-insensitive substring matched against name or SKU.\n          schema:\n            type: string\n            minLength: 1\n            maxLength: 150\n        - name: sku\n          in: query\n          description: Exact SKU.\n          schema:\n            type: string\n            minLength: 1\n            maxLength: 40\n        - name: barcode\n          in: query\n          description: >-\n            Exact textual barcode, digits only, in the form printed on the\n            label. Matching uses the digits as stored: a GTIN-12 does not match\n            its zero-padded GTIN-13. The barcode itself is served by\n            `getProductDetails`, not in the `Product` representation. A value\n            outside the `Barcode` pattern returns 422 `invalid_query` with an\n            `invalid_format` detail naming `barcode`; a well-formed value with\n            a wrong check digit matches no product and gives an empty page.\n          example: '4006381333931'\n          schema:\n            $ref: '#/components/schemas/Barcode'\n        - name: category_id\n          in: query\n          description: Existing category identifier to filter by.\n          schema:\n            type: integer\n            minimum: 1\n            maximum: 32767\n        - name: active\n          in: query\n          description: Whether to return active or inactive products.\n          schema:\n            type: boolean\n        - name: ids\n          in: query\n          description: >-\n            Comma-separated list of one to 50 positive product ids. Unknown ids\n            are omitted. More than 50 ids returns 422 `too_many_ids`; the\n            pattern below leaves the count to the service so that refusal\n            carries its own code rather than a generic schema error.\n          example: 1001,1002,1003\n          schema:\n            type: string\n            pattern: '^[1-9][0-9]*(,[1-9][0-9]*)*$'\n        - $ref: '#/components/parameters/Page'\n        - $ref: '#/components/parameters/Size'\n      responses:\n        '200':\n          description: A page of products.\n          headers:\n            X-Correlation-ID:\n              $ref: '#/components/headers/CorrelationId'\n          content:\n            application/json:\n              schema:\n                $ref: '#/components/schemas/Products'\n              examples:\n                products:\n                  externalValue: ./examples/products.json\n                fifty_id_batch:\n                  externalValue: ./examples/products-50-id-batch.json\n                by_barcode:\n                  externalValue: ./examples/products-by-barcode.json\n            application/xml:\n              schema:\n                $ref: '#/components/schemas/Products'\n              examples:\n                products:\n                  externalValue: ./examples/products.xml\n                fifty_id_batch:\n                  externalValue: ./examples/products-50-id-batch.xml\n                by_barcode:\n                  externalValue: ./examples/products-by-barcode.xml\n        '401':\n          $ref: '#/components/responses/AuthenticationError'\n        '403':\n          $ref: '#/components/responses/ForbiddenRole'\n        '406':\n          $ref: '#/components/responses/NotAcceptable'\n        '422':\n          $ref: '#/components/responses/ProductListValidation'\n        '429':\n          $ref: '#/components/responses/RateLimited'\n        '503':\n          $ref: '#/components/responses/ProtectedDatabaseUnavailable'\n    post:\n      operationId: createProduct\n      summary: Create a product\n      description: >-\n        Creates an active product with the caller-supplied `product_id`. The SKU\n        \n… (49459 more characters)",
+      "at": "2026-11-24T03:33:02Z"
+    },
+    {
+      "number": 6,
+      "correlation_id": "f24-08-1951e4178dc54087",
+      "note": "version",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/openapi.yaml",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-1951e4178dc54087"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/yaml"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-1951e4178dc54087"
+        ]
+      ],
+      "response_body": "openapi: 3.1.0\ninfo:\n  title: recommendations-service\n  version: 2.0.4\n  description: >-\n    Answers what to recommend to one customer, and why, or why nothing qualifies\n    (RN-40, restated by ADR-0067).\n\n    `/v1` is frozen: `GET /v1/recommendations` keeps its request, its response and\n    its XSD (`recommendations.xsd`, namespace `.../xml/recommendations/v1`) exactly\n    as 1.0.0 published them, judged at the customer's usual store, so every\n    existing caller keeps working. It never carries a store or channel the caller\n    named, an alternative, an `elsewhere` entry or a decision id, and an old client\n    would show any of them as stock in this store. ADR-0035 makes an element added\n    to an XML response type a breaking change, so the new behaviour ships as `/v2`\n    beside `/v1`, with `recommendations.v2.xsd` (namespace\n    `.../xml/recommendations/v2`, served at `/schema.v2.xsd`).\n\n    `/v2` judges a recommendation at a reference store and an optional reference\n    channel the caller may name, gives each item its score factors, its availability\n    and its reasons, offers a marked alternative for a product that is unavailable,\n    and gives each answer a decision id. The decision is recorded, and\n    `recommendation-decisions` (a top-level resource of this service, `/v2` only)\n    reads it back: what was offered, what was excluded and why. A `/v1` answer is\n    recorded too, but carries no decision id.\n\n    The service reads published `api_*` views only (E-07): the seven of 1.0.0\n    (`api_products.product_ref_v1`, `api_categories.category_tree_v1`,\n    `api_stock.stock_level_v1`, `api_customers.customer_ref_v1`,\n    `api_preferences.interest_category_v1`, `api_sales.purchase_line_v1` and\n    `api_segments.current_label_v1`) and, for `/v2`, `api_stock.availability_v1`,\n    `api_products.product_relation_v1`, `api_stores.store_directory_v2`,\n    `api_sales.channel_v1`, `api_users.store_assignment_v1` and\n    `api_models.run_version_v1`. It keeps a result cache, and since ADR-0067 it\n    records each decision in a schema it owns (ADR-0046). Staleness bound: a result may be\n    served from cache for at most 120 s after the facts behind it change, and\n    normally within the relay's 5 s plus the consumer's turn. Items carry ids and\n    figures only: clients fetch names with `GET /v1/products?ids=`.\nsecurity:\n- bearer: []\ntags:\n- name: Recommendations\n- name: Meta\npaths:\n  /v1/recommendations:\n    get:\n      tags:\n      - Recommendations\n      summary: Get a customer's recommendations\n      description: Recommends active products that are in stock at the customer's\n        usual store, not already bought in the window, and that match at least one\n        stated signal (segment peers, a preferred category, or purchase history),\n        each with its reasons. When nothing qualifies, `status` says why and `items`\n        is empty (RN-40). Items are ordered by the number of signals that match,\n        then by segment buyers, then by the category's share of the customer's buying,\n        then by product id. The status is `unassigned_result` or `no_open_assignment`\n        when the customer has no segment, and the segment is checked before the\n        usual store.\n\n\n        A customer whose `PERSONALIZATION` is not granted (an objection, a\n        withdrawal, no decision recorded, or a consent view the service cannot\n        read) is recommended nothing, so `status` is `none_match`, `items` is empty,\n        `label_code`, `run_id` and `usual_store_id` are null, and no segment,\n        purchase, interest or stock of the customer is read (ADR-0066, ADR-0067).\n        `/v1` is frozen, so it cannot name the reason; `/v2` answers\n        `PERSONALIZATION_WITHDRAWN`. A category the customer restricted, and every\n        category below it, never appears. Consent and restrictions are read on\n        every request, before the result cache, so a withdrawal is seen by the\n        next read and the cache serves nothing older.\n      operationId: getRecommendations\n      x-mosaiq-roles:\n      - ADMIN\n      - ANALYST\n      - STORE_MANAGER\n      - MARKETING\n      - AUDITOR\n      parameters:\n      - $ref: '#/components/parameters/CorrelationId'\n      - $ref: '#/components/parameters/CustomerId'\n      - $ref: '#/components/parameters/Limit'\n      responses:\n        '200':\n          description: 'The result: items, or the status that says why there are\n            none.'\n          headers:\n            X-Correlation-ID:\n              $ref: '#/components/headers/CorrelationId'\n          content:\n            application/json:\n              schema: &id001\n                $ref: '#/components/schemas/Recommendation'\n              examples:\n                recommended:\n                  externalValue: ./examples/recommended.json\n                none_match:\n                  externalValue: ./examples/none-match.json\n                no_open_assignment:\n                  externalValue: ./examples/no-open-assignment.json\n                unassigned_result:\n                  externalValue: ./examples/unassigned-result.json\n                no_usual_store:\n                  externalValue: ./examples/no-usual-store.json\n            application/xml:\n              schema: *id001\n              examples:\n                recommended:\n                  externalValue: ./examples/recommended.xml\n                none_match:\n                  externalValue: ./examples/none-match.xml\n                no_open_assignment:\n                  externalValue: ./examples/no-open-assignment.xml\n                unassigned_result:\n                  externalValue: ./examples/unassigned-result.xml\n                no_usual_store:\n                  externalValue: ./examples/no-usual-store.xml\n        '401':\n          $ref: '#/components/responses/Unauthorized'\n        '403':\n          $ref: '#/components/responses/Forbidden'\n        '406':\n          $ref: '#/components/responses/NotAcceptable'\n        '422':\n          $ref: '#/components/responses/Un\n… (53760 more characters)",
+      "at": "2026-11-24T03:33:02Z"
+    },
+    {
+      "number": 7,
+      "correlation_id": "f24-08-b929945dabc041f2",
+      "note": "before",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-b929945dabc041f2"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-b929945dabc041f2"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"2a948a39-c77f-42f7-8576-13f57cfd7914\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:31:43.621405Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:31:43.621405Z\",\n    \"end\": \"2026-11-24T03:31:43.621405Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 21\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 10\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:03Z"
+    },
+    {
+      "number": 8,
+      "correlation_id": "f24-08-4c849d928c7d4dbc",
+      "note": "before, again (the cache)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-4c849d928c7d4dbc"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-4c849d928c7d4dbc"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"2a948a39-c77f-42f7-8576-13f57cfd7914\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:31:43.621405Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:31:43.621405Z\",\n    \"end\": \"2026-11-24T03:31:43.621405Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 21\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 10\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:03Z"
+    },
+    {
+      "number": 9,
+      "correlation_id": "f24-08-3202e9304bb94342",
+      "note": "stock level before",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/stock/v1/stock-levels/3/2",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-3202e9304bb94342"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "x-correlation-id",
+          "f24-08-3202e9304bb94342"
+        ]
+      ],
+      "response_body": "{\n  \"store_id\": 3,\n  \"product_id\": 2,\n  \"quantity_on_hand\": 10,\n  \"updated_at\": \"2026-11-23T20:16:25.843243Z\"\n}",
+      "at": "2026-11-24T03:33:03Z"
+    },
+    {
+      "number": 10,
+      "correlation_id": "f24-08-78296c3946a245b5",
+      "note": "COUNT to zero",
+      "method": "POST",
+      "url": "https://127.0.0.1/api/stock/v1/stock-movements",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-78296c3946a245b5"
+        ],
+        [
+          "Idempotency-Key",
+          "1c3a3be5-82b5-4310-af67-20cca0cab037"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #4>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "request_body": "{\n  \"movement_type\": \"COUNT\",\n  \"store_id\": 3,\n  \"product_id\": 2,\n  \"quantity\": 0,\n  \"counted_by\": \"F24-08 acceptance (#831)\",\n  \"note\": \"F24-08 (#831): leaves the product at zero\"\n}",
+      "status": 201,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "x-correlation-id",
+          "f24-08-78296c3946a245b5"
+        ]
+      ],
+      "response_body": "{\n  \"movements\": [\n    {\n      \"movement_id\": 36,\n      \"movement_type\": \"COUNT\",\n      \"store_id\": 3,\n      \"product_id\": 2,\n      \"quantity_delta\": -10,\n      \"quantity_before\": 10,\n      \"quantity_after\": 0,\n      \"transfer_id\": null,\n      \"reference\": null,\n      \"reason\": null,\n      \"counted_by\": \"F24-08 acceptance (#831)\",\n      \"note\": \"F24-08 (#831): leaves the product at zero\",\n      \"reversal_id\": null,\n      \"recorded_by\": \"b914c065-b19e-4372-a920-9888f8e6963e\",\n      \"recorded_at\": \"2026-11-24T03:33:03.157985Z\"\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:03Z"
+    },
+    {
+      "number": 11,
+      "correlation_id": "f24-08-07a4d5f2fb404bcf",
+      "note": "poll (1. Agotado)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-07a4d5f2fb404bcf"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-07a4d5f2fb404bcf"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"967eb947-3c6c-43aa-9204-edd2545b84bb\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:33:03.226584Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:33:03.226584Z\",\n    \"end\": \"2026-11-24T03:33:03.226584Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 22\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"elsewhere\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 13,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 25\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": \"out_of_stock\",\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:03Z"
+    },
+    {
+      "number": 12,
+      "correlation_id": "f24-08-25e66e8df5c14383",
+      "note": "read after the bound (1. Agotado)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-25e66e8df5c14383"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-25e66e8df5c14383"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"967eb947-3c6c-43aa-9204-edd2545b84bb\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:33:03.226584Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:33:03.226584Z\",\n    \"end\": \"2026-11-24T03:33:03.226584Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 22\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"elsewhere\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 13,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 25\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": \"out_of_stock\",\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:08Z"
+    },
+    {
+      "number": 13,
+      "correlation_id": "f24-08-1e15aa2d933a4f4a",
+      "note": "read again (1. Agotado)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-1e15aa2d933a4f4a"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-1e15aa2d933a4f4a"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"967eb947-3c6c-43aa-9204-edd2545b84bb\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:33:03.226584Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:33:03.226584Z\",\n    \"end\": \"2026-11-24T03:33:03.226584Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 22\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"elsewhere\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 13,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 25\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": \"out_of_stock\",\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:08Z"
+    },
+    {
+      "number": 14,
+      "correlation_id": "f24-08-dee42d4eb8944c0f",
+      "note": "stock level (1. Agotado)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/stock/v1/stock-levels/3/2",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-dee42d4eb8944c0f"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "x-correlation-id",
+          "f24-08-dee42d4eb8944c0f"
+        ]
+      ],
+      "response_body": "{\n  \"store_id\": 3,\n  \"product_id\": 2,\n  \"quantity_on_hand\": 0,\n  \"updated_at\": \"2026-11-24T03:33:03.157985Z\"\n}",
+      "at": "2026-11-24T03:33:08Z"
+    },
+    {
+      "number": 15,
+      "correlation_id": "f24-08-04fb182f867c49f3",
+      "note": "RECEIPT (restock)",
+      "method": "POST",
+      "url": "https://127.0.0.1/api/stock/v1/stock-movements",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-04fb182f867c49f3"
+        ],
+        [
+          "Idempotency-Key",
+          "f3205c35-5555-42cd-9912-0bfd054cbbed"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #4>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ],
+        [
+          "Content-Type",
+          "application/json"
+        ]
+      ],
+      "request_body": "{\n  \"movement_type\": \"RECEIPT\",\n  \"store_id\": 3,\n  \"product_id\": 2,\n  \"quantity\": 10,\n  \"reference\": \"F24-08 (#831) restock\",\n  \"note\": \"F24-08 (#831): restores the counted quantity\"\n}",
+      "status": 201,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "x-correlation-id",
+          "f24-08-04fb182f867c49f3"
+        ]
+      ],
+      "response_body": "{\n  \"movements\": [\n    {\n      \"movement_id\": 37,\n      \"movement_type\": \"RECEIPT\",\n      \"store_id\": 3,\n      \"product_id\": 2,\n      \"quantity_delta\": 10,\n      \"quantity_before\": 0,\n      \"quantity_after\": 10,\n      \"transfer_id\": null,\n      \"reference\": \"F24-08 (#831) restock\",\n      \"reason\": null,\n      \"counted_by\": null,\n      \"note\": \"F24-08 (#831): restores the counted quantity\",\n      \"reversal_id\": null,\n      \"recorded_by\": \"b914c065-b19e-4372-a920-9888f8e6963e\",\n      \"recorded_at\": \"2026-11-24T03:33:08.499553Z\"\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:08Z"
+    },
+    {
+      "number": 16,
+      "correlation_id": "f24-08-2ccf1bbef4d24d15",
+      "note": "poll (2. Reabastecido)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-2ccf1bbef4d24d15"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-2ccf1bbef4d24d15"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"0fd3af51-15c3-463d-b7af-b057ca631c26\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:33:08.514964Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:33:08.514964Z\",\n    \"end\": \"2026-11-24T03:33:08.514964Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 21\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 10\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:08Z"
+    },
+    {
+      "number": 17,
+      "correlation_id": "f24-08-2a738742749f46ee",
+      "note": "read after the bound (2. Reabastecido)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-2a738742749f46ee"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-2a738742749f46ee"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"0fd3af51-15c3-463d-b7af-b057ca631c26\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:33:08.514964Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:33:08.514964Z\",\n    \"end\": \"2026-11-24T03:33:08.514964Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 21\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 10\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:13Z"
+    },
+    {
+      "number": 18,
+      "correlation_id": "f24-08-a6735d1934c34049",
+      "note": "read again (2. Reabastecido)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/recommendations/v2/recommendations?customer_id=00000000-0000-0000-0000-000000000003&store_id=3",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-a6735d1934c34049"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "X-Correlation-ID",
+          "f24-08-a6735d1934c34049"
+        ]
+      ],
+      "response_body": "{\n  \"decision_id\": \"0fd3af51-15c3-463d-b7af-b057ca631c26\",\n  \"customer_id\": \"00000000-0000-0000-0000-000000000003\",\n  \"status\": \"recommended\",\n  \"computed_at\": \"2026-11-24T03:33:08.514964Z\",\n  \"window\": {\n    \"days\": 180,\n    \"start\": \"2026-05-28T03:33:08.514964Z\",\n    \"end\": \"2026-11-24T03:33:08.514964Z\"\n  },\n  \"label_code\": \"CHAMPION\",\n  \"run_id\": 31,\n  \"model_version_id\": 1,\n  \"usual_store_id\": 17,\n  \"store_id\": 3,\n  \"store_source\": \"given\",\n  \"channel_id\": null,\n  \"exclusions\": [\n    {\n      \"reason\": \"already_bought\",\n      \"count\": 14\n    },\n    {\n      \"reason\": \"out_of_stock\",\n      \"count\": 21\n    },\n    {\n      \"reason\": \"PERSONALIZATION_WITHDRAWN\",\n      \"count\": 1\n    }\n  ],\n  \"items\": [\n    {\n      \"product_id\": 1,\n      \"category_id\": 1,\n      \"kind\": \"primary\",\n      \"position\": 1,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 34\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 2,\n      \"category_id\": 2,\n      \"kind\": \"primary\",\n      \"position\": 2,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 2,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 10\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 2,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 3,\n      \"category_id\": 3,\n      \"kind\": \"primary\",\n      \"position\": 3,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 61\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    },\n    {\n      \"product_id\": 5,\n      \"category_id\": 5,\n      \"kind\": \"primary\",\n      \"position\": 4,\n      \"factors\": {\n        \"signals_matched\": 1,\n        \"segment_buyers\": 1,\n        \"category_share\": null\n      },\n      \"availability\": {\n        \"store_id\": 3,\n        \"channel_id\": null,\n        \"quantity_on_hand\": 18\n      },\n      \"alternative_for\": null,\n      \"unavailable_reason\": null,\n      \"reasons\": [\n        {\n          \"signal\": \"segment\",\n          \"segment_buyers\": 1,\n          \"category_id\": null,\n          \"share\": null\n        }\n      ]\n    }\n  ]\n}",
+      "at": "2026-11-24T03:33:13Z"
+    },
+    {
+      "number": 19,
+      "correlation_id": "f24-08-c24874e6e295491d",
+      "note": "stock level (2. Reabastecido)",
+      "method": "GET",
+      "url": "https://127.0.0.1/api/stock/v1/stock-levels/3/2",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-c24874e6e295491d"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 200,
+      "response_headers": [
+        [
+          "Content-Type",
+          "application/json"
+        ],
+        [
+          "x-correlation-id",
+          "f24-08-c24874e6e295491d"
+        ]
+      ],
+      "response_body": "{\n  \"store_id\": 3,\n  \"product_id\": 2,\n  \"quantity_on_hand\": 10,\n  \"updated_at\": \"2026-11-24T03:33:08.499553Z\"\n}",
+      "at": "2026-11-24T03:33:13Z"
+    },
+    {
+      "number": 20,
+      "correlation_id": "f24-08-3b821ce53ae64b39",
+      "note": "sign out, reader",
+      "method": "DELETE",
+      "url": "https://127.0.0.1/api/auth/v1/sessions/current",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-3b821ce53ae64b39"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #1>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 204,
+      "response_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-3b821ce53ae64b39"
+        ]
+      ],
+      "response_body": "",
+      "at": "2026-11-24T03:33:14Z"
+    },
+    {
+      "number": 21,
+      "correlation_id": "f24-08-7df18a10339d4ae8",
+      "note": "sign out, planner",
+      "method": "DELETE",
+      "url": "https://127.0.0.1/api/auth/v1/sessions/current",
+      "request_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-7df18a10339d4ae8"
+        ],
+        [
+          "Authorization",
+          "Bearer <masked #4>"
+        ],
+        [
+          "Accept",
+          "application/json"
+        ]
+      ],
+      "request_body": "",
+      "status": 204,
+      "response_headers": [
+        [
+          "X-Correlation-ID",
+          "f24-08-7df18a10339d4ae8"
+        ]
+      ],
+      "response_body": "",
+      "at": "2026-11-24T03:33:15Z"
+    }
+  ],
+  "rows": [
+    [
+      "inventory before",
+      " store_id | product_id | quantity_on_hand |          updated_at           \n----------+------------+------------------+-------------------------------\n        3 |          2 |               10 | 2026-11-23 20:16:25.843243+00\n(1 row)\n\n"
+    ],
+    [
+      "stored decision (1. Agotado)",
+      "             decision_id              |             customer_id              |   status    |          computed_at          | store_id | store_source | channel_id \n--------------------------------------+--------------------------------------+-------------+-------------------------------+----------+--------------+------------\n 967eb947-3c6c-43aa-9204-edd2545b84bb | 00000000-0000-0000-0000-000000000003 | recommended | 2026-11-24 03:33:03.226584+00 |        3 | given        |     (null)\n(1 row)\n\n\n position | product_id |   kind    | category_id | quantity_on_hand | held_at_store_id | alternative_for | unavailable_reason \n----------+------------+-----------+-------------+------------------+------------------+-----------------+--------------------\n        1 |          1 | primary   |           1 |               34 |           (null) |          (null) | (null)\n        2 |          3 | primary   |           3 |               61 |           (null) |          (null) | (null)\n        3 |          5 | primary   |           5 |               18 |           (null) |          (null) | (null)\n        4 |          2 | elsewhere |           2 |               25 |               13 |          (null) | out_of_stock\n(4 rows)\n\n\n          reason           | product_count \n---------------------------+---------------\n already_bought            |            14\n out_of_stock              |            22\n PERSONALIZATION_WITHDRAWN |             1\n(3 rows)\n\n"
+    ],
+    [
+      "inventory after (1. Agotado)",
+      " store_id | product_id | quantity_on_hand |          updated_at           \n----------+------------+------------------+-------------------------------\n        3 |          2 |                0 | 2026-11-24 03:33:03.157985+00\n(1 row)\n\n"
+    ],
+    [
+      "stored decision (2. Reabastecido)",
+      "             decision_id              |             customer_id              |   status    |          computed_at          | store_id | store_source | channel_id \n--------------------------------------+--------------------------------------+-------------+-------------------------------+----------+--------------+------------\n 0fd3af51-15c3-463d-b7af-b057ca631c26 | 00000000-0000-0000-0000-000000000003 | recommended | 2026-11-24 03:33:08.514964+00 |        3 | given        |     (null)\n(1 row)\n\n\n position | product_id |  kind   | category_id | quantity_on_hand | held_at_store_id | alternative_for | unavailable_reason \n----------+------------+---------+-------------+------------------+------------------+-----------------+--------------------\n        1 |          1 | primary |           1 |               34 |           (null) |          (null) | (null)\n        2 |          2 | primary |           2 |               10 |           (null) |          (null) | (null)\n        3 |          3 | primary |           3 |               61 |           (null) |          (null) | (null)\n        4 |          5 | primary |           5 |               18 |           (null) |          (null) | (null)\n(4 rows)\n\n\n          reason           | product_count \n---------------------------+---------------\n already_bought            |            14\n out_of_stock              |            21\n PERSONALIZATION_WITHDRAWN |             1\n(3 rows)\n\n"
+    ],
+    [
+      "inventory after (2. Reabastecido)",
+      " store_id | product_id | quantity_on_hand |          updated_at           \n----------+------------+------------------+-------------------------------\n        3 |          2 |               10 | 2026-11-24 03:33:08.499553+00\n(1 row)\n\n"
+    ],
+    [
+      "the two movements",
+      " movement_id | movement_type | store_id | product_id | quantity_delta | quantity_before | quantity_after |          recorded_at          \n-------------+---------------+----------+------------+----------------+-----------------+----------------+-------------------------------\n          36 | COUNT         |        3 |          2 |            -10 |              10 |              0 | 2026-11-24 03:33:03.157985+00\n          37 | RECEIPT       |        3 |          2 |             10 |               0 |             10 | 2026-11-24 03:33:08.499553+00\n(2 rows)\n\n"
+    ]
+  ]
+}

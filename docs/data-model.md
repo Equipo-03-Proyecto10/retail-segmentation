@@ -798,6 +798,22 @@ The record holds identifiers, figures and codes only: no name, email, phone,
 SKU, price or free text, and nothing copied from customer or product beyond ids.
 Every text column is a code constrained to a list.
 
+The interactions (#1197, ADR-0075, ADR-0090) add one relation, also in 4NF:
+- **`recommendations.recommendation_interaction`** is keyed by `event_id`, the
+  engagement event's UUID, which determines the kind, the time, the store, the
+  product, the customer, the label code and the rank: one event is one fact with
+  no repeating group, and none of those columns determines another.
+  - `voided` is the only column that changes, and only from false to true, so a
+    void is a flag on the fact it voids and not a second relation. It is what lets
+    a `VOIDED` notice that arrives before its `RECORDED` be kept.
+  - A purchase through a recommendation is not stored. It is derived by a view from
+    the net sale lines and the clicks (`api_recommendations.recommended_purchase_v1`),
+    so storing it would hold the same fact twice, free to disagree with the sale.
+  - `customer_id` names no row of another boundary: a customer unknown to the
+    database cannot make an at-least-once delivery fail, and an anonymous counter has
+    none. `kind` is constrained to its two values and `label_code` to a non-empty
+    code.
+
 The sales boundary (ADR-0039, ADR-0046, F14-18) adds one relation, also in 4NF:
 - **`sales.sale_capture`** is keyed by `transaction_id`, which determines
   `request_sha256`, `recorded_by` and `captured_at`. It is a 1:1 split of
@@ -1769,6 +1785,26 @@ window.
 is the 90-day retention, run by the service) and UPDATE of `customer_id` alone
 (anonymization). A decision is never updated otherwise. The web has no
 privilege on the schema.
+
+#### `recommendations.recommendation_interaction`
+
+One row per `RECO_IMPRESSION` or `RECO_CLICK` that engagement relayed (#1197).
+`svc_recommendations` holds SELECT, INSERT and UPDATE of `voided` and
+`customer_id`, and no DELETE. The web has no privilege on the schema, and
+analytics-kpis reads the views `api_recommendations.interaction_v1` and
+`recommended_purchase_v1`, never the table.
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `event_id` | `UUID` | NN | PK | The engagement event; the idempotency key of the stream |
+| `kind` | `TEXT` | NN | `RECO_IMPRESSION` or `RECO_CLICK` | What happened |
+| `occurred_at` | `TIMESTAMPTZ` | NN | | When it happened, as engagement recorded it |
+| `store_id` | `SMALLINT` | NN | | The store |
+| `product_id` | `INTEGER` | NN | | The recommended product |
+| `customer_id` | `UUID` | yes | no foreign key | The customer, when the client sent one |
+| `label_code` | `TEXT` | NN | `CHECK <> ''` | The segment label of the recommendation |
+| `rank` | `SMALLINT` | NN | `>= 1` | The position of the recommendation |
+| `voided` | `BOOLEAN` | NN | default `false` | True once a `VOIDED` notice arrived, whichever came first |
 
 #### `sales.sale_capture`
 

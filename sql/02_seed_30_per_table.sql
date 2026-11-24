@@ -15,9 +15,10 @@
 --    misrepresent the business. Those three, and only those, are listed in
 --    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
 --    Every other table holds at least 30 rows, including the runtime tables
---    app_session, sales_load and sales_load_rejection: their rows record the
---    demonstration history the rest of the seed implies (sign-ins that ended,
---    the CSV uploads that brought the sales in), none of them still open.
+--    app_session, sales_load, sales_load_rejection and stored_file: their rows
+--    record the demonstration history the rest of the seed implies (sign-ins
+--    that ended, the CSV uploads that brought the sales in, the product
+--    pictures that were replaced), none of them still open.
 --
 -- 3) audit_log is not inserted into by hand. The triggers in 01_schema.sql
 --    fill it as this script loads the audited tables, which is also what
@@ -584,6 +585,40 @@ SELECT n, 'SKU-' || lpad(n::text,5,'0'), 'Demo Product ' || n,
        NULL,
        TRUE
 FROM generate_series(1,40) n;
+
+-- ---------- stored_file (30, the history of replaced product pictures) ----------
+-- Runtime history, seeded like app_session rather than exempted (ADR-0051), and
+-- for the same reason as product.image_path above: a seeded row that named a
+-- picture still in the store would point at an object no bucket holds, and the
+-- catalog would show a broken image on a fresh clone. So each row is the record
+-- of a picture the administrator uploaded for one of the first thirty products
+-- and later replaced: DELETED, with its deletion time, referenced by nobody. The
+-- hashes are of a fixed text, not of any file. Every product still has no
+-- picture until one is really uploaded. The object name is
+-- product-image/<file_id>.<ext>, as the CHECK requires (ADR-0091).
+INSERT INTO stored_file
+    (file_id, object_path, content_type, size_bytes, sha256, privacy, status,
+     owner_user_id, created_at, deleted_at, metadata)
+SELECT f.file_id,
+       'product-image/' || f.file_id::text || t.ext,
+       t.content_type,
+       20000 + n * 1500,
+       encode(sha256(convert_to('seeded product picture ' || n, 'UTF8')), 'hex'),
+       'PUBLIC',
+       'DELETED',
+       '11111111-1111-1111-1111-000000000001'::uuid,
+       now() - ((60 + n) || ' days')::interval,
+       now() - ((58 + n) || ' days')::interval,
+       jsonb_build_object('kind', 'product-image', 'product_id', n,
+                          'ended', 'replaced')
+FROM generate_series(1, 30) AS n
+CROSS JOIN LATERAL (
+    SELECT ('33333333-3333-3333-3333-' || lpad(n::text, 12, '0'))::uuid AS file_id
+) AS f
+CROSS JOIN LATERAL (
+    SELECT (ARRAY['image/jpeg', 'image/png', 'image/webp'])[1 + (n % 3)] AS content_type,
+           (ARRAY['.jpg', '.png', '.webp'])[1 + (n % 3)] AS ext
+) AS t;
 
 -- ---------- products.* commercial details (F21-10, #790) ----------
 -- One block for the boundary's four tables, after product and before anything

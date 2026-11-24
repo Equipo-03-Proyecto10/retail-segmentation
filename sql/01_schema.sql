@@ -403,17 +403,87 @@ FOR EACH ROW EXECUTE FUNCTION fn_customer_segment_history_close_only();
 
 -- ---------- PRODUCT CATALOG AND SALES ----------
 
+-- The metadata of one file the platform keeps outside the database (F29-13,
+-- #1189, ADR-0091): the bytes are an object in a private Cloud Storage bucket
+-- (or, on a developer's machine and in tests, a file under UPLOAD_DIR), and
+-- this row is the only thing PostgreSQL holds about them. Never the bytes.
+--
+-- The object is named <kind>/<file_id>.<ext>: the kind, the row's own identifier
+-- and an extension that matches the content type. The user's file name is never
+-- used, so the CHECK below is also what keeps a path inside its folder.
+--
+-- A row is never deleted. Removing a file marks it DELETED and keeps the fact
+-- that it existed; PENDING_DELETE is a delete the store has not yet confirmed
+-- (the bucket was unreachable), which deploy/migrate-uploads-1189.py retries.
+-- 4NF: every column depends on file_id alone; object_path is a second candidate
+-- key; sha256 is deliberately not a key (two uploads of one picture are two
+-- files). metadata is free, and nothing queries it (docs/data-model.md).
+CREATE TABLE stored_file (
+    file_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    object_path    VARCHAR(255) NOT NULL UNIQUE,
+    content_type   VARCHAR(100) NOT NULL,
+    size_bytes     BIGINT NOT NULL,
+    sha256         CHAR(64) NOT NULL,
+    privacy        VARCHAR(10) NOT NULL,
+    status         VARCHAR(15) NOT NULL DEFAULT 'STORED',
+    owner_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at     TIMESTAMPTZ,
+    metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT stored_file_content_type_check
+        CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp')),
+    -- 5 MB, the same limit as MAX_UPLOAD_BYTES. A larger kind of file widens it
+    -- by a schema change of its own.
+    CONSTRAINT stored_file_size_check
+        CHECK (size_bytes > 0 AND size_bytes <= 5242880),
+    CONSTRAINT stored_file_sha256_check CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT stored_file_privacy_check CHECK (privacy IN ('PUBLIC', 'PRIVATE')),
+    CONSTRAINT stored_file_status_check
+        CHECK (status IN ('STORED', 'PENDING_DELETE', 'DELETED')),
+    CONSTRAINT stored_file_deleted_at_check
+        CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL)),
+    CONSTRAINT stored_file_metadata_check CHECK (jsonb_typeof(metadata) = 'object'),
+    -- <kind>/<file_id>.<ext>, the extension the content type implies.
+    CONSTRAINT stored_file_object_path_check
+        CHECK (object_path ~ ('^[a-z][a-z0-9-]*/' || file_id::text || '[.](jpg|png|webp)$')
+           AND ((content_type = 'image/jpeg' AND object_path LIKE '%.jpg')
+             OR (content_type = 'image/png'  AND object_path LIKE '%.png')
+             OR (content_type = 'image/webp' AND object_path LIKE '%.webp')))
+);
+
+-- One user's files, newest first.
+CREATE INDEX idx_stored_file_owner ON stored_file (owner_user_id, created_at DESC);
+-- The delete the store has not yet confirmed, found without scanning the table.
+CREATE INDEX idx_stored_file_pending_delete ON stored_file (created_at)
+    WHERE status = 'PENDING_DELETE';
+
 CREATE TABLE product (
     product_id  INT PRIMARY KEY,
     sku         VARCHAR(40) NOT NULL UNIQUE,
     name        VARCHAR(150) NOT NULL,
     category_id SMALLINT NOT NULL REFERENCES category(category_id) ON DELETE RESTRICT,
     list_price  NUMERIC(10,2) NOT NULL CHECK (list_price >= 0),
-    -- F3-07 stores the uploaded file under UPLOAD_DIR and keeps only its path
-    -- here. The bytes are never versioned and never held in the database.
+    -- The public name of the picture: what the web's image route
+    -- (/admin/products/image/<name>) answers to, and what products-service
+    -- joins to PRODUCTS_PHOTO_BASE_URL to publish photo_url (ADR-0091). F3-07
+    -- kept a file name under UPLOAD_DIR here; a picture kept in the file store
+    -- is named <image_file_id>.<ext>, which the CHECK below enforces. That makes
+    -- the column derivable from image_file_id and the file's content type, a
+    -- deliberate and temporary redundancy: products-service reads this column
+    -- and its contract is frozen. A later story gives it a published view and
+    -- drops the column. A row with image_path and no image_file_id is a file
+    -- not yet moved by deploy/migrate-uploads-1189.py.
     image_path  VARCHAR(255),
-    is_active   BOOLEAN NOT NULL DEFAULT TRUE
+    -- The product's picture in the file store: one stored file, and a file is
+    -- one product's.
+    image_file_id UUID REFERENCES stored_file(file_id) ON DELETE RESTRICT,
+    is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+    CONSTRAINT product_image_name_check
+        CHECK (image_file_id IS NULL
+               OR image_path ~ ('^' || image_file_id::text || '[.](jpg|png|webp)$'))
 );
+CREATE UNIQUE INDEX ux_product_image_file ON product (image_file_id)
+    WHERE image_file_id IS NOT NULL;
 
 CREATE TABLE transaction (
     transaction_id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

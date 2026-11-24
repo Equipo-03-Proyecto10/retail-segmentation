@@ -48,6 +48,7 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 | `experiment_exposure` | One exposure event for an assigned customer, recorded separately from assignment |
 | `experiment_conversion` | A qualifying sale linked back to an assignment, inside its experiment's conversion window |
 | `inventory` | Stock of one product at one store |
+| `stored_file` | The metadata of one file kept in the file store (a product's picture): its object path, content type, size, SHA-256, privacy, status and owner, never the bytes (ADR-0091) |
 | `notification` | One thing that happened that somebody should be told about: a sales load, a segmentation run, an experiment's end or a user's deactivation (ADR-0047). The event, kept once |
 | `notification_recipient` | One user an event was written for, and when they read it |
 | `audit_log` | Who changed which business rule or catalog row, when, and to what |
@@ -86,6 +87,8 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 - `notification` (1) — is written for — (N) `notification_recipient` (N) — belongs to — (1) `app_user`
 - `customer` (1) — has — (N) `customer_preferred_channel` rows (N) — reference — (1) `channel`
 - `customer` (1) — has — (N) `customer_interest_category` rows (N) — reference — (1) `category`
+- `app_user` (1) — owns — (N) `stored_file`
+- `stored_file` (0..1) — is the picture of — (0..1) `product`
 - `audit_log` names any audited entity as text; only its optional actor is a foreign key
 
 ### Permission matrix
@@ -118,7 +121,8 @@ and [`business-rules.md`](business-rules.md) RN-01 explains the split.
 ### Dependencies
 
 **Functional.** Each surrogate key determines every non-key attribute of its
-row: `product_id → sku, name, category_id, list_price, image_path, is_active`,
+row: `product_id → sku, name, category_id, list_price, image_path, image_file_id,
+is_active`,
 and equivalently for the other entities; §2.4 states each base relation's keys
 and dependencies one by one. Three candidate keys carry a
 functional dependency of their own and are therefore `UNIQUE`: `sku →
@@ -421,6 +425,36 @@ unfinished:
 
 No message text is stored. The sentence is a function of the subject row, so
 storing it would be a second copy of facts the subject already holds.
+
+`stored_file` (F29-13, ADR-0091) is the metadata of one object in the file store,
+and nothing else about it: the bytes are in the bucket. Its key is `file_id`, and
+`object_path` is a second candidate key (`UNIQUE`, and its CHECK ties it to
+`file_id` and to the content type, so the name is never the user's). Every other
+column — `content_type`, `size_bytes`, `sha256`, `privacy`, `status`, `owner_user_id`,
+`created_at`, `deleted_at`, `metadata` — depends on `file_id` alone, so the relation
+is in BCNF. The one dependency a reader might propose, `sha256 → size_bytes,
+content_type` (equal bytes have an equal size), is not a dependency of the schema:
+`sha256` is deliberately not a key, because two uploads of the same picture are two
+files, each with its own owner, privacy, status and life. The columns describe one
+stored object, not one distinct content, and splitting the content out would add a
+table to avoid a repeat that is a coincidence of the data and not a fact to keep in
+step. There is no multivalued dependency: the owner, privacy and status are each
+single-valued, and a product's picture is one file (`product.image_file_id`, unique
+where set), where a gallery would be an association table of its own and not a
+repeating column. `metadata` is one opaque `jsonb` object for facts that no query
+filters or joins on (the product a replaced picture belonged to, for instance); a
+fact a query needs is a column, so the object never holds a repeating group. Two
+columns record a status that is not a state of the world but a fact about the store:
+`status = 'PENDING_DELETE'` is a delete the bucket has not confirmed, and a row is
+never removed, so `DELETED` keeps the record that the file existed.
+
+`product.image_path` is the one deliberate departure. A picture kept in the store is
+named `<image_file_id>.<ext>` in `image_path`, so that column is derivable from
+`image_file_id` and the file's content type, and `product_image_name_check` keeps
+the two from disagreeing. It exists because products-service publishes `photo_url`
+from it and that contract is frozen. It is temporary: the story that gives
+products-service a published view drops the column, and until then the redundancy is
+checked, not trusted.
 
 The remaining composite-key tables — `transaction_line`, `inventory` — each
 carry a single multivalued fact plus attributes that depend on the whole key,
@@ -1277,6 +1311,8 @@ erDiagram
     app_user                   |o--o{ notification               : "is the subject of"
     notification               ||--o{ notification_recipient     : "is written for"
     app_user                   ||--o{ notification_recipient     : "is told"
+    app_user                   ||--o{ stored_file                : "owns"
+    stored_file                |o--o| product                    : "is the picture of"
 ```
 
 ### Data dictionary
@@ -2127,6 +2163,26 @@ history reads.
 
 These two are the 4NF decomposition from §2.4.
 
+#### `stored_file`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `file_id` | `UUID` | NN | PK, default `gen_random_uuid()` | File identifier, also the stem of its object name |
+| `object_path` | `VARCHAR(255)` | NN | UQ; `CHECK` (`stored_file_object_path_check`): `<kind>/<file_id>.<ext>` with the extension the content type implies | Where the object is in the store. Never the uploaded file's name |
+| `content_type` | `VARCHAR(100)` | NN | `CHECK IN ('image/jpeg','image/png','image/webp')` | What the bytes were validated to be |
+| `size_bytes` | `BIGINT` | NN | `CHECK > 0 AND <= 5242880` | Size of the object, 5 MB at most (RF-08) |
+| `sha256` | `CHAR(64)` | NN | `CHECK ~ '^[0-9a-f]{64}$'` | SHA-256 of the bytes, lowercase hex; not unique, two uploads of one picture are two files |
+| `privacy` | `VARCHAR(10)` | NN | `CHECK IN ('PUBLIC','PRIVATE')` | `PUBLIC` is streamed by the web to a signed-in reader of the catalog; `PRIVATE` is reached only through a signed URL (#1190) |
+| `status` | `VARCHAR(15)` | NN | default `'STORED'`; `CHECK IN ('STORED','PENDING_DELETE','DELETED')` | `PENDING_DELETE` is a delete the store has not confirmed, retried by `deploy/migrate-uploads-1189.py --delete-pending` |
+| `owner_user_id` | `UUID` | NN | FK → `app_user`, `RESTRICT` | Who uploaded it |
+| `created_at` | `TIMESTAMPTZ` | NN | default `now()` | When the row was written |
+| `deleted_at` | `TIMESTAMPTZ` | yes | `CHECK` (`stored_file_deleted_at_check`): set exactly when `status = 'DELETED'` | When the object was removed |
+| `metadata` | `JSONB` | NN | default `'{}'`; `CHECK` it is an object | Free facts nothing queries; never a repeating group (§2.4) |
+
+Seeded with 30 rows, all `DELETED`: the record of a picture the administrator
+replaced, for each of the first thirty products. A live row would name an object no
+bucket holds, so the seed has none, like `product.image_path`.
+
 #### `product`
 
 | Column | Type | Null | Constraints | Meaning |
@@ -2136,7 +2192,8 @@ These two are the 4NF decomposition from §2.4.
 | `name` | `VARCHAR(150)` | NN | — | Product name |
 | `category_id` | `SMALLINT` | NN | FK → `category`, `RESTRICT` | Its category |
 | `list_price` | `NUMERIC(10,2)` | NN | `CHECK >= 0` | Current list price |
-| `image_path` | `VARCHAR(255)` | yes | — | Path under `UPLOAD_DIR`. The database stores the path; the bytes are never versioned and never held in a column |
+| `image_path` | `VARCHAR(255)` | yes | `CHECK` (`product_image_name_check`): when `image_file_id` is set, equals `<image_file_id>.<jpg|png|webp>` | The public name of the picture: what `/admin/products/image/<name>` answers to and what products-service joins to `PRODUCTS_PHOTO_BASE_URL`. Before the migration of ADR-0091 it is a file name under `UPLOAD_DIR`; afterwards it is derived from `image_file_id`, a temporary redundancy (§2.4) |
+| `image_file_id` | `UUID` | yes | FK → `stored_file`, `RESTRICT`; unique where set (`ux_product_image_file`) | The picture in the file store. The bytes are never held in the database |
 | `is_active` | `BOOLEAN` | NN | default `TRUE` | Whether it is sold today |
 
 #### `transaction`

@@ -111,11 +111,15 @@ jobs:
           gcloud compute os-login ssh-keys add \
             --key-file ~/.ssh/google_compute_engine.pub --ttl 30m
 
+      # deploy-service.sh rebuilds the aclfile with the ops users (ADR-0055) of
+      # this tree, so their ACL files travel too. Without them every service
+      # deploy dropped ops_console from both Redis instances (#764).
       - name: Copy the merged commit's files to the instance
         run: |
           set -euo pipefail
           git archive --format=tar.gz -o "$RUNNER_TEMP/bundle.tgz" "$GITHUB_SHA" \
-            deploy/deploy-service.sh deploy/infra contracts/registry.yaml "services/$NAME"
+            deploy/deploy-service.sh deploy/infra contracts/registry.yaml "services/$NAME" \
+            ':(glob)ops/*/redis/*.acl'
           gcloud compute scp "$RUNNER_TEMP/bundle.tgz" "$INSTANCE:$BUNDLE.tgz" \
             --project="$GCP_PROJECT" --zone="$GCP_ZONE" --quiet
 

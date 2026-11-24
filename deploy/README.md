@@ -1169,8 +1169,9 @@ the web keeps deploying through `deploy.sh`, unchanged.
      merged commit, so only the image this run tested is deployed;
    - authenticates with Workload Identity Federation, as `deploy.yml` does;
    - copies `deploy/deploy-service.sh`, `deploy/infra/`,
-     `contracts/registry.yaml` and `services/<name>/` from the merged commit to
-     the instance, and runs `deploy-service.sh <name> <version>` there as root.
+     `contracts/registry.yaml`, `services/<name>/` and the ops users'
+     `ops/*/redis/*.acl` from the merged commit to the instance, and runs
+     `deploy-service.sh <name> <version>` there as root.
 
 ### What the script does
 
@@ -1289,7 +1290,8 @@ nobody else owns:
 sha=<commit>; name=<name>; version=$(git show "$sha:services/$name/VERSION")
 dir=/tmp/mosaiq-deploy-service-$name-$(date +%s)
 git archive --format=tar.gz -o /tmp/bundle.tgz "$sha" \
-  deploy/deploy-service.sh deploy/infra contracts/registry.yaml "services/$name"
+  deploy/deploy-service.sh deploy/infra contracts/registry.yaml "services/$name" \
+  ':(glob)ops/*/redis/*.acl'
 gcloud compute scp /tmp/bundle.tgz "mosaiq-deployment-vm:$dir.tgz" \
   --project=iac-dev-01 --zone=northamerica-south1-a
 gcloud compute ssh mosaiq-deployment-vm --project=iac-dev-01 \

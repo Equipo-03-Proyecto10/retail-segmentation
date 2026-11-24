@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import re
+from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -111,15 +113,54 @@ def test_vendored_assets_match_their_pinned_checksums() -> None:
     assert f"**{VERSION}**" in (PAGE / "README.md").read_text()
 
 
+class _Page(HTMLParser):
+    """Scripts, event handlers and references of a page, in any letter case.
+
+    HTMLParser lower-cases tag and attribute names, so ``<SCRIPT SRC=…>`` and
+    ``onLoad=`` are found as ``script``/``src`` and ``onload``.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.scripts: list[dict[str, str | None]] = []
+        self.script_text: list[str] = []
+        self.handlers: list[str] = []
+        self.references: list[str] = []
+        self._in_script = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handlers += [name for name, _ in attrs if name.startswith("on")]
+        self.references += [
+            value or "" for name, value in attrs if name in {"src", "href"}
+        ]
+        if tag == "script":
+            self.scripts.append(dict(attrs))
+            self._in_script = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "script":
+            self._in_script = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_script and data.strip():
+            self.script_text.append(data)
+
+
 def test_the_page_loads_only_local_assets_and_no_inline_script() -> None:
-    html = (PAGE / "index.html").read_text(encoding="utf-8")
-    scripts = re.findall(r"<script\b([^>]*)>(.*?)</script>", html, re.DOTALL)
-    assert scripts, "the page loads its scripts"
-    assert all("src=" in attrs and not body.strip() for attrs, body in scripts)
-    assert not re.search(r"\son[a-z]+\s*=", html), "no inline event handler"
-    references = re.findall(r'(?:src|href)="([^"]*)"', html)
-    assert all(not re.match(r"[a-z]+://|//", ref) for ref in references)
-    for ref in references:
+    page = _Page()
+    page.feed((PAGE / "index.html").read_text(encoding="utf-8"))
+    page.close()
+    assert page.scripts, "the page loads its scripts"
+    assert all(attrs.get("src") for attrs in page.scripts), "every script has a src"
+    assert page.script_text == [], "no inline script body"
+    assert page.handlers == [], "no inline event handler"
+    external = [
+        ref
+        for ref in page.references
+        if ref.startswith("//") or urlsplit(ref).scheme.lower() not in {"", "data"}
+    ]
+    assert external == [], "no external reference"
+    for ref in page.references:
         if not ref.startswith("data:"):
             assert (PAGE / ref).is_file(), ref
 

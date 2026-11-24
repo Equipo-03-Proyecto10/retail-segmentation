@@ -229,6 +229,7 @@ Later runtime events must be preserved.
 | [0088](0088-the-drift-monitor-reads-the-current-profiles-in-one-snapshot-raises-an-alert-on-the-second-alarming-window-and-is-audited-as-a-calculation-run.md) | The drift monitor reads the current profiles in one snapshot, raises an alert on the second alarming window, and is audited as a calculation run | Accepted |
 | [0089](0089-the-outcome-test-reads-each-cohorts-segments-from-the-assignment-history-stores-one-row-per-segment-and-claims-concept-drift-only-on-the-second-passing-cohort.md) | The outcome test reads each cohort's segments from the assignment history, stores one row per segment, and claims concept drift only on the second passing cohort | Accepted |
 | [0090](0090-a-purchase-through-a-recommendation-is-a-net-sale-line-bought-within-seven-days-of-the-customers-click-on-that-product.md) | A purchase through a recommendation is a net sale line bought within seven days of the customer's click on that product | Accepted |
+| [0092](0092-a-run-of-rfm-engines-changes-is-linked-to-its-model-version-in-the-transaction-that-records-it-through-a-function-model-registry-publishes.md) | A run of rfm-engine's changes is linked to its model version in the transaction that records it, through a function model-registry publishes | Proposed |
 
 ## Writing one
 

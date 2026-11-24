@@ -58,7 +58,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 |---|---|---|---|
 | `models.model_version`, `models.model_version_feature` | Tables (`models`) | S, insert only | Immutable: a trigger refuses every DELETE and every change but `state`, `published_at` and `retired_at`, which F22-13 moves with a publication. Exempt from the 30-row seed (two versions), with its reason in `sql/seed-exempt.txt` |
 | `models.model_publication` | Table (`models`) | R until F22-13 | Append-only; one seeded row, the first publication. Exempt |
-| `models.run_version` | Table (`models`) | R until the stream consumer (ADR-0064) | Links each segmentation run to its version; the seed links all 31 runs |
+| `models.run_version` | Table (`models`) | R until the stream consumer (ADR-0064) | Links each segmentation run to its version; the seed links all 31 runs. `definer_models` adds the link of each run `api_segments.apply_assignment_v1` records, through `api_models.link_run_version_v1` (ADR-0092), and model-registry's section backfills the runs recorded before it, idempotently |
 | `models.model_training`, `models.model_training_feature`, `models.model_training_cluster` | Tables (`models`) | S | F22-12. A training's request and outcome, the variables it fitted, and the size of each cluster by rank. Insert, plus UPDATE of the outcome columns while `RUNNING`; a trigger refuses every other change and every DELETE; one unique partial index allows one `RUNNING` row. Cluster sizes are kept but not served: adding them to a v1 response type would break the XML policy of the contract check. Exempt from the 30-row seed, with its reason in `sql/seed-exempt.txt` |
 | `models.drift_report`, `models.drift_variable`, `models.drift_statistic`, `models.drift_bin`, `models.drift_alert` | Tables (`models`) | S, insert only | F23-09 (ADR-0065, ADR-0088). A report is one pass over one window of the published version; its variables, their statistics and bins, and the alerts it raised hang from it. A trigger refuses every UPDATE and DELETE. The reference, the thresholds, a bin's contribution and an alert's text are derived at read, not stored. Exempt from the 30-row seed, with its reason in `sql/seed-exempt.txt`: the seed holds one honest `INSUFFICIENT_DATA` report |
 | `models_events.outbox` | Table (outbox) | SELECT, UPDATE of `relayed_at`, DELETE (7-day purge) | Filled by `definer_models`; seed-exempt runtime state |
@@ -68,6 +68,8 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Direction | Object | Counterpart |
 |---|---|---|
 | Publishes | `api_models.published_version_v1` | rfm-engine, analytics-kpis |
+| Publishes | `api_models.run_version_v1` | segments, recommendations, analytics-kpis |
+| Publishes | `api_models.link_run_version_v1` (ADR-0092, #1208) | segments (`definer_segments`, from `api_segments.apply_assignment_v1`, in the transaction that records a run of rfm-engine's changes) |
 | Consumes | `api_rfm.current_profile_v1` | rfm-engine (the window of the drift monitor, read in one repeatable-read snapshot: every scored customer, F23-09) |
 | Consumes | `api_sales.net_purchase_line_v1` (F21-02, #770) | sales (the net purchases a training fits, read once in a repeatable-read snapshot and streamed) |
 | Consumes | `api_segments.label_v1` (F22-12) | segments (the label vocabulary and its order, so a training never copies the labels) |

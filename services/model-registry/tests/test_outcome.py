@@ -376,11 +376,12 @@ def test_the_real_cohort_read_runs_as_the_service(
     assert sum(side.customers for side in cohort.values()) <= 30
 
 
-def test_the_real_cohort_keeps_an_incremental_run_while_its_link_is_pending(
+def test_the_real_cohort_keeps_an_incremental_run_under_the_version_it_links(
     owner_url: str,
 ) -> None:
-    """ADR-0087 records the version on an incremental run before model-registry has
-    linked that run. The assignment contract must preserve the member meanwhile."""
+    """ADR-0087 records the version on an incremental run, and ADR-0092 links the run
+    to it in the same transaction (#1208). The member stays in the cohort, and the
+    link and the recorded version agree."""
     with psycopg.connect(owner_url) as connection:
         try:
             version_id, method, window_days, rule_set_id = connection.execute(
@@ -430,13 +431,10 @@ def test_the_real_cohort_keeps_an_incremental_run_while_its_link_is_pending(
                 (customer_id,),
             ).fetchone()
             assert recorded_version == version_id
-            assert (
-                connection.execute(
-                    "SELECT version_id FROM models.run_version WHERE run_id = %s",
-                    (run_id,),
-                ).fetchone()
-                is None
-            )
+            assert connection.execute(
+                "SELECT version_id FROM models.run_version WHERE run_id = %s",
+                (run_id,),
+            ).fetchone() == (version_id,)
             (after_at,) = connection.execute("SELECT clock_timestamp()").fetchone()
             after = sum(
                 side.customers

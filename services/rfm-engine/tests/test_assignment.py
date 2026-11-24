@@ -226,6 +226,53 @@ def test_each_row_records_its_cause_and_the_version_and_the_event_is_in_the_outb
     assert event == ("INSERT",)
 
 
+def test_an_incremental_run_is_linked_to_the_version_it_was_scored_under(
+    shop: Shop,
+    service: psycopg.Connection,
+    owner: psycopg.Connection,
+    version: recompute.Version,
+    now: datetime,
+) -> None:
+    """The run a sale records is linked in models.run_version to the published
+    version, in the transaction that records it, so segments reads its version like a
+    full run's (#1208, ADR-0092). A rolled-back change leaves no link either."""
+    customer = shop.customer()
+    _two_moments(shop, service, version, now, customer)
+    _apply(service, customer, version, now, "SALE")
+    _apply(service, customer, version, now + timedelta(days=150), "AGEING")
+
+    links = owner.execute(
+        "SELECT r.scope, v.version_id, (r.parameters ->> 'model_version_id')::bigint"
+        " FROM public.customer_segment_history AS h"
+        " JOIN public.segmentation_run AS r USING (run_id)"
+        " LEFT JOIN api_models.run_version_v1 AS v USING (run_id)"
+        " WHERE h.customer_id = %s ORDER BY h.history_id",
+        (customer,),
+    ).fetchall()
+    assert links == [
+        ("INCREMENTAL", version.version_id, version.version_id),
+        ("INCREMENTAL", version.version_id, version.version_id),
+    ]
+
+    rolled_back = shop.customer()
+    shop.sale(rolled_back, days_ago(now, 5))
+    (before,) = owner.execute("SELECT count(*) FROM models.run_version").fetchone()
+    with pytest.raises(RuntimeError):
+        with service.transaction():
+            recompute.customer(
+                service,
+                rolled_back,
+                version.rule_set_id,
+                now,
+                recompute.Applying(version, "SALE", uuid.uuid4()),
+            )
+            raise RuntimeError("roll back")
+    assert _history(owner, rolled_back) == []
+    assert owner.execute("SELECT count(*) FROM models.run_version").fetchone() == (
+        before,
+    )
+
+
 def test_a_batch_is_one_run_and_a_redelivered_one_adds_nothing(
     shop: Shop,
     service: psycopg.Connection,
@@ -658,9 +705,14 @@ def test_a_batch_under_another_version_is_a_run_of_its_own(
     shop.sale(second, days_ago(now, 6))
     batch = uuid.uuid4()
     _apply(service, first, version, now, "AGEING", batch)
-    later = recompute.Version(
-        version.version_id + 100000, version.rule_set_id, version.window_days
-    )
+    # Another version the registry holds: the run is linked to it (ADR-0092), so it
+    # must exist.
+    other = owner.execute(
+        "SELECT min(version_id) FROM models.model_version WHERE version_id <> %s",
+        (version.version_id,),
+    ).fetchone()
+    assert other is not None and other[0] is not None
+    later = recompute.Version(other[0], version.rule_set_id, version.window_days)
     _apply(service, second, later, now, "AGEING", batch)
     assert _history(owner, first)[0][3] != _history(owner, second)[0][3]
 
@@ -741,8 +793,15 @@ def test_under_a_k_means_version_profiles_are_kept_and_only_a_withdrawal_applies
     label, and a withdrawal is still recorded, under that version and its window."""
     from app import store
 
+    # A K-means version the registry holds: the run is linked to it (ADR-0092).
+    found = owner.execute(
+        "SELECT min(version_id) FROM models.model_version WHERE method = %s",
+        ("KMEANS",),
+    ).fetchone()
+    assert found is not None and found[0] is not None
+    kmeans = found[0]
     monkeypatch.setattr(
-        store, "published_version", lambda c: (424242, "KMEANS", None, 90)
+        store, "published_version", lambda c: (kmeans, "KMEANS", None, 90)
     )
     kept, left = shop.customer(), shop.customer()
     sale = shop.sale(kept, days_ago(now, 5))
@@ -762,7 +821,7 @@ def test_under_a_k_means_version_profiles_are_kept_and_only_a_withdrawal_applies
         " FROM public.segmentation_run WHERE run_id = %s",
         (rows[0][3],),
     ).fetchone()
-    assert run == ("KMEANS", 90, 424242)
+    assert run == ("KMEANS", 90, kmeans)
 
 
 def test_with_no_version_published_the_profile_is_written_and_nothing_applied(

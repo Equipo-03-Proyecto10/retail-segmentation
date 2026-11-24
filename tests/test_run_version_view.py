@@ -8,13 +8,31 @@ migration needs the version of an older run.
 from __future__ import annotations
 
 import re
+import uuid
 from pathlib import Path
 
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = (ROOT / "contracts/db/api_models.run_version.v1.md").read_text()
+LINK_CONTRACT = (ROOT / "contracts/db/api_models.link_run_version.v1.md").read_text()
+SECTION = (
+    (ROOT / "sql/01_schema.sql")
+    .read_text()
+    .split("-- BEGIN BOUNDARY model-registry\n", 1)[1]
+    .split("-- END BOUNDARY model-registry", 1)[0]
+)
+# The backfill of the runs rfm-engine's changes recorded before they were linked
+# (ADR-0092, #1208), exactly as the operator's reapply of the section runs it.
+_BACKFILL = re.search(
+    r"^INSERT INTO models\.run_version \(run_id, version_id\)\nSELECT .*?;$",
+    SECTION,
+    re.M | re.S,
+)
+assert _BACKFILL is not None
+BACKFILL = _BACKFILL.group(0)
 
 pytestmark = pytest.mark.postgres
 
@@ -86,3 +104,77 @@ def test_segments_still_cannot_read_the_registrys_tables(database) -> None:
                 cur.execute("SELECT 1 FROM models.run_version")
         finally:
             cur.execute("RESET ROLE")
+
+
+def test_the_link_function_contract_names_its_object_owner_and_caller() -> None:
+    assert "| Object | `api_models.link_run_version_v1` |" in LINK_CONTRACT
+    assert "| Owning boundary | model-registry |" in LINK_CONTRACT
+    assert "| Consumer | segments (`definer_segments`) |" in LINK_CONTRACT
+    assert "`api_models.link_run_version_v1(bigint,bigint)`" in LINK_CONTRACT
+
+
+def test_only_the_function_that_records_runs_may_link_one(database) -> None:
+    callers = {
+        row[0]
+        for row in database.execute(
+            "SELECT r.rolname FROM pg_roles AS r"
+            " WHERE (starts_with(r.rolname, 'svc_')"
+            "        OR starts_with(r.rolname, 'definer_')"
+            "        OR r.rolname = 'retail_app')"
+            " AND has_function_privilege(r.oid,"
+            "     'api_models.link_run_version_v1(bigint,bigint)', 'EXECUTE')"
+        ).fetchall()
+    }
+    assert callers == {"definer_models", "definer_segments"}
+
+
+def _pending_run(connection, parameters: dict) -> int:
+    """A run recorded the way apply_assignment_v1 recorded one before #1208: its
+    version in its parameters and no link."""
+    return connection.execute(
+        "INSERT INTO public.segmentation_run"
+        " (method, window_days, parameters, customer_count, data_origin, scope)"
+        " VALUES ('RFM_RULES', 180, %s, 1,"
+        "         public.fn_segmentation_window_origin(180), 'INCREMENTAL')"
+        " RETURNING run_id",
+        (Jsonb(parameters),),
+    ).fetchone()[0]
+
+
+def test_the_backfill_links_each_pending_incremental_run_once(owner_url) -> None:
+    with psycopg.connect(owner_url) as connection:
+        try:
+            (version,) = connection.execute(
+                "SELECT version_id FROM api_models.published_version_v1"
+            ).fetchone()
+            pending = _pending_run(
+                connection,
+                {"batch_id": str(uuid.uuid4()), "model_version_id": version},
+            )
+            unknown = _pending_run(
+                connection,
+                {"batch_id": str(uuid.uuid4()), "model_version_id": 10**12},
+            )
+            web = _pending_run(connection, {"model_version_id": version})
+
+            def links() -> list[tuple[int, int]]:
+                return connection.execute(
+                    "SELECT run_id, version_id FROM models.run_version"
+                    " WHERE run_id = ANY(%s) ORDER BY run_id",
+                    ([pending, unknown, web],),
+                ).fetchall()
+
+            (total,) = connection.execute(
+                "SELECT count(*) FROM models.run_version"
+            ).fetchone()
+            connection.execute(BACKFILL)
+            assert links() == [
+                (pending, version)
+            ], "the pending run is linked; an unknown version and a web run are not"
+            connection.execute(BACKFILL)
+            assert links() == [(pending, version)]
+            assert connection.execute(
+                "SELECT count(*) FROM models.run_version"
+            ).fetchone() == (total + 1,), "a second pass adds nothing"
+        finally:
+            connection.rollback()

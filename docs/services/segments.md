@@ -59,6 +59,7 @@ S = only service writer, W = the frozen web also writes, R = read-only through i
 | Publishes | `api_segments.current_label_v1` | recommendations |
 | Publishes | `api_segments.apply_assignment_v1` | rfm-engine (the only caller) |
 | Consumes | `api_models.run_version_v1` | model-registry (the immutable model version of each run) |
+| Calls | `api_models.link_run_version_v1` (ADR-0092) | model-registry (`apply_assignment_v1` links each run it records to the version of the call, in the same transaction, so a sale-driven migration under one version is not methodological, #1208) |
 | Consumes | `api_customers.customer_ref_v1` | customers (a 404 for an unknown customer) |
 | Calls | `api_audit.record_event_v1(...)` | audit-trail (EXECUTE; ADR-0072): a `HISTORY_READ` for `GET /v1/segment-assignments?customer_id=`, a 403 included, in the read's transaction; 503 `audit_unavailable` when it cannot |
 

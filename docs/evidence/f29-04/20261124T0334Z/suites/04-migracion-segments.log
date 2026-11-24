@@ -1,0 +1,22 @@
+cargo test --locked --no-fail-fast --test migration_validation --test assignment_cause -- --test-threads=1
+
+
+running 4 tests
+test a_customer_who_withdrew_profiling_is_not_one_with_no_purchases ... ok
+test a_migration_carries_the_history_rows_own_cause ... ok
+test every_seeded_row_reports_a_cause_not_null ... ok
+test the_contract_roles_read_the_reason_and_other_roles_are_refused ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+
+running 3 tests
+test a_change_keeps_the_previous_assignment_and_names_its_cause ... ok
+test a_recomputation_with_no_new_sale_shows_no_migration ... ok
+test entries_exits_and_moves_match_the_table_worked_out_by_hand ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+    Finished `test` profile [unoptimized] target(s) in 0.21s
+     Running tests/assignment_cause.rs (/home/pc/.cache/mosaiq-rust/target/debug/deps/assignment_cause-f4343472c86013aa)
+     Running tests/migration_validation.rs (/home/pc/.cache/mosaiq-rust/target/debug/deps/migration_validation-37a8edcb146bd5c2)

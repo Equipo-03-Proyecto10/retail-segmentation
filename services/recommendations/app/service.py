@@ -24,9 +24,16 @@ from psycopg import Connection, errors
 
 import redis
 
-from . import decision_store, decisions, retention, rule, rule_v2, store
+from . import decision_store, decisions, interactions, retention, rule, rule_v2, store
 from .cache import ResultCache, result_key, result_key_v2
-from .config import ASSIGNMENT_STREAM, DEFAULT_LIMIT, MAX_LIMIT, STREAMS, Settings
+from .config import (
+    ASSIGNMENT_STREAM,
+    DEFAULT_LIMIT,
+    INTERACTION_STREAM,
+    MAX_LIMIT,
+    STREAMS,
+    Settings,
+)
 
 LOGGER = logging.getLogger(__name__)
 SUFFIX = "recommendations"
@@ -462,13 +469,15 @@ def create_app() -> Flask:
                 )
         return Representation("RecommendationDecision", decision.as_dict())
 
-    _start_consumers(app, settings, cache)
+    _start_consumers(app, settings, cache, kit)
     if settings.retention_enabled:
         retention.start(app, kit)
     return app
 
 
-def _start_consumers(app: Flask, settings: Settings, cache: ResultCache) -> None:
+def _start_consumers(
+    app: Flask, settings: Settings, cache: ResultCache, kit: Kit
+) -> None:
     """One consumer per stream, group `recommendations`, each emptying the cache (a
     changed assignment empties only that customer's results)."""
     if not settings.stream_consumer_enabled:
@@ -487,6 +496,13 @@ def _start_consumers(app: Flask, settings: Settings, cache: ResultCache) -> None
         else:
             cache.invalidate()
 
+    def handle_interaction(fields: dict[str, str]) -> None:
+        """Keep one engagement interaction. The result cache is untouched: an
+        interaction changes no answer (ADR-0090)."""
+        with kit.db.transaction() as connection:
+            interactions.apply(connection, fields)
+
+    app.extensions["recommendations_handle_interaction"] = handle_interaction
     consumers = []
     for stream in STREAMS:
         consumer = StreamConsumer(
@@ -496,4 +512,11 @@ def _start_consumers(app: Flask, settings: Settings, cache: ResultCache) -> None
         )
         consumer.start()
         consumers.append(consumer)
+    interaction_consumer = StreamConsumer(
+        _long_timeout_client(settings.redis_state_url, 10),
+        INTERACTION_STREAM,
+        handle_interaction,
+    )
+    interaction_consumer.start()
+    consumers.append(interaction_consumer)
     app.extensions["recommendations_consumers"] = consumers

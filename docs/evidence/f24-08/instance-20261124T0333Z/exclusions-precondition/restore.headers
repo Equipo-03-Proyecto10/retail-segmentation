@@ -1,0 +1,13 @@
+HTTP/2 200 
+server: nginx
+date: Tue, 24 Nov 2026 03:34:22 GMT
+content-type: application/json
+content-length: 302
+x-correlation-id: s1-f2408-restore-active
+strict-transport-security: max-age=31536000; includeSubDomains
+x-content-type-options: nosniff
+x-frame-options: DENY
+referrer-policy: strict-origin-when-cross-origin
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+permissions-policy: camera=(), microphone=(), geolocation=(), payment=()
+

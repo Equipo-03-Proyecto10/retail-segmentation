@@ -250,7 +250,7 @@ const CATALOG: &str = r#"[
   "kpi_code": "recommendation-performance",
   "name": "Recommendation performance",
   "version": 1,
-  "definition": "Impressions, clicks and purchases of recommendations. Each is counted from its own origin and none is derived from another, so a purchase is never inferred from a click.",
+  "definition": "Impressions, clicks and purchases of recommendations. Each is counted from its own origin and none is derived from another, so a purchase is never inferred from a click. An interaction carries no channel, so channel is not a dimension of this report.",
   "window": "An impression or click falls in the window when its occurred_at lies in [from 00:00 UTC, to + 1 day 00:00 UTC); a purchase when the sale's occurred_at does.",
   "origin_views": [
    "api_recommendations.interaction_v1",
@@ -260,7 +260,6 @@ const CATALOG: &str = r#"[
   "dimensions": [
    "segment",
    "store",
-   "channel",
    "period"
   ],
   "store_attributable": true,

@@ -1,0 +1,34 @@
+{
+  "bound": {
+    "p95_ms": 3000,
+    "max_ms": 5000
+  },
+  "zero": {
+    "delay_ms": 163.7,
+    "last_unchanged_sent_ms": null,
+    "reads": 1,
+    "polls": [
+      {
+        "number": 11,
+        "sent_ms": 0.0663799983158242,
+        "received_ms": 163.6614399976679,
+        "held": true,
+        "decision_id": "967eb947-3c6c-43aa-9204-edd2545b84bb"
+      }
+    ]
+  },
+  "restock": {
+    "delay_ms": 73.3,
+    "last_unchanged_sent_ms": null,
+    "reads": 1,
+    "polls": [
+      {
+        "number": 16,
+        "sent_ms": 0.06479399962699972,
+        "received_ms": 73.29215399659006,
+        "held": true,
+        "decision_id": "0fd3af51-15c3-463d-b7af-b057ca631c26"
+      }
+    ]
+  }
+}

@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ASSIGNMENT_STREAM = "stream:segments.v1.assignment_changed"
+# engagement's interaction facts (ADR-0075, #1197): kept as rows, never a reason to
+# empty the result cache, so they are not in STREAMS.
+INTERACTION_STREAM = "stream:engagement.v1.interaction_recorded"
 # A change in any of these boundaries can change an answer
 # (docs/services/recommendations.md).
 STREAMS = (

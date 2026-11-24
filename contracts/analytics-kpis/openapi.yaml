@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: analytics-kpis-service
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     Reports the commercial KPIs of the platform under their published
     definition, window and data origin, and only to the roles and stores
@@ -56,15 +56,16 @@ info:
     `api_models.run_version_v1`, which names the model version behind a label.
     Consumed and contracted by their producers' open contracts:
     `api_sales.net_purchase_line_v1` (which must also publish a `data_origin`
-    column for ADR-0052) and `api_users.store_assignment_v1`. Required of their
-    producers and not yet contracted: `api_recommendations.interaction_v1` (one row per `RECO_IMPRESSION` and
-    `RECO_CLICK` that is not voided: type, customer, store, instant, data origin),
-    `api_experiments.exposure_v1` (one row per `CAMPAIGN_EXPOSURE` that is not
-    voided: campaign, customer, store, instant, data origin),
-    and `api_recommendations.recommended_purchase_v1` (one row per sale line bought
-    through a recommendation: sale, store, channel, instant).
-    This contract invents none of their columns; each producer's story fixes
-    them, and the reports that read them stay planned until they exist.
+    column for ADR-0052) and `api_users.store_assignment_v1`. Consumed and contracted
+    by their producers for F26-04 (#1197, #1198): `api_recommendations.interaction_v1`
+    (one row per `RECO_IMPRESSION` and `RECO_CLICK` that is not voided: kind, instant,
+    store, product, the customer when the client sent one, label code and rank),
+    `api_recommendations.recommended_purchase_v1` (one row per net sale line whose
+    customer clicked that product up to seven days before: sale, customer, store,
+    instant, amount, data origin; ADR-0090) and `api_experiments.exposure_v1` (one row
+    per campaign exposure that is not voided: campaign, experiment, customer, instant,
+    data origin). An interaction and an exposure carry no channel, and an exposure
+    carries no store.
     Consumed and contracted by experimentation: `api_experiments.campaign_effect_v1`
     (one row per measured experiment of a campaign: its window, arm sizes,
     attributed amount, effect, interval and the interval's confidence, data
@@ -79,9 +80,10 @@ info:
 
     **Implemented so far.** The stand-up story (F26-02) serves `getNetSalesReport`
     and `listKpiDefinitions`, F26-05 serves `getDemandCoverageReport`, and F26-03
-    serves `getSpendReport`, `getRetentionReport` and `getMigrationReport`. Every other
-    report is marked `x-mosaiq-status: planned` (ADR-0073) until its own story removes
-    the marker.
+    serves `getSpendReport`, `getRetentionReport` and `getMigrationReport`, and F26-04
+    serves `getCampaignPerformanceReport`, `getConversionReport` and
+    `getRecommendationPerformanceReport`. A report not yet built is marked
+    `x-mosaiq-status: planned` (ADR-0073) until its own story removes the marker.
 security:
   - bearer: []
 paths:
@@ -332,9 +334,8 @@ paths:
     get:
       summary: Report conversion after exposure
       description: >-
-        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. `channel` is not a dimension of conversion, because an exposure carries no channel; asking for it is 422 `invalid_query` with `dimension_not_supported`. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_recommendations.interaction_v1` (impressions) and `api_experiments.exposure_v1` (campaign exposures) for exposures, `api_sales.net_purchase_line_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+        Conversion (`conversion`, definition version 1): of the customers exposed in a bucket, the share who bought within 7 days. A customer is exposed at the first recorded recommendation impression or campaign exposure in the bucket and converts with at least one net purchase, in any store, within 7 days after that instant. `channel` is not a dimension of conversion, because an exposure carries no channel; asking for it, by `group_by` or by `channel_id`, is 422 `invalid_query` with `dimension_not_supported`. A campaign exposure carries no store either, so a report that groups by `store`, names a `store_id` or is read by a store-scoped role counts recommendation impressions only, and `data_origin.views` says which origins it read. A bucket whose last exposure is under 7 days before `generated_at` reports `converted_customers` and `conversion_rate` absent. It is observational, never an effect; the effect of a campaign is `campaign-performance`. Origin: `api_recommendations.interaction_v1` (impressions) and `api_experiments.exposure_v1` (campaign exposures) for exposures, `api_sales.net_purchase_line_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getConversionReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -390,9 +391,8 @@ paths:
     get:
       summary: Report recommendation performance
       description: >-
-        Recommendation performance (`recommendation-performance`, definition version 1): impressions, clicks and purchases, each counted from its own origin and none derived from another. Origin: `api_recommendations.interaction_v1` for impressions and clicks, `api_recommendations.recommended_purchase_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
+        Recommendation performance (`recommendation-performance`, definition version 1): impressions, clicks and purchases, each counted from its own origin and none derived from another. An interaction carries no channel, so `channel` is not a dimension of this report: asking for it, by `group_by` or by `channel_id`, is 422 `invalid_query` with `dimension_not_supported`. A purchase is a net sale line whose customer clicked that product up to seven days before the sale (ADR-0090). Origin: `api_recommendations.interaction_v1` for impressions and clicks, `api_recommendations.recommended_purchase_v1` for purchases, and `api_segments.current_label_v1` for `segment`. The response holds counts and no customer.
       operationId: getRecommendationPerformanceReport
-      x-mosaiq-status: planned
       x-mosaiq-roles:
         - ADMIN
         - ANALYST
@@ -422,15 +422,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/KpiReport'
               examples:
-                by_channel_and_week:
-                  summary: By channel and week.
+                by_store_and_week:
+                  summary: By store and week.
                   externalValue: ./examples/recommendation-performance.json
             application/xml:
               schema:
                 $ref: '#/components/schemas/KpiReport'
               examples:
-                by_channel_and_week:
-                  summary: By channel and week.
+                by_store_and_week:
+                  summary: By store and week.
                   externalValue: ./examples/recommendation-performance.xml
         '401':
           $ref: '#/components/responses/AuthenticationError'

@@ -23,6 +23,7 @@ STREAMS = (
     "stream:sales.v1.recorded",
     "stream:segments.v1.run_recorded",
     "stream:segments.v1.assignment_changed",
+    "stream:engagement.v1.interaction_recorded",
 )
 EXPECTED = (
     "user svc_recommendations on {{password}} resetchannels -@all +@connection"

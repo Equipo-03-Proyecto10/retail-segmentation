@@ -6387,6 +6387,29 @@ SELECT e.campaign_id,
   LEFT JOIN experiments.experiment_plan AS p ON p.experiment_id = e.experiment_id
  WHERE e.campaign_id IS NOT NULL;
 REVOKE ALL ON api_experiments.campaign_effect_v1 FROM PUBLIC;
+
+-- contracts/db/api_experiments.exposure.v1.md (#1198): one row per campaign exposure
+-- that still counts, as experimentation projected it from engagement's stream (F25-10,
+-- ADR-0075). A VOIDED notice removes the exposure of its source event, whichever notice
+-- arrived first; an exposure the web wrote has no source event and counts. The control
+-- is never exposed, so no arm is published, and an exposure is never an effect
+-- (ADR-0069). A definer-rights view: a consumer needs no privilege on any table it reads.
+CREATE OR REPLACE VIEW api_experiments.exposure_v1
+WITH (security_invoker = off) AS
+SELECT x.exposure_id,
+       e.campaign_id,
+       a.experiment_id,
+       a.customer_id,
+       x.exposed_at,
+       e.data_origin::text AS data_origin
+  FROM public.experiment_exposure AS x
+  JOIN public.experiment_assignment AS a ON a.assignment_id = x.assignment_id
+  JOIN public.experiment AS e ON e.experiment_id = a.experiment_id
+ WHERE e.campaign_id IS NOT NULL
+   AND NOT EXISTS (SELECT FROM experiments.exposure_notice AS v
+                    WHERE v.source_event_id = x.source_event_id
+                      AND v.notice = 'VOIDED');
+REVOKE ALL ON api_experiments.exposure_v1 FROM PUBLIC;
 -- END BOUNDARY experimentation
 
 -- BEGIN BOUNDARY model-registry
@@ -7368,6 +7391,97 @@ GRANT SELECT ON api_stores.store_directory_v2 TO svc_recommendations;
 GRANT SELECT ON api_sales.channel_v1 TO svc_recommendations;
 GRANT SELECT ON api_users.store_assignment_v1 TO svc_recommendations;
 GRANT SELECT ON api_models.run_version_v1 TO svc_recommendations;
+-- Recommendation interactions (#1197, ADR-0075, ADR-0090): the impressions and clicks
+-- engagement relays on stream:engagement.v1.interaction_recorded, kept one row per
+-- event so analytics-kpis can count them through api_recommendations (F26-04, #849).
+-- event_id is the engagement event's UUID: the durable idempotency key, since the
+-- stream delivers at least once. A void sets `voided`, whichever notice arrived first,
+-- and the row stays: nothing is deleted. customer_id is the client's and may be absent
+-- (an anonymous counter); it names no row of another boundary, so a customer unknown to
+-- the database cannot make a delivery fail. It holds identifiers and codes only.
+-- docs/data-model.md holds the 4NF justification.
+CREATE SCHEMA IF NOT EXISTS api_recommendations;
+REVOKE ALL ON SCHEMA api_recommendations FROM PUBLIC;
+GRANT USAGE ON SCHEMA api_recommendations TO svc_recommendations;
+
+CREATE TABLE IF NOT EXISTS recommendations.recommendation_interaction (
+    event_id UUID NOT NULL,
+    kind TEXT NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
+    store_id SMALLINT NOT NULL,
+    product_id INTEGER NOT NULL,
+    customer_id UUID,
+    label_code TEXT NOT NULL,
+    rank SMALLINT NOT NULL,
+    voided BOOLEAN NOT NULL DEFAULT false
+);
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_interaction'::regclass
+      AND conname = 'recommendation_interaction_pkey'
+) THEN ALTER TABLE recommendations.recommendation_interaction
+        ADD CONSTRAINT recommendation_interaction_pkey PRIMARY KEY (event_id); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_interaction'::regclass
+      AND conname = 'recommendation_interaction_kind_check'
+) THEN ALTER TABLE recommendations.recommendation_interaction
+        ADD CONSTRAINT recommendation_interaction_kind_check
+        CHECK (kind IN ('RECO_IMPRESSION', 'RECO_CLICK')); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_interaction'::regclass
+      AND conname = 'recommendation_interaction_label_check'
+) THEN ALTER TABLE recommendations.recommendation_interaction
+        ADD CONSTRAINT recommendation_interaction_label_check
+        CHECK (label_code <> ''); END IF; END $$;
+DO $$ BEGIN IF NOT EXISTS (
+    SELECT FROM pg_constraint WHERE conrelid = 'recommendations.recommendation_interaction'::regclass
+      AND conname = 'recommendation_interaction_rank_check'
+) THEN ALTER TABLE recommendations.recommendation_interaction
+        ADD CONSTRAINT recommendation_interaction_rank_check
+        CHECK (rank >= 1); END IF; END $$;
+-- The click that earns a purchase is found by customer and product (ADR-0090).
+CREATE INDEX IF NOT EXISTS recommendation_interaction_click
+    ON recommendations.recommendation_interaction (customer_id, product_id, occurred_at)
+    WHERE kind = 'RECO_CLICK' AND NOT voided AND customer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS recommendation_interaction_occurred
+    ON recommendations.recommendation_interaction (occurred_at);
+
+-- Written once and then only voided: SELECT, INSERT, UPDATE of `voided`, and of
+-- `customer_id` alone, which is anonymization. No DELETE: a void is a flag.
+GRANT SELECT, INSERT ON recommendations.recommendation_interaction TO svc_recommendations;
+GRANT UPDATE (voided, customer_id) ON recommendations.recommendation_interaction TO svc_recommendations;
+
+-- contracts/db/api_recommendations.interaction.v1.md: the interactions that still count.
+CREATE OR REPLACE VIEW api_recommendations.interaction_v1
+WITH (security_invoker = off) AS
+SELECT i.event_id, i.kind, i.occurred_at, i.store_id, i.product_id, i.customer_id,
+       i.label_code, i.rank
+  FROM recommendations.recommendation_interaction AS i
+ WHERE NOT i.voided;
+REVOKE ALL ON api_recommendations.interaction_v1 FROM PUBLIC;
+
+-- contracts/db/api_recommendations.recommended_purchase.v1.md (ADR-0090): a net sale
+-- line whose customer clicked that product up to seven days before the sale. One row
+-- per line, against the earliest click. An impression earns nothing, and neither does
+-- a click without a customer. A definer-rights view: a consumer needs no privilege on
+-- the interactions or on the sales view it reads.
+CREATE OR REPLACE VIEW api_recommendations.recommended_purchase_v1
+WITH (security_invoker = off) AS
+SELECT DISTINCT ON (n.transaction_id, n.product_id)
+       n.transaction_id, n.product_id, n.customer_id, n.store_id, n.occurred_at,
+       n.net_quantity, n.net_amount,
+       c.event_id AS click_event_id, c.occurred_at AS click_occurred_at,
+       n.data_origin
+  FROM api_sales.net_purchase_line_v1 AS n
+  JOIN recommendations.recommendation_interaction AS c
+    ON c.customer_id = n.customer_id
+   AND c.product_id = n.product_id
+   AND c.kind = 'RECO_CLICK'
+   AND NOT c.voided
+   AND c.occurred_at <= n.occurred_at
+   AND n.occurred_at <= c.occurred_at + interval '7 days'
+ ORDER BY n.transaction_id, n.product_id, c.occurred_at, c.event_id;
+REVOKE ALL ON api_recommendations.recommended_purchase_v1 FROM PUBLIC;
+
 -- END BOUNDARY recommendations
 
 -- BEGIN BOUNDARY analytics-kpis
@@ -7412,6 +7526,13 @@ GRANT SELECT ON api_models.run_version_v1 TO svc_kpis;
 -- incremental effect, read from experimentation's view.
 GRANT USAGE ON SCHEMA api_experiments TO svc_kpis;
 GRANT SELECT ON api_experiments.campaign_effect_v1 TO svc_kpis;
+-- Conversion and recommendation performance (F26-04, #849, #1197): the interactions and
+-- the purchases made through a recommendation, read from recommendations' views.
+GRANT USAGE ON SCHEMA api_recommendations TO svc_kpis;
+GRANT SELECT ON api_recommendations.interaction_v1 TO svc_kpis;
+GRANT SELECT ON api_recommendations.recommended_purchase_v1 TO svc_kpis;
+-- Conversion after exposure (#1198): the campaign exposures that still count.
+GRANT SELECT ON api_experiments.exposure_v1 TO svc_kpis;
 -- END BOUNDARY analytics-kpis
 
 -- BEGIN APPLICATION ROLE VERIFICATION

@@ -6,7 +6,7 @@
   <from>2026-10-01</from>
   <to>2026-10-31</to>
   <granularity>week</granularity>
-  <group_by>channel</group_by>
+  <group_by>store</group_by>
   <group_by>period</group_by>
   <generated_at>2026-10-31T18:00:00Z</generated_at>
   <store_scope>
@@ -21,7 +21,7 @@
   <rows>
     <period_start>2026-10-26</period_start>
     <period_end>2026-11-01</period_end>
-    <channel_id>1</channel_id>
+    <store_id>1</store_id>
     <synthetic>false</synthetic>
     <measures>
       <code>impressions</code>
@@ -45,7 +45,7 @@
   <rows>
     <period_start>2026-10-26</period_start>
     <period_end>2026-11-01</period_end>
-    <channel_id>3</channel_id>
+    <store_id>3</store_id>
     <synthetic>false</synthetic>
     <measures>
       <code>impressions</code>

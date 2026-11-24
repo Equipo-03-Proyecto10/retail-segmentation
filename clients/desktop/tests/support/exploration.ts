@@ -149,7 +149,7 @@ export function answer(url: URL, behaviour: Behaviour = {}): Answer | undefined 
   if (/^rfm-engine\/v1\/rfm-profiles\/[^/]+$/.test(path))
     return ok(behaviour.profile ?? example('rfm-engine', 'profile-scored'));
   if (/^rfm-engine\/v1\/rfm-rule-sets\/\d+$/.test(path))
-    return ok(behaviour.ruleSet ?? example('rfm-engine', 'rule-set'));
+    return ok(behaviour.ruleSet ?? example('rfm-engine', 'rule-set-published'));
   if (path.endsWith('/restrictions'))
     return ok(behaviour.restrictions ?? example('customer-preferences', 'get-restrictions'));
   if (path.endsWith('/consent'))

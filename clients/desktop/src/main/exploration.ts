@@ -212,7 +212,8 @@ export class Exploration {
     try {
       const res = await this.office.authed({ method: 'GET', path: `/v1/rfm-rule-sets/${id}` });
       if (!res.ok) return { error: plain(res.error) };
-      const x = res.data?.RfmRuleSet as {
+      // getRfmRuleSet answers RfmRuleSetDetail (F22-09); RfmRuleSet is the older root.
+      const x = (res.data?.RfmRuleSetDetail ?? res.data?.RfmRuleSet) as {
         rule_set_id: string;
         name: string;
         window_days: string;

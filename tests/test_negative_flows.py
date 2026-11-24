@@ -112,6 +112,7 @@ SIGNED_IN_ROUTES = [
     ("GET", "/notifications/1"),
     ("POST", "/notifications/1/read"),
     ("POST", "/notifications/read-all"),
+    ("GET", "/files/00000000-0000-4000-8000-000000000001/download"),
 ]
 ANONYMOUS_REFUSED_ROUTES = PROTECTED_ROUTES + SIGNED_IN_ROUTES + [("POST", "/logout")]
 PRODUCT = dict(

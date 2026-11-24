@@ -55,7 +55,7 @@ _REJECTIONS = [
 
 
 @pytest.fixture
-def app() -> Flask:
+def app(tmp_path) -> Flask:
     application = create_app(
         Config(
             secret_key="test",
@@ -65,6 +65,7 @@ def app() -> Flask:
             session_cookie_secure=False,
             database_url="unused-by-test",
             max_upload_bytes=_MAX_UPLOAD_BYTES,
+            upload_dir=str(tmp_path),
         ),
         database_connector=Mock(return_value=MagicMock()),
     )

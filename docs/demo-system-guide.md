@@ -944,7 +944,7 @@ report*.
 
 ## 9. PostgreSQL domain model
 
-The schema has 30 tables.
+The schema has 31 tables.
 
 | Domain | Tables | Definition in this project |
 |---|---|---|

@@ -23,6 +23,7 @@ import tempfile
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -43,6 +44,7 @@ EXTENSION_BY_CONTENT_TYPE = {
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/webp": ".webp",
+    "text/csv": ".csv",
 }
 
 # How long a call to the bucket may take before the user is told it is down. Two
@@ -55,6 +57,9 @@ GCS_DEADLINE_SECONDS = 20
 
 PUBLIC = "PUBLIC"
 PRIVATE = "PRIVATE"
+# The kinds a PRIVATE file can have today, and the folder (first path segment)
+# each lives in. See web/services/file_urls.py for who may read each.
+SALES_IMPORT_KIND = "sales-import"
 
 
 class StoreUnavailable(Exception):
@@ -158,10 +163,12 @@ class GcsFileStore:
         bucket_name: str,
         client: Any | None = None,
         retry_policy: Callable[[], Any] | None = None,
+        signer_identity: Callable[[], tuple[str, str]] | None = None,
     ) -> None:
         self._bucket_name = bucket_name
         self._client = client
         self._retry_policy = retry_policy
+        self._identity = signer_identity
 
     def _retry(self) -> Any:
         """The retry policy of every call: the client's own, with its whole-operation
@@ -223,6 +230,48 @@ class GcsFileStore:
             if self._is_not_found(error):
                 raise ObjectMissing(object_path) from error
             raise self._unavailable("read", object_path, error) from error
+
+    def _signer_identity(self) -> tuple[str, str]:
+        """The attached service account and a fresh access token for it.
+
+        Compute Engine credentials hold no private key, so the library signs by
+        calling IAM `signBlob` as this account (it needs
+        `roles/iam.serviceAccountTokenCreator` on itself, ADR-0091). Tests hand in
+        `signer_identity` instead."""
+        if self._identity is not None:
+            return self._identity()
+        import google.auth
+        from google.auth.transport.requests import Request
+
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        credentials.refresh(Request())
+        return credentials.service_account_email, credentials.token
+
+    def signed_url(
+        self, object_path: str, *, expires_in: int, download_name: str
+    ) -> str:
+        """A V4 URL that lets whoever holds it GET this one object for
+        `expires_in` seconds, as a download. The object stays private: no ACL is
+        set and no public access is granted. The URL is returned and never
+        logged."""
+        try:
+            email, token = self._signer_identity()
+            return str(
+                self._bucket()
+                .blob(object_path)
+                .generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(seconds=expires_in),
+                    method="GET",
+                    response_disposition=f'attachment; filename="{download_name}"',
+                    service_account_email=email,
+                    access_token=token,
+                )
+            )
+        except Exception as error:
+            raise self._unavailable("sign", object_path, error) from error
 
     def delete(self, object_path: str) -> None:
         try:

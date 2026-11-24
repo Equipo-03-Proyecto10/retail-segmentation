@@ -18,6 +18,7 @@ from flask import (
     Response,
     abort,
     current_app,
+    flash,
     redirect,
     render_template,
     request,
@@ -36,12 +37,15 @@ from web.db.sales_loads import (
 from web.middleware.authz import SALES_INGEST_EXECUTE, requires
 from web.routes.pagination import redirect_last_page
 from web.services.catalog import parse_pagination
+from web.services.file_urls import ttl_seconds
+from web.services.files import abandon_object, get_file_store
 from web.services.pagination import page_count
 from web.services.sales_csv import (
     CONTRACT_VERSION,
     UnsupportedContractVersion,
     load_and_record_sales_csv,
 )
+from web.services.source_files import attach_source, write_source
 
 bp = Blueprint("sales_import", __name__, url_prefix="/admin/sales-import")
 
@@ -103,6 +107,8 @@ def upload() -> Response | tuple[str | Response, int]:
                 f"The file is larger than the {max_bytes / (1024 * 1024):.0f} MB "
                 "upload limit. Split it and upload each part."
             )
+        store = get_file_store()
+        kept = write_source(store, tmp_path.read_bytes(), session.get("user_id"))
         try:
             _, load_id = load_and_record_sales_csv(
                 get_connection(),
@@ -111,8 +117,17 @@ def upload() -> Response | tuple[str | Response, int]:
                 contract_version=CONTRACT_VERSION,
                 loaded_by=session.get("user_id"),
             )
-        except UnsupportedContractVersion as error:
-            return _refuse(f"The file was not loaded: {error}.")
+        except BaseException as error:
+            if kept is not None:
+                abandon_object(get_connection(), store, kept)
+            if isinstance(error, UnsupportedContractVersion):
+                return _refuse(f"The file was not loaded: {error}.")
+            raise
+        if kept is None or not attach_source(get_connection(), store, kept, load_id):
+            flash(
+                "The file was loaded, but its copy could not be kept for download.",
+                "warning",
+            )
 
     # Redirected rather than rendered, unlike segment_run: reloading a
     # rendered report would post the file again, recording a second load
@@ -138,6 +153,7 @@ def detail(load_id: int) -> str | Response:
         return response
     return render_template(
         "sales_import/report.html",
+        signed_url_minutes=max(1, ttl_seconds(current_app.config["APP_CONFIG"]) // 60),
         load=load,
         rejections=rejections,
         page=page,

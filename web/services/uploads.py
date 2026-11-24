@@ -24,7 +24,6 @@ from werkzeug.datastructures import FileStorage
 
 from web.config import Config
 from web.services.files import (
-    EXTENSION_BY_CONTENT_TYPE,
     PUBLIC,
     FileStore,
     NewFile,
@@ -37,6 +36,8 @@ from web.services.files import (
 )
 
 PRODUCT_IMAGE_KIND = "product-image"
+# The types a product image may have; the file store also holds text/csv.
+IMAGE_CONTENT_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
 # A product image is shown as a thumbnail and a detail picture; no camera
 # produces a side longer than this. A header that declares more is refused
@@ -67,7 +68,7 @@ def _validate(file: FileStorage, config: Config) -> ValidatedImage:
     content_type = (file.mimetype or "").lower()
     if (
         content_type not in config.allowed_image_types
-        or content_type not in EXTENSION_BY_CONTENT_TYPE
+        or content_type not in IMAGE_CONTENT_TYPES
     ):
         raise UploadRejected(
             f"'{content_type or 'unknown'}' is not an accepted image type. "

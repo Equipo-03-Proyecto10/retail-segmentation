@@ -563,6 +563,8 @@ def test_a_database_that_predates_the_file_store_keeps_its_images_and_gains_the_
     # all that deploy/migrate-uploads-1189.py has to go on.
     owner.execute("DROP TRIGGER trg_product_image_file_matches ON product")
     owner.execute("ALTER TABLE product DROP COLUMN image_file_id")
+    owner.execute("ALTER TABLE sales_load DROP COLUMN source_file_id")
+    owner.execute("DROP TABLE file_access")
     owner.execute("DROP TABLE stored_file")
     legacy = _a_product(owner)
     owner.execute(
@@ -578,6 +580,15 @@ def test_a_database_that_predates_the_file_store_keeps_its_images_and_gains_the_
         (legacy,),
     ).fetchone() == ("0123456789abcdef0123456789abcdef.jpg", None)
     assert owner.execute("SELECT count(*) FROM stored_file").fetchone()[0] == 0
+    # The private-file pieces of #1190 come back with it.
+    assert (
+        owner.execute(
+            "SELECT count(*) FROM information_schema.columns"
+            " WHERE table_name = 'sales_load' AND column_name = 'source_file_id'"
+        ).fetchone()[0]
+        == 1
+    )
+    assert owner.execute("SELECT count(*) FROM file_access").fetchone()[0] == 0
     # What the migration selects is still there to be selected.
     assert (
         owner.execute(
@@ -634,3 +645,172 @@ def test_a_service_that_writes_products_and_cannot_read_stored_file_is_unaffecte
     assert owner.execute(
         "SELECT count(*) FROM product WHERE product_id = 1"
     ).fetchone() == (1,)
+
+
+# ---------- a private file kind and the record of its requests (F29-14) ----------
+
+
+def test_a_csv_is_a_stored_file_and_pairs_only_with_its_own_extension(owner) -> None:
+    file_id = str(uuid4())
+    _insert(
+        owner,
+        _row(
+            file_id=file_id,
+            content_type="text/csv",
+            privacy="PRIVATE",
+            object_path=f"sales-import/{file_id}.csv",
+        ),
+    )
+    other = str(uuid4())
+    _refused(
+        owner,
+        _row(
+            file_id=other,
+            content_type="text/csv",
+            object_path=f"sales-import/{other}.png",
+        ),
+        "stored_file_object_path_check",
+    )
+    third = str(uuid4())
+    _refused(
+        owner,
+        _row(
+            file_id=third,
+            content_type="image/png",
+            object_path=f"sales-import/{third}.csv",
+        ),
+        "stored_file_object_path_check",
+    )
+
+
+def _private_csv(owner: psycopg.Connection) -> str:
+    file_id = str(uuid4())
+    _insert(
+        owner,
+        _row(
+            file_id=file_id,
+            content_type="text/csv",
+            privacy="PRIVATE",
+            object_path=f"sales-import/{file_id}.csv",
+        ),
+    )
+    return file_id
+
+
+def _access(owner: psycopg.Connection, file_id: str, **changes) -> None:
+    row = {
+        "file_id": file_id,
+        "actor": ADMIN_ID,
+        "role": "ADMIN",
+        "outcome": "ISSUED",
+        "at": "2026-11-23T12:00:00Z",
+        "expires": "2026-11-23T12:10:00Z",
+    }
+    row.update(changes)
+    owner.execute(
+        "INSERT INTO file_access (file_id, actor_user_id, role_code, outcome,"
+        " occurred_at, expires_at) VALUES (%(file_id)s, %(actor)s, %(role)s,"
+        " %(outcome)s, %(at)s, %(expires)s)",
+        row,
+    )
+
+
+def test_an_issued_url_and_a_refusal_are_both_recorded(owner) -> None:
+    file_id = _private_csv(owner)
+
+    _access(owner, file_id)
+    _access(owner, file_id, outcome="REFUSED", role="ANALYST", expires=None)
+
+
+@pytest.mark.parametrize(
+    "changes,constraint",
+    [
+        # Two CHECKs refuse an unknown outcome; PostgreSQL names the first it meets.
+        ({"outcome": "GRANTED"}, "file_access_expiry_check"),
+        ({"expires": None}, "file_access_expiry_check"),  # issued, no expiry
+        ({"expires": "2026-11-23T12:15:01Z"}, "file_access_expiry_check"),  # >15 min
+        ({"expires": "2026-11-23T12:00:00Z"}, "file_access_expiry_check"),  # not after
+        ({"expires": "2026-11-23T11:59:00Z"}, "file_access_expiry_check"),
+        (
+            {"outcome": "REFUSED", "expires": "2026-11-23T12:10:00Z"},
+            "file_access_expiry_check",  # a refusal issued nothing
+        ),
+    ],
+    ids=[
+        "unknown-outcome",
+        "issued-without-expiry",
+        "over-fifteen-minutes",
+        "expires-at-request",
+        "expired-before-request",
+        "refused-with-url-expiry",
+    ],
+)
+def test_the_record_of_a_request_refuses_what_cannot_be_true(
+    owner, changes, constraint
+) -> None:
+    file_id = _private_csv(owner)
+
+    with pytest.raises(CheckViolation) as refusal:
+        with owner.transaction():
+            _access(owner, file_id, **changes)
+
+    assert refusal.value.diag.constraint_name == constraint
+
+
+def test_fifteen_minutes_exactly_is_accepted(owner) -> None:
+    _access(owner, _private_csv(owner), expires="2026-11-23T12:15:00Z")
+
+
+def test_the_web_can_add_to_the_record_of_requests_but_never_change_it(owner) -> None:
+    file_id = _private_csv(owner)
+    owner.execute("SET LOCAL ROLE retail_app")
+    _access(owner, file_id)
+
+    for statement in (
+        "UPDATE file_access SET role_code = 'X'",
+        "DELETE FROM file_access",
+        "TRUNCATE file_access",
+    ):
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            with owner.transaction():
+                owner.execute(statement)
+
+    assert owner.execute("SELECT count(*) FROM file_access").fetchone()[0] >= 1
+
+
+def test_a_sales_load_keeps_at_most_one_source_file_and_a_file_one_load(owner) -> None:
+    file_id = _private_csv(owner)
+    owner.execute("UPDATE sales_load SET source_file_id = NULL WHERE load_id IN (1, 2)")
+
+    owner.execute(
+        "UPDATE sales_load SET source_file_id = %s WHERE load_id = 1", (file_id,)
+    )
+    with pytest.raises(UniqueViolation):
+        with owner.transaction():
+            owner.execute(
+                "UPDATE sales_load SET source_file_id = %s WHERE load_id = 2",
+                (file_id,),
+            )
+
+
+def test_the_seed_gives_every_load_a_source_file_and_every_file_one_request(
+    owner,
+) -> None:
+    with owner.cursor() as cursor:
+        cursor.execute(
+            "SELECT count(*), count(*) FILTER (WHERE f.status = 'DELETED'),"
+            " count(*) FILTER (WHERE f.privacy = 'PRIVATE'),"
+            " count(*) FILTER"
+            " (WHERE f.object_path = 'sales-import/' || f.file_id || '.csv')"
+            " FROM sales_load l JOIN stored_file f ON f.file_id = l.source_file_id"
+            " WHERE f.file_id::text LIKE '44444444-4444-4444-4444-%'"
+        )
+        assert cursor.fetchone() == (30, 30, 30, 30)
+        cursor.execute(
+            "SELECT count(*), count(*) FILTER (WHERE outcome = 'ISSUED'),"
+            " count(*) FILTER (WHERE outcome = 'REFUSED' AND role_code = 'ANALYST'),"
+            " count(DISTINCT file_id) FROM file_access"
+        )
+        assert cursor.fetchone() == (30, 24, 6, 30)
+        cursor.execute("SELECT count(*) FROM stored_file")
+        assert cursor.fetchone()[0] == 60

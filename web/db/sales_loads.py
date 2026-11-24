@@ -27,6 +27,7 @@ class SalesLoad:
     loaded_by: UUID | None
     loaded_by_name: str | None
     loaded_at: datetime
+    source_file_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -94,7 +95,7 @@ def list_sales_loads(
             """
             SELECT l.load_id, l.filename, l.contract_version, l.received_count,
                    l.accepted_count, l.rejected_count, l.loaded_by, u.name,
-                   l.loaded_at
+                   l.loaded_at, l.source_file_id
             FROM sales_load AS l
             LEFT JOIN app_user AS u ON u.user_id = l.loaded_by
             ORDER BY l.loaded_at DESC, l.load_id DESC
@@ -117,7 +118,7 @@ def get_sales_load(connection: Connection[Any], load_id: int) -> SalesLoad | Non
             """
             SELECT l.load_id, l.filename, l.contract_version, l.received_count,
                    l.accepted_count, l.rejected_count, l.loaded_by, u.name,
-                   l.loaded_at
+                   l.loaded_at, l.source_file_id
             FROM sales_load AS l
             LEFT JOIN app_user AS u ON u.user_id = l.loaded_by
             WHERE l.load_id = %s
@@ -177,3 +178,16 @@ def list_sales_load_rejections_page(
         total = cursor.fetchone()[0]
 
     return rows, total
+
+
+def set_source_file(connection: Connection[Any], load_id: int, file_id: UUID) -> None:
+    """Point a load at the stored file that keeps its CSV; the caller owns the
+    transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE sales_load SET source_file_id = %s
+            WHERE load_id = %s AND source_file_id IS NULL
+            """,
+            (file_id, load_id),
+        )

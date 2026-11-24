@@ -242,3 +242,18 @@ def test_the_gcs_file_store_needs_a_bucket() -> None:
 def test_an_unknown_file_store_is_refused() -> None:
     with pytest.raises(ConfigurationError, match=r"must be one of gcs, local"):
         Config.from_env({"DATABASE_URL": "x", "FILE_STORE_BACKEND": "s3"})
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [(None, 600), ("120", 120), ("900", 900), ("901", 900), ("99999", 900)]
+    + [("0", 600), ("-3", 600), ("ten", 600), ("", 600)],
+)
+def test_a_signed_url_never_lives_longer_than_fifteen_minutes(
+    value: str | None, expected: int
+) -> None:
+    environment = {"DATABASE_URL": "x"}
+    if value is not None:
+        environment["SIGNED_URL_TTL_SECONDS"] = value
+
+    assert Config.from_env(environment).signed_url_ttl_seconds == expected

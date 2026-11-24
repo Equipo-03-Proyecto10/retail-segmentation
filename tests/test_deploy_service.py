@@ -12,10 +12,13 @@ release whose /health/ready cannot pass, as in deploy/rehearse-rollback.sh.
 from __future__ import annotations
 
 import hashlib
+import io
 import os
+import shlex
 import shutil
 import stat
 import subprocess
+import tarfile
 import time
 from pathlib import Path
 
@@ -551,6 +554,43 @@ def test_a_service_deploy_keeps_the_ops_users_of_the_merged_tree(
 
     assert f"user ops_console on #{digest} {rules}" in instance.acl()
     assert user_line("alpha", "~alpha:cache:* ~alpha:v2:*") in instance.acl()
+
+
+def test_the_workflow_copies_every_file_the_script_reads_from_its_tree() -> None:
+    # The case above builds its own tree. The instance's tree is only what
+    # deploy-service.yml archives, and an archive without ops/ dropped
+    # ops_console on every service deploy after #1196 (#764).
+    workflow = (ROOT / ".github/workflows/deploy-service.yml").read_text()
+    command = workflow.split(
+        'git archive --format=tar.gz -o "$RUNNER_TEMP/bundle.tgz"'
+    )[1]
+    command = command.split("\n          gcloud")[0].replace("\\\n", " ")
+    paths = shlex.split(command)[1:]
+    assert paths, "no paths after the commit in the workflow's git archive"
+    paths = [p.replace("$NAME", "users") for p in paths]
+    archived = subprocess.run(
+        ["git", "archive", "--format=tar", "HEAD", "--", *paths],
+        cwd=ROOT,
+        capture_output=True,
+        check=True,
+    ).stdout
+    names = set(tarfile.open(fileobj=io.BytesIO(archived)).getnames())
+    ops = subprocess.run(
+        ["git", "ls-files", "--", ":(glob)ops/*/redis/*.acl"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert ops, "no ops user is committed"
+    for needed in (
+        "deploy/deploy-service.sh",
+        "deploy/infra/redis/assemble-acl.sh",
+        "contracts/registry.yaml",
+        "services/users/VERSION",
+        *ops,
+    ):
+        assert needed in names, needed
 
 
 def test_the_committed_scripts_are_executable() -> None:

@@ -49,6 +49,7 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 | `experiment_conversion` | A qualifying sale linked back to an assignment, inside its experiment's conversion window |
 | `inventory` | Stock of one product at one store |
 | `stored_file` | The metadata of one file kept in the file store (a product's picture): its object path, content type, size, SHA-256, privacy, status and owner, never the bytes (ADR-0091) |
+| `file_access` | One request for a PRIVATE stored file: the signed URL that was issued (with its expiry, 15 minutes at most) or the refusal, with who asked and in which role (ADR-0091, F29-14). Append-only |
 | `notification` | One thing that happened that somebody should be told about: a sales load, a segmentation run, an experiment's end or a user's deactivation (ADR-0047). The event, kept once |
 | `notification_recipient` | One user an event was written for, and when they read it |
 | `audit_log` | Who changed which business rule or catalog row, when, and to what |
@@ -89,6 +90,8 @@ own schemas under ADR-0046 and are deliberately outside this list and diagram.
 - `customer` (1) — has — (N) `customer_interest_category` rows (N) — reference — (1) `category`
 - `app_user` (1) — owns — (N) `stored_file`
 - `stored_file` (0..1) — is the picture of — (0..1) `product`
+- `stored_file` (0..1) — is the source file of — (0..1) `sales_load`
+- `stored_file` (1) — is requested in — (N) `file_access` rows (N) — made by — (1) `app_user`
 - `audit_log` names any audited entity as text; only its optional actor is a foreign key
 
 ### Permission matrix
@@ -447,6 +450,18 @@ fact a query needs is a column, so the object never holds a repeating group. Two
 columns record a status that is not a state of the world but a fact about the store:
 `status = 'PENDING_DELETE'` is a delete the bucket has not confirmed, and a row is
 never removed, so `DELETED` keeps the record that the file existed.
+
+`file_access` (F29-14) is an event relation keyed by `access_id`: one row per request
+for a private file. Its determinants are the key alone. `role_code` is the role the
+actor held at the request, a fact about that moment (a later role change must not
+rewrite it), not a function of `actor_user_id`; `expires_at` is set exactly when
+`outcome = 'ISSUED'` (`file_access_expiry_check`, which also bounds it to 15 minutes
+after `occurred_at`). The file and the actor each have one row per request, so there is
+no multivalued fact to split. It never holds the URL or its signature.
+
+`sales_load.source_file_id` (F29-14) is the one new attribute of an existing relation:
+the stored file that keeps the load's CSV, single-valued, unique where set, null for a
+load whose file was not kept. It depends on `load_id` alone.
 
 `product.image_path` is the one deliberate departure. A picture kept in the store is
 named `<image_file_id>.<ext>` in `image_path`, so that column is derivable from
@@ -1312,6 +1327,9 @@ erDiagram
     notification               ||--o{ notification_recipient     : "is written for"
     app_user                   ||--o{ notification_recipient     : "is told"
     app_user                   ||--o{ stored_file                : "owns"
+    stored_file                ||--o{ file_access                : "is requested in"
+    app_user                   ||--o{ file_access                : "asks"
+    stored_file                |o--o| sales_load                 : "keeps the CSV of"
     stored_file                |o--o| product                    : "is the picture of"
 ```
 
@@ -2169,19 +2187,36 @@ These two are the 4NF decomposition from §2.4.
 |---|---|---|---|---|
 | `file_id` | `UUID` | NN | PK, default `gen_random_uuid()` | File identifier, also the stem of its object name |
 | `object_path` | `VARCHAR(255)` | NN | UQ; `CHECK` (`stored_file_object_path_check`): `<kind>/<file_id>.<ext>` with the extension the content type implies | Where the object is in the store. Never the uploaded file's name |
-| `content_type` | `VARCHAR(100)` | NN | `CHECK IN ('image/jpeg','image/png','image/webp')` | What the bytes were validated to be |
+| `content_type` | `VARCHAR(100)` | NN | `CHECK IN ('image/jpeg','image/png','image/webp','text/csv')` | What the bytes were validated to be; `text/csv` is the source file of a sales import, the one PRIVATE kind |
 | `size_bytes` | `BIGINT` | NN | `CHECK > 0 AND <= 5242880` | Size of the object, 5 MB at most (RF-08) |
 | `sha256` | `CHAR(64)` | NN | `CHECK ~ '^[0-9a-f]{64}$'` | SHA-256 of the bytes, lowercase hex; not unique, two uploads of one picture are two files |
-| `privacy` | `VARCHAR(10)` | NN | `CHECK IN ('PUBLIC','PRIVATE')` | `PUBLIC` is streamed by the web to a signed-in reader of the catalog; `PRIVATE` is reached only through a signed URL (#1190) |
+| `privacy` | `VARCHAR(10)` | NN | `CHECK IN ('PUBLIC','PRIVATE')` | `PUBLIC` is streamed by the web to a signed-in reader of the catalog; `PRIVATE` is reached only through a signed URL that lives 15 minutes at most (F29-14) |
 | `status` | `VARCHAR(15)` | NN | default `'STORED'`; `CHECK IN ('STORED','PENDING_DELETE','DELETED')` | `PENDING_DELETE` is a delete the store has not confirmed, retried by `deploy/migrate-uploads-1189.py --delete-pending` |
 | `owner_user_id` | `UUID` | NN | FK → `app_user`, `RESTRICT` | Who uploaded it |
 | `created_at` | `TIMESTAMPTZ` | NN | default `now()` | When the row was written |
 | `deleted_at` | `TIMESTAMPTZ` | yes | `CHECK` (`stored_file_deleted_at_check`): set exactly when `status = 'DELETED'` | When the object was removed |
 | `metadata` | `JSONB` | NN | default `'{}'`; `CHECK` it is an object | Free facts nothing queries; never a repeating group (§2.4) |
 
-Seeded with 30 rows, all `DELETED`: the record of a picture the administrator
-replaced, for each of the first thirty products. A live row would name an object no
-bucket holds, so the seed has none, like `product.image_path`.
+Seeded with 60 rows, all `DELETED`: the record of a picture the administrator
+replaced, for each of the first thirty products, and the source CSV of each of the
+thirty seeded sales loads. A live row would name an object no bucket holds, so the
+seed has none, like `product.image_path`.
+
+#### `file_access`
+
+| Column | Type | Null | Constraints | Meaning |
+|---|---|---|---|---|
+| `access_id` | `BIGINT` | NN | PK, `GENERATED ALWAYS AS IDENTITY` | Request identifier |
+| `file_id` | `UUID` | NN | FK → `stored_file`, `RESTRICT` | The file that was asked for |
+| `actor_user_id` | `UUID` | NN | FK → `app_user`, `RESTRICT` | Who asked |
+| `role_code` | `VARCHAR(40)` | NN | — | The role they held at that moment |
+| `outcome` | `VARCHAR(10)` | NN | `CHECK IN ('ISSUED','REFUSED')` | A URL was issued, or the request was refused (403, no URL) |
+| `occurred_at` | `TIMESTAMPTZ` | NN | default `now()` | When |
+| `expires_at` | `TIMESTAMPTZ` | yes | `CHECK` (`file_access_expiry_check`): set and within 15 minutes after `occurred_at` when `ISSUED`, `NULL` when `REFUSED` | When the issued URL stops working |
+
+`retail_app` holds `SELECT` and `INSERT` only. Seeded with 30 rows, one per seeded
+sales-load file: 24 issued to the administrator for ten minutes, 6 refused to an
+analyst.
 
 #### `product`
 
@@ -2271,6 +2306,7 @@ domain forbids.
 | `rejected_count` | `INT` | NN | `CHECK >= 0` | Rows refused with a recorded reason |
 | `loaded_by` | `UUID` | yes | FK → `app_user`, `SET NULL` | Administrator who submitted the file; preserved as `NULL` if that account is removed |
 | `loaded_at` | `TIMESTAMPTZ` | NN | default `now()` | When the attempt completed |
+| `source_file_id` | `UUID` | yes | FK → `stored_file`, `RESTRICT`; unique where set (`ux_sales_load_source_file`) | The PRIVATE file that keeps the uploaded CSV (F29-14); `NULL` when it was not kept. Read only through a signed URL |
 
 The table-level check `received_count = accepted_count + rejected_count`
 keeps the stored report reconciled. This is runtime history rather than

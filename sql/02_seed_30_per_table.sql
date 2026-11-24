@@ -15,7 +15,7 @@
 --    misrepresent the business. Those three, and only those, are listed in
 --    sql/seed-exempt.txt with the reason, which is the mechanism CI reads.
 --    Every other table holds at least 30 rows, including the runtime tables
---    app_session, sales_load, sales_load_rejection and stored_file: their rows
+--    app_session, sales_load, sales_load_rejection, stored_file and file_access: their rows
 --    record the demonstration history the rest of the seed implies (sign-ins
 --    that ended, the CSV uploads that brought the sales in, the product
 --    pictures that were replaced), none of them still open.
@@ -1156,6 +1156,52 @@ SELECT 'sales-' || to_char((now() - make_interval(days => 31 - n))::date, 'YYYY-
        now() - make_interval(days => 31 - n) + interval '11 hours'
 FROM generate_series(1,30) n
 ORDER BY n;
+
+-- ---------- stored_file (30 more) and file_access (30): the source files of those loads ----------
+-- Runtime history, as for the product pictures above (ADR-0051, ADR-0091): each
+-- seeded load kept its CSV as a PRIVATE stored file, which has since been
+-- removed (DELETED, twelve hours after the load), because a live row would name
+-- an object no bucket holds. sales_load.source_file_id points at it. The hashes
+-- are of a fixed text, not of any file.
+INSERT INTO stored_file
+    (file_id, object_path, content_type, size_bytes, sha256, privacy, status,
+     owner_user_id, created_at, deleted_at, metadata)
+SELECT f.file_id,
+       'sales-import/' || f.file_id::text || '.csv',
+       'text/csv',
+       800 + l.load_id * 37,
+       encode(sha256(convert_to('seeded sales load ' || l.load_id, 'UTF8')), 'hex'),
+       'PRIVATE',
+       'DELETED',
+       l.loaded_by,
+       l.loaded_at,
+       l.loaded_at + interval '12 hours',
+       jsonb_build_object('kind', 'sales-import', 'sales_load_id', l.load_id)
+FROM sales_load AS l
+CROSS JOIN LATERAL (
+    SELECT ('44444444-4444-4444-4444-' || lpad(l.load_id::text, 12, '0'))::uuid AS file_id
+) AS f
+ORDER BY l.load_id;
+
+UPDATE sales_load
+SET source_file_id = ('44444444-4444-4444-4444-' || lpad(load_id::text, 12, '0'))::uuid;
+
+-- Each file was asked for once while it existed: every fifth time by an ANALYST,
+-- who may not read it (refused, no URL), otherwise by the administrator, who
+-- got a URL that lasted ten minutes. User 2 is the seeded ANALYST.
+INSERT INTO file_access
+    (file_id, actor_user_id, role_code, outcome, occurred_at, expires_at)
+SELECT l.source_file_id,
+       CASE WHEN l.load_id % 5 = 0
+            THEN '11111111-1111-1111-1111-000000000002'::uuid
+            ELSE '11111111-1111-1111-1111-000000000001'::uuid END,
+       CASE WHEN l.load_id % 5 = 0 THEN 'ANALYST' ELSE 'ADMIN' END,
+       CASE WHEN l.load_id % 5 = 0 THEN 'REFUSED' ELSE 'ISSUED' END,
+       l.loaded_at + interval '1 hour',
+       CASE WHEN l.load_id % 5 = 0 THEN NULL
+            ELSE l.loaded_at + interval '1 hour 10 minutes' END
+FROM sales_load AS l
+ORDER BY l.load_id;
 
 -- ---------- sales_load_rejection (one row per refused line = 60) ----------
 -- The refused lines of those loads, numbered as the file numbers them (the

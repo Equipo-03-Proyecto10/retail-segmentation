@@ -69,7 +69,7 @@ what the web changes without the web knowing they exist.
 
 | Store | Where | Holds |
 |---|---|---|
-| PostgreSQL, database `retail` | the instance, `127.0.0.1:5432` | `public` (30 tables, 4NF), the service schemas, the `api_*` schemas, the eight outboxes |
+| PostgreSQL, database `retail` | the instance, `127.0.0.1:5432` | `public` (31 tables, 4NF), the service schemas, the `api_*` schemas, the eight outboxes |
 | `redis-state` | project `mosaiq-infra` | sessions, Redis Streams, rate limits; `noeviction`, AOF |
 | `redis-cache` | project `mosaiq-infra` | caches and live counters; `allkeys-lru` |
 | MongoDB | project `mosaiq-infra` | in-store engagement, owned by `engagement` alone |

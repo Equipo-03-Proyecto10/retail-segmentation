@@ -431,9 +431,10 @@ CREATE TABLE stored_file (
     deleted_at     TIMESTAMPTZ,
     metadata       JSONB NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT stored_file_content_type_check
-        CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp')),
+        CHECK (content_type IN ('image/jpeg', 'image/png', 'image/webp', 'text/csv')),
     -- 5 MB, the same limit as MAX_UPLOAD_BYTES. A larger kind of file widens it
-    -- by a schema change of its own.
+    -- by a schema change of its own. text/csv is the one PRIVATE kind there is
+    -- today: the source file of a sales import (ADR-0091, F29-14).
     CONSTRAINT stored_file_size_check
         CHECK (size_bytes > 0 AND size_bytes <= 5242880),
     CONSTRAINT stored_file_sha256_check CHECK (sha256 ~ '^[0-9a-f]{64}$'),
@@ -445,10 +446,11 @@ CREATE TABLE stored_file (
     CONSTRAINT stored_file_metadata_check CHECK (jsonb_typeof(metadata) = 'object'),
     -- <kind>/<file_id>.<ext>, the extension the content type implies.
     CONSTRAINT stored_file_object_path_check
-        CHECK (object_path ~ ('^[a-z][a-z0-9-]*/' || file_id::text || '[.](jpg|png|webp)$')
+        CHECK (object_path ~ ('^[a-z][a-z0-9-]*/' || file_id::text || '[.](jpg|png|webp|csv)$')
            AND ((content_type = 'image/jpeg' AND object_path LIKE '%.jpg')
              OR (content_type = 'image/png'  AND object_path LIKE '%.png')
-             OR (content_type = 'image/webp' AND object_path LIKE '%.webp')))
+             OR (content_type = 'image/webp' AND object_path LIKE '%.webp')
+             OR (content_type = 'text/csv'   AND object_path LIKE '%.csv')))
 );
 
 -- One user's files, newest first.
@@ -456,6 +458,30 @@ CREATE INDEX idx_stored_file_owner ON stored_file (owner_user_id, created_at DES
 -- The delete the store has not yet confirmed, found without scanning the table.
 CREATE INDEX idx_stored_file_pending_delete ON stored_file (created_at)
     WHERE status = 'PENDING_DELETE';
+
+-- Every request for a PRIVATE file: the signed URL that was issued, or the
+-- refusal (F29-14, ADR-0091). Append-only: the web may insert and read, never
+-- change or remove a row. It holds who, which file, what answer and until when,
+-- never the URL or its signature.
+CREATE TABLE file_access (
+    access_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    file_id        UUID NOT NULL REFERENCES stored_file(file_id) ON DELETE RESTRICT,
+    actor_user_id  UUID NOT NULL REFERENCES app_user(user_id) ON DELETE RESTRICT,
+    role_code      VARCHAR(40) NOT NULL,
+    outcome        VARCHAR(10) NOT NULL,
+    occurred_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ,
+    CONSTRAINT file_access_outcome_check CHECK (outcome IN ('ISSUED', 'REFUSED')),
+    -- An issued URL has an expiry, at most 15 minutes after the request; a
+    -- refusal has none, because no URL exists.
+    CONSTRAINT file_access_expiry_check CHECK (
+        (outcome = 'ISSUED' AND expires_at > occurred_at
+            AND expires_at <= occurred_at + interval '15 minutes')
+        OR (outcome = 'REFUSED' AND expires_at IS NULL))
+);
+CREATE INDEX idx_file_access_file ON file_access (file_id, occurred_at DESC);
+CREATE INDEX idx_file_access_actor ON file_access (actor_user_id, occurred_at DESC);
+REVOKE UPDATE, DELETE ON file_access FROM retail_app;
 
 CREATE TABLE product (
     product_id  INT PRIMARY KEY,
@@ -620,8 +646,14 @@ CREATE TABLE sales_load (
     rejected_count    INT NOT NULL CHECK (rejected_count >= 0),
     loaded_by         UUID REFERENCES app_user(user_id) ON DELETE SET NULL,
     loaded_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- The uploaded file, kept as a PRIVATE stored file so it can be read again
+    -- through a short-lived signed URL (F29-14, ADR-0091). NULL when it was not
+    -- retained: a load before that release, or a store that was down.
+    source_file_id    UUID REFERENCES stored_file(file_id) ON DELETE RESTRICT,
     CHECK (received_count = accepted_count + rejected_count)
 );
+CREATE UNIQUE INDEX ux_sales_load_source_file ON sales_load (source_file_id)
+    WHERE source_file_id IS NOT NULL;
 
 -- One row per rejected line, with the file's own line number (the header is
 -- line 1, so the first data row is line 2) -- not the record index, which

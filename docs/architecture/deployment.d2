@@ -77,7 +77,7 @@ gcp: "GCP · project iac-dev-01 · northamerica-south1-a" {
 
     pg: "PostgreSQL 18 · database retail · 127.0.0.1:5432" {
       class: layer
-      public: "public\n30 tables, 4NF\nthe web reads and writes it as retail_app" { class: store; shape: cylinder }
+      public: "public\n31 tables, 4NF\nthe web reads and writes it as retail_app" { class: store; shape: cylinder }
       svcschemas: "service schemas\nsvc_<name> roles, own tables only (ADR-0046)" { class: store; shape: cylinder }
       api: "api_* schemas\nversioned *_v1 views, consume_v1" { class: store; shape: cylinder }
       outbox: "eight outboxes\n<suffix>_events.outbox\nusers · products · categories · stores\nstock · preferences · sales · segments" { class: store; shape: cylinder }

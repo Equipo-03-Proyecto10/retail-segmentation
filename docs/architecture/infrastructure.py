@@ -129,7 +129,7 @@ with Diagram(
 
             with Cluster(PG_LABEL, graph_attr=CLUSTER_ATTR):
                 postgres = PostgreSQL(
-                    "public (30 tables, 4NF)\nservice schemas\n"
+                    "public (31 tables, 4NF)\nservice schemas\n"
                     "api_* schemas\neight outboxes"
                 )
 

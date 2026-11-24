@@ -1,6 +1,6 @@
 # analytics-kpis
 
-> **Status:** Stood up (phase 26, third; F26-02, #847): it serves `GET /v1/kpi-reports/net-sales` and `GET /v1/kpi-reports/definitions`, since F26-05 (#850) `GET /v1/kpi-reports/demand-coverage`, and since F26-03 (#848) `GET /v1/kpi-reports/spend`, `/retention` and `/migrations`; every other report is marked `x-mosaiq-status: planned` (ADR-0073) until its own story. The contract was published by F26-01 (#846). ADR-0059 places it; ADR-0060 decides who reads which store.
+> **Status:** Stood up (phase 26, third; F26-02, #847): it serves `GET /v1/kpi-reports/net-sales` and `GET /v1/kpi-reports/definitions`, since F26-05 (#850) `GET /v1/kpi-reports/demand-coverage`, since F26-03 (#848) `GET /v1/kpi-reports/spend`, `/retention` and `/migrations`, and since F26-04 (#849) `/campaign-performance`, `/conversion` and `/recommendation-performance`; no report is left `x-mosaiq-status: planned` (ADR-0073). The contract was published by F26-01 (#846). ADR-0059 places it; ADR-0060 decides who reads which store.
 > **One rule:** A KPI is reported only under its published definition, window and data origin, from `api_*` objects, and only to the roles and stores allowed to read it (RN-68)
 
 ## Summary
@@ -35,8 +35,8 @@
 | GET | `/v1/kpi-reports/net-sales` | Net amount, units and orders (served, F26-02) | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/spend` | Net amount, active customers, average spend (served, F26-03) | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/retention` | Cohort retention by next bucket (served, F26-03) | the above (store roles narrowed) |
-| GET | `/v1/kpi-reports/conversion` | Exposed customers who bought within 7 days (planned) | the above (store roles narrowed) |
-| GET | `/v1/kpi-reports/recommendation-performance` | Impressions, clicks, purchases (planned) | the above (store roles narrowed) |
+| GET | `/v1/kpi-reports/conversion` | Of the customers exposed in a bucket, the share who bought within 7 days after their first exposure; observational, never an effect. `channel` is not a dimension (422 `dimension_not_supported`), and a report by store, or read by a store-scoped role, counts recommendation impressions only because a campaign exposure carries no store (served, F26-04) | the above (store roles narrowed) |
+| GET | `/v1/kpi-reports/recommendation-performance` | Impressions, clicks and purchases, each from its own origin and none derived from another. `channel` is not a dimension: an interaction carries none (422 `dimension_not_supported`) (served, F26-04) | the above (store roles narrowed) |
 | GET | `/v1/kpi-reports/migrations` | Segment changes within a model version (served, F26-03) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET | `/v1/kpi-reports/campaign-performance` | Attributed sales (`ATTRIBUTED`) and incremental effect (`INCREMENTAL`, with its 95% interval) per measured experiment of a campaign, never merged (F26-04) | ADMIN, ANALYST, MARKETING, AUDITOR |
 | GET | `/v1/kpi-reports/demand-coverage` | Demand by segment and category beside stock on hand, days of cover and units to replenish (served, F26-05) | ADMIN, ANALYST, INVENTORY_PLANNER, AUDITOR, STORE_MANAGER (narrowed) |
@@ -61,9 +61,9 @@ Reports take `from` and `to` (required), `group_by` of `segment`, `store`, `chan
 | `api_products.product_ref_v1` | products | Published; read by `demand-coverage` only, for the product's category and `is_active`, granted to `svc_kpis` by F26-05 |
 | `api_segments.assignment_change_v1` | segments | Published by F26-03 ([`api_segments.assignment_change.v1.md`](../../contracts/db/api_segments.assignment_change.v1.md)): one row per change of a customer's label between two consecutive assignments, each side named by its run (the model version comes from `api_models.run_version_v1`); read by `migrations` only, granted to `svc_kpis` by F26-03 |
 | `api_models.run_version_v1` | model-registry | Published; read by `migrations` for the model version of each side's run, and by `spend` and `retention` through the run of a customer's current label, to name the model versions behind a segment, granted to `svc_kpis` by F26-03 |
-| `api_recommendations.interaction_v1` | recommendations | Required, not contracted: `RECO_IMPRESSION` and `RECO_CLICK` events that are not voided, kept by recommendations from engagement's stream (ADR-0075) |
-| `api_experiments.exposure_v1` | experimentation | Required, not contracted: `CAMPAIGN_EXPOSURE` events that are not voided, kept by experimentation from engagement's stream (ADR-0075) |
-| `api_recommendations.recommended_purchase_v1` | recommendations | Required, not contracted: sale lines bought through a recommendation |
+| `api_recommendations.interaction_v1` | recommendations | Contracted (`contracts/db/api_recommendations.interaction.v1.md`, #1197): `RECO_IMPRESSION` and `RECO_CLICK` events that are not voided, kept by recommendations from engagement's stream (ADR-0075); read by `conversion` and `recommendation-performance` |
+| `api_experiments.exposure_v1` | experimentation | Contracted (`contracts/db/api_experiments.exposure.v1.md`, #1198): `CAMPAIGN_EXPOSURE` events that are not voided, kept by experimentation from engagement's stream (ADR-0075); read by `conversion` |
+| `api_recommendations.recommended_purchase_v1` | recommendations | Contracted (`contracts/db/api_recommendations.recommended_purchase.v1.md`, #1197, ADR-0090): net sale lines whose customer clicked that product in the seven days before; read by `recommendation-performance` |
 | `api_experiments.campaign_effect_v1` | experimentation | Contracted (`contracts/db/api_experiments.campaign_effect.v1.md`, F26-04): per measured experiment of a campaign, its window, arm sizes, net attributed amount, effect, interval and the interval's confidence |
 
 engagement publishes no `api_*` view; its facts reach recommendations and experimentation on a Redis stream (ADR-0075), so figures built on them are eventually consistent. The contract invents none of the required views' columns. Each producer's story fixes them, adds its grant row for `svc_kpis` to `contracts/db/grants.csv`, and names analytics-kpis as a consumer.

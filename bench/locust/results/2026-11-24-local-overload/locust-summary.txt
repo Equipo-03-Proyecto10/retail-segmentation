@@ -1,0 +1,72 @@
+[2026-11-23 22:11:14,649] Raquels-MacBook-Air-4/WARNING/locust.runners: Your selected spawn rate is very high (>100), and this is known to sometimes cause issues. Do you really need to ramp up that fast?
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      /api/analytics-kpis/v1/kpi-reports/definitions                                  1091     1(0.09%) |      4       1     302      3 |    2.02        0.00
+GET      /api/analytics-kpis/v1/kpi-reports/demand-coverage                              1047     1(0.10%) |     10       1     562      7 |    1.94        0.00
+GET      /api/analytics-kpis/v1/kpi-reports/migrations                                   1021     1(0.10%) |      8       1     570      5 |    1.89        0.00
+GET      /api/analytics-kpis/v1/kpi-reports/net-sales                                    3188     3(0.09%) |      9       2     765      6 |    5.90        0.01
+GET      /api/analytics-kpis/v1/kpi-reports/net-sales (segment, month)                   2208     1(0.05%) |     12       2     738      6 |    4.09        0.00
+GET      /api/analytics-kpis/v1/kpi-reports/retention                                    1084     2(0.18%) |     16       1     622     11 |    2.01        0.00
+GET      /api/analytics-kpis/v1/kpi-reports/spend                                        2234     2(0.09%) |     10       1     655      6 |    4.14        0.00
+GET      /api/audit-trail/v1/audit-entries                                                985  255(25.89%) |     11       1     299      8 |    1.82        0.47
+POST     /api/auth/v1/sessions/refresh                                                     28     0(0.00%) |     27       4      53     25 |    0.05        0.00
+GET      /api/products/v1/products                                                       3510     0(0.00%) |      7       1     406      5 |    6.50        0.00
+POST     /api/sales/v1/sales                                                            10156     0(0.00%) |     23       3    1149      9 |   18.81        0.00
+POST     /api/sales/v1/sales (replay)                                                     521     0(0.00%) |     19       2    1007      6 |    0.96        0.00
+GET      /api/stock/v1/stock-levels                                                      3582     0(0.00%) |      6       1     449      4 |    6.63        0.00
+GET      /api/users/v1/users                                                             1019  309(30.32%) |     10       2     256      6 |    1.89        0.57
+GET      /catalog/customers                                                              4968     0(0.00%) |   1387       8    8929    450 |    9.20        0.00
+GET      /catalog/customers/{id}                                                         3647     0(0.00%) |   1361      11    8954    430 |    6.75        0.00
+GET      /catalog/customers?q=                                                           2459     0(0.00%) |   1389       8    8392    430 |    4.55        0.00
+GET      /catalog/segments                                                               2549     0(0.00%) |   1341       8    8934    430 |    4.72        0.00
+GET      /catalog/segments/{id}                                                          2429     0(0.00%) |   1328       9    8909    410 |    4.50        0.00
+GET      /segmentation-dashboard/                                                        1229     0(0.00%) |   1620     107    9101    640 |    2.28        0.00
+GET      console /                                                                        974     2(0.21%) |     10       1     432      5 |    1.80        0.00
+GET      console /status.json                                                            2982     6(0.20%) |      7       0     509      4 |    5.52        0.01
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                     52911   583(1.10%) |    461       0    9101      9 |   97.99        1.08
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+GET      /api/analytics-kpis/v1/kpi-reports/definitions                                          3      4      4      5      7     10     19     28    190    300    300   1091
+GET      /api/analytics-kpis/v1/kpi-reports/demand-coverage                                      7      9     10     11     16     21     35     45    330    560    560   1047
+GET      /api/analytics-kpis/v1/kpi-reports/migrations                                           5      6      7      8     11     16     27     60    330    570    570   1021
+GET      /api/analytics-kpis/v1/kpi-reports/net-sales                                            6      7      8      8     12     17     33     53    580    770    770   3188
+GET      /api/analytics-kpis/v1/kpi-reports/net-sales (segment, month)                           6      7      8      9     14     23     42    170    660    740    740   2208
+GET      /api/analytics-kpis/v1/kpi-reports/retention                                           11     14     15     17     24     35     56    190    510    620    620   1084
+GET      /api/analytics-kpis/v1/kpi-reports/spend                                                6      7      8      8     12     19     38     72    560    660    660   2234
+GET      /api/audit-trail/v1/audit-entries                                                       8      9     11     12     18     29     55    100    300    300    300    985
+POST     /api/auth/v1/sessions/refresh                                                          25     29     36     37     50     51     54     54     54     54     54     28
+GET      /api/products/v1/products                                                               5      6      7      7     11     18     34     54    300    410    410   3510
+POST     /api/sales/v1/sales                                                                     9     11     13     15     24     43    200    490   1000   1100   1100  10156
+POST     /api/sales/v1/sales (replay)                                                            6      7      8      9     17     45    230    370   1000   1000   1000    521
+GET      /api/stock/v1/stock-levels                                                              4      4      5      6      9     14     28     54    370    450    450   3582
+GET      /api/users/v1/users                                                                     6      8     10     12     21     29     50     99    230    260    260   1019
+GET      /catalog/customers                                                                    450   1300   2000   2500   4400   6000   6800   7400   8300   8900   8900   4968
+GET      /catalog/customers/{id}                                                               430   1300   2000   2400   4400   6000   6700   7400   8600   9000   9000   3647
+GET      /catalog/customers?q=                                                                 430   1300   2000   2500   4400   6000   6900   7400   8300   8400   8400   2459
+GET      /catalog/segments                                                                     430   1300   2000   2500   4200   5800   6600   7400   8600   8900   8900   2549
+GET      /catalog/segments/{id}                                                                410   1100   1900   2300   4200   6100   6700   7400   8200   8900   8900   2429
+GET      /segmentation-dashboard/                                                              640   1500   2300   2700   4900   6400   7300   8000   8900   9100   9100   1229
+GET      console /                                                                               5      6      7      9     14     24     62    100    430    430    430    974
+GET      console /status.json                                                                    4      5      6      6     10     18     46     84    400    510    510   2982
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                              9     17     56    220   1700   3300   5700   6500   7900   8900   9100  52911
+
+Error report
+# occurrences      Error                                                                                               
+------------------|---------------------------------------------------------------------------------------------------------------------------------------------
+6                  GET console /status.json: 0                                                                         
+2                  GET console /: 0                                                                                    
+309                GET /api/users/v1/users: 429 rate_limited                                                           
+255                GET /api/audit-trail/v1/audit-entries: 429 rate_limited                                             
+2                  GET /api/analytics-kpis/v1/kpi-reports/spend: 429 rate_limited                                      
+1                  GET /api/analytics-kpis/v1/kpi-reports/demand-coverage: 429 rate_limited                            
+2                  GET /api/analytics-kpis/v1/kpi-reports/retention: 429 rate_limited                                  
+3                  GET /api/analytics-kpis/v1/kpi-reports/net-sales: 429 rate_limited                                  
+1                  GET /api/analytics-kpis/v1/kpi-reports/migrations: 429 rate_limited                                 
+1                  GET /api/analytics-kpis/v1/kpi-reports/net-sales (segment, month): 429 rate_limited                 
+1                  GET /api/analytics-kpis/v1/kpi-reports/definitions: 429 rate_limited                                
+------------------|---------------------------------------------------------------------------------------------------------------------------------------------
+

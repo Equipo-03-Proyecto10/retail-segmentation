@@ -350,7 +350,7 @@ def test_the_rule_still_keeps_no_explanation_the_service_records_it(
         "SELECT count(*) FROM information_schema.tables"
         " WHERE table_schema = 'recommendations'"
     ).fetchone()
-    assert stored == 4
+    assert stored == 5
     assert not re.search(r"\b(INSERT|UPDATE|DELETE)\b", Path(rule.__file__).read_text())
     first = scenario.ask()
     assert set(first.as_dict(AS_OF)) == {

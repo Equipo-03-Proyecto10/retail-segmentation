@@ -156,17 +156,29 @@ fn invalid(details: Vec<Detail>) -> ApiError {
 /// Read the query string of a report that groups by `group_by` and filters by
 /// store, segment and channel (`net-sales`, `spend`).
 pub fn parse_sales_query(query: &str) -> Result<SalesQuery, ApiError> {
-    parse_sales(query, false)
+    parse_sales(query, false, true)
+}
+
+/// Read the query string of `conversion` and `recommendation-performance`
+/// (F26-04). An interaction and an exposure carry no channel, so `channel` is
+/// not a dimension of either report: grouping by it, or filtering by
+/// `channel_id`, is 422 `dimension_not_supported`, never ignored.
+pub fn parse_engagement_query(query: &str) -> Result<SalesQuery, ApiError> {
+    parse_sales(query, false, false)
 }
 
 /// Read the query string of the retention report: its rows are always cohorts,
 /// so `period` is a dimension whether or not the caller named it, and
 /// `granularity` is allowed without it (the contract's `getRetentionReport`).
 pub fn parse_retention_query(query: &str) -> Result<SalesQuery, ApiError> {
-    parse_sales(query, true)
+    parse_sales(query, true, true)
 }
 
-fn parse_sales(query: &str, always_period: bool) -> Result<SalesQuery, ApiError> {
+fn parse_sales(
+    query: &str,
+    always_period: bool,
+    channel_supported: bool,
+) -> Result<SalesQuery, ApiError> {
     let values = values(query);
     let mut details = Vec::new();
 
@@ -184,6 +196,10 @@ fn parse_sales(query: &str, always_period: bool) -> Result<SalesQuery, ApiError>
     if let Some(text) = values.get("group_by") {
         for part in text.split(',').filter(|_| !text.is_empty()) {
             match Dimension::parse(part) {
+                Some(Dimension::Channel) if !channel_supported => {
+                    details.push(Detail::new("group_by", "dimension_not_supported"));
+                    break;
+                }
                 Some(dimension) if group_by.contains(&dimension) => {
                     details.push(Detail::new("group_by", "invalid_format"));
                     break;
@@ -216,6 +232,9 @@ fn parse_sales(query: &str, always_period: bool) -> Result<SalesQuery, ApiError>
 
     let store_id = positive_i32(&values, "store_id", &mut details);
     let channel_id = positive_i32(&values, "channel_id", &mut details);
+    if !channel_supported && values.contains_key("channel_id") && channel_id.is_some() {
+        details.push(Detail::new("channel_id", "dimension_not_supported"));
+    }
     let segment_code = match values.get("segment_code") {
         Some(text) if (1..=40).contains(&text.chars().count()) => Some(text.clone()),
         Some(_) => {

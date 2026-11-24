@@ -1334,9 +1334,11 @@ It prints a Markdown section per service, and exits 1 when a check fails.
 ## F29-13 — the platform's files in a Cloud Storage bucket (#1189)
 
 [ADR-0091](../docs/adr/0091-the-web-keeps-its-files-in-a-private-gcs-bucket-behind-a-file-store-port-and-only-their-metadata-in-postgresql.md)
-(Proposed until the team accepts it) moves the product images off the instance's
-disk. The bytes go to a private bucket, the database keeps one `stored_file` row
-of metadata per file, and the web streams a picture through its own image route.
+moves the product images off the instance's disk. The bytes go to a private
+bucket, the database keeps one `stored_file` row of metadata per file, and the
+web streams a picture through its own image route. The bucket of step 1 exists
+since 2026-11-24 (`gs://iac-dev-01-mosaiq-files`, recorded in
+[`docs/infra.md`](../docs/infra.md)), but the VM's scope still refuses writes.
 **Nothing here has been created or run in the cloud by the repository.** An
 operator does the steps below, in this order, and the web refuses to start
 before step 3 is done.

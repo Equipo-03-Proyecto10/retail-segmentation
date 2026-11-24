@@ -6,6 +6,10 @@ F29-10 (#896). It is written for the deployed instance at
 run it in order. Do not replace a `‹fill: …›` value with an estimate: capture
 the value from this run.
 
+The full script is for the recorded video. The ten-minute classroom
+presentation uses the same preparation and the shorter order in
+[Classroom cut](#classroom-cut-ten-minutes).
+
 All service paths below are contract paths. Through the gateway, prefix them
 with `/api/<service>`. Android sends and accepts JSON. Electron sends and
 accepts XML and validates it against that service's XSD. Save every response's
@@ -20,8 +24,10 @@ it when a request fails.
 | Run start, UTC | `‹fill: RFC 3339 instant›` |
 | Floor account email / user id | `‹fill: email›` / `‹fill: UUID›` |
 | Marketing account email / user id | `‹fill: email›` / `‹fill: UUID›` |
+| Analyst account email / user id | `‹fill: email›` / `‹fill: UUID›` |
 | Store | `‹fill: id and name›` |
 | Customer | `‹fill: id and name›` |
+| Rehearsal customer (P7) | `‹fill: id and name›` |
 | Product | `‹fill: id, SKU and name›` |
 | Campaign / promotion / experiment | `‹fill: ids›` |
 | Phone session id (`sid`, never the token) | `‹fill: sid›` |
@@ -49,8 +55,18 @@ Reuse the users-service procedure in
 [F20-01 §1](evidence/f20-01-android-sale.md#1-create-the-account) for an active
 `STORE_MANAGER`, including its store assignment, and
 [F20-02 §1](evidence/f20-02-electron-sale-campaign.md#1-the-accounts) for an
-active `MARKETING` account. Seeded accounts are deactivated on the instance and
-must not be reactivated for the demo.
+active `MARKETING` account, and the same F20-02 procedure for an active
+`ANALYST` account. Seeded accounts are deactivated on the instance and must not
+be reactivated for the demo.
+
+Electron's **Analysis** reads in Part 2 and in the classroom cut use the
+`ANALYST` account. Of the roles created here, it is the only one that may call
+every operation those screens show:
+- `STORE_MANAGER` may not call `getExperimentResult` (step 16).
+- `MARKETING` may not call `listRecommendationDecisions` (step 13's **Stored
+  decisions**).
+
+Step 9 stays with `STORE_MANAGER`, because `ANALYST` may not call `getCheckIn`.
 
 The relevant operations are:
 
@@ -62,7 +78,8 @@ The relevant operations are:
 
 Check: `GET /v1/store-assignments/{floor_user_id}`, role `STORE_MANAGER`, lists
 the demonstration store. Record correlation ids `‹fill: create floor›`,
-`‹fill: create marketing›`, and `‹fill: assign store›`.
+`‹fill: create marketing›`, `‹fill: create analyst›`, and
+`‹fill: assign store›`.
 
 ### P3. Set the store and emulator location
 
@@ -108,6 +125,13 @@ with the same two GETs and choose the first one that is `assigned` and
 `recommended`, has both consents granted, and whose usual store can be used.
 Write that name and id into the Run record before Part 1. If none qualifies,
 stop: the preparation is not valid.
+
+Among the customers that qualify, prefer one whose
+`GET /v1/rfm-profiles/{customer_id}` shows an `r_score` of 1 or 2: one who has
+not bought for a long time. A sale today resets recency to zero, which moves R
+to the top band. That is the change most likely to cross a label boundary, which
+step 12 needs. It is still not guaranteed; step 12 says what to do when no
+boundary is crossed.
 
 Check product detail with `GET /v1/products/{product_id}` and stock with
 `GET /v1/stock-levels/{store_id}/{product_id}`. It must be active and
@@ -187,6 +211,14 @@ uses the frozen salt and always deals the control arm first, so the primary is
 not guaranteed to be treated; apply P4's fallback instead of retrying or
 rewriting an assignment.
 
+A rehearsal uses up its customer. After the sale, the profile has moved and the
+exposure and conversion stay recorded, so the same customer cannot show the
+change again. Choose two customers that pass P4 and are assigned `TREATMENT`:
+- the rehearsal customer, for the run the night before;
+- the customer for the recorded or classroom run.
+
+Write both into the Run record.
+
 Now activate the campaign with Electron **Campaigns** or
 `POST /v1/campaigns/{campaign_id}/transitions`, role `MARKETING`, body
 `{"to":"ACTIVE","expected_status":"DRAFT"}`. Check today lies in both
@@ -226,6 +258,48 @@ outside its dates, create a new draft campaign, promotion and experiment. If
 the experiment has a stored primary result, `getCurrentAssignment` correctly
 returns 404, so create a new non-overlapping plan rather than reusing it.
 Stock decreases, RFM/profile/history and recommendation decisions persist.
+
+## Classroom cut (ten minutes)
+
+The classroom presentation follows one loop through the three clients and the
+web. Do P1 to P8 the night before. The cut reuses the steps below in a different
+order:
+- the profile from before the sale is shown first;
+- the exposure is recorded before the sale (step 6).
+
+| Start | Length | Client | Account | Shown | Steps |
+|---|---|---|---|---|---|
+| 0:00 | 1:00 | Electron | `ANALYST` | **Analysis → Customer exploration**: the customer's RFM profile before the sale | 11 (before) |
+| 1:00 | 2:45 | Android | `STORE_MANAGER` | **Sign in**. **Sale → Customer** with its Segment and Recommendations cards. **Promotions**: the `TREATMENT` arm, then **Shown to customer** once. **Open … in Scan** on one recommendation. **Record sale** with the promotion | 1, 4, 14, 5, 3, 6 |
+| 3:45 | 2:15 | Electron | `ANALYST` | **Analysis → Sales**: the sale as XML validated by `sales.xsd`. **Customer exploration** again. **Migration matrix → Why this customer moved**. **Recommendations → Inspect a recommendation**, then **Stored decisions** | 9 (sale only), 11, 12, 13 |
+| 6:00 | 1:15 | Web | administrator | `/reports/` and `/catalog/stock`: the same sale and the decremented stock, read from PostgreSQL | 8 |
+| 7:15 | 1:00 | Electron | `ANALYST` | **Analysis → Conversion analysis**, stored result: `PENDING`, the arm counts, `required_per_arm`, `UNDERPOWERED` | 16 |
+| 8:15 | 1:45 | — | — | Whether the delivery-3 objective was met, then close | — |
+
+The closing answers against
+[`docs/scope-delivery-3.md`](scope-delivery-3.md) §1, link by link:
+
+| Link of the §1 process | Shown at |
+|---|---|
+| A purchase modifies the consumer's profile | 3:45: only this customer's profile was recomputed, from the sale event |
+| That may cause a segment migration | 3:45: the migration, its previous and new labels, its model version |
+| Recommendations update according to the inventory | 3:45: the inspected recommendation, its stock and its stored decision |
+| A campaign's effect is evaluated by a designed experiment | 1:00 and 7:15: the frozen plan, the control arm, the exposure, the pending result |
+
+Rules for the cut:
+
+- **Rehearse the night before** with the rehearsal customer (P7), and record
+  whether it migrated. If the presented customer does not cross a band, say so
+  (step 12) and show the rehearsal customer's migration instead. Never claim a
+  migration that did not happen.
+- **Sign in beforehand.** Before starting, Electron is signed in as `ANALYST`
+  with the customer's profile on screen, and the web is signed in as the
+  administrator. Android signs in live.
+- **Do not restart anything.** Do not restart the VM or `mosaiq-infra` between
+  the rehearsal and the presentation: a Redis restart revokes every session
+  (#714).
+- **When a scene fails,** read its `X-Correlation-ID` aloud and show that step's
+  capture from `docs/evidence/`.
 
 ## Part 1 — F18-05
 
@@ -284,7 +358,8 @@ On Android **Sale → Customer**, search the Run record's customer. Android uses
 id. Show the current assignment
 `GET /v1/segment-assignments/current?customer_id=<id>` and recommendation
 `GET /v1/recommendations?customer_id=<id>`; point out `assigned` and
-`recommended` again.
+`recommended` again. Also save `GET /v1/rfm-profiles/{customer_id}` now, before
+the sale, because step 11 compares against it.
 
 Open **Customer → Consent, benefits and preferences → Interests**. The save is
 the whole-set `PUT /v1/preference-profiles/{customer_id}/interest-categories`,
@@ -311,6 +386,10 @@ exactly one item in this run has that client id.
 Evidence: [f18-05-05-recommendations.png](evidence/f18-05-05-recommendations.png).
 
 ### 6. Record the sale offline, then reconnect
+
+For the recorded complete loop, do step 14's exposure first, in this same
+session: **Promotions → Shown to customer**, once. Step 15 can then count and
+attribute this sale, without a second conversion sale.
 
 On Android **Sale**, add the scanned/recommended product and open **Review
 sale**. If Part 2 uses the promotion, select it; the discounted unit price must
@@ -410,14 +489,14 @@ Evidence: [f18-05-10-session-revoked.png](evidence/f18-05-10-session-revoked.png
 ## Part 2 — F29-10, the complete loop
 
 Continue with Part 1's customer and sale. Use a fresh phone session after step
-10.
+10. In Electron, sign in as the `ANALYST` account (P2) for steps 12, 13 and 16.
 
 ### 11. Profile change in rfm-engine
 
-Before the sale, save
-`GET /v1/rfm-profiles/{customer_id}`, role `STORE_MANAGER`: `r_days`,
-`f_count`, `m_total`, the three scores, label and `computed_at`. After the sale,
-poll the same GET for at most the stream's five-second default maximum and
+Step 4 saved `GET /v1/rfm-profiles/{customer_id}` before the sale: `r_days`,
+`f_count`, `m_total`, the three scores, label and `computed_at`. Electron
+**Analysis → Customer exploration** shows the same read. After the sale, poll
+the same GET for at most the stream's five-second default maximum and
 compare. The sale makes recency zero (for a current sale), increases frequency
 by one, and increases monetary value by the accepted net line total; a score
 changes only when a boundary is crossed. Record both correlation ids and
@@ -461,8 +540,9 @@ item is offered. Correlation ids `‹fill›`; evidence
 On Android **Sale**, select the customer and scroll to **Promotions**. The app calls
 `GET /v1/promotions?store_id=<store>&channel_id=<channel>&active=true` and, for
 the campaign, `GET /v1/experiment-assignments/current?customer_id=<id>&campaign_id=<id>`.
-Point out the `TREATMENT` arm and promotion. Tap **Shown to customer** exactly
-once. Android queues `POST /v2/engagement-events` type
+Point out the `TREATMENT` arm and promotion. If step 6 already recorded the
+exposure, show it here and do not tap again. Otherwise tap **Shown to customer**
+exactly once. Android queues `POST /v2/engagement-events` type
 `CAMPAIGN_EXPOSURE`; wait for **Shown and recorded**. The experimentation
 consumer projects that event within five seconds. Read the assignment list and
 point out `exposure_count`/first exposure. Correlation ids and client event id
@@ -549,14 +629,6 @@ warning. Correlation id `‹fill›`; evidence
 | 16 | Analysis instant not reached, small arm, failed ratio check, or result already frozen | Experiment design `analysis_at`; status/assumptions; result rows; never manufacture a second look |
 
 ## Known gaps
-
-- Step 11 reads `getRfmProfile`, and Electron's exploration and RFM modules read
-  `listRfmProfiles`/`getRfmProfile`; rfm-engine still marks both `planned` until
-  #1175 (F22-19) merges and deploys. Until then step 11 cannot be shown through the
-  service.
-- Step 13's **Stored decisions** reads `/v2/recommendation-decisions`, which
-  recommendations-service still marks `planned` until #1176 (F24-09) merges and
-  deploys.
 
 - Electron has no served promotion-create screen, although campaigns-service
   serves `createPromotion`; preparation therefore uses the contracted API.

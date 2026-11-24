@@ -491,14 +491,24 @@ def _migrations(rec: Recorder, edge, token: str, customer: str, since: str) -> N
         token=token,
     )
     items = reply.json().get("migrations", []) if reply.status == 200 else []
-    changed = [m for m in items if m.get("changed_at")]
+    sales = [m for m in items if m.get("changed_at") and m.get("cause") == "SALE"]
 
-    held_, actual = migration_verdict(reply.status, changed)
+    held_, actual = migration_verdict(reply.status, sales)
     rec.check(
         "Migración",
         "the sale's customer: the sale changed the segment, and each change still"
         " names the assignment before it",
-        "at least 1 changed migration, each with its previous state (and label)",
+        "at least 1 SALE migration, each with its previous state (and label)",
+        actual,
+        held_,
+        [rec.link(number)],
+    )
+    held_, actual = behaviour_verdict(reply.status, sales)
+    rec.check(
+        "Migración",
+        "the sale's customer: the sale's change is counted as behaviour",
+        "at least 1 SALE migration, each with both model versions and"
+        " `methodological` false (ADR-0064)",
         actual,
         held_,
         [rec.link(number)],
@@ -526,6 +536,35 @@ def migration_verdict(status: int, changed: list[dict]) -> tuple[bool, str]:
     if not changed:
         return False, actual + ": the sale did not provoke a change"
     return kept == len(changed), actual
+
+
+def behaviour_verdict(status: int, sales: list[dict]) -> tuple[bool, str]:
+    """Whether every SALE migration is counted as behaviour.
+
+    A migration is methodological when either side's model version is unknown
+    (the segments contract, ADR-0064), and is then never counted as behaviour,
+    whatever its cause. Found on the instance on 2026-11-24: #1208."""
+    if status != 200:
+        return False, f"HTTP {status}"
+    behaviour = [
+        m
+        for m in sales
+        if m.get("methodological") is False
+        and m.get("previous_model_version_id") is not None
+        and m.get("new_model_version_id") is not None
+    ]
+    actual = f"{len(sales)} SALE, {len(behaviour)} behavioural"
+    if not sales:
+        return False, actual + ": no SALE migration to judge"
+    unknown = [
+        side
+        for m in sales
+        for side in ("previous", "new")
+        if m.get(f"{side}_model_version_id") is None
+    ]
+    if unknown:
+        actual += f" ({', '.join(sorted(set(unknown)))} model version unknown)"
+    return len(behaviour) == len(sales), actual
 
 
 def main(argv: list[str] | None = None) -> int:

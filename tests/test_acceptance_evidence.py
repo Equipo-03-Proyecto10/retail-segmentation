@@ -404,6 +404,52 @@ def test_f29_04_a_sale_that_changed_nothing_is_not_a_held_migration() -> None:
     assert migration_verdict(503, [kept])[0] is False
 
 
+def test_f29_04_a_methodological_sale_migration_is_not_behaviour() -> None:
+    # #1208: an incremental run's version was unknown to segments, so the
+    # sale's migration came back methodological and must not count.
+    from tests.acceptance.f29_04 import behaviour_verdict
+
+    sale = {
+        "cause": "SALE",
+        "methodological": False,
+        "previous_model_version_id": 1,
+        "new_model_version_id": 1,
+    }
+    assert behaviour_verdict(200, [sale]) == (True, "1 SALE, 1 behavioural")
+    instance = sale | {"methodological": True, "new_model_version_id": None}
+    held, actual = behaviour_verdict(200, [instance])
+    assert held is False and "new model version unknown" in actual
+    assert behaviour_verdict(200, [sale, instance])[0] is False
+    assert behaviour_verdict(200, [sale | {"methodological": True}])[0] is False
+    held, actual = behaviour_verdict(200, [])
+    assert held is False and "no SALE migration" in actual
+    assert behaviour_verdict(503, [sale])[0] is False
+
+
+def test_f29_04_resolves_a_relative_out_before_the_suites_change_directory(
+    tmp_path, monkeypatch
+) -> None:
+    # The service suites run in services/<name>: a relative --out made their
+    # JUnit land there, and five checks read {} (found on the 2026-11-24 run).
+    from argparse import Namespace
+
+    from tests.acceptance import f29_04
+
+    for name in f29_04.REQUIRED:
+        monkeypatch.setenv(name, "set")
+    seen = []
+
+    def run(_suite, out, _environment, _index, _masker):
+        seen.append(out)
+        counts = {"tests": 1, "failures": 0, "errors": 0, "skipped": 0}
+        return f29_04.Ran(0, counts), "suite.log"
+
+    monkeypatch.setattr(f29_04, "run_command", run)
+    monkeypatch.chdir(tmp_path)
+    f29_04.run_suites(Namespace(out="relative", only=["RFM"]))
+    assert seen and all(out == (tmp_path / "relative").resolve() for out in seen)
+
+
 def test_f29_04_every_planted_size_has_its_row_and_a_kind_needs_a_detection() -> None:
     from tests.acceptance.f29_04 import drift_row
 

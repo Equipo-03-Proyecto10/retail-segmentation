@@ -2,11 +2,16 @@
 
 > **Status: run on 2026-11-24 (03:25 - 03:57 UTC; the evening of 2026-11-23 in
 > Mexico City) on the identified version `fdf0caed` (the instance's release #1188,
-> `main` at `50bf7d5c`, same tree). All five criteria are accepted.** Step 1 ran 21
+> `main` at `50bf7d5c`, same tree). Four criteria are accepted; "Migración" is
+> accepted at the commit and not yet on the instance (#1208).** Step 1 ran 21
 > checks, all held. Step 2 ran on the instance after F20-01's sale (sale 307, the
 > Android release build's, customer 28): the verification found 30 profiles of 30
 > equivalent, and the customer's `LOYAL` -> `CHAMPION` migration names the assignment
-> before it. The record is below; the raw evidence is in
+> before it, but it comes back `methodological: true` with `new_model_version_id`
+> null, so it is not counted as behaviour: the incremental run's version is unknown
+> to segments-service ([#1208](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/1208)).
+> The collector at the run did not check that flag; the review found it, and the
+> collector now does (see "Found on the way", 2). The record is below; the raw evidence is in
 > [`f29-04/20261124T0334Z/`](f29-04/20261124T0334Z/). The run was made by the team's
 > automation. The [local dry run](#local-dry-run-not-the-acceptance) is kept for what
 > it showed about a wrong environment; it is not the acceptance.
@@ -165,19 +170,20 @@ connection-string password masked before they are written.
 
 ### The results
 
-Step 1: [`suites/summary.md`](f29-04/20261124T0334Z/suites/summary.md), 21 checks, 21 held, one log and JUnit file per suite beside it. Step 2: [`instance/summary.md`](f29-04/20261124T0334Z/instance/summary.md), 2 checks, 2 held, the exchanges in [`instance/exchanges.md`](f29-04/20261124T0334Z/instance/exchanges.md).
+Step 1: [`suites/summary.md`](f29-04/20261124T0334Z/suites/summary.md), 21 checks, 21 held, one log and JUnit file per suite beside it. Step 2: [`instance/summary.md`](f29-04/20261124T0334Z/instance/summary.md), 2 checks, 2 held as the collector then judged them (one of them does not hold as behaviour, see "Found on the way", 2), the exchanges in [`instance/exchanges.md`](f29-04/20261124T0334Z/instance/exchanges.md).
 
 | Criterion | Step 1 (commit) | Step 2 (instance) | Accepted |
 |---|---|---|---|
 | RFM | Held. The web: 4 of 4 against the 14 hand-worked customers. rfm-engine: 2 of 2. None skipped | - | Yes |
-| Migración | Held. rfm-engine's `test_assignment.py`: 25 of 25 (a change closes the previous assignment and opens one). segments' `migration_validation` and `assignment_cause`: 7 of 7 (six customers moved by each cause, the matrix and history against the table worked on paper) | Held. Customer 28's migration since the sale: `LOYAL` to `CHAMPION`, cause `SALE`, `movement` improved, `previous_run_id` 31, `new_run_id` 41, at 03:51:17.755Z, 1 changed with its previous state and label (exchange 7, correlation id `f29-04-bf7fc36c61c24096`) | Yes |
-| Incremental | Held. `test_verification.py`: 35 of 35 | Held. Verification 1 (`ON_DEMAND`, rule set 1) COMPLETED, EQUIVALENT, 30 customers checked, 0 different, in 39 ms (exchange 6, correlation id `f29-04-378199280b5a4f4d`). The profile the sale changed was among them: 12 purchases, 5340.75, r/f/m 5/4/5, `CHAMPION` | Yes |
+| Migración | Held. rfm-engine's `test_assignment.py`: 25 of 25 (a change closes the previous assignment and opens one). segments' `migration_validation` and `assignment_cause`: 7 of 7 (six customers moved by each cause, the matrix and history against the table worked on paper) | Held. Customer 28's migration since the sale: `LOYAL` to `CHAMPION`, cause `SALE`, `movement` improved, `previous_run_id` 31, `new_run_id` 41, at 03:51:17.755Z, 1 changed with its previous state and label (exchange 7, correlation id `f29-04-bf7fc36c61c24096`). **Not counted as behaviour:** the same row has `previous_model_version_id` 1, `new_model_version_id` null and `methodological: true` (#1208) | At the commit, yes. On the instance, not until #1208 is fixed and step 2 runs again |
+| Incremental | Held. `test_verification.py`: 35 of 35 | Held. Verification 1 (`ON_DEMAND`, rule set 1) COMPLETED, EQUIVALENT, 30 customers checked, 0 different, in 38 ms (03:57:12.298994Z to 03:57:12.337083Z) (exchange 6, correlation id `f29-04-378199280b5a4f4d`). The profile the sale changed was among them: 12 purchases, 5340.75, r/f/m 5/4/5, `CHAMPION` | Yes |
 | K-means | Held. Fitted 3 times from scratch with no difference; the partition digest `040e8e1a8171ac792d4e0c6235376b13a45602afa075f67d372a020e677d26e0` equals F23-04's (k 4, seed 11, 100 iterations, tolerance 0.0001, 180 days); model-registry's `test_training.py`: 35 of 35 | - | Yes |
 | Drift | Held. The study ran through the production monitor on `retail_drift` in 405 s; its figures' digest `cfb2ddcfacaa1cef431f6a2ae54294fa8138e44f73a31facc4d5be6d51630f25` equals F23-10's. Spend x2 and frequency -50% detected in 50 of 50 pairs each, with an alert on the planted variable moving the planted way in each; the smaller planted sizes (0 of 50) are recorded as F23-10 registers them. No shift: 0 alerts of 200 pairs, 95% upper bound 0.75% (within 1%). The monitor tests: 40 of 40 | - | Yes |
 
 ### Found on the way
 
 1. **A relative `--out` made five checks fail.** The first run (03:25 - 03:33, `RUN=docs/evidence/...` as the runbook writes it) reported 21 checks, 16 held: the service suites run in `services/<name>`, so their JUnit files were written under that directory, the collector found none, and each of the five read `{}`. The suites themselves had exited 0. [`tests/acceptance/f29_04.py`](../../tests/acceptance/f29_04.py) now resolves `--out` first. That first run was discarded; the one recorded here was run again from empty databases with an absolute path, on the unfixed collector, so its `commit` is the identified one.
+2. **The live migration check could not fail on a methodological row.** At the run, the collector counted any migration with `changed_at` that named its previous assignment. The review of this record (2026-11-24) read exchange 7 and found the sale's migration `methodological: true`, with `new_model_version_id` null. The segments contract never counts such a migration as behaviour (ADR-0064). The cause is [#1208](https://github.com/Equipo-03-Proyecto10/retail-segmentation/issues/1208): rfm-engine records an INCREMENTAL run's version only in the run's `parameters` (ADR-0087), segments-service reads versions only from `api_models.run_version_v1`, and the instance had 0 of its 2 INCREMENTAL runs linked there, against 31 of 31 FULL runs. The collector now judges SALE migrations only, and adds a second "Migración" check that holds only when each has both model versions and `methodological` false (`behaviour_verdict`, with its tests). [`instance/summary.md`](f29-04/20261124T0334Z/instance/summary.md) is left as the run wrote it.
 2. **The instance step needs the checkout's modules.** `tests/negative` and `tests/conformance` import pytest and PyYAML, which the instance does not have; the run used a virtualenv in the root-only scratch folder. The summary's "checkout commit" reads `(unavailable)` because the archive has no `.git`; the web commit line is the instance's own.
 3. **The administrator's password in `/root/mosaiq-admin.env` is the whole line** of the file, as `IFS= read -r` reads it. Sourcing the file and using the part after `=` is refused with 401.
 4. The instance step ran one verification recalculation (the runbook's only way to compare incremental with full on the deployed system); it wrote no profile and changed no segment. No experiment, campaign or model was created or changed.

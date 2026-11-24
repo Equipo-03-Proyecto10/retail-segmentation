@@ -1,7 +1,7 @@
 """Render an isolated local stack for the Locust run (F29-15, #1191).
 
     python3 bench/locust/stack.py render --project p1191 --tag p831 \
-        --work <scratch dir> > <scratch dir>/compose.json
+        > <scratch dir>/compose.json
 
 It starts from `docker compose config` of compose.distributed.yaml, keeps the
 services the four profiles reach (and the infrastructure they need), and adds
@@ -25,7 +25,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -48,7 +47,19 @@ SERVICES = (
 # Redis instances, the document store, their one-shot steps and the gateway)
 # are the infrastructure, and all of it is kept.
 SERVICE_IMAGE = "ghcr.io/equipo-03-proyecto10/mosaiq-"
-OPS_CONSOLE_PASSWORD = "local-ops-console-only"
+# The ops console's Redis password is never written by this script, nor into
+# the rendered file: compose reads it from the caller's environment when the
+# stack comes up, and the redis-acl step writes the env file assemble-acl.sh
+# needs into a tmpfs of its own container.
+OPS_CONSOLE_SECRET = "${MOSAIQ_LOCUST_OPS_CONSOLE_PASSWORD:-}"
+ACL_STEP = (
+    'test -n "$$REDIS_OPS_CONSOLE_PASSWORD" '
+    '|| { echo "MOSAIQ_LOCUST_OPS_CONSOLE_PASSWORD is not set" >&2; exit 1; }; '
+    "cp /repo/docker/distributed/svc/*.env /svc/ && "
+    'printf "REDIS_OPS_CONSOLE_PASSWORD=%s\\n" "$$REDIS_OPS_CONSOLE_PASSWORD" '
+    ">/svc/ops-console.env && "
+    "exec bash /repo/deploy/infra/redis/assemble-acl.sh --write-only"
+)
 
 
 def base_config(project: str, tag: str) -> dict:
@@ -74,22 +85,8 @@ def base_config(project: str, tag: str) -> dict:
     return json.loads(out)
 
 
-def svc_env_dir(work: Path) -> Path:
-    """The services' local env files, plus the ops console's one secret."""
-    target = work / "svc"
-    if target.exists():
-        shutil.rmtree(target)
-    shutil.copytree(ROOT / "docker/distributed/svc", target)
-    (target / "ops-console.env").write_text(
-        f"REDIS_OPS_CONSOLE_PASSWORD={OPS_CONSOLE_PASSWORD}\n"
-    )
-    return target
-
-
 def render(args: argparse.Namespace) -> dict:
     project, tag = args.project, args.tag
-    work = Path(args.work).resolve()
-    work.mkdir(parents=True, exist_ok=True)
     config = base_config(project, tag)
     overrides = dict(item.split("=", 1) for item in args.image)
     keep = {
@@ -126,15 +123,14 @@ def render(args: argparse.Namespace) -> dict:
 
     # The ops console's ACL line joins the services' in the aclfile, as
     # assemble-acl.sh does on the instance (its default ACL_SOURCES).
-    env_dir = svc_env_dir(work)
     acl = services["redis-acl"]
     acl["environment"][
         "ACL_SOURCES"
     ] = "/repo/services/*/redis/*.acl /repo/ops/*/redis/*.acl"
     acl["environment"]["SVC_ENV_DIR"] = "/svc"
-    acl["volumes"].append(
-        {"type": "bind", "source": str(env_dir), "target": "/svc", "read_only": True}
-    )
+    acl["environment"]["REDIS_OPS_CONSOLE_PASSWORD"] = OPS_CONSOLE_SECRET
+    acl["entrypoint"] = ["bash", "-c", ACL_STEP]
+    acl["tmpfs"] = [*acl.get("tmpfs", []), "/svc:mode=0700"]
 
     web_env = {
         "DATABASE_URL": "postgresql://retail_app:retail_app@db:5432/retail",
@@ -183,7 +179,7 @@ def render(args: argparse.Namespace) -> dict:
         "tmpfs": ["/tmp:uid=10001,gid=10001,mode=0700"],
         "mem_limit": "96m",
         "cpus": 0.25,
-        "environment": {"REDIS_OPS_CONSOLE_PASSWORD": OPS_CONSOLE_PASSWORD},
+        "environment": {"REDIS_OPS_CONSOLE_PASSWORD": OPS_CONSOLE_SECRET},
         "depends_on": {
             "redis-state": {"condition": "service_started", "required": True}
         },
@@ -221,7 +217,6 @@ def main(argv: list[str]) -> int:
         metavar="SERVICE=TAG",
         help="another tag for one service's image (repeatable)",
     )
-    r.add_argument("--work", required=True, help="a scratch directory")
     r.add_argument("--gateway-port", type=int, default=18191)
     r.add_argument("--web-port", type=int, default=18192)
     r.add_argument("--console-port", type=int, default=18193)

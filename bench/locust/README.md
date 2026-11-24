@@ -126,10 +126,17 @@ cp contracts/registry.yaml ops/console/registry.yaml
 docker build -t mosaiq-web:p1191 .
 docker build -t mosaiq-ops-console:p1191 ops/console
 work=$(mktemp -d)
-python3 bench/locust/stack.py render --project p1191 --tag <tag> --work "$work" >"$work/compose.json"
+python3 bench/locust/stack.py render --project p1191 --tag <tag> >"$work/compose.json"
 docker network create p1191-mosaiq
+export MOSAIQ_LOCUST_OPS_CONSOLE_PASSWORD=$(openssl rand -hex 16)
 docker compose -p p1191 -f "$work/compose.json" up -d --wait
 ```
+
+The ops console's Redis password lives only in that variable. The rendered
+file holds a reference to it, `${MOSAIQ_LOCUST_OPS_CONSOLE_PASSWORD:-}`, which
+compose resolves at `up`. The `redis-acl` step writes the console's env file
+for `assemble-acl.sh` into a tmpfs of its own container, so the password is
+never written to disk, and `redis-acl` stops if the variable is empty.
 
 The database is throwaway, so the test stores' stock is raised before the
 run, which keeps a sale from being refused for stock:

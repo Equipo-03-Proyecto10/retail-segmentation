@@ -76,29 +76,37 @@ pub struct TestStore {
 
 impl TestStore {
     pub async fn create(owner: &Client) -> Self {
-        // Tests run in parallel against one database, so a drawn id may be
-        // taken: draw again until the insert claims one (#1223).
-        let mut attempts = 0;
-        let id: i16 = loop {
-            attempts += 1;
-            assert!(
-                attempts <= 200,
-                "no free test store id in 30_000..30_000+2_000"
-            );
-            let candidate: i16 = 30_000 + (Uuid::new_v4().as_u128() % 2_000) as i16;
-            let claimed = owner
+        // Tests run in parallel against one database and audit rows outlive
+        // a store, so a test store takes an id in its range that no store
+        // holds and no audit row names: a reused id would collide on
+        // store_pkey or inherit an earlier test's audit trail (#1223). A
+        // parallel test may claim the same free id first; then draw again.
+        let mut id: Option<i16> = None;
+        for _ in 0..50 {
+            id = owner
                 .query_opt(
                     "INSERT INTO public.store (store_id, name, city, state) \
-                     VALUES ($1, $2, 'Testville', 'TS') \
+                     SELECT free.id, $2 || free.id, 'Testville', 'TS' \
+                     FROM (SELECT candidate::smallint AS id \
+                           FROM generate_series($1::int, $1::int + 1999) AS candidate \
+                           WHERE NOT EXISTS (SELECT 1 FROM public.store s \
+                                             WHERE s.store_id = candidate) \
+                             AND NOT EXISTS (SELECT 1 FROM public.audit_log a \
+                                             WHERE a.entity LIKE 'store%' \
+                                               AND a.entity_pk = candidate::text) \
+                           ORDER BY random() LIMIT 1) AS free \
                      ON CONFLICT (store_id) DO NOTHING RETURNING store_id",
-                    &[&candidate, &format!("svc-test-{candidate}")],
+                    &[&30_000_i32, &"svc-test-"],
                 )
                 .await
-                .unwrap();
-            if let Some(row) = claimed {
-                break row.get(0);
+                .unwrap()
+                .map(|row| row.get(0));
+            if id.is_some() {
+                break;
             }
-        };
+        }
+        let id = id
+            .expect("no free test store id is left in 30_000..30_000+2_000; load a fresh database");
         Self { id }
     }
 

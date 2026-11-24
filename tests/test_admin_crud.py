@@ -21,6 +21,7 @@ from flask.testing import FlaskClient
 
 from web.app import create_app
 from web.config import Config
+from web.db.products import ProductImage
 from web.routes import admin
 from web.services.catalog import CatalogConflict, validate_role
 
@@ -248,7 +249,7 @@ def test_a_valid_product_without_an_image_is_created_and_redirects_to_the_list(
 def test_a_product_with_nothing_referencing_it_is_deleted(
     client: FlaskClient, monkeypatch
 ) -> None:
-    delete = Mock(return_value=True)
+    delete = Mock(return_value=ProductImage(None, None))
     monkeypatch.setattr(admin, "delete_product", delete)
     monkeypatch.setattr(
         admin,
@@ -427,7 +428,7 @@ def test_product_image_is_removed_only_after_successful_delete(
             raise CatalogConflict(
                 "", "Cannot delete: other records still reference it."
             )
-        return None
+        return ProductImage(image_path.name, None)
 
     monkeypatch.setattr(admin, "delete_product", delete)
     response = client.post("/admin/products/1/delete", data={"confirm": "yes"})
@@ -641,7 +642,7 @@ def test_a_failed_create_removes_the_uploaded_image(
     )
 
     assert response.status_code == 500
-    abandon.assert_called_once_with(abandon.saved)
+    abandon.assert_called_once_with(ANY, abandon.saved)
 
 
 def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
@@ -671,5 +672,5 @@ def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
     )
 
     assert response.status_code == 500
-    abandon.assert_called_once_with(abandon.saved)
+    abandon.assert_called_once_with(ANY, abandon.saved)
     retire.assert_not_called()

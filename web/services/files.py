@@ -9,7 +9,7 @@ Google client and a test never needs the cloud.
 Writing is bytes first (`put_new_file`), then the row, inserted by the service
 that owns the transaction in the same unit of work as whatever refers to the file:
 if the store refuses, no row exists; if the row or that unit of work fails, the
-caller removes the object (`remove_object`). The one case this order cannot undo
+caller removes the object (`abandon_object`). The one case this order cannot undo
 is a crash between the two steps, which leaves an object no row names. No reader
 sees it, and it costs storage only.
 """
@@ -21,6 +21,7 @@ import logging
 import os
 import tempfile
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, cast
@@ -44,8 +45,13 @@ EXTENSION_BY_CONTENT_TYPE = {
     "image/webp": ".webp",
 }
 
-# How long a call to the bucket may take before the user is told it is down.
-GCS_TIMEOUT_SECONDS = 15
+# How long a call to the bucket may take before the user is told it is down. Two
+# numbers, because the client's `timeout` bounds one HTTP attempt, and its retry
+# policy (a 120-second deadline by default, the same as gunicorn's worker timeout
+# and twice NGINX's) bounds the operation: the deadline is what keeps a retryable
+# outage from outliving the proxy and the worker (ADR-0091).
+GCS_TIMEOUT_SECONDS = 10
+GCS_DEADLINE_SECONDS = 20
 
 PUBLIC = "PUBLIC"
 PRIVATE = "PRIVATE"
@@ -147,9 +153,24 @@ class GcsFileStore:
     tests, which hand in an object that records the calls.
     """
 
-    def __init__(self, bucket_name: str, client: Any | None = None) -> None:
+    def __init__(
+        self,
+        bucket_name: str,
+        client: Any | None = None,
+        retry_policy: Callable[[], Any] | None = None,
+    ) -> None:
         self._bucket_name = bucket_name
         self._client = client
+        self._retry_policy = retry_policy
+
+    def _retry(self) -> Any:
+        """The retry policy of every call: the client's own, with its whole-operation
+        deadline cut to GCS_DEADLINE_SECONDS. Tests hand in `retry_policy`."""
+        if self._retry_policy is not None:
+            return self._retry_policy()
+        from google.cloud.storage.retry import DEFAULT_RETRY
+
+        return DEFAULT_RETRY.with_deadline(GCS_DEADLINE_SECONDS)
 
     def _bucket(self) -> Any:
         if self._client is None:
@@ -184,6 +205,7 @@ class GcsFileStore:
                 content_type=content_type,
                 if_generation_match=0,
                 timeout=GCS_TIMEOUT_SECONDS,
+                retry=self._retry(),
             )
         except Exception as error:
             raise self._unavailable("write", object_path, error) from error
@@ -191,7 +213,12 @@ class GcsFileStore:
     def get(self, object_path: str) -> bytes:
         try:
             blob = self._bucket().blob(object_path)
-            return cast(bytes, blob.download_as_bytes(timeout=GCS_TIMEOUT_SECONDS))
+            return cast(
+                bytes,
+                blob.download_as_bytes(
+                    timeout=GCS_TIMEOUT_SECONDS, retry=self._retry()
+                ),
+            )
         except Exception as error:
             if self._is_not_found(error):
                 raise ObjectMissing(object_path) from error
@@ -199,7 +226,9 @@ class GcsFileStore:
 
     def delete(self, object_path: str) -> None:
         try:
-            self._bucket().blob(object_path).delete(timeout=GCS_TIMEOUT_SECONDS)
+            self._bucket().blob(object_path).delete(
+                timeout=GCS_TIMEOUT_SECONDS, retry=self._retry()
+            )
         except Exception as error:
             if self._is_not_found(error):
                 return
@@ -278,7 +307,7 @@ def put_new_file(store: FileStore, new: NewFile) -> StoredObject:
     raises StoreUnavailable when the store refuses, with nothing written and no
     row to undo. After it returns, whoever holds the `StoredObject` must either
     commit its row (`stored_files.insert_stored_file`, in the unit of work that
-    uses it) or call `remove_object` if that unit of work fails.
+    uses it) or call `abandon_object` if that unit of work fails.
     """
     file_id = uuid.uuid4()
     extension = EXTENSION_BY_CONTENT_TYPE[new.content_type]
@@ -323,21 +352,63 @@ def remove_object(store: FileStore, object_path: str) -> None:
 
 
 @atomic
-def discard_file(connection: Connection, store: FileStore, file_id: uuid.UUID) -> None:
-    """Retire a stored file the platform no longer uses, in its own transaction.
-
-    The object is deleted and the row marked `DELETED`. If the store cannot be
-    reached the row is marked `PENDING_DELETE` instead, for
-    `deploy/migrate-uploads-1189.py --delete-pending` to finish; the user's
-    action succeeds either way.
-    """
+def _mark_pending(connection: Connection, file_id: uuid.UUID) -> StoredFile | None:
+    """Commit the intent to delete, before the store is touched."""
     row = stored_files.get_stored_file(connection, file_id)
+    if row is not None and row.status == "STORED":
+        stored_files.mark_pending_delete(connection, file_id)
+    return row
+
+
+@atomic
+def _mark_deleted(connection: Connection, file_id: uuid.UUID) -> None:
+    stored_files.mark_deleted(connection, file_id)
+
+
+def discard_file(connection: Connection, store: FileStore, file_id: uuid.UUID) -> None:
+    """Retire a stored file the platform no longer uses.
+
+    The row is committed `PENDING_DELETE` first, then the object is deleted, then
+    the row is committed `DELETED`: three steps, each its own transaction, so that
+    whichever fails or is interrupted leaves a row that says what is still to do
+    (`deploy/migrate-uploads-1189.py --delete-pending` finishes it) and never one
+    that says `STORED` over an object that is gone. The user's action succeeds in
+    every case, and a file already `DELETED` or unknown is left alone.
+    """
+    row = _mark_pending(connection, file_id)
     if row is None or row.status == "DELETED":
         return
     try:
         store.delete(row.object_path)
     except StoreUnavailable:
-        stored_files.mark_pending_delete(connection, file_id)
         _log.error("file_store_delete_deferred file_id=%s", file_id)
-    else:
-        stored_files.mark_deleted(connection, file_id)
+        return
+    try:
+        _mark_deleted(connection, file_id)
+    except Exception:
+        _log.exception("file_store_delete_record_deferred file_id=%s", file_id)
+
+
+@atomic
+def _record_orphan(connection: Connection, stored: StoredObject) -> None:
+    insert_row(connection, stored)
+    stored_files.mark_pending_delete(connection, stored.file_id)
+
+
+def abandon_object(
+    connection: Connection, store: FileStore, stored: StoredObject
+) -> None:
+    """Remove an object whose write was refused after it reached the store.
+
+    Called after the refused transaction has rolled back. If the store cannot be
+    reached either, the object would have no row and nothing could ever find it, so
+    its metadata is committed in a fresh transaction as `PENDING_DELETE`, for
+    `--delete-pending` to retry. Neither failure reaches the user."""
+    try:
+        store.delete(stored.object_path)
+    except StoreUnavailable:
+        try:
+            _record_orphan(connection, stored)
+            _log.error("file_store_orphan_delete_deferred file_id=%s", stored.file_id)
+        except Exception:
+            _log.exception("file_store_orphan_left path=%r", stored.object_path)

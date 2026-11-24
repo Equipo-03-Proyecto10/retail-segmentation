@@ -1,0 +1,24 @@
+mosaiq-analytics-kpis-analytics-kpis-1	ghcr.io/equipo-03-proyecto10/mosaiq-analytics-kpis:0.4.0	sha256:deb863e0cd5dd123272d9e099ae6180b162778384f3bb7051c13d0291abddca6	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.4.0
+mosaiq-audit-trail-audit-trail-1	ghcr.io/equipo-03-proyecto10/mosaiq-audit-trail:0.1.5	sha256:b001002d893cb5d1aabac4713b355d793e81556596ef0693dd589d8062afa16c	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.1.5
+mosaiq-auth-auth-1	ghcr.io/equipo-03-proyecto10/mosaiq-auth:0.1.4	sha256:c5bde30c46e990bfea9c7a5065222166508a753a9bb646bf7157b8eeaad18284	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.1.4
+mosaiq-campaigns-campaigns-1	ghcr.io/equipo-03-proyecto10/mosaiq-campaigns:0.4.0	sha256:fc8c55ee2040046c31bc374bf706b9534a79c780e54301420271d05101596bc1	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.4.0
+mosaiq-categories-categories-1	ghcr.io/equipo-03-proyecto10/mosaiq-categories:0.1.9	sha256:29987abc3bd3af52d8f09d988531922edc78f4b4976c8f190eeb92b03de36828	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.1.9
+mosaiq-check-ins-check-ins-1	ghcr.io/equipo-03-proyecto10/mosaiq-check-ins:0.3.0	sha256:e60fb7e5ed8a4f1b02151b3608ac9f2e22681b2aee817be5f24c716fb9020d7e	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.3.0
+mosaiq-customer-preferences-customer-preferences-1	ghcr.io/equipo-03-proyecto10/mosaiq-customer-preferences:0.3.0	sha256:7ba757a03387ec9686dcd9ffcf89d502d04e6e09de56721845dfe4e88ddbfda5	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.3.0
+mosaiq-customers-customers-1	ghcr.io/equipo-03-proyecto10/mosaiq-customers:0.4.0	sha256:668a38a219399559ba30c7893367e25d8c01a2ca3609d1e3711941c822babc8f	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.4.0
+mosaiq-engagement-engagement-1	ghcr.io/equipo-03-proyecto10/mosaiq-engagement:0.4.0	sha256:835c4e9ee916cf065f3c608f90b2ff7c8d98b00602e36c6359e658f93eec8e82	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.4.0
+mosaiq-experimentation-experimentation-1	ghcr.io/equipo-03-proyecto10/mosaiq-experimentation:0.8.1	sha256:79d322f60e65b5b18aff8db13d4c4d9ae36875a8994df321d4a38d0e30521df2	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.8.1
+mosaiq-infra-mongodb-1	mongo:7.0.41@sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0	sha256:b096b4cb9269f3ebcf363be63f1c50920f786879d03a1890347a3bf33f1f0df0	22.04	
+mosaiq-infra-redis-cache-1	redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499	sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499		
+mosaiq-infra-redis-state-1	redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499	sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499		
+mosaiq-model-registry-model-registry-1	ghcr.io/equipo-03-proyecto10/mosaiq-model-registry:0.5.0	sha256:6fb221dc4db009b6f6d34f09ea77e17bee0ded1e231a83c42b831c2eefc04563	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.5.0
+mosaiq-ops-console-ops-console-1	ghcr.io/equipo-03-proyecto10/mosaiq-ops-console:0.1.0	sha256:ad097f708502b3af111d1649a7301896046b5ebd30e61ba100d7d82b0aa2b9a5	2cd641e98079d5848f82d8adab1cfc1dae67567a	0.1.0
+mosaiq-products-products-1	ghcr.io/equipo-03-proyecto10/mosaiq-products:0.3.0	sha256:1b395a2108f54d664e5286c46e7ad9f4faa34a8683c1044a8159e42d8b50ced1	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.3.0
+mosaiq-recommendations-recommendations-1	ghcr.io/equipo-03-proyecto10/mosaiq-recommendations:0.5.0	sha256:9d45c24b37825d20d3d2d3a6dc952fcbf63d5000ffdf9080836e7484312014c7	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.5.0
+mosaiq-rfm-engine-rfm-engine-1	ghcr.io/equipo-03-proyecto10/mosaiq-rfm-engine:0.8.0	sha256:b0976394eb4ffd9d68ccea75f8969c569bfc609e41f55cd99644b6c0c3d46987	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.8.0
+mosaiq-sales-sales-1	ghcr.io/equipo-03-proyecto10/mosaiq-sales:0.7.0	sha256:b0d2b38c398e5cd1975e196393dff25744c5495ba277364adddeac203e944757	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.7.0
+mosaiq-sales-sales-import-worker-1	ghcr.io/equipo-03-proyecto10/mosaiq-sales:0.7.0	sha256:b0d2b38c398e5cd1975e196393dff25744c5495ba277364adddeac203e944757	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.7.0
+mosaiq-segments-segments-1	ghcr.io/equipo-03-proyecto10/mosaiq-segments:0.6.0	sha256:05430790af20077220e2eb49479a912a95c75682b5c5b38d249a43079059f8a1	50bf7d5c48336a39f89f34f9bb8d44a78057fb06	0.6.0
+mosaiq-stock-stock-1	ghcr.io/equipo-03-proyecto10/mosaiq-stock:0.3.0	sha256:60f26716298c6a26fef1eeaa681a8d6bae9859d3cd93d7aa38bfdc0055edcfdc	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.3.0
+mosaiq-stores-stores-1	ghcr.io/equipo-03-proyecto10/mosaiq-stores:0.2.0	sha256:5c4821537d4fb569edffe0abac1f930cb43a1de86b6f9600f4e67f23464d09c8	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.2.0
+mosaiq-users-users-1	ghcr.io/equipo-03-proyecto10/mosaiq-users:0.2.0	sha256:c9fc9a518252a75b260c5680879e056b644d3e49413b0137b9078474cf0d4c89	3c085829c2f504dff053ad9b5e7d4b6d8f374b65	0.2.0

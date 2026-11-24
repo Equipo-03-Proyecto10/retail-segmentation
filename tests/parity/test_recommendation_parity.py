@@ -106,13 +106,72 @@ def _unchosen_category(db, customer: str, store_id: int, recommended) -> int | N
     return rows[0][0] if rows else None
 
 
+# How many products the subject fixture stocks, one at a time, before it gives
+# up on a candidate, and the units it counts each one to.
+STOCK_ATTEMPTS = 10
+STOCKED_UNITS = 5
+
+
+def _unstocked(db, customer: str, store_id: int) -> list[int]:
+    """Active products with a price that the usual store holds no units of,
+    outside every category the customer declared, and that nobody now in the
+    customer's segment, the customer included, bought in the window: so neither
+    the segment signal nor the customer's own purchase can choose them once
+    they are stocked. The purchase-history signal, which reads the category
+    hierarchy, is left to the web to judge (`_stock_unchosen`)."""
+
+    rows = db(
+        "SELECT p.product_id FROM product AS p "
+        "WHERE p.is_active AND p.list_price > 0 AND NOT (p.category_id = ANY(%s)) "
+        "AND NOT EXISTS (SELECT 1 FROM inventory AS i WHERE i.store_id = %s "
+        "AND i.product_id = p.product_id AND i.quantity_on_hand > 0) "
+        "AND NOT EXISTS (SELECT 1 FROM customer_segment_history AS me "
+        "JOIN customer_segment_history AS h ON h.label_code = me.label_code "
+        "AND h.valid_to IS NULL "
+        "JOIN transaction AS t ON t.customer_id = h.customer_id "
+        "JOIN transaction_line AS l ON l.transaction_id = t.transaction_id "
+        "WHERE me.customer_id = %s AND me.valid_to IS NULL "
+        "AND l.product_id = p.product_id "
+        "AND t.occurred_at >= now() - make_interval(days => %s)) "
+        "ORDER BY p.product_id LIMIT %s",
+        (_interests(db, customer), store_id, customer, WINDOW_DAYS, STOCK_ATTEMPTS),
+    )
+    return [r[0] for r in rows]
+
+
+def _stock_unchosen(db, web, recommendations, customer: str, store_id: int, seen):
+    """Count into the usual store, through stock-service, a product no signal
+    chooses, and return its category. A product is kept only when the web's
+    answer is the same after it is stocked; one the web does choose is counted
+    back to zero, which leaves the answer as it was."""
+
+    for product in _unstocked(db, customer, store_id):
+        recommendations.count_stock(store_id, product, STOCKED_UNITS)
+        if web.recommendations(customer) == seen:
+            [[category]] = db(
+                "SELECT category_id FROM product WHERE product_id = %s", (product,)
+            )
+            return category
+        recommendations.count_stock(store_id, product, 0)
+    return None
+
+
 @pytest.fixture(scope="module")
 def subject(db, web, recommendations) -> Subject:
     """The first candidate with 2 to 7 recommendations and an eligible product
     no signal chooses, so a sale and a stock change each have one to remove and
-    an added interest has room to show."""
+    an added interest has room to show.
+
+    The seed stocks five products in each store, so a customer with 2 to 7
+    recommendations has at most three unchosen ones, and a sale recorded before
+    this module runs can take them all: one sale of product 1 by customer …0001
+    (tests/e2e and tests/parity/test_parity.py each make one) gives it the
+    segment signal for every other customer of …0001's segment (#1222). So
+    when no stocked product is left unchosen, the fixture stocks one, rather
+    than depending on what ran before it on the same stack."""
 
     [[channel]] = db("SELECT min(channel_id) FROM channel")
+    eligible = []
     for customer in _candidates(db):
         seen = web.recommendations(customer)
         if seen.status != "recommended" or not 2 <= len(seen.items) <= LIMIT - 3:
@@ -122,9 +181,14 @@ def subject(db, web, recommendations) -> Subject:
         added = _unchosen_category(db, customer, store, seen.products)
         if added is not None:
             return Subject(customer, store, channel, added)
+        eligible.append((customer, store, seen))
+    for customer, store, seen in eligible:
+        added = _stock_unchosen(db, web, recommendations, customer, store, seen)
+        if added is not None:
+            return Subject(customer, store, channel, added)
     pytest.fail(
         "no seeded customer with consent has 2 to 7 recommendations and an "
-        "eligible product no signal chooses"
+        "eligible product no signal chooses, even after stocking one"
     )
 
 

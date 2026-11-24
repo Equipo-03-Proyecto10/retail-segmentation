@@ -105,9 +105,10 @@ def test_analytics_kpis_reads_the_view_and_no_table(
         _with_database(database["owner"], name, role="svc_kpis"), autocommit=True
     ) as kpis:
         assert kpis.execute(VIEW, (scene.experiment,)).fetchall()
-        for table in ("public.experiment_exposure", "experiments.exposure_notice"):
-            with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                kpis.execute(f"SELECT 1 FROM {table}")  # noqa: S608
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            kpis.execute("SELECT 1 FROM public.experiment_exposure")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            kpis.execute("SELECT 1 FROM experiments.exposure_notice")
 
 
 def test_the_web_has_no_privilege_on_the_view(database: dict[str, str]) -> None:

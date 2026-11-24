@@ -1,6 +1,6 @@
 # ADR-0091 — The web keeps its files in a private GCS bucket behind a file-store port, and only their metadata in PostgreSQL
 
-**Status:** Proposed
+**Status:** Accepted (2026-11-24)
 **Owner:** Marcelo
 **Issue:** #1189
 **Supersedes:** —

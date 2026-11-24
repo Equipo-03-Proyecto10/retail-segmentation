@@ -18,6 +18,10 @@
 #                                                        /run/postgresql
 #   PROPAGATION_IMAGE   the Python image                  python:3.12.12-slim
 #   PROPAGATION_ENV     the report's environment label    instance
+#   PROPAGATION_USER    run the container as this uid (the instance's PostgreSQL
+#                       accepts `postgres` on its socket only from the OS user
+#                       postgres: PROPAGATION_USER=$(id -u postgres)); the
+#                       report directory must be writable by it   root
 #
 # backlog stops the consumer with STOP_CMD, lets the container raise and relay
 # the backlog, starts the consumer with START_CMD and signals the container,
@@ -40,13 +44,14 @@ shift
 
 container=(
   docker run --rm --network "$network"
+  ${PROPAGATION_USER:+--user "$PROPAGATION_USER"} -e HOME=/tmp -e PYTHONUSERBASE=/tmp/py
   -v "$socket:/run/postgresql"
   -v "$PWD/ops/propagation:/tool:ro"
   -v "$PWD/contracts/streams:/contracts:ro"
   -v "$out:/out"
   -e DATABASE_URL -e REDIS_URL
   "$image" sh -c
-  'pip install --quiet --no-cache-dir --disable-pip-version-check --root-user-action=ignore -r /tool/requirements.txt \
+  'pip install --user --quiet --no-cache-dir --disable-pip-version-check --root-user-action=ignore -r /tool/requirements.txt \
      && exec python /tool/propagation.py "$@"' propagation
 )
 

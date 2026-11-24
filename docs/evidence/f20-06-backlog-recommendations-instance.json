@@ -1,0 +1,15 @@
+{
+  "kind": "backlog",
+  "environment": "instance",
+  "stream": "stream:products.v1.changed",
+  "group": "recommendations",
+  "events": 500,
+  "producer_stopped": false,
+  "duplicate_entries": 0,
+  "entries": 500,
+  "acknowledged_entries": 500,
+  "lost_events": [],
+  "max_deliveries_seen": 1,
+  "catch_up_s": 13.651,
+  "poll_interval_ms": 5.0
+}

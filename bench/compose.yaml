@@ -28,7 +28,9 @@ services:
     tmpfs:
       - /var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "psql -U postgres -d retail -tAc \"SELECT 1 FROM product WHERE product_id = 110000\" | grep -q 1"]
+      # Over TCP: the image's temporary init server listens on the unix socket
+      # only and is shut down after the init scripts (#1224).
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U postgres -d retail -tAc \"SELECT 1 FROM product WHERE product_id = 110000\" | grep -q 1"]
       interval: 5s
       timeout: 5s
       retries: 60

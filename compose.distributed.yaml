@@ -82,7 +82,10 @@ services:
       - mosaiq-distributed-pgdata:/var/lib/postgresql
       - mosaiq-pgsocket:/var/run/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "psql -U postgres -d retail -tAc 'SELECT 1 FROM app_user LIMIT 1' || exit 1"]
+      # Over TCP, so it cannot pass against the image's temporary init server:
+      # that one runs the init scripts with listen_addresses='' (unix socket
+      # only) and is then shut down before the real server starts (#1224).
+      test: ["CMD-SHELL", "psql -h 127.0.0.1 -U postgres -d retail -tAc 'SELECT 1 FROM app_user LIMIT 1' || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 24

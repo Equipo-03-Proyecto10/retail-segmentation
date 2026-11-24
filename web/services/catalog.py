@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import uuid
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from functools import wraps
@@ -328,6 +329,7 @@ def create_product(
     category_id: int,
     list_price: Decimal,
     image_path: str | None = None,
+    image_file_id: uuid.UUID | None = None,
 ) -> None:
     """Create a product, translating constraint refusals."""
     products.create_product(
@@ -338,6 +340,7 @@ def create_product(
         category_id=category_id,
         list_price=list_price,
         image_path=image_path,
+        image_file_id=image_file_id,
     )
 
 
@@ -352,6 +355,7 @@ def update_product(
     list_price: Decimal,
     is_active: bool,
     image_path: str | None = None,
+    image_file_id: uuid.UUID | None = None,
 ) -> None:
     """Update a product, translating constraint refusals."""
     products.update_product(
@@ -363,6 +367,7 @@ def update_product(
         list_price=list_price,
         is_active=is_active,
         image_path=image_path,
+        image_file_id=image_file_id,
     )
 
 

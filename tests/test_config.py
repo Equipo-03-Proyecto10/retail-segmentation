@@ -32,10 +32,14 @@ def test_reads_every_value_from_the_environment() -> None:
             "DATABASE_URL": "configured-by-the-environment",
             "LOGIN_THROTTLE_MAX_ATTEMPTS": "7",
             "LOGIN_THROTTLE_WINDOW_SECONDS": "120",
+            "FILE_STORE_BACKEND": "gcs",
+            "GCS_BUCKET": "a-private-bucket",
         }
     )
 
     assert config.secret_key == "set-by-the-environment"
+    assert config.file_store_backend == "gcs"
+    assert config.gcs_bucket == "a-private-bucket"
     assert config.environment == "production"
     assert config.port == 8080
     assert config.log_level == "WARNING"
@@ -121,6 +125,8 @@ def test_a_real_secret_outside_development_is_accepted() -> None:
             "DATABASE_URL": "x",
             "FLASK_ENV": "production",
             "FLASK_SECRET_KEY": "a-real-generated-value",
+            "FILE_STORE_BACKEND": "gcs",
+            "GCS_BUCKET": "a-private-bucket",
         }
     )
 
@@ -195,3 +201,44 @@ def test_no_tracked_file_names_the_retired_synthetic_flag() -> None:
         offenders += [name for flag in _RETIRED if flag in text]
 
     assert offenders == []
+
+
+# ---------- the file store (F29-13, ADR-0091) ----------
+
+_PRODUCTION = {
+    "DATABASE_URL": "x",
+    "FLASK_ENV": "production",
+    "FLASK_SECRET_KEY": "a-real-generated-value",
+}
+
+
+def test_the_local_file_store_is_the_default_in_development() -> None:
+    config = Config.from_env({"DATABASE_URL": "x"})
+
+    assert config.file_store_backend == "local"
+    assert config.gcs_bucket is None
+    assert config.file_store_allow_local_in_production is False
+
+
+def test_production_refuses_to_start_with_the_local_file_store() -> None:
+    with pytest.raises(ConfigurationError, match=r"FILE_STORE_BACKEND is local"):
+        Config.from_env(dict(_PRODUCTION))
+
+
+def test_production_may_keep_the_local_file_store_when_it_says_so() -> None:
+    config = Config.from_env(
+        {**_PRODUCTION, "FILE_STORE_ALLOW_LOCAL_IN_PRODUCTION": "true"}
+    )
+
+    assert config.file_store_backend == "local"
+    assert config.file_store_allow_local_in_production is True
+
+
+def test_the_gcs_file_store_needs_a_bucket() -> None:
+    with pytest.raises(ConfigurationError, match=r"GCS_BUCKET"):
+        Config.from_env({**_PRODUCTION, "FILE_STORE_BACKEND": "gcs"})
+
+
+def test_an_unknown_file_store_is_refused() -> None:
+    with pytest.raises(ConfigurationError, match=r"must be one of gcs, local"):
+        Config.from_env({"DATABASE_URL": "x", "FILE_STORE_BACKEND": "s3"})

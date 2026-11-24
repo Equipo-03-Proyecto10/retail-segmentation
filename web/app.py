@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import mimetypes
 
-from flask import Flask, Response, request
+from flask import Flask, Response, g, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from web.cli import register_commands
@@ -101,11 +101,16 @@ def create_app(
         previous user's customer or sales data. Only successful /static
         responses stay cacheable because they hold no account data. Setting
         this on every other response, rather than only when a user is signed
-        in, means a route cannot forget it.
+        in, means a route cannot forget it. A route that serves a stored
+        picture (no account data, and a name that never changes its bytes)
+        opts out by setting `g.cacheable_response` and its own Cache-Control.
         """
-        if not (request.path.startswith("/static/") and response.status_code < 400):
-            response.headers["Cache-Control"] = "no-store"
-            response.headers["Pragma"] = "no-cache"
+        if response.status_code < 400 and (
+            request.path.startswith("/static/") or g.get("cacheable_response")
+        ):
+            return response
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
         return response
 
     @app.context_processor
@@ -117,11 +122,12 @@ def create_app(
     register_commands(app)
     app.logger.info(
         "application_started environment=%r log_level=%r proxy_hops=%s "
-        "upload_dir=%r max_upload_bytes=%s max_request_bytes=%s",
+        "upload_dir=%r file_store=%s max_upload_bytes=%s max_request_bytes=%s",
         config.environment,
         config.log_level,
         int(config.trusted_proxy_hops),
         config.upload_dir,
+        config.file_store_backend,
         config.max_upload_bytes,
         app.config["MAX_CONTENT_LENGTH"],
     )

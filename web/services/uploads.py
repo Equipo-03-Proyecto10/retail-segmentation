@@ -1,8 +1,12 @@
-"""Image uploads for product records (F3-07, #67).
+"""Image uploads for product records (F3-07, #67; the file store, F29-13, #1189).
 
-An uploaded file is validated by content type and size, written under
-Config.upload_dir with a generated name, and only its relative path is ever
-handed back — the database stores that path, never the bytes (RF-08).
+An uploaded file is validated by content type, size and signature, and its bytes
+are written to the file store (ADR-0091) under a generated name; the database
+keeps a `stored_file` row with the metadata, never the bytes (RF-08). The
+uploaded file's own name is ignored.
+
+Files that predate the file store sit under `Config.upload_dir` and are named in
+`product.image_path` alone; `delete_legacy_image` still removes one of those.
 """
 
 from __future__ import annotations
@@ -15,18 +19,24 @@ import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
+from psycopg import Connection
 from werkzeug.datastructures import FileStorage
 
 from web.config import Config
+from web.services.files import (
+    EXTENSION_BY_CONTENT_TYPE,
+    PUBLIC,
+    FileStore,
+    NewFile,
+    StoreUnavailable,
+    discard_file,
+    get_file_store,
+    public_name,
+    remove_object,
+    store_new_file,
+)
 
-# Maps an accepted MIME type to the extension the stored file gets, so the
-# extension on disk matches the declared type and the checked file signature.
-_EXTENSION_BY_TYPE = {
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-}
-
+PRODUCT_IMAGE_KIND = "product-image"
 
 # A product image is shown as a thumbnail and a detail picture; no camera
 # produces a side longer than this. A header that declares more is refused
@@ -41,21 +51,34 @@ class UploadRejected(Exception):
     """A file was refused: wrong type, or over the size limit."""
 
 
+class UploadUnavailable(Exception):
+    """The file store could not take the file. Nothing was saved."""
+
+
 @dataclass(frozen=True)
 class SavedUpload:
-    """Where an accepted upload ended up. `relative_path` is what the
-    database stores in product.image_path."""
+    """An accepted upload, written to the store and registered in the caller's
+    open transaction. `relative_path` is the public name the database stores in
+    product.image_path (`<file_id>.<ext>`)."""
 
+    file_id: uuid.UUID
+    object_path: str
     relative_path: str
-    absolute_path: str
 
 
-def _validate(file: FileStorage, config: Config) -> str:
-    """Return the extension to save with, or raise UploadRejected."""
+@dataclass(frozen=True)
+class ValidatedImage:
+    data: bytes
+    content_type: str
+
+
+def _validate(file: FileStorage, config: Config) -> ValidatedImage:
+    """Return the validated bytes and their content type, or raise
+    UploadRejected."""
     content_type = (file.mimetype or "").lower()
     if (
         content_type not in config.allowed_image_types
-        or content_type not in _EXTENSION_BY_TYPE
+        or content_type not in EXTENSION_BY_CONTENT_TYPE
     ):
         raise UploadRejected(
             f"'{content_type or 'unknown'}' is not an accepted image type. "
@@ -89,11 +112,12 @@ def _validate(file: FileStorage, config: Config) -> str:
     if not signatures[content_type]:
         raise UploadRejected("The file content does not match the selected image type.")
 
+    data = file.stream.read()
+    file.stream.seek(0)
     if content_type == "image/png":
-        _check_png(file.stream.read())
-        file.stream.seek(0)
+        _check_png(data)
 
-    return _EXTENSION_BY_TYPE[content_type]
+    return ValidatedImage(data=data, content_type=content_type)
 
 
 def _check_png(data: bytes) -> None:
@@ -141,30 +165,87 @@ def _check_png(data: bytes) -> None:
             return
 
 
-def save_product_image(file: FileStorage, config: Config) -> SavedUpload:
-    """Validate and store an uploaded product image.
+def save_product_image(
+    file: FileStorage,
+    config: Config,
+    *,
+    connection: Connection,
+    owner_id: uuid.UUID | str,
+    store: FileStore | None = None,
+) -> SavedUpload:
+    """Validate an uploaded product image, write it to the file store and
+    register it in the caller's transaction.
 
-    Raises UploadRejected on a disallowed type, an oversized file, or a PNG
-    that is damaged, too large in pixels, or carries data after its end. The
-    original filename is ignored; a generated name prevents collisions.
+    Raises UploadRejected on a disallowed type, an oversized file, or a PNG that
+    is damaged, too large in pixels, or carries data after its end, and
+    UploadUnavailable when the store cannot take the file; in both cases nothing
+    is stored and no row exists. The caller commits the row together with the
+    product, or calls `abandon_product_image` if that write fails. The original
+    filename is ignored.
     """
+    log = logging.getLogger(__name__)
     try:
-        extension = _validate(file, config)
+        image = _validate(file, config)
     except UploadRejected as error:
-        logging.getLogger(__name__).info("upload_refused reason=%r", str(error))
+        log.info("upload_refused reason=%r", str(error))
         raise
-    os.makedirs(config.upload_dir, exist_ok=True)
+    store = store or get_file_store()
+    try:
+        stored = store_new_file(
+            connection,
+            store,
+            NewFile(
+                kind=PRODUCT_IMAGE_KIND,
+                data=image.data,
+                content_type=image.content_type,
+                owner_id=owner_id,
+                privacy=PUBLIC,
+                metadata={"kind": PRODUCT_IMAGE_KIND},
+            ),
+        )
+    except StoreUnavailable as error:
+        log.error("upload_failed reason=file_store_unavailable error=%s", error)
+        raise UploadUnavailable(
+            "The image could not be saved because the file store is not "
+            "reachable. Nothing was changed; try again in a few minutes."
+        ) from error
+    return SavedUpload(
+        file_id=stored.file_id,
+        object_path=stored.object_path,
+        relative_path=public_name(stored),
+    )
 
-    stored_name = f"{uuid.uuid4().hex}{extension}"
-    absolute_path = os.path.join(config.upload_dir, stored_name)
 
-    file.save(absolute_path)
+def abandon_product_image(
+    saved: SavedUpload, *, store: FileStore | None = None
+) -> None:
+    """Remove the object of an upload whose transaction did not commit."""
+    remove_object(store or get_file_store(), saved.object_path)
 
-    return SavedUpload(relative_path=stored_name, absolute_path=absolute_path)
+
+def retire_product_image(
+    connection: Connection,
+    *,
+    image_file_id: uuid.UUID | None,
+    image_path: str | None,
+    config: Config,
+    store: FileStore | None = None,
+) -> None:
+    """Remove the picture a product no longer has, after its change committed.
+
+    A file in the store is marked `DELETED` (or `PENDING_DELETE` when the store
+    is unreachable); a file that predates the store is deleted from the upload
+    directory. Neither can fail the user's action.
+    """
+    if image_file_id is not None:
+        discard_file(connection, store or get_file_store(), image_file_id)
+    elif image_path:
+        delete_legacy_image(image_path, config)
 
 
-def delete_product_image(relative_path: str, config: Config) -> None:
-    """Remove a previously stored image, if it still exists.
+def delete_legacy_image(relative_path: str, config: Config) -> None:
+    """Remove a file that predates the file store from `UPLOAD_DIR`, if it still
+    exists.
 
     Silent on a missing file: replacing an image whose file was already lost
     should not itself become an error.

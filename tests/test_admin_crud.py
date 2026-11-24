@@ -14,6 +14,7 @@ already exercised at length by tests/test_single_administrator.py.
 from __future__ import annotations
 
 from unittest.mock import ANY, MagicMock, Mock, patch
+from uuid import UUID
 
 import pytest
 from flask.testing import FlaskClient
@@ -249,7 +250,11 @@ def test_a_product_with_nothing_referencing_it_is_deleted(
 ) -> None:
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, "delete_product", delete)
-    monkeypatch.setattr(admin, "get_product", Mock(return_value=Mock(image_path=None)))
+    monkeypatch.setattr(
+        admin,
+        "get_product",
+        Mock(return_value=Mock(image_path=None, image_file_id=None)),
+    )
     response = client.post("/admin/products/1/delete", data={"confirm": "yes"})
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/admin/products")
@@ -391,7 +396,9 @@ def test_delete_requires_confirmation(client, monkeypatch, entity, plural):
     delete = Mock(return_value=True)
     monkeypatch.setattr(admin, f"delete_{entity}", delete)
     monkeypatch.setattr(
-        admin, f"get_{entity}", Mock(return_value=Mock(image_path=None))
+        admin,
+        f"get_{entity}",
+        Mock(return_value=Mock(image_path=None, image_file_id=None)),
     )
     response = client.post(f"/admin/{plural}/1/delete")
     assert response.status_code == 200
@@ -408,7 +415,9 @@ def test_product_image_is_removed_only_after_successful_delete(
     image_path = Path(config.upload_dir) / "product.png"
     image_path.write_bytes(b"existing image")
     monkeypatch.setattr(
-        admin, "get_product", Mock(return_value=Mock(image_path=image_path.name))
+        admin,
+        "get_product",
+        Mock(return_value=Mock(image_path=image_path.name, image_file_id=None)),
     )
     monkeypatch.setattr(admin, "list_products", Mock(return_value=([], 0)))
 
@@ -596,16 +605,14 @@ _PRODUCT_FORM = {
 
 
 def _upload(monkeypatch) -> Mock:
-    """A saved upload, and the deletion the route must call for it."""
+    """A saved upload, and the removal the route must call for it."""
     monkeypatch.setattr(admin, "list_all_categories", Mock(return_value=[]))
-    monkeypatch.setattr(
-        admin,
-        "save_product_image",
-        Mock(return_value=Mock(relative_path="products/new.png")),
-    )
-    delete = Mock()
-    monkeypatch.setattr(admin, "delete_product_image", delete)
-    return delete
+    saved = Mock(relative_path="new-name.png", file_id=UUID(int=7))
+    monkeypatch.setattr(admin, "save_product_image", Mock(return_value=saved))
+    abandon = Mock()
+    monkeypatch.setattr(admin, "abandon_product_image", abandon)
+    abandon.saved = saved
+    return abandon
 
 
 def _with_image(data: dict) -> dict:
@@ -622,7 +629,7 @@ def test_a_failed_create_removes_the_uploaded_image(
     client = app.test_client()
     with client.session_transaction() as session:
         session.update(user_id="u-1", role_code="ADMIN", name="Admin")
-    delete = _upload(monkeypatch)
+    abandon = _upload(monkeypatch)
     monkeypatch.setattr(
         admin, "create_product", Mock(side_effect=RuntimeError("database down"))
     )
@@ -634,7 +641,7 @@ def test_a_failed_create_removes_the_uploaded_image(
     )
 
     assert response.status_code == 500
-    delete.assert_called_once_with("products/new.png", ANY)
+    abandon.assert_called_once_with(abandon.saved)
 
 
 def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
@@ -645,9 +652,13 @@ def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
     client = app.test_client()
     with client.session_transaction() as session:
         session.update(user_id="u-1", role_code="ADMIN", name="Admin")
-    delete = _upload(monkeypatch)
+    abandon = _upload(monkeypatch)
+    retire = Mock()
+    monkeypatch.setattr(admin, "retire_product_image", retire)
     monkeypatch.setattr(
-        admin, "get_product", Mock(return_value=Mock(image_path="products/old.png"))
+        admin,
+        "get_product",
+        Mock(return_value=Mock(image_path="old.png", image_file_id=UUID(int=3))),
     )
     monkeypatch.setattr(
         admin, "update_product", Mock(side_effect=RuntimeError("database down"))
@@ -660,4 +671,5 @@ def test_a_failed_edit_removes_the_new_image_and_keeps_the_old_one(
     )
 
     assert response.status_code == 500
-    delete.assert_called_once_with("products/new.png", ANY)
+    abandon.assert_called_once_with(abandon.saved)
+    retire.assert_not_called()

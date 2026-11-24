@@ -480,7 +480,8 @@ CREATE TABLE product (
     is_active   BOOLEAN NOT NULL DEFAULT TRUE,
     CONSTRAINT product_image_name_check
         CHECK (image_file_id IS NULL
-               OR image_path ~ ('^' || image_file_id::text || '[.](jpg|png|webp)$'))
+               OR coalesce(image_path ~ ('^' || image_file_id::text || '[.](jpg|png|webp)$'),
+                           FALSE))
 );
 CREATE UNIQUE INDEX ux_product_image_file ON product (image_file_id)
     WHERE image_file_id IS NOT NULL;

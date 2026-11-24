@@ -1,0 +1,14 @@
+empty_cluster_policy: an emptied cluster takes the customer farthest from their own cluster's centre, from a cluster holding at least two; lowest customer id on a tie
+initialisation: k-means++, seeded
+k: 4
+max_iterations: 100
+normalisation: min-max to [0, 1] across the run; recency reversed so higher is better; a constant feature is 0
+quality: {'cluster_sizes': [1471, 1231, 748, 529], 'converged': True, 'customers_clustered': 3979, 'empty_cluster_events': 0, 'final_shift': 0.0, 'inertia': 54.170765, 'iterations': 6, 'silhouette': 0.582904, 'silhouette_sample_seed': 11, 'silhouette_sample_size': 1000, 'silhouette_sampled': True, 'stopped_on': 'tolerance'}
+seed: 11
+tie_break: a customer equidistant from two clusters goes to the lower-numbered one
+tolerance: 0.0001
+window_days: 180
+digest: 040e8e1a8171ac792d4e0c6235376b13a45602afa075f67d372a020e677d26e0
+repeats: 3
+differences: none
+seconds: 1.8

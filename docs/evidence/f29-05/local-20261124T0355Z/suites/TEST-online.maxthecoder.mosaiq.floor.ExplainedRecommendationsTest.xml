@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-24T03:51:01.707Z" hostname="LA-PODEROSA" time="11.476">
+  <properties/>
+  <testcase name="aRoleThatRecordsNothingSeesTheListAndQueuesNothing" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="7.69"/>
+  <testcase name="withNoStoreCheckedInNothingIsAskedAndItSaysSo" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.269"/>
+  <testcase name="aTapIsASeparateClickEachTime" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.676"/>
+  <testcase name="itAsksAtTheCheckedInStoreAndNamesNoChannel" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.441"/>
+  <testcase name="eachItemSaysWhereItCanBeHadAndWhyAndAnAlternativeIsMarked" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.705"/>
+  <testcase name="theSameDecisionShownAgainIsNotASecondImpression" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.572"/>
+  <testcase name="oneImpressionPerItemReallyShownThroughScrollAndRotation" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.584"/>
+  <testcase name="anEmptyResultStatesTheServicesReason" classname="online.maxthecoder.mosaiq.floor.ExplainedRecommendationsTest" time="0.538"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

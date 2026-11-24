@@ -531,6 +531,28 @@ def test_a_concurrent_deploy_keeps_the_line_another_one_just_loaded(
     assert user_line("beta", "~beta:cache:* ~beta:v2:*") in instance.acl()
 
 
+def test_a_service_deploy_keeps_the_ops_users_of_the_merged_tree(
+    instance: Instance,
+) -> None:
+    # The infra run loads ops/*/redis/*.acl. A service deploy that rebuilt the
+    # aclfile from the services alone dropped ops_console on the instance
+    # (#764), so the console and the propagation tool lost Redis.
+    rules = "resetchannels -@all +ping +xpending %R~stream:*"
+    acl = instance.tree / "ops/console/redis/ops-console.acl"
+    acl.parent.mkdir(parents=True)
+    acl.write_text(f"# ops console\nuser ops_console on {{{{password}}}} {rules}\n")
+    (instance.svc / "ops-console.env").write_text(
+        "REDIS_OPS_CONSOLE_PASSWORD=pw-console\n"
+    )
+    digest = hashlib.sha256(b"pw-console").hexdigest()
+
+    instance.ship("alpha", "0.1.0")
+    instance.ship("alpha", "0.2.0", acl=" ~alpha:v2:*")
+
+    assert f"user ops_console on #{digest} {rules}" in instance.acl()
+    assert user_line("alpha", "~alpha:cache:* ~alpha:v2:*") in instance.acl()
+
+
 def test_the_committed_scripts_are_executable() -> None:
     for relative in ("deploy/deploy-service.sh", "deploy/rehearse-rollback.sh"):
         mode = subprocess.run(

@@ -598,7 +598,7 @@ def test_the_tables_hold_ids_figures_and_codes_only(owner: psycopg.Connection) -
         "SELECT table_name, column_name, data_type FROM information_schema.columns"
         " WHERE table_schema = 'recommendations'"
     ).fetchall()
-    assert {table for table, *_ in columns} == set(TABLES)
+    assert {table for table, *_ in columns} == {*TABLES, "recommendation_interaction"}
     assert {kind for *_, kind in columns} <= {
         "uuid",
         "smallint",
@@ -606,6 +606,7 @@ def test_the_tables_hold_ids_figures_and_codes_only(owner: psycopg.Connection) -
         "bigint",
         "numeric",
         "text",
+        "boolean",
         "timestamp with time zone",
     }
     text = {(table, column) for table, column, kind in columns if kind == "text"}
@@ -617,6 +618,8 @@ def test_the_tables_hold_ids_figures_and_codes_only(owner: psycopg.Connection) -
         ("recommendation_item", "kind"),
         ("recommendation_item", "unavailable_reason"),
         ("recommendation_reason", "signal"),
+        ("recommendation_interaction", "kind"),
+        ("recommendation_interaction", "label_code"),
     }
     for table, column in text:
         (guarded,) = owner.execute(
